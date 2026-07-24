@@ -10,9 +10,9 @@ const (
 	// Inferred means evidence supports the conclusion without directly capturing it.
 	Inferred State = "inferred"
 	// Claimed means a vendor, operator, or other source states the behavior.
-	Claimed  State = "claimed"
+	Claimed State = "claimed"
 	// Unknown means the available capture cannot establish what happened.
-	Unknown  State = "unknown"
+	Unknown State = "unknown"
 )
 
 // Valid reports whether the state is part of Ariadne's evidence model.
