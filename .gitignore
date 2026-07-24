@@ -1,0 +1,46 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+/secrets/
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+# Captures and local experiment output
+/.ariadne/
+/captures/
+/runs/
+/work/
+*.har
+*.pcap
+*.pcapng
+
+# Go
+/bin/
+/coverage.out
+*.out
+*.prof
+*.test
+
+# Hugo
+/docs/public/
+/docs/resources/_gen/
+/.hugo_build.lock
+
+# Local tooling
+/.cache/
+/.idea/
+/.vscode/
+*.log
+.DS_Store
+Thumbs.db
+
+# Android build output
+*.apk
+*.aab
+local.properties
