@@ -14,6 +14,34 @@ Two personas will differ in exactly one declared value. The specific value will
 be selected with the fixture application so that the expected influence is
 known without being hard-coded into Ariadne.
 
+## Manifest v1
+
+The first manifest is intentionally flat:
+
+```json
+{
+  "schema_version": 1,
+  "name": "experiment-001-email",
+  "variable": "email",
+  "baseline": {
+    "email": "baseline@example.invalid",
+    "region": "us-east"
+  },
+  "treatment": {
+    "email": "treatment@example.invalid",
+    "region": "us-east"
+  }
+}
+```
+
+Both personas must contain the same string keys. Exactly one value must differ,
+and its key must equal `variable`. Nested values and non-string persona values
+are outside v1.
+
+The parser will reject inputs larger than 64 KiB, duplicate JSON keys, unknown
+top-level fields, and trailing data. Validation errors may name fields but must
+never include persona values.
+
 ## Procedure
 
 1. Verify the selected emulator, package, and fixture version.
@@ -38,4 +66,3 @@ known without being hard-coded into Ariadne.
 - Defeating certificate pinning
 - Running a general-purpose Android malware sandbox
 - Supporting multiple capture backends before the first experiment works
-
