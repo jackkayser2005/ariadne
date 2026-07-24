@@ -5,9 +5,13 @@ package evidence
 type State string
 
 const (
+	// Observed means captured artifacts directly contain the reported behavior.
 	Observed State = "observed"
+	// Inferred means evidence supports the conclusion without directly capturing it.
 	Inferred State = "inferred"
+	// Claimed means a vendor, operator, or other source states the behavior.
 	Claimed  State = "claimed"
+	// Unknown means the available capture cannot establish what happened.
 	Unknown  State = "unknown"
 )
 
