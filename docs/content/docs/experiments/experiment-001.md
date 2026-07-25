@@ -84,7 +84,9 @@ experiment.
 
 The fixture package is `dev.ariadne.fixture`. Its exported activity accepts
 `email` and `region` string extras, writes `files/observation.json`, and exits.
-It requests no Android permissions and sends no network traffic.
+It requests Android's normal `INTERNET` permission. It sends no request unless
+the runner supplies `collector_port`; when supplied, it posts the same JSON to
+IPv4 loopback. Cleartext traffic to other destinations is denied.
 
 For the example manifest, the stored `variant` is `standard` for the baseline
 email and `personalized` for the treatment email. Ariadne does not contain this
