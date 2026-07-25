@@ -60,6 +60,26 @@ variable: email
 persona_fields: 2
 ```
 
+## Android target preflight
+
+Before a session, verify one explicitly selected device and package:
+
+```console
+go run ./cmd/ariadne android check --device emulator-5554 --package dev.ariadne.fixture
+```
+
+Use `--adb <path>` when `adb` is not on `PATH`. A successful check prints:
+
+```text
+android target ready
+adb_version: 1.0.41
+device: emulator-5554
+package: dev.ariadne.fixture
+```
+
+The check does not enumerate devices, inspect package data, or run the
+experiment.
+
 ## Procedure
 
 1. Verify the selected emulator, package, and fixture version.
