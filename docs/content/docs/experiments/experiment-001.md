@@ -42,6 +42,24 @@ The parser will reject inputs larger than 64 KiB, duplicate JSON keys, unknown
 top-level fields, and trailing data. Validation errors may name fields but must
 never include persona values.
 
+## Validate a manifest
+
+Run:
+
+```console
+go run ./cmd/ariadne validate examples/experiment-001.json
+```
+
+Successful validation prints stable metadata without displaying persona values:
+
+```text
+valid manifest
+name: experiment-001-email
+schema_version: 1
+variable: email
+persona_fields: 2
+```
+
 ## Procedure
 
 1. Verify the selected emulator, package, and fixture version.

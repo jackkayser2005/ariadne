@@ -2,6 +2,8 @@
 package experiment
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -12,6 +14,28 @@ const CurrentSchemaVersion = 1
 
 // Persona is a flat set of named string values used in one experiment run.
 type Persona map[string]string
+
+// UnmarshalJSON rejects persona values that are not JSON strings.
+func (p *Persona) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+
+	persona := make(Persona, len(fields))
+	for key, raw := range fields {
+		if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+			return fmt.Errorf("persona field %q: value must be a string", key)
+		}
+		var value string
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return fmt.Errorf("persona field %q: value must be a string: %w", key, err)
+		}
+		persona[key] = value
+	}
+	*p = persona
+	return nil
+}
 
 // Manifest declares the single controlled difference between two personas.
 type Manifest struct {
