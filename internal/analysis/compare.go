@@ -8,8 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
-	"unicode"
 	"unicode/utf8"
 
 	"github.com/jackkayser2005/ariadne/internal/collector"
@@ -212,8 +210,16 @@ func (observation fixtureObservation) validate() error {
 }
 
 func validFieldValue(value string) bool {
-	return value != "" &&
-		len(value) <= 1024 &&
-		strings.TrimSpace(value) == value &&
-		!strings.ContainsFunc(value, unicode.IsControl)
+	if value == "" || len(value) > 1024 {
+		return false
+	}
+	for _, character := range value {
+		isLetter := character >= 'a' && character <= 'z' ||
+			character >= 'A' && character <= 'Z'
+		isDigit := character >= '0' && character <= '9'
+		if !isLetter && !isDigit && !bytes.ContainsRune([]byte("._@:+-"), character) {
+			return false
+		}
+	}
+	return true
 }

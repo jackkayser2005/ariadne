@@ -1,0 +1,498 @@
+package bundle
+
+import (
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/jackkayser2005/ariadne/internal/adb"
+	"github.com/jackkayser2005/ariadne/internal/collector"
+)
+
+const (
+	baselineObservation  = `{"schema_version":1,"region":"us-east","variant":"standard"}`
+	treatmentObservation = `{"schema_version":1,"region":"us-east","variant":"personalized"}`
+)
+
+func TestWrite(t *testing.T) {
+	runDir := makeRun(t, runOptions{})
+
+	summary, err := Write(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.ManifestName != "experiment-001-email" || summary.Differences != 1 {
+		t.Fatalf("Write() = %#v", summary)
+	}
+
+	evidence, err := os.ReadFile(filepath.Join(runDir, "evidence.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document document
+	if err := json.Unmarshal(evidence, &document); err != nil {
+		t.Fatal(err)
+	}
+	if document.SchemaVersion != 1 ||
+		len(document.Artifacts) != 6 ||
+		len(document.Comparison.Differences) != 1 ||
+		document.Comparison.Differences[0].Field != "variant" {
+		t.Fatalf("evidence = %#v", document)
+	}
+
+	report, err := os.ReadFile(filepath.Join(runDir, "report.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(report)
+	for _, expected := range []string{
+		"# Evidence Report",
+		"Observed differences: 1",
+		"<code>variant</code>",
+		"<code>standard</code>",
+		"<code>personalized</code>",
+		"Verified artifacts: 6",
+	} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("report missing %q:\n%s", expected, text)
+		}
+	}
+	for _, secret := range []string{"baseline@example.invalid", "treatment@example.invalid"} {
+		if strings.Contains(string(evidence), secret) || strings.Contains(text, secret) {
+			t.Fatalf("bundle exposed persona value %q", secret)
+		}
+	}
+}
+
+func TestWriteRequiresRunDirectory(t *testing.T) {
+	_, err := Write(" \t")
+	if err == nil || !strings.Contains(err.Error(), "run directory is required") {
+		t.Fatalf("Write() error = %v", err)
+	}
+}
+
+func TestWriteIsDeterministic(t *testing.T) {
+	first := makeRun(t, runOptions{})
+	second := makeRun(t, runOptions{})
+	if _, err := Write(first); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Write(second); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"evidence.json", "report.md"} {
+		firstData, err := os.ReadFile(filepath.Join(first, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		secondData, err := os.ReadFile(filepath.Join(second, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(firstData) != string(secondData) {
+			t.Fatalf("%s is not deterministic", name)
+		}
+	}
+}
+
+func TestWriteRejectsTamperedArtifactWithoutExposingIt(t *testing.T) {
+	const secret = "do-not-print-tampered-value"
+	runDir := makeRun(t, runOptions{})
+	path := filepath.Join(runDir, "baseline", "observations", "storage.json")
+	if err := os.WriteFile(path, []byte(`{"value":"`+secret+`"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Write(runDir)
+	if err == nil || !strings.Contains(err.Error(), "integrity check failed") {
+		t.Fatalf("Write() error = %v", err)
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Fatalf("Write() exposed artifact value: %v", err)
+	}
+	assertNoOutputs(t, runDir)
+}
+
+func TestWriteRejectsInvalidSessions(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*adb.SessionRecord)
+		want   string
+	}{
+		{
+			name: "schema",
+			mutate: func(record *adb.SessionRecord) {
+				record.SchemaVersion = 2
+			},
+			want: "schema_version or kind",
+		},
+		{
+			name: "kind",
+			mutate: func(record *adb.SessionRecord) {
+				record.Kind = "other"
+			},
+			want: "schema_version or kind",
+		},
+		{
+			name: "metadata",
+			mutate: func(record *adb.SessionRecord) {
+				record.Package = ""
+			},
+			want: "package is invalid",
+		},
+		{
+			name: "persona fields",
+			mutate: func(record *adb.SessionRecord) {
+				record.PersonaFields = 0
+			},
+			want: "persona_fields",
+		},
+		{
+			name: "failed step",
+			mutate: func(record *adb.SessionRecord) {
+				record.Steps[2].Status = "error"
+				record.Steps[2].ExitCode = 1
+			},
+			want: `step "start" is invalid`,
+		},
+		{
+			name: "wrong step",
+			mutate: func(record *adb.SessionRecord) {
+				record.Steps[1].Name = "other"
+			},
+			want: `step "connect_network" is invalid`,
+		},
+		{
+			name: "missing steps",
+			mutate: func(record *adb.SessionRecord) {
+				record.Steps = record.Steps[:len(record.Steps)-1]
+			},
+			want: "step sequence is incomplete",
+		},
+		{
+			name: "timestamp",
+			mutate: func(record *adb.SessionRecord) {
+				record.FinishedAt = record.StartedAt.Add(-time.Second)
+			},
+			want: "timestamps",
+		},
+		{
+			name: "step timestamp",
+			mutate: func(record *adb.SessionRecord) {
+				record.Steps[0].StartedAt = time.Time{}
+			},
+			want: `step "reset" is invalid`,
+		},
+		{
+			name: "artifact count",
+			mutate: func(record *adb.SessionRecord) {
+				record.Artifacts = record.Artifacts[:1]
+			},
+			want: "expected two artifacts",
+		},
+		{
+			name: "artifact metadata",
+			mutate: func(record *adb.SessionRecord) {
+				record.Artifacts[0].SHA256 = "invalid"
+			},
+			want: "metadata is invalid",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			runDir := makeRun(t, runOptions{mutateTreatment: test.mutate})
+			_, err := Write(runDir)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("Write() error = %v, want containing %q", err, test.want)
+			}
+			assertNoOutputs(t, runDir)
+		})
+	}
+}
+
+func TestWriteRejectsSessionAndSourceDisagreement(t *testing.T) {
+	t.Run("session metadata", func(t *testing.T) {
+		runDir := makeRun(t, runOptions{
+			mutateTreatment: func(record *adb.SessionRecord) {
+				record.Device = "emulator-5556"
+			},
+		})
+		_, err := Write(runDir)
+		if err == nil || !strings.Contains(err.Error(), "session metadata disagree") {
+			t.Fatalf("Write() error = %v", err)
+		}
+	})
+
+	t.Run("observation sources", func(t *testing.T) {
+		runDir := makeRun(t, runOptions{
+			treatmentNetworkBody: baselineObservation,
+		})
+		_, err := Write(runDir)
+		if err == nil || !strings.Contains(err.Error(), "observations disagree") {
+			t.Fatalf("Write() error = %v", err)
+		}
+	})
+}
+
+func TestWriteRejectsInvalidSessionJSON(t *testing.T) {
+	tests := []struct {
+		name   string
+		change func(string) string
+		want   string
+	}{
+		{
+			name: "duplicate",
+			change: func(input string) string {
+				return strings.Replace(
+					input,
+					`"schema_version": 1,`,
+					`"schema_version": 1, "schema_version": 1,`,
+					1,
+				)
+			},
+			want: `duplicate key "schema_version"`,
+		},
+		{
+			name: "unknown",
+			change: func(input string) string {
+				return strings.Replace(input, `"kind":`, `"extra": true, "kind":`, 1)
+			},
+			want: `unknown field "extra"`,
+		},
+		{
+			name:   "trailing",
+			change: func(input string) string { return input + `{}` },
+			want:   "trailing data",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			runDir := makeRun(t, runOptions{})
+			path := filepath.Join(runDir, "baseline", "session.json")
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(test.change(string(data))), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err = Write(runDir)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("Write() error = %v, want containing %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestWriteRefusesExistingOutput(t *testing.T) {
+	runDir := makeRun(t, runOptions{})
+	reportPath := filepath.Join(runDir, "report.md")
+	if err := os.WriteFile(reportPath, []byte("existing"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Write(runDir)
+	if err == nil || !strings.Contains(err.Error(), "output already exists") {
+		t.Fatalf("Write() error = %v", err)
+	}
+	data, readErr := os.ReadFile(reportPath)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(data) != "existing" {
+		t.Fatalf("existing report changed: %q", data)
+	}
+	if _, err := os.Stat(filepath.Join(runDir, "evidence.json")); !os.IsNotExist(err) {
+		t.Fatalf("evidence.json exists: %v", err)
+	}
+}
+
+func TestWriteEscapesReportMetadata(t *testing.T) {
+	runDir := makeRun(t, runOptions{
+		mutateBaseline: func(record *adb.SessionRecord) {
+			record.ManifestName = `<script>alert(1)</script>`
+		},
+		mutateTreatment: func(record *adb.SessionRecord) {
+			record.ManifestName = `<script>alert(1)</script>`
+		},
+	})
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+	report, err := os.ReadFile(filepath.Join(runDir, "report.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(report), "<script>") ||
+		!strings.Contains(string(report), "&lt;script&gt;") {
+		t.Fatalf("report metadata was not escaped:\n%s", report)
+	}
+}
+
+func TestWriteNoDifferences(t *testing.T) {
+	runDir := makeRun(t, runOptions{
+		treatmentStorage:     baselineObservation,
+		treatmentNetworkBody: baselineObservation,
+	})
+	summary, err := Write(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Differences != 0 {
+		t.Fatalf("Write() = %#v", summary)
+	}
+	report, err := os.ReadFile(filepath.Join(runDir, "report.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(report), "No observed differences.") {
+		t.Fatalf("report = %s", report)
+	}
+}
+
+type runOptions struct {
+	treatmentStorage     string
+	treatmentNetworkBody string
+	mutateBaseline       func(*adb.SessionRecord)
+	mutateTreatment      func(*adb.SessionRecord)
+}
+
+func makeRun(t *testing.T, options runOptions) string {
+	t.Helper()
+	runDir := filepath.Join(t.TempDir(), "run")
+	if options.treatmentStorage == "" {
+		options.treatmentStorage = treatmentObservation
+	}
+	if options.treatmentNetworkBody == "" {
+		options.treatmentNetworkBody = treatmentObservation
+	}
+	writeSession(
+		t,
+		runDir,
+		"baseline",
+		baselineObservation,
+		baselineObservation,
+		options.mutateBaseline,
+	)
+	writeSession(
+		t,
+		runDir,
+		"treatment",
+		options.treatmentStorage,
+		options.treatmentNetworkBody,
+		options.mutateTreatment,
+	)
+	return runDir
+}
+
+func writeSession(
+	t *testing.T,
+	runDir, kind, storageBody, networkBody string,
+	mutate func(*adb.SessionRecord),
+) {
+	t.Helper()
+	sessionDir := filepath.Join(runDir, kind)
+	observationDir := filepath.Join(sessionDir, "observations")
+	if err := os.MkdirAll(observationDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	network := networkJSON(t, networkBody)
+	storage := []byte(storageBody)
+	if err := os.WriteFile(filepath.Join(observationDir, "network.json"), network, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(observationDir, "storage.json"), storage, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	started := time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC)
+	if kind == "treatment" {
+		started = started.Add(20 * time.Second)
+	}
+	steps := make([]adb.StepRecord, len(expectedSteps))
+	for index, name := range expectedSteps {
+		stepStart := started.Add(time.Duration(index+1) * time.Second)
+		steps[index] = adb.StepRecord{
+			Name:       name,
+			StartedAt:  stepStart,
+			FinishedAt: stepStart.Add(time.Second),
+			Status:     "ok",
+			ExitCode:   0,
+		}
+	}
+	record := adb.SessionRecord{
+		SchemaVersion:    1,
+		Kind:             kind,
+		ManifestName:     "experiment-001-email",
+		DeclaredVariable: "email",
+		PersonaFields:    2,
+		ADBVersion:       "1.0.41",
+		Device:           "emulator-5554",
+		Package:          "dev.ariadne.fixture",
+		StartedAt:        started,
+		FinishedAt:       started.Add(10 * time.Second),
+		Steps:            steps,
+		Artifacts: []adb.Artifact{
+			adbArtifact("http_request", "POST /observe", "observations/network.json", network),
+			adbArtifact(
+				"android_private_storage",
+				"files/observation.json",
+				"observations/storage.json",
+				storage,
+			),
+		},
+	}
+	if mutate != nil {
+		mutate(&record)
+	}
+	data, err := json.MarshalIndent(record, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = append(data, '\n')
+	if err := os.WriteFile(filepath.Join(sessionDir, "session.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func networkJSON(t *testing.T, body string) []byte {
+	t.Helper()
+	data, err := json.MarshalIndent(collector.Observation{
+		SchemaVersion: 1,
+		Method:        "POST",
+		Path:          "/observe",
+		ContentType:   "application/json",
+		BodyBase64:    base64.StdEncoding.EncodeToString([]byte(body)),
+	}, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return append(data, '\n')
+}
+
+func adbArtifact(kind, source, path string, data []byte) adb.Artifact {
+	sum := sha256.Sum256(data)
+	return adb.Artifact{
+		Kind:      kind,
+		Source:    source,
+		Path:      path,
+		SizeBytes: len(data),
+		SHA256:    hex.EncodeToString(sum[:]),
+	}
+}
+
+func assertNoOutputs(t *testing.T, runDir string) {
+	t.Helper()
+	for _, name := range []string{"evidence.json", "report.md"} {
+		if _, err := os.Stat(filepath.Join(runDir, name)); !os.IsNotExist(err) {
+			t.Fatalf("%s exists: %v", name, err)
+		}
+	}
+}
