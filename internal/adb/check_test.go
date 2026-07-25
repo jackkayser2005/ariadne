@@ -208,6 +208,8 @@ func TestADBHelperProcess(t *testing.T) {
 	case "oversized":
 		fmt.Print(strings.Repeat("x", maxOutputBytes+1))
 		os.Exit(0)
+	case "exit-seven":
+		os.Exit(7)
 	}
 }
 

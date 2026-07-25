@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode"
 )
 
 // CurrentSchemaVersion is the manifest version supported by this build.
@@ -54,8 +55,14 @@ func (m Manifest) Validate() error {
 	if strings.TrimSpace(m.Name) == "" {
 		return errors.New("name: required")
 	}
+	if strings.ContainsFunc(m.Name, unicode.IsControl) {
+		return errors.New("name: control characters are not allowed")
+	}
 	if strings.TrimSpace(m.Variable) == "" {
 		return errors.New("variable: required")
+	}
+	if strings.ContainsFunc(m.Variable, unicode.IsControl) {
+		return errors.New("variable: control characters are not allowed")
 	}
 	if len(m.Baseline) == 0 {
 		return errors.New("baseline: required")
@@ -78,6 +85,9 @@ func (m Manifest) Validate() error {
 	for key, baselineValue := range m.Baseline {
 		if strings.TrimSpace(key) == "" {
 			return errors.New("personas: keys must not be blank")
+		}
+		if strings.ContainsFunc(key, unicode.IsControl) {
+			return errors.New("personas: key control characters are not allowed")
 		}
 		treatmentValue, ok := m.Treatment[key]
 		if !ok {
