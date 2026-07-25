@@ -104,13 +104,22 @@ and writes:
 
 ```text
 .ariadne/runs/experiment-001/
-├── baseline/session.json
-└── treatment/session.json
+├── baseline/
+│   ├── observations/storage.json
+│   └── session.json
+└── treatment/
+    ├── observations/storage.json
+    └── session.json
 ```
 
 Session metadata includes the selected device, package, ADB version, timestamps,
-step status, and exit codes. It excludes persona values, command arguments, and
-raw ADB output.
+step status, exit codes, and a SHA-256 record for each captured artifact. It
+excludes persona values, command arguments, and raw ADB output.
+
+The storage artifact is the exact bounded JSON read from the fixture's private
+`files/observation.json` through Android's `run-as` command. Capture fails if
+the package is not debuggable, the file is missing, the output is not a JSON
+object, or it exceeds 64 KiB.
 
 ## Procedure
 
