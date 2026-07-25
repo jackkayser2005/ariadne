@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "name": "experiment-001-email",
+  "variable": "email",
+  "baseline": {
+    "email": "baseline@example.invalid",
+    "region": "us-east"
+  },
+  "treatment": {
+    "email": "treatment@example.invalid",
+    "region": "us-east"
+  }
+}
