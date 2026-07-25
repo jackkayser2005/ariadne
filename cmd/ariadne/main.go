@@ -15,9 +15,11 @@ import (
 const usage = `usage:
   ariadne validate <manifest.json>
   ariadne android check [--adb <path>] --device <serial> --package <package>
+  ariadne experiment run [--adb <path>] --device <serial> --package <package> --output <directory> <manifest.json>
 `
 
 const adbCheckTimeout = 10 * time.Second
+const experimentRunTimeout = 60 * time.Second
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -29,6 +31,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(args) >= 2 && args[0] == "android" && args[1] == "check" {
 		return runAndroidCheck(args[2:], stdout, stderr, adb.Check)
+	}
+	if len(args) >= 2 && args[0] == "experiment" && args[1] == "run" {
+		return runExperiment(args[2:], stdout, stderr, adb.Check, adb.RunPair)
 	}
 
 	_, _ = io.WriteString(stderr, usage)
@@ -65,6 +70,13 @@ func runValidate(path string, stdout, stderr io.Writer) int {
 }
 
 type targetChecker func(context.Context, string, string, string) (adb.Target, error)
+type pairRunner func(
+	context.Context,
+	string,
+	adb.Target,
+	experiment.Manifest,
+	string,
+) error
 
 func runAndroidCheck(
 	args []string,
@@ -102,6 +114,65 @@ func runAndroidCheck(
 	)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: android check: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func runExperiment(
+	args []string,
+	stdout, stderr io.Writer,
+	check targetChecker,
+	runPair pairRunner,
+) int {
+	flags := flag.NewFlagSet("experiment run", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	binary := flags.String("adb", "adb", "")
+	device := flags.String("device", "", "")
+	packageName := flags.String("package", "", "")
+	outputDir := flags.String("output", "", "")
+	if err := flags.Parse(args); err != nil ||
+		flags.NArg() != 1 ||
+		*device == "" ||
+		*packageName == "" ||
+		*outputDir == "" {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+
+	file, err := os.Open(flags.Arg(0))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment run: open manifest: %v\n", err)
+		return 1
+	}
+	defer file.Close()
+
+	manifest, err := experiment.Decode(file)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment run: %v\n", err)
+		return 1
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), experimentRunTimeout)
+	defer cancel()
+
+	target, err := check(ctx, *binary, *device, *packageName)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment run: %v\n", err)
+		return 1
+	}
+	if err := runPair(ctx, *binary, target, manifest, *outputDir); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment run: %v\n", err)
+		return 1
+	}
+
+	_, err = fmt.Fprintf(
+		stdout,
+		"experiment complete\nname: %s\nruns: 2\n",
+		manifest.Name,
+	)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment run: write output: %v\n", err)
 		return 1
 	}
 	return 0
