@@ -2,11 +2,14 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/jackkayser2005/ariadne/internal/adb"
 )
 
 const validManifest = `{
@@ -45,6 +48,8 @@ func TestRunUsage(t *testing.T) {
 		{"unknown"},
 		{"validate"},
 		{"validate", "one.json", "two.json"},
+		{"android"},
+		{"android", "unknown"},
 	}
 
 	for _, args := range tests {
@@ -64,6 +69,147 @@ func TestRunUsage(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRunAndroidCheck(t *testing.T) {
+	check := func(
+		ctx context.Context,
+		binary, device, packageName string,
+	) (adb.Target, error) {
+		if _, ok := ctx.Deadline(); !ok {
+			t.Fatal("check() context has no deadline")
+		}
+		if binary != "custom-adb" ||
+			device != "emulator-5554" ||
+			packageName != "dev.ariadne.fixture" {
+			t.Fatalf(
+				"check() arguments = %q, %q, %q",
+				binary,
+				device,
+				packageName,
+			)
+		}
+		return adb.Target{
+			Version: "1.0.41",
+			Device:  device,
+			Package: packageName,
+		}, nil
+	}
+	var stdout, stderr bytes.Buffer
+
+	exitCode := runAndroidCheck(
+		[]string{
+			"--adb", "custom-adb",
+			"--device", "emulator-5554",
+			"--package", "dev.ariadne.fixture",
+		},
+		&stdout,
+		&stderr,
+		check,
+	)
+
+	const want = "android target ready\n" +
+		"adb_version: 1.0.41\n" +
+		"device: emulator-5554\n" +
+		"package: dev.ariadne.fixture\n"
+	if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+		t.Fatalf(
+			"runAndroidCheck() = %d, stdout=%q, stderr=%q",
+			exitCode,
+			stdout.String(),
+			stderr.String(),
+		)
+	}
+}
+
+func TestRunAndroidCheckFailures(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "missing device", args: []string{"--package", "dev.ariadne.fixture"}},
+		{name: "missing package", args: []string{"--device", "emulator-5554"}},
+		{name: "unknown flag", args: []string{"--unknown"}},
+		{name: "positional argument", args: []string{
+			"--device", "emulator-5554",
+			"--package", "dev.ariadne.fixture",
+			"extra",
+		}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			exitCode := runAndroidCheck(
+				test.args,
+				&stdout,
+				&stderr,
+				func(context.Context, string, string, string) (adb.Target, error) {
+					t.Fatal("check called for invalid usage")
+					return adb.Target{}, nil
+				},
+			)
+			if exitCode != 2 || stdout.Len() != 0 || stderr.String() != usage {
+				t.Fatalf(
+					"runAndroidCheck() = %d, stdout=%q, stderr=%q",
+					exitCode,
+					stdout.String(),
+					stderr.String(),
+				)
+			}
+		})
+	}
+
+	t.Run("check error", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAndroidCheck(
+			[]string{
+				"--device", "emulator-5554",
+				"--package", "dev.ariadne.fixture",
+			},
+			&stdout,
+			&stderr,
+			func(context.Context, string, string, string) (adb.Target, error) {
+				return adb.Target{}, errors.New("adb unavailable")
+			},
+		)
+		if exitCode != 1 ||
+			stdout.Len() != 0 ||
+			!strings.Contains(stderr.String(), "adb unavailable") {
+			t.Fatalf(
+				"runAndroidCheck() = %d, stdout=%q, stderr=%q",
+				exitCode,
+				stdout.String(),
+				stderr.String(),
+			)
+		}
+	})
+
+	t.Run("write error", func(t *testing.T) {
+		var stderr bytes.Buffer
+		exitCode := runAndroidCheck(
+			[]string{
+				"--device", "emulator-5554",
+				"--package", "dev.ariadne.fixture",
+			},
+			failingWriter{},
+			&stderr,
+			func(context.Context, string, string, string) (adb.Target, error) {
+				return adb.Target{
+					Version: "1.0.41",
+					Device:  "emulator-5554",
+					Package: "dev.ariadne.fixture",
+				}, nil
+			},
+		)
+		if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+			t.Fatalf(
+				"runAndroidCheck() = %d, stderr=%q",
+				exitCode,
+				stderr.String(),
+			)
+		}
+	})
 }
 
 func TestRunReadFailure(t *testing.T) {
