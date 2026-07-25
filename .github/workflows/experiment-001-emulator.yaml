@@ -74,7 +74,7 @@ jobs:
           profile: pixel_7
           emulator-port: 5554
           script: |
-            adb -s emulator-5554 install --replace fixture/android/app/build/outputs/apk/debug/app-debug.apk
+            adb -s emulator-5554 install -r fixture/android/app/build/outputs/apk/debug/app-debug.apk
             "${RUNNER_TEMP}/ariadne" android check \
               --device emulator-5554 \
               --package dev.ariadne.fixture
