@@ -1,13 +1,11 @@
 # Ariadne
 
-Trace where your data leads.
-
 Ariadne is an open-source counterfactual privacy analysis tool. It runs
 software in controlled parallel environments, changes one piece of personal
 data, and reports which observable behaviors change.
 
-Privacy claims are hypotheses. Ariadne records evidence as **observed**,
-**inferred**, **claimed**, or **unknown**.
+Reports classify conclusions as **observed**, **inferred**, **claimed**, or
+**unknown**.
 
 ## Experiment 001
 
@@ -28,7 +26,8 @@ Prerequisites:
 
 - Go 1.24 or newer
 - Docker Desktop for containerized tools and documentation
-- Android SDK Platform Tools when work on the device runner begins
+- JDK 17
+- Android SDK Platform 36 and Build Tools 36.0.0
 
 Preview the documentation:
 
@@ -37,6 +36,13 @@ docker compose up --build docs
 ```
 
 Then open <http://localhost:1313>.
+
+Build and test the authorized Android fixture:
+
+```console
+cd fixture/android
+./gradlew testDebugUnitTest createDebugUnitTestCoverageReport lintDebug assembleDebug
+```
 
 ## Automation
 

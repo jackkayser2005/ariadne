@@ -80,6 +80,16 @@ package: dev.ariadne.fixture
 The check does not enumerate devices, inspect package data, or run the
 experiment.
 
+## Authorized fixture
+
+The fixture package is `dev.ariadne.fixture`. Its exported activity accepts
+`email` and `region` string extras, writes `files/observation.json`, and exits.
+It requests no Android permissions and sends no network traffic.
+
+For the example manifest, the stored `variant` is `standard` for the baseline
+email and `personalized` for the treatment email. Ariadne does not contain this
+rule.
+
 ## Procedure
 
 1. Verify the selected emulator, package, and fixture version.
