@@ -44,3 +44,6 @@ Thumbs.db
 *.apk
 *.aab
 local.properties
+/fixture/android/.gradle/
+/fixture/android/build/
+/fixture/android/app/build/
