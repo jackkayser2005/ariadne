@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/jackkayser2005/ariadne/internal/adb"
+	"github.com/jackkayser2005/ariadne/internal/bundle"
 	"github.com/jackkayser2005/ariadne/internal/experiment"
 )
 
@@ -296,6 +297,97 @@ func TestRunExperimentFailures(t *testing.T) {
 		)
 		if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
 			t.Fatalf("runExperiment() = %d, stderr=%q", exitCode, stderr.String())
+		}
+	})
+}
+
+func TestRunReport(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	exitCode := runReport(
+		[]string{"run-directory"},
+		&stdout,
+		&stderr,
+		func(path string) (bundle.Summary, error) {
+			if path != "run-directory" {
+				t.Fatalf("write() path = %q", path)
+			}
+			return bundle.Summary{
+				ManifestName: "experiment-001-email",
+				Differences:  1,
+			}, nil
+		},
+	)
+	const want = "evidence bundle complete\n" +
+		"name: experiment-001-email\n" +
+		"differences: 1\n"
+	if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+		t.Fatalf(
+			"runReport() = %d, stdout=%q, stderr=%q",
+			exitCode,
+			stdout.String(),
+			stderr.String(),
+		)
+	}
+}
+
+func TestRunReportFailures(t *testing.T) {
+	for _, args := range [][]string{nil, {"one", "two"}} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			exitCode := runReport(
+				args,
+				&stdout,
+				&stderr,
+				func(string) (bundle.Summary, error) {
+					t.Fatal("write called for invalid usage")
+					return bundle.Summary{}, nil
+				},
+			)
+			if exitCode != 2 || stdout.Len() != 0 || stderr.String() != usage {
+				t.Fatalf(
+					"runReport() = %d, stdout=%q, stderr=%q",
+					exitCode,
+					stdout.String(),
+					stderr.String(),
+				)
+			}
+		})
+	}
+
+	t.Run("bundle error", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runReport(
+			[]string{"run"},
+			&stdout,
+			&stderr,
+			func(string) (bundle.Summary, error) {
+				return bundle.Summary{}, errors.New("invalid bundle")
+			},
+		)
+		if exitCode != 1 ||
+			stdout.Len() != 0 ||
+			!strings.Contains(stderr.String(), "invalid bundle") {
+			t.Fatalf(
+				"runReport() = %d, stdout=%q, stderr=%q",
+				exitCode,
+				stdout.String(),
+				stderr.String(),
+			)
+		}
+	})
+
+	t.Run("write output", func(t *testing.T) {
+		var stderr bytes.Buffer
+		exitCode := runReport(
+			[]string{"run"},
+			failingWriter{},
+			&stderr,
+			func(string) (bundle.Summary, error) {
+				return bundle.Summary{ManifestName: "experiment-001"}, nil
+			},
+		)
+		if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+			t.Fatalf("runReport() = %d, stderr=%q", exitCode, stderr.String())
 		}
 	})
 }
