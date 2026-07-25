@@ -102,10 +102,22 @@ go run ./cmd/ariadne experiment run --device emulator-5554 --package dev.ariadne
 
 The output directory must not already exist. Ariadne clears the selected
 package before each session, starts `.MainActivity` with the persona fields,
-and writes:
+and captures the raw session artifacts.
+
+After both sessions succeed, verify the artifacts and write the evidence
+outputs:
+
+```console
+go run ./cmd/ariadne experiment report .ariadne/runs/experiment-001
+```
+
+The report command refuses existing `evidence.json` or `report.md` files. The
+completed directory contains:
 
 ```text
 .ariadne/runs/experiment-001/
+├── evidence.json
+├── report.md
 ├── baseline/
 │   ├── observations/
 │   │   ├── network.json
@@ -133,6 +145,11 @@ artifact records one `POST /observe` request's method, path, media type, and
 exact body encoded as base64. It does not collect unrelated request headers.
 The body must be a JSON object no larger than 64 KiB. Ariadne removes the
 reverse mapping before the session ends, including after capture failures.
+
+`evidence.json` verifies session order, successful step records, artifact
+sizes, and SHA-256 digests before recording the normalization and comparison.
+`report.md` is the concise human-readable view. For the fixture, it reports one
+observed `variant` difference supported by both storage and network artifacts.
 
 ## Procedure
 
