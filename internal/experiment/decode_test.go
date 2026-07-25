@@ -50,6 +50,12 @@ func TestDecode(t *testing.T) {
 			"treatment": {"email": "second"},
 			"extra": [{"nested": true}]
 		}`, wantErr: `unknown field "extra"`},
+		{name: "case-insensitive field alias", input: strings.Replace(
+			validJSON,
+			`"name"`,
+			`"NAME"`,
+			1,
+		), wantErr: `unknown field "NAME"`},
 		{name: "trailing data", input: validJSON + `{}`, wantErr: "trailing data"},
 		{name: "non-string persona value", input: `{
 			"schema_version": 1,
@@ -58,6 +64,19 @@ func TestDecode(t *testing.T) {
 			"baseline": {"consent": false},
 			"treatment": {"consent": true}
 		}`, wantErr: "cannot unmarshal bool"},
+		{name: "null persona value", input: `{
+			"schema_version": 1,
+			"name": "typed",
+			"variable": "email",
+			"baseline": {"email": null},
+			"treatment": {"email": "treatment@example.invalid"}
+		}`, wantErr: "value must be a string"},
+		{name: "invalid UTF-8", input: strings.Replace(
+			validJSON,
+			"experiment-001-email",
+			"experiment-\xff",
+			1,
+		), wantErr: "valid UTF-8"},
 		{name: "semantic failure", input: strings.Replace(
 			validJSON,
 			"treatment@example.invalid",

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"unicode/utf8"
 )
 
 // MaxManifestBytes is the largest manifest Decode accepts.
@@ -23,7 +24,13 @@ func Decode(r io.Reader) (Manifest, error) {
 	if len(bytes.TrimSpace(data)) == 0 {
 		return Manifest{}, errors.New("manifest: empty input")
 	}
+	if !utf8.Valid(data) {
+		return Manifest{}, errors.New("manifest: input must be valid UTF-8")
+	}
 	if err := rejectDuplicateKeys(data); err != nil {
+		return Manifest{}, fmt.Errorf("manifest: %w", err)
+	}
+	if err := rejectUnknownTopLevelFields(data); err != nil {
 		return Manifest{}, fmt.Errorf("manifest: %w", err)
 	}
 
@@ -43,6 +50,28 @@ func Decode(r io.Reader) (Manifest, error) {
 		return Manifest{}, fmt.Errorf("manifest: %w", err)
 	}
 	return manifest, nil
+}
+
+func rejectUnknownTopLevelFields(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		// The main decoder reports malformed input; this check only enforces names.
+		return nil
+	}
+
+	allowed := map[string]struct{}{
+		"schema_version": {},
+		"name":           {},
+		"variable":       {},
+		"baseline":       {},
+		"treatment":      {},
+	}
+	for field := range fields {
+		if _, ok := allowed[field]; !ok {
+			return fmt.Errorf("unknown field %q", field)
+		}
+	}
+	return nil
 }
 
 func rejectDuplicateKeys(data []byte) error {
