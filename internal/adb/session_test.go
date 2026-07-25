@@ -3,8 +3,10 @@ package adb
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,6 +35,15 @@ func TestRunPair(t *testing.T) {
 		if args[3] == "pm" {
 			return []byte("Success\n"), nil
 		}
+		if args[2] == "reverse" {
+			return nil, nil
+		}
+		if args[3] == "am" {
+			if err := postFixtureObservation(args, captures[0]); err != nil {
+				return nil, err
+			}
+			return []byte("Status: ok\n"), nil
+		}
 		if args[2] == "exec-out" {
 			output := captures[0]
 			captures = captures[1:]
@@ -58,29 +69,35 @@ func TestRunPair(t *testing.T) {
 
 	wantCalls := [][]string{
 		{"adb", "-s", "emulator-5554", "shell", "pm", "clear", "dev.ariadne.fixture"},
+		{"adb", "-s", "emulator-5554", "reverse", "tcp:<port>", "tcp:<port>"},
 		{
 			"adb", "-s", "emulator-5554", "shell", "am", "start", "-W", "-S",
 			"-n", "dev.ariadne.fixture/.MainActivity",
 			"--es", "email", "baseline@example.invalid",
 			"--es", "region", "us-east",
+			"--ei", "collector_port", "<port>",
 		},
 		{
 			"adb", "-s", "emulator-5554", "exec-out", "run-as",
 			"dev.ariadne.fixture", "cat", "files/observation.json",
 		},
+		{"adb", "-s", "emulator-5554", "reverse", "--remove", "tcp:<port>"},
 		{"adb", "-s", "emulator-5554", "shell", "pm", "clear", "dev.ariadne.fixture"},
+		{"adb", "-s", "emulator-5554", "reverse", "tcp:<port>", "tcp:<port>"},
 		{
 			"adb", "-s", "emulator-5554", "shell", "am", "start", "-W", "-S",
 			"-n", "dev.ariadne.fixture/.MainActivity",
 			"--es", "email", "treatment@example.invalid",
 			"--es", "region", "us-east",
+			"--ei", "collector_port", "<port>",
 		},
 		{
 			"adb", "-s", "emulator-5554", "exec-out", "run-as",
 			"dev.ariadne.fixture", "cat", "files/observation.json",
 		},
+		{"adb", "-s", "emulator-5554", "reverse", "--remove", "tcp:<port>"},
 	}
-	if !reflect.DeepEqual(calls, wantCalls) {
+	if normalized := normalizeNetworkPorts(calls); !reflect.DeepEqual(normalized, wantCalls) {
 		t.Fatalf("runPairWith() calls = %#v, want %#v", calls, wantCalls)
 	}
 
@@ -92,6 +109,15 @@ func TestRunPair(t *testing.T) {
 			t.Fatal(err)
 		}
 		sum := sha256.Sum256(observation)
+		network, err := os.ReadFile(
+			filepath.Join(outputDir, kind, "observations", "network.json"),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(network), base64.StdEncoding.EncodeToString(observation)) {
+			t.Fatalf("%s network observation = %s", kind, network)
+		}
 
 		data, err := os.ReadFile(filepath.Join(outputDir, kind, "session.json"))
 		if err != nil {
@@ -101,6 +127,7 @@ func TestRunPair(t *testing.T) {
 		if !strings.Contains(text, `"kind": "`+kind+`"`) ||
 			!strings.Contains(text, `"exit_code": 0`) ||
 			!strings.Contains(text, `"source": "files/observation.json"`) ||
+			!strings.Contains(text, `"source": "POST /observe"`) ||
 			!strings.Contains(text, `"sha256": "`+fmt.Sprintf("%x", sum)+`"`) {
 			t.Fatalf("%s session metadata = %s", kind, text)
 		}
@@ -141,6 +168,15 @@ func TestRunPairRejectsInvalidStorageObservation(t *testing.T) {
 				if args[3] == "pm" {
 					return []byte("Success\n"), nil
 				}
+				if args[2] == "reverse" {
+					return nil, nil
+				}
+				if args[3] == "am" {
+					if err := postFixtureObservation(args, []byte(`{}`)); err != nil {
+						return nil, err
+					}
+					return []byte("Status: ok\n"), nil
+				}
 				if args[2] == "exec-out" {
 					return test.output, nil
 				}
@@ -163,7 +199,7 @@ func TestRunPairRejectsInvalidStorageObservation(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("runPairWith() error = %v, want containing %q", err, test.want)
 			}
-			if calls != 3 || directoryExists(filepath.Join(outputDir, "treatment")) {
+			if calls != 5 || directoryExists(filepath.Join(outputDir, "treatment")) {
 				t.Fatalf("runPairWith() calls = %d, treatment directory exists", calls)
 			}
 
@@ -187,6 +223,15 @@ func TestRunPairRecordsStorageCaptureFailure(t *testing.T) {
 		calls++
 		if args[3] == "pm" {
 			return []byte("Success\n"), nil
+		}
+		if args[2] == "reverse" {
+			return nil, nil
+		}
+		if args[3] == "am" {
+			if err := postFixtureObservation(args, []byte(`{}`)); err != nil {
+				return nil, err
+			}
+			return []byte("Status: ok\n"), nil
 		}
 		if args[2] == "exec-out" {
 			return []byte(secret), errors.New("exit status 1")
@@ -213,8 +258,157 @@ func TestRunPairRecordsStorageCaptureFailure(t *testing.T) {
 	if strings.Contains(err.Error(), secret) {
 		t.Fatalf("runPairWith() exposed observation output: %v", err)
 	}
-	if calls != 3 || directoryExists(filepath.Join(outputDir, "treatment")) {
+	if calls != 5 || directoryExists(filepath.Join(outputDir, "treatment")) {
 		t.Fatalf("runPairWith() calls = %d, treatment directory exists", calls)
+	}
+}
+
+func TestRunPairCleansNetworkMappingAfterMissingObservation(t *testing.T) {
+	outputDir := filepath.Join(t.TempDir(), "run")
+	var calls [][]string
+	run := func(ctx context.Context, _ string, args ...string) ([]byte, error) {
+		calls = append(calls, append([]string(nil), args...))
+		if args[3] == "pm" {
+			return []byte("Success\n"), nil
+		}
+		if args[2] == "reverse" {
+			if args[3] == "--remove" && ctx.Err() != nil {
+				t.Fatalf("cleanup context error = %v", ctx.Err())
+			}
+			return nil, nil
+		}
+		return []byte("Status: ok\n"), nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+
+	err := runPairWith(
+		ctx,
+		"adb",
+		Target{
+			Version: "1.0.41",
+			Device:  "emulator-5554",
+			Package: "dev.ariadne.fixture",
+		},
+		sessionManifest(),
+		outputDir,
+		run,
+		sequenceClock(),
+	)
+	if err == nil || !strings.Contains(err.Error(), "capture network") {
+		t.Fatalf("runPairWith() error = %v", err)
+	}
+	if len(calls) != 4 ||
+		calls[len(calls)-1][2] != "reverse" ||
+		calls[len(calls)-1][3] != "--remove" {
+		t.Fatalf("runPairWith() calls = %#v", calls)
+	}
+
+	data, readErr := os.ReadFile(filepath.Join(outputDir, "baseline", "session.json"))
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	text := string(data)
+	if !strings.Contains(text, `"name": "capture_network"`) ||
+		!strings.Contains(text, `"name": "disconnect_network"`) ||
+		!strings.Contains(text, `"status": "error"`) {
+		t.Fatalf("failure metadata = %s", data)
+	}
+}
+
+func TestRunPairCleansNetworkMappingAfterConnectFailure(t *testing.T) {
+	const secret = "do-not-print-reverse-output"
+	outputDir := filepath.Join(t.TempDir(), "run")
+	var calls [][]string
+	run := func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		calls = append(calls, append([]string(nil), args...))
+		if args[3] == "pm" {
+			return []byte("Success\n"), nil
+		}
+		if args[2] == "reverse" && args[3] != "--remove" {
+			return []byte(secret), errors.New("exit status 1")
+		}
+		if args[2] == "reverse" && args[3] == "--remove" {
+			return nil, nil
+		}
+		t.Fatal("fixture started after reverse failure")
+		return nil, nil
+	}
+
+	err := runPairWith(
+		context.Background(),
+		"adb",
+		Target{
+			Version: "1.0.41",
+			Device:  "emulator-5554",
+			Package: "dev.ariadne.fixture",
+		},
+		sessionManifest(),
+		outputDir,
+		run,
+		sequenceClock(),
+	)
+	if err == nil || !strings.Contains(err.Error(), "connect network collector") {
+		t.Fatalf("runPairWith() error = %v", err)
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Fatalf("runPairWith() exposed reverse output: %v", err)
+	}
+	if len(calls) != 3 ||
+		calls[len(calls)-1][2] != "reverse" ||
+		calls[len(calls)-1][3] != "--remove" {
+		t.Fatalf("runPairWith() calls = %#v", calls)
+	}
+}
+
+func TestRunPairReportsNetworkCleanupFailure(t *testing.T) {
+	outputDir := filepath.Join(t.TempDir(), "run")
+	run := func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		if args[3] == "pm" {
+			return []byte("Success\n"), nil
+		}
+		if args[2] == "reverse" {
+			if args[3] == "--remove" {
+				return nil, errors.New("exit status 1")
+			}
+			return nil, nil
+		}
+		if args[3] == "am" {
+			if err := postFixtureObservation(args, []byte(`{}`)); err != nil {
+				return nil, err
+			}
+			return []byte("Status: ok\n"), nil
+		}
+		if args[2] == "exec-out" {
+			return []byte(`{}`), nil
+		}
+		return nil, errors.New("unexpected command")
+	}
+
+	err := runPairWith(
+		context.Background(),
+		"adb",
+		Target{
+			Version: "1.0.41",
+			Device:  "emulator-5554",
+			Package: "dev.ariadne.fixture",
+		},
+		sessionManifest(),
+		outputDir,
+		run,
+		sequenceClock(),
+	)
+	if err == nil || !strings.Contains(err.Error(), "disconnect network collector") {
+		t.Fatalf("runPairWith() error = %v", err)
+	}
+
+	data, readErr := os.ReadFile(filepath.Join(outputDir, "baseline", "session.json"))
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if !strings.Contains(string(data), `"name": "disconnect_network"`) ||
+		!strings.Contains(string(data), `"status": "error"`) {
+		t.Fatalf("failure metadata = %s", data)
 	}
 }
 
@@ -503,4 +697,43 @@ func sequenceClock() func() time.Time {
 func directoryExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+func postFixtureObservation(args []string, body []byte) error {
+	for index := range args {
+		if args[index] != "collector_port" || index+1 >= len(args) {
+			continue
+		}
+		response, err := http.Post(
+			"http://127.0.0.1:"+args[index+1]+"/observe",
+			"application/json",
+			strings.NewReader(string(body)),
+		)
+		if err != nil {
+			return err
+		}
+		response.Body.Close()
+		if response.StatusCode != http.StatusNoContent {
+			return fmt.Errorf("collector status %d", response.StatusCode)
+		}
+		return nil
+	}
+	return errors.New("collector port not found")
+}
+
+func normalizeNetworkPorts(calls [][]string) [][]string {
+	normalized := make([][]string, len(calls))
+	for callIndex, call := range calls {
+		normalized[callIndex] = append([]string(nil), call...)
+		for argumentIndex, argument := range normalized[callIndex] {
+			if strings.HasPrefix(argument, "tcp:") {
+				normalized[callIndex][argumentIndex] = "tcp:<port>"
+			}
+			if argumentIndex > 0 &&
+				normalized[callIndex][argumentIndex-1] == "collector_port" {
+				normalized[callIndex][argumentIndex] = "<port>"
+			}
+		}
+	}
+	return normalized
 }

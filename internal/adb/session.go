@@ -11,13 +11,17 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/jackkayser2005/ariadne/internal/collector"
 	"github.com/jackkayser2005/ariadne/internal/experiment"
 )
 
 const sessionSchemaVersion = 1
+const networkObservationTimeout = 5 * time.Second
+const networkCleanupTimeout = 5 * time.Second
 
 // SessionRecord describes one isolated fixture execution without persona values.
 type SessionRecord struct {
@@ -35,7 +39,7 @@ type SessionRecord struct {
 	Artifacts        []Artifact   `json:"artifacts,omitempty"`
 }
 
-// StepRecord describes one ADB command without its arguments or output.
+// StepRecord describes one session operation without arguments or output.
 type StepRecord struct {
 	Name       string    `json:"name"`
 	StartedAt  time.Time `json:"started_at"`
@@ -174,47 +178,145 @@ func runSession(
 		return finishSession(sessionDir, &record, now, fmt.Errorf("%s: reset package: %w", kind, err))
 	}
 
-	args := []string{
-		"-s", target.Device,
-		"shell", "am", "start", "-W", "-S",
-		"-n", target.Package + "/.MainActivity",
-	}
-	keys := make([]string, 0, len(persona))
-	for key := range persona {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		args = append(args, "--es", key, persona[key])
-	}
-
-	start, _, err := runStep(ctx, run, now, "start", binary, args...)
-	record.Steps = append(record.Steps, start)
+	networkCollector, err := collector.Start()
 	if err != nil {
-		return finishSession(sessionDir, &record, now, fmt.Errorf("%s: start fixture: %w", kind, err))
+		return finishSession(
+			sessionDir,
+			&record,
+			now,
+			fmt.Errorf("%s: start network collector: %w", kind, err),
+		)
 	}
 
-	capture, output, err := runStep(
+	port := strconv.Itoa(networkCollector.Port())
+	connect, _, err := runStep(
 		ctx,
 		run,
 		now,
-		"capture_storage",
+		"connect_network",
 		binary,
 		"-s", target.Device,
-		"exec-out", "run-as", target.Package,
-		"cat", "files/observation.json",
+		"reverse", "tcp:"+port, "tcp:"+port,
 	)
-	record.Steps = append(record.Steps, capture)
+	record.Steps = append(record.Steps, connect)
+	var sessionErr error
 	if err != nil {
-		return finishSession(sessionDir, &record, now, fmt.Errorf("%s: capture storage: %w", kind, err))
+		sessionErr = fmt.Errorf("%s: connect network collector: %w", kind, err)
 	}
-	artifact, err := writeStorageObservation(sessionDir, output)
-	if err != nil {
-		record.Steps[len(record.Steps)-1].Status = "error"
-		return finishSession(sessionDir, &record, now, fmt.Errorf("%s: capture storage: %w", kind, err))
+
+	if sessionErr == nil {
+		sessionErr = func() error {
+			args := []string{
+				"-s", target.Device,
+				"shell", "am", "start", "-W", "-S",
+				"-n", target.Package + "/.MainActivity",
+			}
+			keys := make([]string, 0, len(persona))
+			for key := range persona {
+				keys = append(keys, key)
+			}
+			sort.Strings(keys)
+			for _, key := range keys {
+				args = append(args, "--es", key, persona[key])
+			}
+			args = append(args, "--ei", "collector_port", port)
+
+			start, _, err := runStep(ctx, run, now, "start", binary, args...)
+			record.Steps = append(record.Steps, start)
+			if err != nil {
+				return fmt.Errorf("%s: start fixture: %w", kind, err)
+			}
+
+			captureNetwork := StepRecord{
+				Name:      "capture_network",
+				StartedAt: now().UTC(),
+				Status:    "ok",
+			}
+			waitContext, cancel := context.WithTimeout(ctx, networkObservationTimeout)
+			observation, err := networkCollector.Wait(waitContext)
+			cancel()
+			captureNetwork.FinishedAt = now().UTC()
+			if err != nil {
+				captureNetwork.Status = "error"
+				captureNetwork.ExitCode = -1
+			}
+			record.Steps = append(record.Steps, captureNetwork)
+			if err != nil {
+				return fmt.Errorf("%s: capture network: %w", kind, err)
+			}
+
+			data, err := json.MarshalIndent(observation, "", "  ")
+			if err != nil {
+				record.Steps[len(record.Steps)-1].Status = "error"
+				record.Steps[len(record.Steps)-1].ExitCode = -1
+				return fmt.Errorf("%s: encode network observation: %w", kind, err)
+			}
+			data = append(data, '\n')
+			artifact, err := writeArtifact(
+				sessionDir,
+				"observations/network.json",
+				"http_request",
+				"POST /observe",
+				data,
+			)
+			if err != nil {
+				record.Steps[len(record.Steps)-1].Status = "error"
+				record.Steps[len(record.Steps)-1].ExitCode = -1
+				return fmt.Errorf("%s: capture network: %w", kind, err)
+			}
+			record.Artifacts = append(record.Artifacts, artifact)
+
+			captureStorage, output, err := runStep(
+				ctx,
+				run,
+				now,
+				"capture_storage",
+				binary,
+				"-s", target.Device,
+				"exec-out", "run-as", target.Package,
+				"cat", "files/observation.json",
+			)
+			record.Steps = append(record.Steps, captureStorage)
+			if err != nil {
+				return fmt.Errorf("%s: capture storage: %w", kind, err)
+			}
+			artifact, err = writeStorageObservation(sessionDir, output)
+			if err != nil {
+				record.Steps[len(record.Steps)-1].Status = "error"
+				record.Steps[len(record.Steps)-1].ExitCode = -1
+				return fmt.Errorf("%s: capture storage: %w", kind, err)
+			}
+			record.Artifacts = append(record.Artifacts, artifact)
+			return nil
+		}()
 	}
-	record.Artifacts = append(record.Artifacts, artifact)
-	return finishSession(sessionDir, &record, now, nil)
+
+	cleanupContext, cancelCleanup := context.WithTimeout(
+		context.WithoutCancel(ctx),
+		networkCleanupTimeout,
+	)
+	disconnect, _, disconnectErr := runStep(
+		cleanupContext,
+		run,
+		now,
+		"disconnect_network",
+		binary,
+		"-s", target.Device,
+		"reverse", "--remove", "tcp:"+port,
+	)
+	cancelCleanup()
+	record.Steps = append(record.Steps, disconnect)
+	if disconnectErr != nil {
+		cleanupErr := fmt.Errorf("%s: disconnect network collector: %w", kind, disconnectErr)
+		sessionErr = errors.Join(sessionErr, cleanupErr)
+	}
+	if err := networkCollector.Close(); err != nil {
+		sessionErr = errors.Join(
+			sessionErr,
+			fmt.Errorf("%s: close network collector: %w", kind, err),
+		)
+	}
+	return finishSession(sessionDir, &record, now, sessionErr)
 }
 
 func writeStorageObservation(sessionDir string, data []byte) (Artifact, error) {
@@ -229,9 +331,21 @@ func writeStorageObservation(sessionDir string, data []byte) (Artifact, error) {
 		return Artifact{}, errors.New("observation is not a valid JSON object")
 	}
 
-	const relativePath = "observations/storage.json"
-	directory := filepath.Join(sessionDir, "observations")
-	if err := os.Mkdir(directory, 0o700); err != nil {
+	return writeArtifact(
+		sessionDir,
+		"observations/storage.json",
+		"android_private_storage",
+		"files/observation.json",
+		data,
+	)
+}
+
+func writeArtifact(
+	sessionDir, relativePath, kind, source string,
+	data []byte,
+) (Artifact, error) {
+	directory := filepath.Dir(filepath.Join(sessionDir, filepath.FromSlash(relativePath)))
+	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return Artifact{}, fmt.Errorf("create observation directory: %w", err)
 	}
 	if err := os.WriteFile(filepath.Join(sessionDir, filepath.FromSlash(relativePath)), data, 0o600); err != nil {
@@ -240,8 +354,8 @@ func writeStorageObservation(sessionDir string, data []byte) (Artifact, error) {
 
 	sum := sha256.Sum256(data)
 	return Artifact{
-		Kind:      "android_private_storage",
-		Source:    "files/observation.json",
+		Kind:      kind,
+		Source:    source,
 		Path:      relativePath,
 		SizeBytes: len(data),
 		SHA256:    fmt.Sprintf("%x", sum),

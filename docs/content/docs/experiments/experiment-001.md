@@ -107,10 +107,14 @@ and writes:
 ```text
 .ariadne/runs/experiment-001/
 ├── baseline/
-│   ├── observations/storage.json
+│   ├── observations/
+│   │   ├── network.json
+│   │   └── storage.json
 │   └── session.json
 └── treatment/
-    ├── observations/storage.json
+    ├── observations/
+    │   ├── network.json
+    │   └── storage.json
     └── session.json
 ```
 
@@ -122,6 +126,13 @@ The storage artifact is the exact bounded JSON read from the fixture's private
 `files/observation.json` through Android's `run-as` command. Capture fails if
 the package is not debuggable, the file is missing, the output is not a JSON
 object, or it exceeds 64 KiB.
+
+For each session, Ariadne binds an ephemeral IPv4 loopback port and temporarily
+maps the same port into the selected device with `adb reverse`. The network
+artifact records one `POST /observe` request's method, path, media type, and
+exact body encoded as base64. It does not collect unrelated request headers.
+The body must be a JSON object no larger than 64 KiB. Ariadne removes the
+reverse mapping before the session ends, including after capture failures.
 
 ## Procedure
 
