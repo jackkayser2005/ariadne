@@ -90,6 +90,28 @@ For the example manifest, the stored `variant` is `standard` for the baseline
 email and `personalized` for the treatment email. Ariadne does not contain this
 rule.
 
+## Run isolated sessions
+
+After installing the fixture, run:
+
+```console
+go run ./cmd/ariadne experiment run --device emulator-5554 --package dev.ariadne.fixture --output .ariadne/runs/experiment-001 examples/experiment-001.json
+```
+
+The output directory must not already exist. Ariadne clears the selected
+package before each session, starts `.MainActivity` with the persona fields,
+and writes:
+
+```text
+.ariadne/runs/experiment-001/
+├── baseline/session.json
+└── treatment/session.json
+```
+
+Session metadata includes the selected device, package, ADB version, timestamps,
+step status, and exit codes. It excludes persona values, command arguments, and
+raw ADB output.
+
 ## Procedure
 
 1. Verify the selected emulator, package, and fixture version.

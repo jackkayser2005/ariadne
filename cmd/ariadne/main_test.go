@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/jackkayser2005/ariadne/internal/adb"
+	"github.com/jackkayser2005/ariadne/internal/experiment"
 )
 
 const validManifest = `{
@@ -50,6 +51,8 @@ func TestRunUsage(t *testing.T) {
 		{"validate", "one.json", "two.json"},
 		{"android"},
 		{"android", "unknown"},
+		{"experiment"},
+		{"experiment", "unknown"},
 	}
 
 	for _, args := range tests {
@@ -69,6 +72,232 @@ func TestRunUsage(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRunExperiment(t *testing.T) {
+	path := writeManifest(t, validManifest)
+	outputDir := filepath.Join(t.TempDir(), "run")
+	var stdout, stderr bytes.Buffer
+
+	check := func(
+		ctx context.Context,
+		binary, device, packageName string,
+	) (adb.Target, error) {
+		if _, ok := ctx.Deadline(); !ok {
+			t.Fatal("check() context has no deadline")
+		}
+		if binary != "custom-adb" ||
+			device != "emulator-5554" ||
+			packageName != "dev.ariadne.fixture" {
+			t.Fatalf("check() arguments = %q, %q, %q", binary, device, packageName)
+		}
+		return adb.Target{
+			Version: "1.0.41",
+			Device:  device,
+			Package: packageName,
+		}, nil
+	}
+	runPair := func(
+		_ context.Context,
+		binary string,
+		target adb.Target,
+		manifest experiment.Manifest,
+		output string,
+	) error {
+		if binary != "custom-adb" ||
+			target.Device != "emulator-5554" ||
+			manifest.Name != "experiment-001-email" ||
+			output != outputDir {
+			t.Fatalf(
+				"runPair() arguments = %q, %#v, %#v, %q",
+				binary,
+				target,
+				manifest,
+				output,
+			)
+		}
+		return nil
+	}
+
+	exitCode := runExperiment(
+		[]string{
+			"--adb", "custom-adb",
+			"--device", "emulator-5554",
+			"--package", "dev.ariadne.fixture",
+			"--output", outputDir,
+			path,
+		},
+		&stdout,
+		&stderr,
+		check,
+		runPair,
+	)
+
+	const want = "experiment complete\nname: experiment-001-email\nruns: 2\n"
+	if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+		t.Fatalf(
+			"runExperiment() = %d, stdout=%q, stderr=%q",
+			exitCode,
+			stdout.String(),
+			stderr.String(),
+		)
+	}
+}
+
+func TestRunExperimentUsage(t *testing.T) {
+	tests := [][]string{
+		nil,
+		{"--device", "emulator-5554"},
+		{"--package", "dev.ariadne.fixture"},
+		{"--output", "run"},
+		{
+			"--device", "emulator-5554",
+			"--package", "dev.ariadne.fixture",
+			"--output", "run",
+		},
+		{
+			"--device", "emulator-5554",
+			"--package", "dev.ariadne.fixture",
+			"--output", "run",
+			"one.json", "two.json",
+		},
+	}
+	for _, args := range tests {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			exitCode := runExperiment(
+				args,
+				&stdout,
+				&stderr,
+				func(context.Context, string, string, string) (adb.Target, error) {
+					t.Fatal("check called for invalid usage")
+					return adb.Target{}, nil
+				},
+				func(
+					context.Context,
+					string,
+					adb.Target,
+					experiment.Manifest,
+					string,
+				) error {
+					t.Fatal("runPair called for invalid usage")
+					return nil
+				},
+			)
+			if exitCode != 2 || stdout.Len() != 0 || stderr.String() != usage {
+				t.Fatalf(
+					"runExperiment() = %d, stdout=%q, stderr=%q",
+					exitCode,
+					stdout.String(),
+					stderr.String(),
+				)
+			}
+		})
+	}
+}
+
+func TestRunExperimentFailures(t *testing.T) {
+	validArgs := func(path, output string) []string {
+		return []string{
+			"--device", "emulator-5554",
+			"--package", "dev.ariadne.fixture",
+			"--output", output,
+			path,
+		}
+	}
+	target := adb.Target{
+		Version: "1.0.41",
+		Device:  "emulator-5554",
+		Package: "dev.ariadne.fixture",
+	}
+
+	t.Run("missing manifest", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runExperiment(
+			validArgs(filepath.Join(t.TempDir(), "missing.json"), "run"),
+			&stdout,
+			&stderr,
+			func(context.Context, string, string, string) (adb.Target, error) {
+				t.Fatal("check called for missing manifest")
+				return adb.Target{}, nil
+			},
+			nil,
+		)
+		if exitCode != 1 || !strings.Contains(stderr.String(), "open manifest") {
+			t.Fatalf("runExperiment() = %d, stderr=%q", exitCode, stderr.String())
+		}
+	})
+
+	t.Run("target check", func(t *testing.T) {
+		path := writeManifest(t, validManifest)
+		var stdout, stderr bytes.Buffer
+		exitCode := runExperiment(
+			validArgs(path, "run"),
+			&stdout,
+			&stderr,
+			func(context.Context, string, string, string) (adb.Target, error) {
+				return adb.Target{}, errors.New("device unavailable")
+			},
+			nil,
+		)
+		if exitCode != 1 || !strings.Contains(stderr.String(), "device unavailable") {
+			t.Fatalf("runExperiment() = %d, stderr=%q", exitCode, stderr.String())
+		}
+	})
+
+	t.Run("session", func(t *testing.T) {
+		const secret = "do-not-print-persona"
+		input := strings.Replace(validManifest, "baseline@example.invalid", secret, 1)
+		path := writeManifest(t, input)
+		var stdout, stderr bytes.Buffer
+		exitCode := runExperiment(
+			validArgs(path, "run"),
+			&stdout,
+			&stderr,
+			func(context.Context, string, string, string) (adb.Target, error) {
+				return target, nil
+			},
+			func(
+				context.Context,
+				string,
+				adb.Target,
+				experiment.Manifest,
+				string,
+			) error {
+				return errors.New("session failed")
+			},
+		)
+		if exitCode != 1 ||
+			!strings.Contains(stderr.String(), "session failed") ||
+			strings.Contains(stderr.String(), secret) {
+			t.Fatalf("runExperiment() = %d, stderr=%q", exitCode, stderr.String())
+		}
+	})
+
+	t.Run("write output", func(t *testing.T) {
+		path := writeManifest(t, validManifest)
+		var stderr bytes.Buffer
+		exitCode := runExperiment(
+			validArgs(path, "run"),
+			failingWriter{},
+			&stderr,
+			func(context.Context, string, string, string) (adb.Target, error) {
+				return target, nil
+			},
+			func(
+				context.Context,
+				string,
+				adb.Target,
+				experiment.Manifest,
+				string,
+			) error {
+				return nil
+			},
+		)
+		if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+			t.Fatalf("runExperiment() = %d, stderr=%q", exitCode, stderr.String())
+		}
+	})
 }
 
 func TestRunAndroidCheck(t *testing.T) {
