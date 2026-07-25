@@ -18,9 +18,19 @@ func TestManifestValidate(t *testing.T) {
 		{name: "blank name", change: func(m *Manifest) {
 			m.Name = " "
 		}, wantErr: "name"},
+		{name: "name control character", change: func(m *Manifest) {
+			m.Name = "experiment\nforged"
+		}, wantErr: "control"},
 		{name: "blank variable", change: func(m *Manifest) {
 			m.Variable = " "
 		}, wantErr: "variable"},
+		{name: "variable control character", change: func(m *Manifest) {
+			m.Baseline["email\nforged"] = m.Baseline["email"]
+			m.Treatment["email\nforged"] = m.Treatment["email"]
+			delete(m.Baseline, "email")
+			delete(m.Treatment, "email")
+			m.Variable = "email\nforged"
+		}, wantErr: "control"},
 		{name: "missing baseline", change: func(m *Manifest) {
 			m.Baseline = nil
 		}, wantErr: "baseline"},
@@ -44,6 +54,10 @@ func TestManifestValidate(t *testing.T) {
 			m.Baseline[""] = "same"
 			m.Treatment[""] = "same"
 		}, wantErr: "keys must not be blank"},
+		{name: "persona key control character", change: func(m *Manifest) {
+			m.Baseline["region\nforged"] = "same"
+			m.Treatment["region\nforged"] = "same"
+		}, wantErr: "control"},
 		{name: "no differences", change: func(m *Manifest) {
 			m.Treatment["email"] = m.Baseline["email"]
 		}, wantErr: "found 0"},
