@@ -1,7 +1,9 @@
 package adb
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -30,6 +32,7 @@ type SessionRecord struct {
 	StartedAt        time.Time    `json:"started_at"`
 	FinishedAt       time.Time    `json:"finished_at"`
 	Steps            []StepRecord `json:"steps"`
+	Artifacts        []Artifact   `json:"artifacts,omitempty"`
 }
 
 // StepRecord describes one ADB command without its arguments or output.
@@ -39,6 +42,15 @@ type StepRecord struct {
 	FinishedAt time.Time `json:"finished_at"`
 	Status     string    `json:"status"`
 	ExitCode   int       `json:"exit_code"`
+}
+
+// Artifact identifies one captured file and its origin.
+type Artifact struct {
+	Kind      string `json:"kind"`
+	Source    string `json:"source"`
+	Path      string `json:"path"`
+	SizeBytes int    `json:"size_bytes"`
+	SHA256    string `json:"sha256"`
 }
 
 // RunPair executes isolated baseline and treatment fixture sessions.
@@ -181,7 +193,59 @@ func runSession(
 	if err != nil {
 		return finishSession(sessionDir, &record, now, fmt.Errorf("%s: start fixture: %w", kind, err))
 	}
+
+	capture, output, err := runStep(
+		ctx,
+		run,
+		now,
+		"capture_storage",
+		binary,
+		"-s", target.Device,
+		"exec-out", "run-as", target.Package,
+		"cat", "files/observation.json",
+	)
+	record.Steps = append(record.Steps, capture)
+	if err != nil {
+		return finishSession(sessionDir, &record, now, fmt.Errorf("%s: capture storage: %w", kind, err))
+	}
+	artifact, err := writeStorageObservation(sessionDir, output)
+	if err != nil {
+		record.Steps[len(record.Steps)-1].Status = "error"
+		return finishSession(sessionDir, &record, now, fmt.Errorf("%s: capture storage: %w", kind, err))
+	}
+	record.Artifacts = append(record.Artifacts, artifact)
 	return finishSession(sessionDir, &record, now, nil)
+}
+
+func writeStorageObservation(sessionDir string, data []byte) (Artifact, error) {
+	trimmed := bytes.TrimSpace(data)
+	if len(data) == 0 {
+		return Artifact{}, errors.New("empty observation")
+	}
+	if len(data) > maxOutputBytes {
+		return Artifact{}, fmt.Errorf("observation exceeds %d-byte limit", maxOutputBytes)
+	}
+	if len(trimmed) == 0 || trimmed[0] != '{' || !json.Valid(data) {
+		return Artifact{}, errors.New("observation is not a valid JSON object")
+	}
+
+	const relativePath = "observations/storage.json"
+	directory := filepath.Join(sessionDir, "observations")
+	if err := os.Mkdir(directory, 0o700); err != nil {
+		return Artifact{}, fmt.Errorf("create observation directory: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(sessionDir, filepath.FromSlash(relativePath)), data, 0o600); err != nil {
+		return Artifact{}, fmt.Errorf("write observation: %w", err)
+	}
+
+	sum := sha256.Sum256(data)
+	return Artifact{
+		Kind:      "android_private_storage",
+		Source:    "files/observation.json",
+		Path:      relativePath,
+		SizeBytes: len(data),
+		SHA256:    fmt.Sprintf("%x", sum),
+	}, nil
 }
 
 func runStep(

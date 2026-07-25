@@ -2,7 +2,9 @@ package adb
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,10 +24,19 @@ func TestRunPair(t *testing.T) {
 		Package: "dev.ariadne.fixture",
 	}
 	var calls [][]string
+	captures := [][]byte{
+		[]byte(`{"schema_version":1,"region":"us-east","variant":"standard"}`),
+		[]byte(`{"schema_version":1,"region":"us-east","variant":"personalized"}`),
+	}
 	run := func(_ context.Context, binary string, args ...string) ([]byte, error) {
 		calls = append(calls, append([]string{binary}, args...))
 		if args[3] == "pm" {
 			return []byte("Success\n"), nil
+		}
+		if args[2] == "exec-out" {
+			output := captures[0]
+			captures = captures[1:]
+			return output, nil
 		}
 		return []byte("Status: ok\n"), nil
 	}
@@ -53,6 +64,10 @@ func TestRunPair(t *testing.T) {
 			"--es", "email", "baseline@example.invalid",
 			"--es", "region", "us-east",
 		},
+		{
+			"adb", "-s", "emulator-5554", "exec-out", "run-as",
+			"dev.ariadne.fixture", "cat", "files/observation.json",
+		},
 		{"adb", "-s", "emulator-5554", "shell", "pm", "clear", "dev.ariadne.fixture"},
 		{
 			"adb", "-s", "emulator-5554", "shell", "am", "start", "-W", "-S",
@@ -60,19 +75,33 @@ func TestRunPair(t *testing.T) {
 			"--es", "email", "treatment@example.invalid",
 			"--es", "region", "us-east",
 		},
+		{
+			"adb", "-s", "emulator-5554", "exec-out", "run-as",
+			"dev.ariadne.fixture", "cat", "files/observation.json",
+		},
 	}
 	if !reflect.DeepEqual(calls, wantCalls) {
 		t.Fatalf("runPairWith() calls = %#v, want %#v", calls, wantCalls)
 	}
 
 	for _, kind := range []string{"baseline", "treatment"} {
+		observation, err := os.ReadFile(
+			filepath.Join(outputDir, kind, "observations", "storage.json"),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sum := sha256.Sum256(observation)
+
 		data, err := os.ReadFile(filepath.Join(outputDir, kind, "session.json"))
 		if err != nil {
 			t.Fatal(err)
 		}
 		text := string(data)
 		if !strings.Contains(text, `"kind": "`+kind+`"`) ||
-			!strings.Contains(text, `"exit_code": 0`) {
+			!strings.Contains(text, `"exit_code": 0`) ||
+			!strings.Contains(text, `"source": "files/observation.json"`) ||
+			!strings.Contains(text, `"sha256": "`+fmt.Sprintf("%x", sum)+`"`) {
 			t.Fatalf("%s session metadata = %s", kind, text)
 		}
 		for _, value := range []string{
@@ -84,6 +113,108 @@ func TestRunPair(t *testing.T) {
 				t.Fatalf("%s session metadata exposed persona value %q", kind, value)
 			}
 		}
+	}
+}
+
+func TestRunPairRejectsInvalidStorageObservation(t *testing.T) {
+	tests := []struct {
+		name   string
+		output []byte
+		want   string
+	}{
+		{name: "empty", want: "empty observation"},
+		{name: "malformed", output: []byte(`{"variant":`), want: "valid JSON object"},
+		{name: "non-object", output: []byte(`["standard"]`), want: "valid JSON object"},
+		{
+			name:   "oversized",
+			output: []byte(`{"value":"` + strings.Repeat("x", maxOutputBytes) + `"}`),
+			want:   "exceeds",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			outputDir := filepath.Join(t.TempDir(), "run")
+			calls := 0
+			run := func(_ context.Context, _ string, args ...string) ([]byte, error) {
+				calls++
+				if args[3] == "pm" {
+					return []byte("Success\n"), nil
+				}
+				if args[2] == "exec-out" {
+					return test.output, nil
+				}
+				return []byte("Status: ok\n"), nil
+			}
+
+			err := runPairWith(
+				context.Background(),
+				"adb",
+				Target{
+					Version: "1.0.41",
+					Device:  "emulator-5554",
+					Package: "dev.ariadne.fixture",
+				},
+				sessionManifest(),
+				outputDir,
+				run,
+				sequenceClock(),
+			)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("runPairWith() error = %v, want containing %q", err, test.want)
+			}
+			if calls != 3 || directoryExists(filepath.Join(outputDir, "treatment")) {
+				t.Fatalf("runPairWith() calls = %d, treatment directory exists", calls)
+			}
+
+			data, readErr := os.ReadFile(filepath.Join(outputDir, "baseline", "session.json"))
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if !strings.Contains(string(data), `"name": "capture_storage"`) ||
+				!strings.Contains(string(data), `"status": "error"`) {
+				t.Fatalf("failure metadata = %s", data)
+			}
+		})
+	}
+}
+
+func TestRunPairRecordsStorageCaptureFailure(t *testing.T) {
+	const secret = "do-not-print-captured-output"
+	outputDir := filepath.Join(t.TempDir(), "run")
+	calls := 0
+	run := func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		calls++
+		if args[3] == "pm" {
+			return []byte("Success\n"), nil
+		}
+		if args[2] == "exec-out" {
+			return []byte(secret), errors.New("exit status 1")
+		}
+		return []byte("Status: ok\n"), nil
+	}
+
+	err := runPairWith(
+		context.Background(),
+		"adb",
+		Target{
+			Version: "1.0.41",
+			Device:  "emulator-5554",
+			Package: "dev.ariadne.fixture",
+		},
+		sessionManifest(),
+		outputDir,
+		run,
+		sequenceClock(),
+	)
+	if err == nil || !strings.Contains(err.Error(), "capture storage") {
+		t.Fatalf("runPairWith() error = %v", err)
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Fatalf("runPairWith() exposed observation output: %v", err)
+	}
+	if calls != 3 || directoryExists(filepath.Join(outputDir, "treatment")) {
+		t.Fatalf("runPairWith() calls = %d, treatment directory exists", calls)
 	}
 }
 
