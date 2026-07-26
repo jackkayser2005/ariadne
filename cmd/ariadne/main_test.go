@@ -319,12 +319,14 @@ func TestRunReport(t *testing.T) {
 			return bundle.Summary{
 				ManifestName: "experiment-001-email",
 				Differences:  1,
+				Unknowns:     0,
 			}, nil
 		},
 	)
 	const want = "evidence bundle complete\n" +
 		"name: experiment-001-email\n" +
-		"differences: 1\n"
+		"differences: 1\n" +
+		"unknowns: 0\n"
 	if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
 		t.Fatalf(
 			"runReport() = %d, stdout=%q, stderr=%q",

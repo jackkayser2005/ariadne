@@ -26,7 +26,7 @@ fixture_sha256="$(
 jq -e \
   --arg fixture_sha256 "${fixture_sha256}" \
   --arg ariadne_revision "${GITHUB_SHA}" '
-  (.schema_version == 2) and
+  (.schema_version == 3) and
   (.target.android_api == 35) and
   (.target.architecture == "x86_64") and
   (.target.package_version_code == 1) and
@@ -34,8 +34,10 @@ jq -e \
   (.target.ariadne_revision == $ariadne_revision) and
   (.target.ariadne_modified == false) and
   (.artifacts | length == 6) and
+  (.comparison.schema_version == 2) and
   (.comparison.unchanged_fields == ["region"]) and
   (.comparison.differences | length == 1) and
+  (.comparison.unknowns == []) and
   (
     .comparison.differences[0] |
     .field == "variant" and

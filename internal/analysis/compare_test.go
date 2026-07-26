@@ -25,6 +25,14 @@ func TestNormalize(t *testing.T) {
 	if session.Region != "us-east" || session.Variant != "standard" {
 		t.Fatalf("Normalize() = %#v", session)
 	}
+
+	network, err := NormalizeNetwork(strings.NewReader(networkArtifact(baselineBody)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if network != session {
+		t.Fatalf("NormalizeNetwork() = %#v", network)
+	}
 }
 
 func TestNormalizeRejectsInvalidArtifacts(t *testing.T) {
@@ -173,10 +181,11 @@ func TestCompare(t *testing.T) {
 		Session{Region: "us-east", Variant: "standard"},
 		Session{Region: "us-east", Variant: "personalized"},
 	)
-	if comparison.SchemaVersion != 1 ||
+	if comparison.SchemaVersion != 2 ||
 		len(comparison.UnchangedFields) != 1 ||
 		comparison.UnchangedFields[0] != "region" ||
-		len(comparison.Differences) != 1 {
+		len(comparison.Differences) != 1 ||
+		len(comparison.Unknowns) != 0 {
 		t.Fatalf("Compare() = %#v", comparison)
 	}
 	difference := comparison.Differences[0]
@@ -192,7 +201,7 @@ func TestCompare(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const want = `{"schema_version":1,"unchanged_fields":["region"],"differences":[{"field":"variant","baseline":"standard","treatment":"personalized","state":"observed","evidence":["baseline/observations/storage.json#/variant","baseline/observations/network.json#decoded-body/variant","treatment/observations/storage.json#/variant","treatment/observations/network.json#decoded-body/variant"]}]}`
+	const want = `{"schema_version":2,"unchanged_fields":["region"],"differences":[{"field":"variant","baseline":"standard","treatment":"personalized","state":"observed","evidence":["baseline/observations/storage.json#/variant","baseline/observations/network.json#decoded-body/variant","treatment/observations/storage.json#/variant","treatment/observations/network.json#decoded-body/variant"]}],"unknowns":[]}`
 	if string(data) != want {
 		t.Fatalf("comparison JSON = %s", data)
 	}

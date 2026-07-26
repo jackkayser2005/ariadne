@@ -26,11 +26,12 @@ type Session struct {
 	Variant string
 }
 
-// Comparison records stable fields and observed counterfactual differences.
+// Comparison records stable fields, observed differences, and unsupported conclusions.
 type Comparison struct {
 	SchemaVersion   int          `json:"schema_version"`
 	UnchangedFields []string     `json:"unchanged_fields"`
 	Differences     []Difference `json:"differences"`
+	Unknowns        []Unknown    `json:"unknowns"`
 }
 
 // Difference records one field whose observed values differ between sessions.
@@ -42,6 +43,14 @@ type Difference struct {
 	Evidence  []string       `json:"evidence"`
 }
 
+// Unknown records a field that the available capture cannot establish.
+type Unknown struct {
+	Field    string         `json:"field"`
+	State    evidence.State `json:"state"`
+	Reason   string         `json:"reason"`
+	Evidence []string       `json:"evidence"`
+}
+
 type fixtureObservation struct {
 	SchemaVersion int    `json:"schema_version"`
 	Region        string `json:"region"`
@@ -50,15 +59,25 @@ type fixtureObservation struct {
 
 // Normalize validates and coalesces one session's storage and network artifacts.
 func Normalize(storage, network io.Reader) (Session, error) {
+	stored, err := normalizeStorage(storage)
+	if err != nil {
+		return Session{}, err
+	}
+	reported, err := NormalizeNetwork(network)
+	if err != nil {
+		return Session{}, err
+	}
+	if stored != reported {
+		return Session{}, errors.New("storage and network observations disagree")
+	}
+	return stored, nil
+}
+
+func normalizeStorage(storage io.Reader) (Session, error) {
 	storageData, err := readBounded(storage, maxStorageBytes, "storage")
 	if err != nil {
 		return Session{}, err
 	}
-	networkData, err := readBounded(network, maxNetworkBytes, "network")
-	if err != nil {
-		return Session{}, err
-	}
-
 	var stored fixtureObservation
 	if err := decodeStrict(
 		storageData,
@@ -70,7 +89,15 @@ func Normalize(storage, network io.Reader) (Session, error) {
 	if err := stored.validate(); err != nil {
 		return Session{}, fmt.Errorf("storage observation: %w", err)
 	}
+	return Session{Region: stored.Region, Variant: stored.Variant}, nil
+}
 
+// NormalizeNetwork validates and decodes one fixture network observation.
+func NormalizeNetwork(network io.Reader) (Session, error) {
+	networkData, err := readBounded(network, maxNetworkBytes, "network")
+	if err != nil {
+		return Session{}, err
+	}
 	var captured collector.Observation
 	if err := decodeStrict(
 		networkData,
@@ -106,19 +133,16 @@ func Normalize(storage, network io.Reader) (Session, error) {
 	if err := reported.validate(); err != nil {
 		return Session{}, fmt.Errorf("network observation body: %w", err)
 	}
-	if stored != reported {
-		return Session{}, errors.New("storage and network observations disagree")
-	}
-
-	return Session{Region: stored.Region, Variant: stored.Variant}, nil
+	return Session{Region: reported.Region, Variant: reported.Variant}, nil
 }
 
 // Compare returns stable fields and observed differences in deterministic order.
 func Compare(baseline, treatment Session) Comparison {
 	comparison := Comparison{
-		SchemaVersion:   1,
+		SchemaVersion:   2,
 		UnchangedFields: make([]string, 0, 2),
 		Differences:     make([]Difference, 0, 2),
+		Unknowns:        make([]Unknown, 0),
 	}
 	fields := []struct {
 		name      string

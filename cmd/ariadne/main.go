@@ -256,9 +256,10 @@ func runReport(
 	}
 	_, err = fmt.Fprintf(
 		stdout,
-		"evidence bundle complete\nname: %s\ndifferences: %d\n",
+		"evidence bundle complete\nname: %s\ndifferences: %d\nunknowns: %d\n",
 		summary.ManifestName,
 		summary.Differences,
+		summary.Unknowns,
 	)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment report: write output: %v\n", err)

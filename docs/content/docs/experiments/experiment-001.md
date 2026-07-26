@@ -163,7 +163,7 @@ when `go run` built Ariadne.
 - If the installed-package hash is unexpected, rebuild and reinstall the same
   APK before running either session.
 - If report generation fails, inspect each `session.json` step status. Ariadne
-  writes no report until both sessions and all artifact integrity checks pass.
+  fails closed for unsupported capture shapes or artifact integrity failures.
 - If `ariadne_modified` is unexpectedly `true`, inspect `git status --short`
   before treating the run as reproducible from the recorded revision alone.
 
@@ -231,6 +231,12 @@ normalization and comparison. `report.md` is the concise human-readable view.
 For the fixture, it reports one observed `variant` difference supported by both
 storage and network artifacts.
 
+If the baseline completes but treatment storage capture fails after treatment
+network capture succeeds, reporting preserves the five verified artifacts and
+classifies both fixture fields as `unknown`. It does not compare the available
+network value or claim that either field changed or stayed stable. Other
+incomplete session shapes remain unsupported and stop report generation.
+
 The real-emulator workflow also runs failure checks against copies of the
 completed run. It requires Ariadne to reject a nonexistent package, modified
 observation bytes, and baseline/treatment package-digest disagreement. Failed
@@ -252,12 +258,9 @@ or disclose persona values. Only the untouched successful run is uploaded.
 - One expected persona-dependent difference is reported.
 - Known timestamp or identifier noise is not reported as causal.
 - Every finding links to raw evidence.
-- Capture gaps stop report generation instead of being silently omitted.
+- The supported treatment-storage gap is reported as `unknown`; other gaps stop
+  report generation instead of being silently omitted.
 - A new contributor can reproduce the result.
-
-The current experiment does not emit a partial report that classifies capture
-gaps as `unknown`. That requires an evidence format for incomplete runs and is
-deferred until after this complete-run proof.
 
 ## Non-goals
 
