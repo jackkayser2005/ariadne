@@ -27,7 +27,9 @@ func TestWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if summary.ManifestName != "experiment-001-email" || summary.Differences != 1 {
+	if summary.ManifestName != "experiment-001-email" ||
+		summary.Differences != 1 ||
+		summary.Unknowns != 0 {
 		t.Fatalf("Write() = %#v", summary)
 	}
 
@@ -39,9 +41,11 @@ func TestWrite(t *testing.T) {
 	if err := json.Unmarshal(evidence, &document); err != nil {
 		t.Fatal(err)
 	}
-	if document.SchemaVersion != 2 ||
+	if document.SchemaVersion != 3 ||
+		document.Comparison.SchemaVersion != 2 ||
 		len(document.Artifacts) != 6 ||
 		len(document.Comparison.Differences) != 1 ||
+		len(document.Comparison.Unknowns) != 0 ||
 		document.Comparison.Differences[0].Field != "variant" ||
 		document.Target.AndroidAPI != 35 ||
 		document.Target.Architecture != "x86_64" ||
@@ -59,6 +63,7 @@ func TestWrite(t *testing.T) {
 	for _, expected := range []string{
 		"# Evidence Report",
 		"Observed differences: 1",
+		"Unknown conclusions: 0",
 		"<code>variant</code>",
 		"<code>standard</code>",
 		"<code>personalized</code>",
@@ -89,6 +94,84 @@ func TestWriteAcceptsLegacySessions(t *testing.T) {
 	}
 }
 
+func TestWriteIncompleteTreatment(t *testing.T) {
+	runDir := makeStorageFailureRun(t, "")
+
+	summary, err := Write(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.ManifestName != "experiment-001-email" ||
+		summary.Differences != 0 ||
+		summary.Unknowns != 2 {
+		t.Fatalf("Write() = %#v", summary)
+	}
+
+	data, err := os.ReadFile(filepath.Join(runDir, "evidence.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document document
+	if err := json.Unmarshal(data, &document); err != nil {
+		t.Fatal(err)
+	}
+	if document.SchemaVersion != 3 ||
+		len(document.Artifacts) != 5 ||
+		len(document.Comparison.UnchangedFields) != 0 ||
+		len(document.Comparison.Differences) != 0 ||
+		len(document.Comparison.Unknowns) != 2 {
+		t.Fatalf("evidence = %#v", document)
+	}
+	for _, unknown := range document.Comparison.Unknowns {
+		if unknown.State != "unknown" ||
+			unknown.Reason != "treatment storage observation was not captured" ||
+			len(unknown.Evidence) != 3 {
+			t.Fatalf("unknown = %#v", unknown)
+		}
+	}
+
+	report, err := os.ReadFile(filepath.Join(runDir, "report.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(report)
+	for _, expected := range []string{
+		"Verified artifacts: 5",
+		"Observed differences: 0",
+		"Unknown conclusions: 2",
+		"No counterfactual difference was established.",
+		"## Unknowns",
+		"treatment storage observation was not captured",
+		"No stable fields were established.",
+	} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("report missing %q:\n%s", expected, text)
+		}
+	}
+	for _, value := range []string{"standard", "personalized"} {
+		if strings.Contains(string(data), value) || strings.Contains(text, value) {
+			t.Fatalf("partial bundle exposed observed value %q", value)
+		}
+	}
+}
+
+func TestWriteIncompleteTreatmentRejectsInvalidNetwork(t *testing.T) {
+	const secret = "do-not-print-partial-value"
+	runDir := makeStorageFailureRun(
+		t,
+		`{"schema_version":1,"region":"us-east","variant":"`+secret+`","extra":true}`,
+	)
+
+	_, err := Write(runDir)
+	if err == nil || !strings.Contains(err.Error(), `unknown field "extra"`) {
+		t.Fatalf("Write() error = %v", err)
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Fatalf("Write() exposed partial value: %v", err)
+	}
+	assertNoOutputs(t, runDir)
+}
+
 func TestWriteRequiresRunDirectory(t *testing.T) {
 	_, err := Write(" \t")
 	if err == nil || !strings.Contains(err.Error(), "run directory is required") {
@@ -97,26 +180,41 @@ func TestWriteRequiresRunDirectory(t *testing.T) {
 }
 
 func TestWriteIsDeterministic(t *testing.T) {
-	first := makeRun(t, runOptions{})
-	second := makeRun(t, runOptions{})
-	if _, err := Write(first); err != nil {
-		t.Fatal(err)
+	tests := []struct {
+		name string
+		make func(*testing.T) string
+	}{
+		{name: "complete", make: func(t *testing.T) string {
+			return makeRun(t, runOptions{})
+		}},
+		{name: "incomplete", make: func(t *testing.T) string {
+			return makeStorageFailureRun(t, "")
+		}},
 	}
-	if _, err := Write(second); err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"evidence.json", "report.md"} {
-		firstData, err := os.ReadFile(filepath.Join(first, name))
-		if err != nil {
-			t.Fatal(err)
-		}
-		secondData, err := os.ReadFile(filepath.Join(second, name))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if string(firstData) != string(secondData) {
-			t.Fatalf("%s is not deterministic", name)
-		}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			first := test.make(t)
+			second := test.make(t)
+			if _, err := Write(first); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Write(second); err != nil {
+				t.Fatal(err)
+			}
+			for _, name := range []string{"evidence.json", "report.md"} {
+				firstData, err := os.ReadFile(filepath.Join(first, name))
+				if err != nil {
+					t.Fatal(err)
+				}
+				secondData, err := os.ReadFile(filepath.Join(second, name))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if string(firstData) != string(secondData) {
+					t.Fatalf("%s is not deterministic", name)
+				}
+			}
+		})
 	}
 }
 
@@ -223,12 +321,21 @@ func TestWriteRejectsInvalidSessions(t *testing.T) {
 			want: "incomplete session failure_stage is invalid",
 		},
 		{
-			name: "incomplete session",
+			name: "unsupported incomplete stage",
+			mutate: func(record *adb.SessionRecord) {
+				record.Status = "incomplete"
+				record.FailureStage = "start"
+			},
+			want: "session is incomplete at start",
+		},
+		{
+			name: "incomplete step status",
 			mutate: func(record *adb.SessionRecord) {
 				record.Status = "incomplete"
 				record.FailureStage = "capture_storage"
+				record.Artifacts = record.Artifacts[:1]
 			},
-			want: "session is incomplete at capture_storage",
+			want: `step "capture_storage" is invalid`,
 		},
 		{
 			name: "failed step",
@@ -271,7 +378,7 @@ func TestWriteRejectsInvalidSessions(t *testing.T) {
 			mutate: func(record *adb.SessionRecord) {
 				record.Artifacts = record.Artifacts[:1]
 			},
-			want: "expected two artifacts",
+			want: "expected 2 artifacts",
 		},
 		{
 			name: "artifact metadata",
@@ -469,6 +576,28 @@ type runOptions struct {
 	treatmentNetworkBody string
 	mutateBaseline       func(*adb.SessionRecord)
 	mutateTreatment      func(*adb.SessionRecord)
+}
+
+func markStorageCaptureFailure(record *adb.SessionRecord) {
+	record.Status = "incomplete"
+	record.FailureStage = "capture_storage"
+	record.Steps[4].Status = "error"
+	record.Steps[4].ExitCode = -1
+	record.Artifacts = record.Artifacts[:1]
+}
+
+func makeStorageFailureRun(t *testing.T, networkBody string) string {
+	t.Helper()
+	runDir := makeRun(t, runOptions{
+		treatmentNetworkBody: networkBody,
+		mutateTreatment:      markStorageCaptureFailure,
+	})
+	if err := os.Remove(
+		filepath.Join(runDir, "treatment", "observations", "storage.json"),
+	); err != nil {
+		t.Fatal(err)
+	}
+	return runDir
 }
 
 func makeRun(t *testing.T, options runOptions) string {

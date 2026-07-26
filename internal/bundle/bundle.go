@@ -18,6 +18,7 @@ import (
 
 	"github.com/jackkayser2005/ariadne/internal/adb"
 	"github.com/jackkayser2005/ariadne/internal/analysis"
+	"github.com/jackkayser2005/ariadne/internal/evidence"
 	"github.com/jackkayser2005/ariadne/internal/jsoncheck"
 )
 
@@ -40,6 +41,7 @@ var expectedSteps = []string{
 type Summary struct {
 	ManifestName string
 	Differences  int
+	Unknowns     int
 }
 
 type document struct {
@@ -103,21 +105,40 @@ func Write(runDir string) (Summary, error) {
 	if err != nil {
 		return Summary{}, fmt.Errorf("baseline: %w", err)
 	}
-	treatmentNormalized, err := analysis.Normalize(
-		bytes.NewReader(treatment.storage),
-		bytes.NewReader(treatment.network),
-	)
-	if err != nil {
-		return Summary{}, fmt.Errorf("treatment: %w", err)
+	var comparison analysis.Comparison
+	var normalizations []string
+	if sessionComplete(treatment.record) {
+		treatmentNormalized, err := analysis.Normalize(
+			bytes.NewReader(treatment.storage),
+			bytes.NewReader(treatment.network),
+		)
+		if err != nil {
+			return Summary{}, fmt.Errorf("treatment: %w", err)
+		}
+		comparison = analysis.Compare(baselineNormalized, treatmentNormalized)
+		normalizations = []string{
+			"decoded network body_base64",
+			"required storage and network payload equality per session",
+			"removed HTTP transport fields from semantic comparison",
+		}
+	} else {
+		if _, err := analysis.NormalizeNetwork(bytes.NewReader(treatment.network)); err != nil {
+			return Summary{}, fmt.Errorf("treatment: %w", err)
+		}
+		comparison = incompleteTreatmentComparison()
+		normalizations = []string{
+			"decoded available network body_base64",
+			"required baseline storage and network payload equality",
+			"withheld semantic comparison without treatment storage",
+		}
 	}
-	comparison := analysis.Compare(baselineNormalized, treatmentNormalized)
 
 	artifacts := []artifact{baseline.metadata}
 	artifacts = append(artifacts, baseline.artifacts...)
 	artifacts = append(artifacts, treatment.metadata)
 	artifacts = append(artifacts, treatment.artifacts...)
 	evidence := document{
-		SchemaVersion:    2,
+		SchemaVersion:    3,
 		ManifestName:     baseline.record.ManifestName,
 		DeclaredVariable: baseline.record.DeclaredVariable,
 		Target: target{
@@ -131,13 +152,9 @@ func Write(runDir string) (Summary, error) {
 			AriadneRevision:    baseline.record.AriadneRevision,
 			AriadneModified:    baseline.record.AriadneModified,
 		},
-		Normalizations: []string{
-			"decoded network body_base64",
-			"required storage and network payload equality per session",
-			"removed HTTP transport fields from semantic comparison",
-		},
-		Artifacts:  artifacts,
-		Comparison: comparison,
+		Normalizations: normalizations,
+		Artifacts:      artifacts,
+		Comparison:     comparison,
 	}
 
 	evidenceData, err := json.MarshalIndent(evidence, "", "  ")
@@ -152,6 +169,7 @@ func Write(runDir string) (Summary, error) {
 	return Summary{
 		ManifestName: baseline.record.ManifestName,
 		Differences:  len(comparison.Differences),
+		Unknowns:     len(comparison.Unknowns),
 	}, nil
 }
 
@@ -195,10 +213,18 @@ func loadSession(runDir, kind string) (loadedSession, error) {
 			output: &loaded.storage,
 		},
 	}
-	if len(record.Artifacts) != len(expected) {
-		return loadedSession{}, fmt.Errorf("%s: session metadata: expected two artifacts", kind)
+	expectedCount := len(expected)
+	if !sessionComplete(record) {
+		expectedCount = 1
 	}
-	for _, wanted := range expected {
+	if len(record.Artifacts) != expectedCount {
+		return loadedSession{}, fmt.Errorf(
+			"%s: session metadata: expected %d artifacts",
+			kind,
+			expectedCount,
+		)
+	}
+	for _, wanted := range expected[:expectedCount] {
 		metadata, ok := artifactByPath(record.Artifacts, wanted.path)
 		if !ok ||
 			metadata.Kind != wanted.kind ||
@@ -333,7 +359,9 @@ func validateSession(record adb.SessionRecord, kind string) error {
 			if !adb.ValidFailureStage(record.FailureStage) {
 				return errors.New("incomplete session failure_stage is invalid")
 			}
-			return fmt.Errorf("session is incomplete at %s", record.FailureStage)
+			if record.FailureStage != "capture_storage" {
+				return fmt.Errorf("session is incomplete at %s", record.FailureStage)
+			}
 		default:
 			return errors.New("session status is invalid")
 		}
@@ -344,9 +372,12 @@ func validateSession(record adb.SessionRecord, kind string) error {
 	previous := record.StartedAt
 	for index, expected := range expectedSteps {
 		step := record.Steps[index]
+		statusValid := step.Status == "ok" && step.ExitCode == 0
+		if !sessionComplete(record) && expected == "capture_storage" {
+			statusValid = step.Status == "error" && step.ExitCode != 0
+		}
 		if step.Name != expected ||
-			step.Status != "ok" ||
-			step.ExitCode != 0 ||
+			!statusValid ||
 			step.StartedAt.IsZero() ||
 			step.FinishedAt.IsZero() ||
 			step.StartedAt.Before(previous) ||
@@ -360,7 +391,8 @@ func validateSession(record adb.SessionRecord, kind string) error {
 }
 
 func validatePair(baseline, treatment adb.SessionRecord) error {
-	if baseline.SchemaVersion != treatment.SchemaVersion ||
+	if !sessionComplete(baseline) ||
+		baseline.SchemaVersion != treatment.SchemaVersion ||
 		baseline.ManifestName != treatment.ManifestName ||
 		baseline.DeclaredVariable != treatment.DeclaredVariable ||
 		baseline.PersonaFields != treatment.PersonaFields ||
@@ -377,6 +409,32 @@ func validatePair(baseline, treatment adb.SessionRecord) error {
 		return errors.New("baseline and treatment session metadata disagree")
 	}
 	return nil
+}
+
+func sessionComplete(record adb.SessionRecord) bool {
+	return record.SchemaVersion == 2 || record.Status == "complete"
+}
+
+func incompleteTreatmentComparison() analysis.Comparison {
+	unknowns := make([]analysis.Unknown, 0, 2)
+	for _, field := range []string{"region", "variant"} {
+		unknowns = append(unknowns, analysis.Unknown{
+			Field:  field,
+			State:  evidence.Unknown,
+			Reason: "treatment storage observation was not captured",
+			Evidence: []string{
+				"baseline/observations/storage.json#/" + field,
+				"baseline/observations/network.json#decoded-body/" + field,
+				"treatment/observations/network.json#decoded-body/" + field,
+			},
+		})
+	}
+	return analysis.Comparison{
+		SchemaVersion:   2,
+		UnchangedFields: make([]string, 0),
+		Differences:     make([]analysis.Difference, 0),
+		Unknowns:        unknowns,
+	}
 }
 
 func artifactByPath(artifacts []adb.Artifact, path string) (adb.Artifact, bool) {
@@ -459,10 +517,15 @@ func renderReport(evidence document) []byte {
 	fmt.Fprintf(&report, "- Ariadne modified: %t\n", evidence.Target.AriadneModified)
 	fmt.Fprintf(&report, "- Verified artifacts: %d\n", len(evidence.Artifacts))
 	fmt.Fprintf(&report, "- Observed differences: %d\n", len(evidence.Comparison.Differences))
+	fmt.Fprintf(&report, "- Unknown conclusions: %d\n", len(evidence.Comparison.Unknowns))
 
 	report.WriteString("\n## Findings\n")
 	if len(evidence.Comparison.Differences) == 0 {
-		report.WriteString("\nNo observed differences.\n")
+		if len(evidence.Comparison.Unknowns) == 0 {
+			report.WriteString("\nNo observed differences.\n")
+		} else {
+			report.WriteString("\nNo counterfactual difference was established.\n")
+		}
 	}
 	for _, difference := range evidence.Comparison.Differences {
 		fmt.Fprintf(&report, "\n### %s\n\n", code(difference.Field))
@@ -475,7 +538,23 @@ func renderReport(evidence document) []byte {
 		}
 	}
 
+	if len(evidence.Comparison.Unknowns) > 0 {
+		report.WriteString("\n## Unknowns\n")
+		for _, unknown := range evidence.Comparison.Unknowns {
+			fmt.Fprintf(&report, "\n### %s\n\n", code(unknown.Field))
+			fmt.Fprintf(&report, "- State: %s\n", code(string(unknown.State)))
+			fmt.Fprintf(&report, "- Reason: %s\n", html.EscapeString(unknown.Reason))
+			report.WriteString("- Available evidence:\n")
+			for _, reference := range unknown.Evidence {
+				fmt.Fprintf(&report, "  - %s\n", code(reference))
+			}
+		}
+	}
+
 	report.WriteString("\n## Stable Fields\n")
+	if len(evidence.Comparison.UnchangedFields) == 0 {
+		report.WriteString("\nNo stable fields were established.")
+	}
 	for _, field := range evidence.Comparison.UnchangedFields {
 		fmt.Fprintf(&report, "\n- %s", code(field))
 	}
