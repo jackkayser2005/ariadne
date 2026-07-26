@@ -19,7 +19,7 @@ import (
 	"github.com/jackkayser2005/ariadne/internal/experiment"
 )
 
-const sessionSchemaVersion = 3
+const sessionSchemaVersion = 4
 const networkObservationTimeout = 5 * time.Second
 const networkCleanupTimeout = 5 * time.Second
 
@@ -35,6 +35,7 @@ type SessionRecord struct {
 	ManifestName       string       `json:"manifest_name"`
 	DeclaredVariable   string       `json:"declared_variable"`
 	PersonaFields      int          `json:"persona_fields"`
+	VolatileFields     []string     `json:"volatile_fields,omitempty"`
 	ADBVersion         string       `json:"adb_version"`
 	Device             string       `json:"device"`
 	Package            string       `json:"package"`
@@ -182,6 +183,7 @@ func runSession(
 		ManifestName:       manifest.Name,
 		DeclaredVariable:   manifest.Variable,
 		PersonaFields:      len(persona),
+		VolatileFields:     experiment.CanonicalVolatileFields(manifest.VolatileFields),
 		ADBVersion:         target.Version,
 		Device:             target.Device,
 		Package:            target.Package,

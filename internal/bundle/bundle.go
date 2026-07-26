@@ -21,6 +21,7 @@ import (
 	"github.com/jackkayser2005/ariadne/internal/adb"
 	"github.com/jackkayser2005/ariadne/internal/analysis"
 	"github.com/jackkayser2005/ariadne/internal/evidence"
+	"github.com/jackkayser2005/ariadne/internal/experiment"
 	"github.com/jackkayser2005/ariadne/internal/jsoncheck"
 )
 
@@ -117,11 +118,21 @@ func Write(runDir string) (Summary, error) {
 		if err != nil {
 			return Summary{}, fmt.Errorf("treatment: %w", err)
 		}
-		comparison = analysis.Compare(baselineNormalized, treatmentNormalized)
+		comparison = analysis.Compare(
+			baselineNormalized,
+			treatmentNormalized,
+			baseline.record.VolatileFields,
+		)
 		normalizations = []string{
 			"decoded network body_base64",
 			"required storage and network payload equality per session",
 			"removed HTTP transport fields from semantic comparison",
+		}
+		for _, field := range comparison.NormalizedFields {
+			normalizations = append(
+				normalizations,
+				"removed declared volatile observation field "+field+" from comparison",
+			)
 		}
 	} else {
 		treatmentAvailable, err := analysis.NormalizeNetwork(bytes.NewReader(treatment.network))
@@ -141,7 +152,7 @@ func Write(runDir string) (Summary, error) {
 	artifacts = append(artifacts, treatment.metadata)
 	artifacts = append(artifacts, treatment.artifacts...)
 	evidence := document{
-		SchemaVersion:    3,
+		SchemaVersion:    4,
 		ManifestName:     baseline.record.ManifestName,
 		DeclaredVariable: baseline.record.DeclaredVariable,
 		Target: target{
@@ -274,6 +285,7 @@ func decodeSession(data []byte, record *adb.SessionRecord) error {
 			"manifest_name":        {},
 			"declared_variable":    {},
 			"persona_fields":       {},
+			"volatile_fields":      {},
 			"adb_version":          {},
 			"device":               {},
 			"package":              {},
@@ -310,7 +322,9 @@ func decodeSession(data []byte, record *adb.SessionRecord) error {
 }
 
 func validateSession(record adb.SessionRecord, kind string) error {
-	if (record.SchemaVersion != 2 && record.SchemaVersion != 3) ||
+	if (record.SchemaVersion != 2 &&
+		record.SchemaVersion != 3 &&
+		record.SchemaVersion != 4) ||
 		record.Kind != kind {
 		return errors.New("schema_version or kind is invalid")
 	}
@@ -330,6 +344,15 @@ func validateSession(record adb.SessionRecord, kind string) error {
 	}
 	if record.PersonaFields < 1 {
 		return errors.New("persona_fields is invalid")
+	}
+	if record.SchemaVersion < 4 && len(record.VolatileFields) > 0 {
+		return errors.New("legacy session volatile_fields is invalid")
+	}
+	if err := experiment.ValidateVolatileFields(record.VolatileFields); err != nil {
+		return err
+	}
+	if !slices.IsSorted(record.VolatileFields) {
+		return errors.New("volatile_fields are not canonical")
 	}
 	if record.AndroidAPI < 1 || record.AndroidAPI > 999 {
 		return errors.New("android_api is invalid")
@@ -399,6 +422,7 @@ func validatePair(baseline, treatment adb.SessionRecord) error {
 		baseline.ManifestName != treatment.ManifestName ||
 		baseline.DeclaredVariable != treatment.DeclaredVariable ||
 		baseline.PersonaFields != treatment.PersonaFields ||
+		!slices.Equal(baseline.VolatileFields, treatment.VolatileFields) ||
 		baseline.ADBVersion != treatment.ADBVersion ||
 		baseline.Device != treatment.Device ||
 		baseline.Package != treatment.Package ||
@@ -451,10 +475,11 @@ func incompleteTreatmentComparison(baseline, treatment analysis.Session) analysi
 		})
 	}
 	return analysis.Comparison{
-		SchemaVersion:   3,
-		UnchangedFields: make([]string, 0),
-		Differences:     make([]analysis.Difference, 0),
-		Unknowns:        unknowns,
+		SchemaVersion:    4,
+		UnchangedFields:  make([]string, 0),
+		NormalizedFields: make([]string, 0),
+		Differences:      make([]analysis.Difference, 0),
+		Unknowns:         unknowns,
 	}
 }
 

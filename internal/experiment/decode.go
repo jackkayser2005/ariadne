@@ -62,11 +62,12 @@ func rejectUnknownTopLevelFields(data []byte) error {
 	}
 
 	allowed := map[string]struct{}{
-		"schema_version": {},
-		"name":           {},
-		"variable":       {},
-		"baseline":       {},
-		"treatment":      {},
+		"schema_version":  {},
+		"name":            {},
+		"variable":        {},
+		"baseline":        {},
+		"treatment":       {},
+		"volatile_fields": {},
 	}
 	for field := range fields {
 		if _, ok := allowed[field]; !ok {

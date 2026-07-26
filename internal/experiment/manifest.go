@@ -6,12 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"unicode"
 )
 
 // CurrentSchemaVersion is the manifest version supported by this build.
-const CurrentSchemaVersion = 1
+const CurrentSchemaVersion = 2
+
+const maxVolatileFields = 64
 
 // Persona is a flat set of named string values used in one experiment run.
 type Persona map[string]string
@@ -40,17 +43,24 @@ func (p *Persona) UnmarshalJSON(data []byte) error {
 
 // Manifest declares the single controlled difference between two personas.
 type Manifest struct {
-	SchemaVersion int     `json:"schema_version"`
-	Name          string  `json:"name"`
-	Variable      string  `json:"variable"`
-	Baseline      Persona `json:"baseline"`
-	Treatment     Persona `json:"treatment"`
+	SchemaVersion  int      `json:"schema_version"`
+	Name           string   `json:"name"`
+	Variable       string   `json:"variable"`
+	Baseline       Persona  `json:"baseline"`
+	Treatment      Persona  `json:"treatment"`
+	VolatileFields []string `json:"volatile_fields,omitempty"`
 }
 
 // Validate reports whether the manifest describes exactly one declared change.
 func (m Manifest) Validate() error {
-	if m.SchemaVersion != CurrentSchemaVersion {
+	if m.SchemaVersion < 1 || m.SchemaVersion > CurrentSchemaVersion {
 		return fmt.Errorf("schema_version: unsupported value %d", m.SchemaVersion)
+	}
+	if m.SchemaVersion == 1 && len(m.VolatileFields) > 0 {
+		return errors.New("volatile_fields: require schema_version 2")
+	}
+	if err := ValidateVolatileFields(m.VolatileFields); err != nil {
+		return err
 	}
 	if strings.TrimSpace(m.Name) == "" {
 		return errors.New("name: required")
@@ -106,4 +116,42 @@ func (m Manifest) Validate() error {
 		return errors.New("variable: declared key does not match differing persona key")
 	}
 	return nil
+}
+
+// ValidateVolatileFields validates explicit observation fields that may be normalized.
+func ValidateVolatileFields(fields []string) error {
+	if len(fields) > maxVolatileFields {
+		return fmt.Errorf("volatile_fields: exceeds %d-field limit", maxVolatileFields)
+	}
+	seen := make(map[string]struct{}, len(fields))
+	for _, field := range fields {
+		if !validObservationFieldName(field) {
+			return errors.New("volatile_fields: field name is invalid")
+		}
+		if _, exists := seen[field]; exists {
+			return errors.New("volatile_fields: duplicate field")
+		}
+		seen[field] = struct{}{}
+	}
+	return nil
+}
+
+// CanonicalVolatileFields returns a sorted copy of validated volatile fields.
+func CanonicalVolatileFields(fields []string) []string {
+	return slices.Sorted(slices.Values(fields))
+}
+
+func validObservationFieldName(value string) bool {
+	if value == "" || len(value) > 128 {
+		return false
+	}
+	for _, character := range value {
+		isLetter := character >= 'a' && character <= 'z' ||
+			character >= 'A' && character <= 'Z'
+		isDigit := character >= '0' && character <= '9'
+		if !isLetter && !isDigit && !strings.ContainsRune("._:-", character) {
+			return false
+		}
+	}
+	return true
 }

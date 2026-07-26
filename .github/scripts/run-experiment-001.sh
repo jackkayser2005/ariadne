@@ -26,7 +26,7 @@ fixture_sha256="$(
 jq -e \
   --arg fixture_sha256 "${fixture_sha256}" \
   --arg ariadne_revision "${GITHUB_SHA}" '
-  (.schema_version == 3) and
+  (.schema_version == 4) and
   (.target.android_api == 35) and
   (.target.architecture == "x86_64") and
   (.target.package_version_code == 1) and
@@ -34,8 +34,9 @@ jq -e \
   (.target.ariadne_revision == $ariadne_revision) and
   (.target.ariadne_modified == false) and
   (.artifacts | length == 6) and
-  (.comparison.schema_version == 3) and
+  (.comparison.schema_version == 4) and
   (.comparison.unchanged_fields == ["region"]) and
+  (.comparison.normalized_fields == []) and
   (.comparison.differences | length == 1) and
   (.comparison.unknowns == []) and
   (
@@ -110,11 +111,12 @@ storage_gap_report_stdout="${failure_dir}/storage-gap-report.stdout"
 grep -F -x -q "differences: 0" "${storage_gap_report_stdout}"
 grep -F -x -q "unknowns: 2" "${storage_gap_report_stdout}"
 jq -e '
-  (.schema_version == 3) and
+  (.schema_version == 4) and
   (.manifest_name == "experiment-001-email-storage-gap") and
   (.artifacts | length == 5) and
-  (.comparison.schema_version == 3) and
+  (.comparison.schema_version == 4) and
   (.comparison.unchanged_fields == []) and
+  (.comparison.normalized_fields == []) and
   (.comparison.differences == []) and
   (.comparison.unknowns | map(.field) == ["region", "variant"]) and
   all(

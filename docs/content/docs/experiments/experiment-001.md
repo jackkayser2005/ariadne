@@ -42,6 +42,10 @@ The parser will reject inputs larger than 64 KiB, duplicate JSON keys, unknown
 top-level fields, and trailing data. Validation errors may name fields but must
 never include persona values.
 
+Manifest schema 2 adds an optional `volatile_fields` array of unique observation
+field names. Schema 1 remains accepted but cannot declare normalization rules.
+The list is limited to 64 names and is stored in sorted order with each session.
+
 ## Validate a manifest
 
 Run:
@@ -208,10 +212,11 @@ completed directory contains:
 Session metadata includes the selected device, Android API, architecture,
 package version and SHA-256, Ariadne Git revision and modified state, ADB
 version, timestamps, step status, exit codes, and a SHA-256 record for each
-captured artifact. Session schema 3 also records `status` as `complete` or
+captured artifact. Session schemas 3 and 4 record `status` as `complete` or
 `incomplete`. Incomplete sessions record only a controlled `failure_stage`;
 they never persist raw errors. Metadata excludes persona values, command
-arguments, raw APK bytes, and raw ADB output.
+arguments, raw APK bytes, and raw ADB output. Schema 4 also records the
+manifest's sorted `volatile_fields` declaration without observation values.
 
 The storage artifact is the exact bounded JSON read from the fixture's private
 `files/observation.json` through Android's `run-as` command. Capture fails if
@@ -236,7 +241,11 @@ and 1 to 64 string fields. Field names are restricted so evidence references
 remain unambiguous. Ariadne requires storage and network fields to agree within
 each session, then compares the sorted union of baseline and treatment fields.
 Each observed difference is classified as `added`, `removed`, or `changed`;
-equal fields are listed as stable.
+equal fields are listed as stable. A declared volatile field is removed from
+comparison only when both sessions captured it. The field is then listed in
+`comparison.normalized_fields` and the applied rule is recorded in
+`normalizations`. A one-sided volatile field remains an added or removed
+finding. Raw artifacts are never rewritten.
 
 If the baseline completes but treatment storage capture fails after treatment
 network capture succeeds, reporting preserves the five verified artifacts and

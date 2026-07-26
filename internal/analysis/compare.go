@@ -29,12 +29,13 @@ type Session struct {
 	Fields map[string]string
 }
 
-// Comparison records stable fields, observed differences, and unsupported conclusions.
+// Comparison records stable, normalized, observed, and unsupported conclusions.
 type Comparison struct {
-	SchemaVersion   int          `json:"schema_version"`
-	UnchangedFields []string     `json:"unchanged_fields"`
-	Differences     []Difference `json:"differences"`
-	Unknowns        []Unknown    `json:"unknowns"`
+	SchemaVersion    int          `json:"schema_version"`
+	UnchangedFields  []string     `json:"unchanged_fields"`
+	NormalizedFields []string     `json:"normalized_fields"`
+	Differences      []Difference `json:"differences"`
+	Unknowns         []Unknown    `json:"unknowns"`
 }
 
 // Difference records one added, removed, or changed field between sessions.
@@ -120,13 +121,18 @@ func NormalizeNetwork(network io.Reader) (Session, error) {
 	return reported, nil
 }
 
-// Compare returns stable fields and observed differences in deterministic order.
-func Compare(baseline, treatment Session) Comparison {
+// Compare applies declared volatile fields and returns deterministic conclusions.
+func Compare(baseline, treatment Session, volatileFields []string) Comparison {
 	comparison := Comparison{
-		SchemaVersion:   3,
-		UnchangedFields: make([]string, 0, len(baseline.Fields)),
-		Differences:     make([]Difference, 0),
-		Unknowns:        make([]Unknown, 0),
+		SchemaVersion:    4,
+		UnchangedFields:  make([]string, 0, len(baseline.Fields)),
+		NormalizedFields: make([]string, 0, len(volatileFields)),
+		Differences:      make([]Difference, 0),
+		Unknowns:         make([]Unknown, 0),
+	}
+	volatile := make(map[string]struct{}, len(volatileFields))
+	for _, field := range volatileFields {
+		volatile[field] = struct{}{}
 	}
 	fields := make(map[string]struct{}, len(baseline.Fields)+len(treatment.Fields))
 	for field := range baseline.Fields {
@@ -139,6 +145,10 @@ func Compare(baseline, treatment Session) Comparison {
 	for _, field := range names {
 		baselineValue, baselineOK := baseline.Fields[field]
 		treatmentValue, treatmentOK := treatment.Fields[field]
+		if _, ignored := volatile[field]; ignored && baselineOK && treatmentOK {
+			comparison.NormalizedFields = append(comparison.NormalizedFields, field)
+			continue
+		}
 		if baselineOK && treatmentOK && baselineValue == treatmentValue {
 			comparison.UnchangedFields = append(comparison.UnchangedFields, field)
 			continue

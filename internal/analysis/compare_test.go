@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"maps"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -238,8 +239,9 @@ func TestCompare(t *testing.T) {
 	comparison := Compare(
 		Session{Fields: map[string]string{"region": "us-east", "variant": "standard"}},
 		Session{Fields: map[string]string{"region": "us-east", "variant": "personalized"}},
+		nil,
 	)
-	if comparison.SchemaVersion != 3 ||
+	if comparison.SchemaVersion != 4 ||
 		len(comparison.UnchangedFields) != 1 ||
 		comparison.UnchangedFields[0] != "region" ||
 		len(comparison.Differences) != 1 ||
@@ -260,7 +262,7 @@ func TestCompare(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const want = `{"schema_version":3,"unchanged_fields":["region"],"differences":[{"field":"variant","kind":"changed","baseline":"standard","treatment":"personalized","state":"observed","evidence":["baseline/observations/storage.json#/variant","baseline/observations/network.json#decoded-body/variant","treatment/observations/storage.json#/variant","treatment/observations/network.json#decoded-body/variant"]}],"unknowns":[]}`
+	const want = `{"schema_version":4,"unchanged_fields":["region"],"normalized_fields":[],"differences":[{"field":"variant","kind":"changed","baseline":"standard","treatment":"personalized","state":"observed","evidence":["baseline/observations/storage.json#/variant","baseline/observations/network.json#decoded-body/variant","treatment/observations/storage.json#/variant","treatment/observations/network.json#decoded-body/variant"]}],"unknowns":[]}`
 	if string(data) != want {
 		t.Fatalf("comparison JSON = %s", data)
 	}
@@ -270,6 +272,7 @@ func TestCompareMultipleAndNoDifferences(t *testing.T) {
 	multiple := Compare(
 		Session{Fields: map[string]string{"region": "east", "variant": "standard"}},
 		Session{Fields: map[string]string{"region": "west", "variant": "personalized"}},
+		nil,
 	)
 	if len(multiple.Differences) != 2 || multiple.Differences[0].Field != "region" {
 		t.Fatalf("Compare() = %#v", multiple)
@@ -278,6 +281,7 @@ func TestCompareMultipleAndNoDifferences(t *testing.T) {
 	none := Compare(
 		Session{Fields: map[string]string{"region": "east", "variant": "standard"}},
 		Session{Fields: map[string]string{"region": "east", "variant": "standard"}},
+		nil,
 	)
 	if len(none.Differences) != 0 || len(none.UnchangedFields) != 2 {
 		t.Fatalf("Compare() = %#v", none)
@@ -288,6 +292,7 @@ func TestCompareAddedAndRemovedFields(t *testing.T) {
 	comparison := Compare(
 		Session{Fields: map[string]string{"removed": "before", "stable": "same"}},
 		Session{Fields: map[string]string{"added": "after", "stable": "same"}},
+		nil,
 	)
 	if len(comparison.Differences) != 2 {
 		t.Fatalf("Compare() = %#v", comparison)
@@ -307,6 +312,30 @@ func TestCompareAddedAndRemovedFields(t *testing.T) {
 		removed.Treatment != "" ||
 		len(removed.Evidence) != 2 {
 		t.Fatalf("removed difference = %#v", removed)
+	}
+}
+
+func TestCompareNormalizesOnlyTwoSidedVolatileFields(t *testing.T) {
+	comparison := Compare(
+		Session{Fields: map[string]string{
+			"missing_treatment": "before",
+			"request_id":        "baseline-id",
+			"variant":           "standard",
+		}},
+		Session{Fields: map[string]string{
+			"request_id": "treatment-id",
+			"variant":    "personalized",
+		}},
+		[]string{"missing_treatment", "request_id"},
+	)
+	if !slices.Equal(comparison.NormalizedFields, []string{"request_id"}) {
+		t.Fatalf("normalized fields = %v", comparison.NormalizedFields)
+	}
+	if len(comparison.Differences) != 2 ||
+		comparison.Differences[0].Field != "missing_treatment" ||
+		comparison.Differences[0].Kind != "removed" ||
+		comparison.Differences[1].Field != "variant" {
+		t.Fatalf("Compare() = %#v", comparison)
 	}
 }
 
