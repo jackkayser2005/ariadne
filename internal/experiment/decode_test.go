@@ -29,6 +29,12 @@ func TestDecode(t *testing.T) {
 	}{
 		{name: "valid", input: validJSON},
 		{name: "valid trailing whitespace", input: validJSON + "\n\t "},
+		{name: "valid v2", input: strings.NewReplacer(
+			`"schema_version": 1`,
+			`"schema_version": 2`,
+			`"name": "experiment-001-email"`,
+			`"name": "experiment-001-email", "volatile_fields": ["request_id"]`,
+		).Replace(validJSON)},
 		{name: "empty", input: " \n", wantErr: "empty input"},
 		{name: "malformed", input: `{"schema_version":`, wantErr: "unexpected end of input"},
 		{name: "duplicate top-level key", input: `{

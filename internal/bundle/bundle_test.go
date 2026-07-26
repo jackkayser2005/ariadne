@@ -41,8 +41,8 @@ func TestWrite(t *testing.T) {
 	if err := json.Unmarshal(evidence, &document); err != nil {
 		t.Fatal(err)
 	}
-	if document.SchemaVersion != 3 ||
-		document.Comparison.SchemaVersion != 3 ||
+	if document.SchemaVersion != 4 ||
+		document.Comparison.SchemaVersion != 4 ||
 		len(document.Artifacts) != 6 ||
 		len(document.Comparison.Differences) != 1 ||
 		len(document.Comparison.Unknowns) != 0 ||
@@ -117,7 +117,7 @@ func TestWriteIncompleteTreatment(t *testing.T) {
 	if err := json.Unmarshal(data, &document); err != nil {
 		t.Fatal(err)
 	}
-	if document.SchemaVersion != 3 ||
+	if document.SchemaVersion != 4 ||
 		len(document.Artifacts) != 5 ||
 		len(document.Comparison.UnchangedFields) != 0 ||
 		len(document.Comparison.Differences) != 0 ||
@@ -271,6 +271,28 @@ func TestWriteRejectsInvalidSessions(t *testing.T) {
 				record.PersonaFields = 0
 			},
 			want: "persona_fields",
+		},
+		{
+			name: "volatile fields order",
+			mutate: func(record *adb.SessionRecord) {
+				record.VolatileFields = []string{"timestamp", "request_id"}
+			},
+			want: "not canonical",
+		},
+		{
+			name: "duplicate volatile field",
+			mutate: func(record *adb.SessionRecord) {
+				record.VolatileFields = []string{"request_id", "request_id"}
+			},
+			want: "duplicate field",
+		},
+		{
+			name: "legacy volatile fields",
+			mutate: func(record *adb.SessionRecord) {
+				record.SchemaVersion = 3
+				record.VolatileFields = []string{"request_id"}
+			},
+			want: "legacy session volatile_fields",
 		},
 		{
 			name: "Android API",
@@ -435,6 +457,12 @@ func TestWriteRejectsSessionAndSourceDisagreement(t *testing.T) {
 				record.PackageSHA256 = strings.Repeat("c", 64)
 			},
 		},
+		{
+			name: "volatile fields",
+			mutate: func(record *adb.SessionRecord) {
+				record.VolatileFields = []string{"request_id"}
+			},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			runDir := makeRun(t, runOptions{mutateTreatment: test.mutate})
@@ -467,8 +495,8 @@ func TestWriteRejectsInvalidSessionJSON(t *testing.T) {
 			change: func(input string) string {
 				return strings.Replace(
 					input,
-					`"schema_version": 3,`,
-					`"schema_version": 3, "schema_version": 3,`,
+					`"schema_version": 4,`,
+					`"schema_version": 4, "schema_version": 4,`,
 					1,
 				)
 			},
@@ -572,10 +600,67 @@ func TestWriteNoDifferences(t *testing.T) {
 	}
 }
 
+func TestWriteRecordsVolatileFieldNormalization(t *testing.T) {
+	const baseline = `{"schema_version":1,"region":"us-east","request_id":"baseline-id","variant":"standard"}`
+	const treatment = `{"schema_version":1,"region":"us-east","request_id":"treatment-id","variant":"personalized"}`
+	runDir := makeRun(t, runOptions{
+		baselineStorage:      baseline,
+		baselineNetworkBody:  baseline,
+		treatmentStorage:     treatment,
+		treatmentNetworkBody: treatment,
+		volatileFields:       []string{"request_id"},
+	})
+
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(runDir, "evidence.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document document
+	if err := json.Unmarshal(data, &document); err != nil {
+		t.Fatal(err)
+	}
+	if len(document.Comparison.Differences) != 1 ||
+		document.Comparison.Differences[0].Field != "variant" ||
+		len(document.Comparison.NormalizedFields) != 1 ||
+		document.Comparison.NormalizedFields[0] != "request_id" {
+		t.Fatalf("comparison = %#v", document.Comparison)
+	}
+	report, err := os.ReadFile(filepath.Join(runDir, "report.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(
+		string(report),
+		"removed declared volatile observation field request_id from comparison",
+	) {
+		t.Fatalf("report = %s", report)
+	}
+	for kind, want := range map[string]string{
+		"baseline":  baseline,
+		"treatment": treatment,
+	} {
+		raw, err := os.ReadFile(
+			filepath.Join(runDir, kind, "observations", "storage.json"),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(raw) != want {
+			t.Fatalf("%s raw observation changed: %s", kind, raw)
+		}
+	}
+}
+
 type runOptions struct {
 	sessionSchemaVersion int
+	baselineStorage      string
+	baselineNetworkBody  string
 	treatmentStorage     string
 	treatmentNetworkBody string
+	volatileFields       []string
 	mutateBaseline       func(*adb.SessionRecord)
 	mutateTreatment      func(*adb.SessionRecord)
 }
@@ -606,7 +691,13 @@ func makeRun(t *testing.T, options runOptions) string {
 	t.Helper()
 	runDir := filepath.Join(t.TempDir(), "run")
 	if options.sessionSchemaVersion == 0 {
-		options.sessionSchemaVersion = 3
+		options.sessionSchemaVersion = 4
+	}
+	if options.baselineStorage == "" {
+		options.baselineStorage = baselineObservation
+	}
+	if options.baselineNetworkBody == "" {
+		options.baselineNetworkBody = baselineObservation
 	}
 	if options.treatmentStorage == "" {
 		options.treatmentStorage = treatmentObservation
@@ -618,8 +709,9 @@ func makeRun(t *testing.T, options runOptions) string {
 		t,
 		runDir,
 		"baseline",
-		baselineObservation,
-		baselineObservation,
+		options.baselineStorage,
+		options.baselineNetworkBody,
+		options.volatileFields,
 		options.sessionSchemaVersion,
 		options.mutateBaseline,
 	)
@@ -629,6 +721,7 @@ func makeRun(t *testing.T, options runOptions) string {
 		"treatment",
 		options.treatmentStorage,
 		options.treatmentNetworkBody,
+		options.volatileFields,
 		options.sessionSchemaVersion,
 		options.mutateTreatment,
 	)
@@ -638,6 +731,7 @@ func makeRun(t *testing.T, options runOptions) string {
 func writeSession(
 	t *testing.T,
 	runDir, kind, storageBody, networkBody string,
+	volatileFields []string,
 	schemaVersion int,
 	mutate func(*adb.SessionRecord),
 ) {
@@ -677,6 +771,7 @@ func writeSession(
 		ManifestName:       "experiment-001-email",
 		DeclaredVariable:   "email",
 		PersonaFields:      2,
+		VolatileFields:     append([]string(nil), volatileFields...),
 		ADBVersion:         "1.0.41",
 		Device:             "emulator-5554",
 		Package:            "dev.ariadne.fixture",
@@ -698,7 +793,7 @@ func writeSession(
 			),
 		},
 	}
-	if schemaVersion == 3 {
+	if schemaVersion >= 3 {
 		record.Status = "complete"
 	}
 	if mutate != nil {

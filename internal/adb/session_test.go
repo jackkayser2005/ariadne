@@ -120,8 +120,10 @@ func TestRunPair(t *testing.T) {
 			t.Fatal(err)
 		}
 		text := string(data)
-		if !strings.Contains(text, `"schema_version": 3`) ||
+		if !strings.Contains(text, `"schema_version": 4`) ||
 			!strings.Contains(text, `"kind": "`+kind+`"`) ||
+			!strings.Contains(text, `"volatile_fields": [`) ||
+			!strings.Contains(text, `"request_id"`) ||
 			!strings.Contains(text, `"status": "complete"`) ||
 			strings.Contains(text, `"failure_stage"`) ||
 			!strings.Contains(text, `"exit_code": 0`) ||
@@ -709,6 +711,7 @@ func sessionManifest() experiment.Manifest {
 			"email":  "treatment@example.invalid",
 			"region": "us-east",
 		},
+		VolatileFields: []string{"request_id"},
 	}
 }
 

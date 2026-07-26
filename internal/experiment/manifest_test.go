@@ -12,9 +12,23 @@ func TestManifestValidate(t *testing.T) {
 		wantErr string
 	}{
 		{name: "valid"},
+		{name: "legacy version", change: func(m *Manifest) {
+			m.SchemaVersion = 1
+			m.VolatileFields = nil
+		}},
 		{name: "unsupported version", change: func(m *Manifest) {
-			m.SchemaVersion = 2
+			m.SchemaVersion = 3
 		}, wantErr: "schema_version"},
+		{name: "volatile fields require v2", change: func(m *Manifest) {
+			m.SchemaVersion = 1
+			m.VolatileFields = []string{"request_id"}
+		}, wantErr: "require schema_version 2"},
+		{name: "invalid volatile field", change: func(m *Manifest) {
+			m.VolatileFields = []string{"request/id"}
+		}, wantErr: "field name is invalid"},
+		{name: "duplicate volatile field", change: func(m *Manifest) {
+			m.VolatileFields = []string{"request_id", "request_id"}
+		}, wantErr: "duplicate field"},
 		{name: "blank name", change: func(m *Manifest) {
 			m.Name = " "
 		}, wantErr: "name"},
@@ -103,5 +117,13 @@ func validManifest() Manifest {
 			"email":  "treatment@example.invalid",
 			"region": "us-east",
 		},
+		VolatileFields: []string{"request_id"},
+	}
+}
+
+func TestCanonicalVolatileFields(t *testing.T) {
+	got := CanonicalVolatileFields([]string{"timestamp", "request_id"})
+	if strings.Join(got, ",") != "request_id,timestamp" {
+		t.Fatalf("CanonicalVolatileFields() = %v", got)
 	}
 }
