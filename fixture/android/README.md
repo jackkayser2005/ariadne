@@ -6,6 +6,12 @@
 `collector_port`, the activity posts the same JSON to
 `http://127.0.0.1:<port>/observe`.
 
+The fixture-only `capture_mode=treatment_network_only` control leaves baseline
+behavior unchanged but omits treatment storage after sending the treatment
+network observation. `examples/experiment-001-storage-gap.json` uses this mode
+to verify incomplete-capture reporting. Do not use it as an application
+behavior claim.
+
 Build and test:
 
 ```console

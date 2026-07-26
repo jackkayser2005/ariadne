@@ -49,6 +49,9 @@ jq -e \
 
 baseline_email="$(jq -r '.baseline.email' examples/experiment-001.json)"
 treatment_email="$(jq -r '.treatment.email' examples/experiment-001.json)"
+failure_dir="${RUNNER_TEMP}/ariadne-failure-proofs"
+mkdir "${failure_dir}"
+
 if grep -R -F -q \
   -e "${baseline_email}" \
   -e "${treatment_email}" \
@@ -57,8 +60,77 @@ if grep -R -F -q \
   exit 1
 fi
 
-failure_dir="${RUNNER_TEMP}/ariadne-failure-proofs"
-mkdir "${failure_dir}"
+storage_gap_dir=".ariadne/ci/experiment-001-storage-gap"
+storage_gap_stdout="${failure_dir}/storage-gap-run.stdout"
+storage_gap_stderr="${failure_dir}/storage-gap-run.stderr"
+if "${ariadne}" experiment run \
+  --device emulator-5554 \
+  --package dev.ariadne.fixture \
+  --output "${storage_gap_dir}" \
+  examples/experiment-001-storage-gap.json \
+  >"${storage_gap_stdout}" 2>"${storage_gap_stderr}"; then
+  echo "storage gap: experiment run unexpectedly succeeded" >&2
+  exit 1
+fi
+if [[ -s "${storage_gap_stdout}" ]]; then
+  echo "storage gap: failed run wrote to stdout" >&2
+  exit 1
+fi
+if ! grep -F -q "capture storage" "${storage_gap_stderr}"; then
+  echo "storage gap: expected capture failure was not reported" >&2
+  exit 1
+fi
+if grep -F -q \
+  -e "${baseline_email}" \
+  -e "${treatment_email}" \
+  "${storage_gap_stderr}"; then
+  echo "storage gap: failure output disclosed a persona value" >&2
+  exit 1
+fi
+
+test -e "${storage_gap_dir}/baseline/observations/storage.json"
+test -e "${storage_gap_dir}/baseline/observations/network.json"
+test -e "${storage_gap_dir}/treatment/observations/network.json"
+test ! -e "${storage_gap_dir}/treatment/observations/storage.json"
+jq -e '
+  (.status == "complete") and
+  (.artifacts | length == 2)
+' "${storage_gap_dir}/baseline/session.json"
+jq -e '
+  (.status == "incomplete") and
+  (.failure_stage == "capture_storage") and
+  (.artifacts | length == 1) and
+  (.artifacts[0].path == "observations/network.json") and
+  any(.steps[]; .name == "capture_storage" and .status == "error")
+' "${storage_gap_dir}/treatment/session.json"
+
+storage_gap_report_stdout="${failure_dir}/storage-gap-report.stdout"
+"${ariadne}" experiment report "${storage_gap_dir}" >"${storage_gap_report_stdout}"
+grep -F -x -q "differences: 0" "${storage_gap_report_stdout}"
+grep -F -x -q "unknowns: 2" "${storage_gap_report_stdout}"
+jq -e '
+  (.schema_version == 3) and
+  (.manifest_name == "experiment-001-email-storage-gap") and
+  (.artifacts | length == 5) and
+  (.comparison.schema_version == 2) and
+  (.comparison.unchanged_fields == []) and
+  (.comparison.differences == []) and
+  (.comparison.unknowns | map(.field) == ["region", "variant"]) and
+  all(
+    .comparison.unknowns[];
+    .state == "unknown" and
+    .reason == "treatment storage observation was not captured" and
+    (.evidence | length == 3)
+  )
+' "${storage_gap_dir}/evidence.json"
+if grep -F -q \
+  -e "standard" \
+  -e "personalized" \
+  "${storage_gap_dir}/evidence.json" \
+  "${storage_gap_dir}/report.md"; then
+  echo "storage gap: partial report disclosed an observed value" >&2
+  exit 1
+fi
 
 expect_failure() {
   local name="$1"

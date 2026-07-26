@@ -29,7 +29,10 @@ public final class MainActivity extends Activity {
 
         try {
             byte[] observation = observationFor(email, region);
-            writeObservation(observation);
+            String captureMode = getIntent().getStringExtra("capture_mode");
+            if (ExperimentLogic.shouldWriteStorage(email, captureMode)) {
+                writeObservation(observation);
+            }
             int collectorPort = getIntent().getIntExtra("collector_port", 0);
             if (collectorPort != 0) {
                 reportObservation(collectorPort, observation);

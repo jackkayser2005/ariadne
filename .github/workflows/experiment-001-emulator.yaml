@@ -9,6 +9,7 @@ on:
       - ".github/workflows/experiment-001-emulator.yaml"
       - "cmd/**"
       - "examples/experiment-001.json"
+      - "examples/experiment-001-storage-gap.json"
       - "fixture/android/**"
       - "internal/**"
       - "go.mod"
@@ -21,6 +22,7 @@ on:
       - ".github/workflows/experiment-001-emulator.yaml"
       - "cmd/**"
       - "examples/experiment-001.json"
+      - "examples/experiment-001-storage-gap.json"
       - "fixture/android/**"
       - "internal/**"
       - "go.mod"
@@ -81,7 +83,9 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: experiment-001-${{ github.sha }}
-          path: .ariadne/ci/experiment-001
+          path: |
+            .ariadne/ci/experiment-001
+            .ariadne/ci/experiment-001-storage-gap
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 14
