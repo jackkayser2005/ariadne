@@ -231,11 +231,19 @@ normalization and comparison. `report.md` is the concise human-readable view.
 For the fixture, it reports one observed `variant` difference supported by both
 storage and network artifacts.
 
+Observation schema 1 is a bounded JSON object containing `schema_version: 1`
+and 1 to 64 string fields. Field names are restricted so evidence references
+remain unambiguous. Ariadne requires storage and network fields to agree within
+each session, then compares the sorted union of baseline and treatment fields.
+Each observed difference is classified as `added`, `removed`, or `changed`;
+equal fields are listed as stable.
+
 If the baseline completes but treatment storage capture fails after treatment
 network capture succeeds, reporting preserves the five verified artifacts and
-classifies both fixture fields as `unknown`. It does not compare the available
-network value or claim that either field changed or stayed stable. Other
-incomplete session shapes remain unsupported and stop report generation.
+classifies every field found in either available session as `unknown`. It does
+not compare the available network value or claim that any field changed or
+stayed stable. Other incomplete session shapes remain unsupported and stop
+report generation.
 The authorized fixture proof is declared in
 `examples/experiment-001-storage-gap.json` and runs in the real-emulator
 workflow.

@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"maps"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/iotest"
@@ -22,7 +24,10 @@ func TestNormalize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if session.Region != "us-east" || session.Variant != "standard" {
+	if !maps.Equal(session.Fields, map[string]string{
+		"region":  "us-east",
+		"variant": "standard",
+	}) {
 		t.Fatalf("Normalize() = %#v", session)
 	}
 
@@ -30,7 +35,7 @@ func TestNormalize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if network != session {
+	if !maps.Equal(network.Fields, session.Fields) {
 		t.Fatalf("NormalizeNetwork() = %#v", network)
 	}
 }
@@ -47,13 +52,19 @@ func TestNormalizeRejectsInvalidArtifacts(t *testing.T) {
 			name:    "storage duplicate",
 			storage: `{"schema_version":1,"region":"first","region":"second","variant":"standard"}`,
 			network: networkArtifact(baselineBody),
-			want:    `duplicate key "region"`,
+			want:    "duplicate object key",
 		},
 		{
-			name:    "storage unknown field",
-			storage: strings.Replace(baselineBody, `"variant"`, `"extra"`, 1),
+			name:    "storage invalid field",
+			storage: strings.Replace(baselineBody, `"variant"`, `"bad/field"`, 1),
 			network: networkArtifact(baselineBody),
-			want:    `unknown field "extra"`,
+			want:    "observation field name is invalid",
+		},
+		{
+			name:    "storage non-string field",
+			storage: strings.Replace(baselineBody, `"standard"`, `1`, 1),
+			network: networkArtifact(baselineBody),
+			want:    "observation field value must be a string",
 		},
 		{
 			name:    "storage trailing data",
@@ -68,10 +79,16 @@ func TestNormalizeRejectsInvalidArtifacts(t *testing.T) {
 			want:    "unsupported schema_version",
 		},
 		{
+			name:    "storage no fields",
+			storage: `{"schema_version":1}`,
+			network: networkArtifact(baselineBody),
+			want:    "expected 1 to 64 observation fields",
+		},
+		{
 			name:    "storage value",
 			storage: strings.Replace(baselineBody, `"us-east"`, `" bad"`, 1),
 			network: networkArtifact(baselineBody),
-			want:    "region is invalid",
+			want:    "observation field value is invalid",
 		},
 		{
 			name:    "network duplicate",
@@ -174,14 +191,55 @@ func TestNormalizeDoesNotExposeValues(t *testing.T) {
 	if strings.Contains(err.Error(), secret) {
 		t.Fatalf("Normalize() exposed value: %v", err)
 	}
+
+	storage = `{"schema_version":1,"` + secret + `/":"value"}`
+	_, err = Normalize(strings.NewReader(storage), strings.NewReader(network))
+	if err == nil {
+		t.Fatal("Normalize() error = nil")
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Fatalf("Normalize() exposed field name: %v", err)
+	}
+}
+
+func TestNormalizeAcceptsGenericFields(t *testing.T) {
+	const observation = `{"schema_version":1,"consent.status":"granted","request-id":"fixed"}`
+	session, err := Normalize(
+		strings.NewReader(observation),
+		strings.NewReader(networkArtifact(observation)),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !maps.Equal(session.Fields, map[string]string{
+		"consent.status": "granted",
+		"request-id":     "fixed",
+	}) {
+		t.Fatalf("Normalize() = %#v", session)
+	}
+}
+
+func TestNormalizeRejectsTooManyFields(t *testing.T) {
+	observation := map[string]any{"schema_version": 1}
+	for index := 0; index <= maxFields; index++ {
+		observation["field-"+strconv.Itoa(index)] = "value"
+	}
+	data, err := json.Marshal(observation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = Normalize(bytes.NewReader(data), strings.NewReader(networkArtifact(string(data))))
+	if err == nil || !strings.Contains(err.Error(), "expected 1 to 64 observation fields") {
+		t.Fatalf("Normalize() error = %v", err)
+	}
 }
 
 func TestCompare(t *testing.T) {
 	comparison := Compare(
-		Session{Region: "us-east", Variant: "standard"},
-		Session{Region: "us-east", Variant: "personalized"},
+		Session{Fields: map[string]string{"region": "us-east", "variant": "standard"}},
+		Session{Fields: map[string]string{"region": "us-east", "variant": "personalized"}},
 	)
-	if comparison.SchemaVersion != 2 ||
+	if comparison.SchemaVersion != 3 ||
 		len(comparison.UnchangedFields) != 1 ||
 		comparison.UnchangedFields[0] != "region" ||
 		len(comparison.Differences) != 1 ||
@@ -190,6 +248,7 @@ func TestCompare(t *testing.T) {
 	}
 	difference := comparison.Differences[0]
 	if difference.Field != "variant" ||
+		difference.Kind != "changed" ||
 		difference.Baseline != "standard" ||
 		difference.Treatment != "personalized" ||
 		difference.State != evidence.Observed ||
@@ -201,7 +260,7 @@ func TestCompare(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const want = `{"schema_version":2,"unchanged_fields":["region"],"differences":[{"field":"variant","baseline":"standard","treatment":"personalized","state":"observed","evidence":["baseline/observations/storage.json#/variant","baseline/observations/network.json#decoded-body/variant","treatment/observations/storage.json#/variant","treatment/observations/network.json#decoded-body/variant"]}],"unknowns":[]}`
+	const want = `{"schema_version":3,"unchanged_fields":["region"],"differences":[{"field":"variant","kind":"changed","baseline":"standard","treatment":"personalized","state":"observed","evidence":["baseline/observations/storage.json#/variant","baseline/observations/network.json#decoded-body/variant","treatment/observations/storage.json#/variant","treatment/observations/network.json#decoded-body/variant"]}],"unknowns":[]}`
 	if string(data) != want {
 		t.Fatalf("comparison JSON = %s", data)
 	}
@@ -209,19 +268,45 @@ func TestCompare(t *testing.T) {
 
 func TestCompareMultipleAndNoDifferences(t *testing.T) {
 	multiple := Compare(
-		Session{Region: "east", Variant: "standard"},
-		Session{Region: "west", Variant: "personalized"},
+		Session{Fields: map[string]string{"region": "east", "variant": "standard"}},
+		Session{Fields: map[string]string{"region": "west", "variant": "personalized"}},
 	)
 	if len(multiple.Differences) != 2 || multiple.Differences[0].Field != "region" {
 		t.Fatalf("Compare() = %#v", multiple)
 	}
 
 	none := Compare(
-		Session{Region: "east", Variant: "standard"},
-		Session{Region: "east", Variant: "standard"},
+		Session{Fields: map[string]string{"region": "east", "variant": "standard"}},
+		Session{Fields: map[string]string{"region": "east", "variant": "standard"}},
 	)
 	if len(none.Differences) != 0 || len(none.UnchangedFields) != 2 {
 		t.Fatalf("Compare() = %#v", none)
+	}
+}
+
+func TestCompareAddedAndRemovedFields(t *testing.T) {
+	comparison := Compare(
+		Session{Fields: map[string]string{"removed": "before", "stable": "same"}},
+		Session{Fields: map[string]string{"added": "after", "stable": "same"}},
+	)
+	if len(comparison.Differences) != 2 {
+		t.Fatalf("Compare() = %#v", comparison)
+	}
+	added := comparison.Differences[0]
+	if added.Field != "added" ||
+		added.Kind != "added" ||
+		added.Baseline != "" ||
+		added.Treatment != "after" ||
+		len(added.Evidence) != 2 {
+		t.Fatalf("added difference = %#v", added)
+	}
+	removed := comparison.Differences[1]
+	if removed.Field != "removed" ||
+		removed.Kind != "removed" ||
+		removed.Baseline != "before" ||
+		removed.Treatment != "" ||
+		len(removed.Evidence) != 2 {
+		t.Fatalf("removed difference = %#v", removed)
 	}
 }
 

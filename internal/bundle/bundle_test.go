@@ -42,11 +42,12 @@ func TestWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	if document.SchemaVersion != 3 ||
-		document.Comparison.SchemaVersion != 2 ||
+		document.Comparison.SchemaVersion != 3 ||
 		len(document.Artifacts) != 6 ||
 		len(document.Comparison.Differences) != 1 ||
 		len(document.Comparison.Unknowns) != 0 ||
 		document.Comparison.Differences[0].Field != "variant" ||
+		document.Comparison.Differences[0].Kind != "changed" ||
 		document.Target.AndroidAPI != 35 ||
 		document.Target.Architecture != "x86_64" ||
 		document.Target.PackageVersionCode != 1 ||
@@ -65,6 +66,7 @@ func TestWrite(t *testing.T) {
 		"Observed differences: 1",
 		"Unknown conclusions: 0",
 		"<code>variant</code>",
+		"Kind: <code>changed</code>",
 		"<code>standard</code>",
 		"<code>personalized</code>",
 		"Verified artifacts: 6",
@@ -163,7 +165,7 @@ func TestWriteIncompleteTreatmentRejectsInvalidNetwork(t *testing.T) {
 	)
 
 	_, err := Write(runDir)
-	if err == nil || !strings.Contains(err.Error(), `unknown field "extra"`) {
+	if err == nil || !strings.Contains(err.Error(), "observation field value must be a string") {
 		t.Fatalf("Write() error = %v", err)
 	}
 	if strings.Contains(err.Error(), secret) {

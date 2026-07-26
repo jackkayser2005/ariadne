@@ -8,6 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
+	"slices"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/jackkayser2005/ariadne/internal/collector"
@@ -18,12 +21,12 @@ import (
 const (
 	maxStorageBytes = 64 << 10
 	maxNetworkBytes = 96 << 10
+	maxFields       = 64
 )
 
 // Session is one normalized pair of agreeing storage and network observations.
 type Session struct {
-	Region  string
-	Variant string
+	Fields map[string]string
 }
 
 // Comparison records stable fields, observed differences, and unsupported conclusions.
@@ -34,11 +37,12 @@ type Comparison struct {
 	Unknowns        []Unknown    `json:"unknowns"`
 }
 
-// Difference records one field whose observed values differ between sessions.
+// Difference records one added, removed, or changed field between sessions.
 type Difference struct {
 	Field     string         `json:"field"`
-	Baseline  string         `json:"baseline"`
-	Treatment string         `json:"treatment"`
+	Kind      string         `json:"kind"`
+	Baseline  string         `json:"baseline,omitempty"`
+	Treatment string         `json:"treatment,omitempty"`
 	State     evidence.State `json:"state"`
 	Evidence  []string       `json:"evidence"`
 }
@@ -51,12 +55,6 @@ type Unknown struct {
 	Evidence []string       `json:"evidence"`
 }
 
-type fixtureObservation struct {
-	SchemaVersion int    `json:"schema_version"`
-	Region        string `json:"region"`
-	Variant       string `json:"variant"`
-}
-
 // Normalize validates and coalesces one session's storage and network artifacts.
 func Normalize(storage, network io.Reader) (Session, error) {
 	stored, err := normalizeStorage(storage)
@@ -67,7 +65,7 @@ func Normalize(storage, network io.Reader) (Session, error) {
 	if err != nil {
 		return Session{}, err
 	}
-	if stored != reported {
+	if !maps.Equal(stored.Fields, reported.Fields) {
 		return Session{}, errors.New("storage and network observations disagree")
 	}
 	return stored, nil
@@ -78,21 +76,14 @@ func normalizeStorage(storage io.Reader) (Session, error) {
 	if err != nil {
 		return Session{}, err
 	}
-	var stored fixtureObservation
-	if err := decodeStrict(
-		storageData,
-		[]string{"schema_version", "region", "variant"},
-		&stored,
-	); err != nil {
+	stored, err := decodeObservation(storageData)
+	if err != nil {
 		return Session{}, fmt.Errorf("storage observation: %w", err)
 	}
-	if err := stored.validate(); err != nil {
-		return Session{}, fmt.Errorf("storage observation: %w", err)
-	}
-	return Session{Region: stored.Region, Variant: stored.Variant}, nil
+	return stored, nil
 }
 
-// NormalizeNetwork validates and decodes one fixture network observation.
+// NormalizeNetwork validates and decodes one captured network observation.
 func NormalizeNetwork(network io.Reader) (Session, error) {
 	networkData, err := readBounded(network, maxNetworkBytes, "network")
 	if err != nil {
@@ -122,55 +113,127 @@ func NormalizeNetwork(network io.Reader) (Session, error) {
 	if len(body) > maxStorageBytes {
 		return Session{}, errors.New("network observation: decoded body exceeds 65536-byte limit")
 	}
-	var reported fixtureObservation
-	if err := decodeStrict(
-		body,
-		[]string{"schema_version", "region", "variant"},
-		&reported,
-	); err != nil {
+	reported, err := decodeObservation(body)
+	if err != nil {
 		return Session{}, fmt.Errorf("network observation body: %w", err)
 	}
-	if err := reported.validate(); err != nil {
-		return Session{}, fmt.Errorf("network observation body: %w", err)
-	}
-	return Session{Region: reported.Region, Variant: reported.Variant}, nil
+	return reported, nil
 }
 
 // Compare returns stable fields and observed differences in deterministic order.
 func Compare(baseline, treatment Session) Comparison {
 	comparison := Comparison{
-		SchemaVersion:   2,
-		UnchangedFields: make([]string, 0, 2),
-		Differences:     make([]Difference, 0, 2),
+		SchemaVersion:   3,
+		UnchangedFields: make([]string, 0, len(baseline.Fields)),
+		Differences:     make([]Difference, 0),
 		Unknowns:        make([]Unknown, 0),
 	}
-	fields := []struct {
-		name      string
-		baseline  string
-		treatment string
-	}{
-		{name: "region", baseline: baseline.Region, treatment: treatment.Region},
-		{name: "variant", baseline: baseline.Variant, treatment: treatment.Variant},
+	fields := make(map[string]struct{}, len(baseline.Fields)+len(treatment.Fields))
+	for field := range baseline.Fields {
+		fields[field] = struct{}{}
 	}
-	for _, field := range fields {
-		if field.baseline == field.treatment {
-			comparison.UnchangedFields = append(comparison.UnchangedFields, field.name)
+	for field := range treatment.Fields {
+		fields[field] = struct{}{}
+	}
+	names := slices.Sorted(maps.Keys(fields))
+	for _, field := range names {
+		baselineValue, baselineOK := baseline.Fields[field]
+		treatmentValue, treatmentOK := treatment.Fields[field]
+		if baselineOK && treatmentOK && baselineValue == treatmentValue {
+			comparison.UnchangedFields = append(comparison.UnchangedFields, field)
 			continue
 		}
-		comparison.Differences = append(comparison.Differences, Difference{
-			Field:     field.name,
-			Baseline:  field.baseline,
-			Treatment: field.treatment,
-			State:     evidence.Observed,
-			Evidence: []string{
-				"baseline/observations/storage.json#/" + field.name,
-				"baseline/observations/network.json#decoded-body/" + field.name,
-				"treatment/observations/storage.json#/" + field.name,
-				"treatment/observations/network.json#decoded-body/" + field.name,
-			},
-		})
+		comparison.Differences = append(
+			comparison.Differences,
+			observedDifference(field, baselineValue, treatmentValue, baselineOK, treatmentOK),
+		)
 	}
 	return comparison
+}
+
+func observedDifference(
+	field, baseline, treatment string,
+	baselineOK, treatmentOK bool,
+) Difference {
+	difference := Difference{
+		Field:    field,
+		State:    evidence.Observed,
+		Evidence: make([]string, 0, 4),
+	}
+	if baselineOK {
+		difference.Baseline = baseline
+		difference.Evidence = append(
+			difference.Evidence,
+			"baseline/observations/storage.json#/"+field,
+			"baseline/observations/network.json#decoded-body/"+field,
+		)
+	}
+	if treatmentOK {
+		difference.Treatment = treatment
+		difference.Evidence = append(
+			difference.Evidence,
+			"treatment/observations/storage.json#/"+field,
+			"treatment/observations/network.json#decoded-body/"+field,
+		)
+	}
+	switch {
+	case !baselineOK:
+		difference.Kind = "added"
+	case !treatmentOK:
+		difference.Kind = "removed"
+	default:
+		difference.Kind = "changed"
+	}
+	return difference
+}
+
+func decodeObservation(data []byte) (Session, error) {
+	if len(bytes.TrimSpace(data)) == 0 {
+		return Session{}, errors.New("empty input")
+	}
+	if !utf8.Valid(data) {
+		return Session{}, errors.New("input must be valid UTF-8")
+	}
+	if err := jsoncheck.RejectDuplicateKeys(data); err != nil {
+		return Session{}, errors.New("duplicate object key")
+	}
+
+	var raw map[string]json.RawMessage
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	if err := decoder.Decode(&raw); err != nil {
+		return Session{}, fmt.Errorf("decode: %w", err)
+	}
+	var trailing json.RawMessage
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return Session{}, errors.New("trailing data")
+	}
+
+	var schemaVersion int
+	if err := json.Unmarshal(raw["schema_version"], &schemaVersion); err != nil ||
+		schemaVersion != 1 {
+		return Session{}, errors.New("unsupported schema_version")
+	}
+	delete(raw, "schema_version")
+	if len(raw) == 0 || len(raw) > maxFields {
+		return Session{}, fmt.Errorf("expected 1 to %d observation fields", maxFields)
+	}
+
+	fields := make(map[string]string, len(raw))
+	for _, field := range slices.Sorted(maps.Keys(raw)) {
+		encoded := raw[field]
+		if !validFieldName(field) {
+			return Session{}, errors.New("observation field name is invalid")
+		}
+		var value string
+		if err := json.Unmarshal(encoded, &value); err != nil {
+			return Session{}, errors.New("observation field value must be a string")
+		}
+		if !validFieldValue(value) {
+			return Session{}, errors.New("observation field value is invalid")
+		}
+		fields[field] = value
+	}
+	return Session{Fields: fields}, nil
 }
 
 func readBounded(reader io.Reader, limit int64, name string) ([]byte, error) {
@@ -220,17 +283,19 @@ func decodeStrict(data []byte, allowed []string, destination any) error {
 	return nil
 }
 
-func (observation fixtureObservation) validate() error {
-	if observation.SchemaVersion != 1 {
-		return errors.New("unsupported schema_version")
+func validFieldName(value string) bool {
+	if value == "" || len(value) > 128 {
+		return false
 	}
-	if !validFieldValue(observation.Region) {
-		return errors.New("region is invalid")
+	for _, character := range value {
+		isLetter := character >= 'a' && character <= 'z' ||
+			character >= 'A' && character <= 'Z'
+		isDigit := character >= '0' && character <= '9'
+		if !isLetter && !isDigit && !strings.ContainsRune("._:-", character) {
+			return false
+		}
 	}
-	if !validFieldValue(observation.Variant) {
-		return errors.New("variant is invalid")
-	}
-	return nil
+	return true
 }
 
 func validFieldValue(value string) bool {
