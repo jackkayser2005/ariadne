@@ -19,24 +19,30 @@ import (
 	"github.com/jackkayser2005/ariadne/internal/experiment"
 )
 
-const sessionSchemaVersion = 1
+const sessionSchemaVersion = 2
 const networkObservationTimeout = 5 * time.Second
 const networkCleanupTimeout = 5 * time.Second
 
 // SessionRecord describes one isolated fixture execution without persona values.
 type SessionRecord struct {
-	SchemaVersion    int          `json:"schema_version"`
-	Kind             string       `json:"kind"`
-	ManifestName     string       `json:"manifest_name"`
-	DeclaredVariable string       `json:"declared_variable"`
-	PersonaFields    int          `json:"persona_fields"`
-	ADBVersion       string       `json:"adb_version"`
-	Device           string       `json:"device"`
-	Package          string       `json:"package"`
-	StartedAt        time.Time    `json:"started_at"`
-	FinishedAt       time.Time    `json:"finished_at"`
-	Steps            []StepRecord `json:"steps"`
-	Artifacts        []Artifact   `json:"artifacts,omitempty"`
+	SchemaVersion      int          `json:"schema_version"`
+	Kind               string       `json:"kind"`
+	ManifestName       string       `json:"manifest_name"`
+	DeclaredVariable   string       `json:"declared_variable"`
+	PersonaFields      int          `json:"persona_fields"`
+	ADBVersion         string       `json:"adb_version"`
+	Device             string       `json:"device"`
+	Package            string       `json:"package"`
+	AndroidAPI         int          `json:"android_api"`
+	Architecture       string       `json:"architecture"`
+	PackageVersionCode uint64       `json:"package_version_code"`
+	PackageSHA256      string       `json:"package_sha256"`
+	AriadneRevision    string       `json:"ariadne_revision"`
+	AriadneModified    bool         `json:"ariadne_modified"`
+	StartedAt          time.Time    `json:"started_at"`
+	FinishedAt         time.Time    `json:"finished_at"`
+	Steps              []StepRecord `json:"steps"`
+	Artifacts          []Artifact   `json:"artifacts,omitempty"`
 }
 
 // StepRecord describes one session operation without arguments or output.
@@ -88,6 +94,21 @@ func runPairWith(
 	}
 	if !validSelection(target.Version) {
 		return errors.New("adb version is invalid")
+	}
+	if target.AndroidAPI < 1 || target.AndroidAPI > 999 {
+		return errors.New("Android API is invalid")
+	}
+	if !validSelection(target.Architecture) {
+		return errors.New("architecture is invalid")
+	}
+	if target.PackageVersionCode == 0 {
+		return errors.New("package version code is invalid")
+	}
+	if !validSHA256(target.PackageSHA256) {
+		return errors.New("package SHA-256 is invalid")
+	}
+	if !validAriadneRevision(target.AriadneRevision) {
+		return errors.New("Ariadne revision is invalid")
 	}
 	if err := manifest.Validate(); err != nil {
 		return fmt.Errorf("manifest: %w", err)
@@ -149,15 +170,21 @@ func runSession(
 	}
 
 	record := SessionRecord{
-		SchemaVersion:    sessionSchemaVersion,
-		Kind:             kind,
-		ManifestName:     manifest.Name,
-		DeclaredVariable: manifest.Variable,
-		PersonaFields:    len(persona),
-		ADBVersion:       target.Version,
-		Device:           target.Device,
-		Package:          target.Package,
-		StartedAt:        now().UTC(),
+		SchemaVersion:      sessionSchemaVersion,
+		Kind:               kind,
+		ManifestName:       manifest.Name,
+		DeclaredVariable:   manifest.Variable,
+		PersonaFields:      len(persona),
+		ADBVersion:         target.Version,
+		Device:             target.Device,
+		Package:            target.Package,
+		AndroidAPI:         target.AndroidAPI,
+		Architecture:       target.Architecture,
+		PackageVersionCode: target.PackageVersionCode,
+		PackageSHA256:      target.PackageSHA256,
+		AriadneRevision:    target.AriadneRevision,
+		AriadneModified:    target.AriadneModified,
+		StartedAt:          now().UTC(),
 	}
 
 	reset, output, err := runStep(

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime/debug"
 	"time"
 
 	"github.com/jackkayser2005/ariadne/internal/adb"
@@ -110,13 +111,29 @@ func runAndroidCheck(
 		_, _ = fmt.Fprintf(stderr, "ariadne: android check: %v\n", err)
 		return 1
 	}
+	target.AriadneRevision, target.AriadneModified = buildIdentity()
 
 	_, err = fmt.Fprintf(
 		stdout,
-		"android target ready\nadb_version: %s\ndevice: %s\npackage: %s\n",
+		"android target ready\n"+
+			"adb_version: %s\n"+
+			"device: %s\n"+
+			"android_api: %d\n"+
+			"architecture: %s\n"+
+			"package: %s\n"+
+			"package_version_code: %d\n"+
+			"package_sha256: %s\n"+
+			"ariadne_revision: %s\n"+
+			"ariadne_modified: %t\n",
 		target.Version,
 		target.Device,
+		target.AndroidAPI,
+		target.Architecture,
 		target.Package,
+		target.PackageVersionCode,
+		target.PackageSHA256,
+		target.AriadneRevision,
+		target.AriadneModified,
 	)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: android check: write output: %v\n", err)
@@ -167,6 +184,7 @@ func runExperiment(
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment run: %v\n", err)
 		return 1
 	}
+	target.AriadneRevision, target.AriadneModified = buildIdentity()
 	if err := runPair(ctx, *binary, target, manifest, *outputDir); err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment run: %v\n", err)
 		return 1
@@ -182,6 +200,43 @@ func runExperiment(
 		return 1
 	}
 	return 0
+}
+
+func buildIdentity() (string, bool) {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "unknown", false
+	}
+	return identityFromSettings(info.Settings)
+}
+
+func identityFromSettings(settings []debug.BuildSetting) (string, bool) {
+	revision := "unknown"
+	modified := false
+	for _, setting := range settings {
+		switch setting.Key {
+		case "vcs.revision":
+			if validRevision(setting.Value) {
+				revision = setting.Value
+			}
+		case "vcs.modified":
+			modified = setting.Value == "true"
+		}
+	}
+	return revision, modified
+}
+
+func validRevision(value string) bool {
+	if len(value) != 40 && len(value) != 64 {
+		return false
+	}
+	for _, character := range value {
+		if (character < '0' || character > '9') &&
+			(character < 'a' || character > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func runReport(

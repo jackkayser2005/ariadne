@@ -19,7 +19,20 @@ adb -s emulator-5554 install -r \
 
 "${ariadne}" experiment report "${run_dir}"
 
-jq -e '
+fixture_sha256="$(
+  sha256sum fixture/android/app/build/outputs/apk/debug/app-debug.apk |
+    cut -d " " -f 1
+)"
+jq -e \
+  --arg fixture_sha256 "${fixture_sha256}" \
+  --arg ariadne_revision "${GITHUB_SHA}" '
+  (.schema_version == 2) and
+  (.target.android_api == 35) and
+  (.target.architecture == "x86_64") and
+  (.target.package_version_code == 1) and
+  (.target.package_sha256 == $fixture_sha256) and
+  (.target.ariadne_revision == $ariadne_revision) and
+  (.target.ariadne_modified == false) and
   (.artifacts | length == 6) and
   (.comparison.unchanged_fields == ["region"]) and
   (.comparison.differences | length == 1) and

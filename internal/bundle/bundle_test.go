@@ -39,10 +39,15 @@ func TestWrite(t *testing.T) {
 	if err := json.Unmarshal(evidence, &document); err != nil {
 		t.Fatal(err)
 	}
-	if document.SchemaVersion != 1 ||
+	if document.SchemaVersion != 2 ||
 		len(document.Artifacts) != 6 ||
 		len(document.Comparison.Differences) != 1 ||
-		document.Comparison.Differences[0].Field != "variant" {
+		document.Comparison.Differences[0].Field != "variant" ||
+		document.Target.AndroidAPI != 35 ||
+		document.Target.Architecture != "x86_64" ||
+		document.Target.PackageVersionCode != 1 ||
+		document.Target.PackageSHA256 != strings.Repeat("a", 64) ||
+		document.Target.AriadneRevision != strings.Repeat("b", 40) {
 		t.Fatalf("evidence = %#v", document)
 	}
 
@@ -58,6 +63,12 @@ func TestWrite(t *testing.T) {
 		"<code>standard</code>",
 		"<code>personalized</code>",
 		"Verified artifacts: 6",
+		"Android API: 35",
+		"Architecture: <code>x86_64</code>",
+		"Package version code: 1",
+		"Package SHA-256: <code>" + strings.Repeat("a", 64) + "</code>",
+		"Ariadne revision: <code>" + strings.Repeat("b", 40) + "</code>",
+		"Ariadne modified: false",
 	} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("report missing %q:\n%s", expected, text)
@@ -128,7 +139,7 @@ func TestWriteRejectsInvalidSessions(t *testing.T) {
 		{
 			name: "schema",
 			mutate: func(record *adb.SessionRecord) {
-				record.SchemaVersion = 2
+				record.SchemaVersion = 1
 			},
 			want: "schema_version or kind",
 		},
@@ -152,6 +163,34 @@ func TestWriteRejectsInvalidSessions(t *testing.T) {
 				record.PersonaFields = 0
 			},
 			want: "persona_fields",
+		},
+		{
+			name: "Android API",
+			mutate: func(record *adb.SessionRecord) {
+				record.AndroidAPI = 0
+			},
+			want: "android_api",
+		},
+		{
+			name: "package version",
+			mutate: func(record *adb.SessionRecord) {
+				record.PackageVersionCode = 0
+			},
+			want: "package_version_code",
+		},
+		{
+			name: "package digest",
+			mutate: func(record *adb.SessionRecord) {
+				record.PackageSHA256 = "invalid"
+			},
+			want: "package_sha256",
+		},
+		{
+			name: "Ariadne revision",
+			mutate: func(record *adb.SessionRecord) {
+				record.AriadneRevision = "invalid"
+			},
+			want: "ariadne_revision",
 		},
 		{
 			name: "failed step",
@@ -218,17 +257,31 @@ func TestWriteRejectsInvalidSessions(t *testing.T) {
 }
 
 func TestWriteRejectsSessionAndSourceDisagreement(t *testing.T) {
-	t.Run("session metadata", func(t *testing.T) {
-		runDir := makeRun(t, runOptions{
-			mutateTreatment: func(record *adb.SessionRecord) {
+	for _, test := range []struct {
+		name   string
+		mutate func(*adb.SessionRecord)
+	}{
+		{
+			name: "device",
+			mutate: func(record *adb.SessionRecord) {
 				record.Device = "emulator-5556"
 			},
+		},
+		{
+			name: "package digest",
+			mutate: func(record *adb.SessionRecord) {
+				record.PackageSHA256 = strings.Repeat("c", 64)
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			runDir := makeRun(t, runOptions{mutateTreatment: test.mutate})
+			_, err := Write(runDir)
+			if err == nil || !strings.Contains(err.Error(), "session metadata disagree") {
+				t.Fatalf("Write() error = %v", err)
+			}
 		})
-		_, err := Write(runDir)
-		if err == nil || !strings.Contains(err.Error(), "session metadata disagree") {
-			t.Fatalf("Write() error = %v", err)
-		}
-	})
+	}
 
 	t.Run("observation sources", func(t *testing.T) {
 		runDir := makeRun(t, runOptions{
@@ -252,8 +305,8 @@ func TestWriteRejectsInvalidSessionJSON(t *testing.T) {
 			change: func(input string) string {
 				return strings.Replace(
 					input,
-					`"schema_version": 1,`,
-					`"schema_version": 1, "schema_version": 1,`,
+					`"schema_version": 2,`,
+					`"schema_version": 2, "schema_version": 2,`,
 					1,
 				)
 			},
@@ -428,17 +481,22 @@ func writeSession(
 		}
 	}
 	record := adb.SessionRecord{
-		SchemaVersion:    1,
-		Kind:             kind,
-		ManifestName:     "experiment-001-email",
-		DeclaredVariable: "email",
-		PersonaFields:    2,
-		ADBVersion:       "1.0.41",
-		Device:           "emulator-5554",
-		Package:          "dev.ariadne.fixture",
-		StartedAt:        started,
-		FinishedAt:       started.Add(10 * time.Second),
-		Steps:            steps,
+		SchemaVersion:      2,
+		Kind:               kind,
+		ManifestName:       "experiment-001-email",
+		DeclaredVariable:   "email",
+		PersonaFields:      2,
+		ADBVersion:         "1.0.41",
+		Device:             "emulator-5554",
+		Package:            "dev.ariadne.fixture",
+		AndroidAPI:         35,
+		Architecture:       "x86_64",
+		PackageVersionCode: 1,
+		PackageSHA256:      strings.Repeat("a", 64),
+		AriadneRevision:    strings.Repeat("b", 40),
+		StartedAt:          started,
+		FinishedAt:         started.Add(10 * time.Second),
+		Steps:              steps,
 		Artifacts: []adb.Artifact{
 			adbArtifact("http_request", "POST /observe", "observations/network.json", network),
 			adbArtifact(

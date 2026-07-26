@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -93,9 +94,13 @@ func TestRunExperiment(t *testing.T) {
 			t.Fatalf("check() arguments = %q, %q, %q", binary, device, packageName)
 		}
 		return adb.Target{
-			Version: "1.0.41",
-			Device:  device,
-			Package: packageName,
+			Version:            "1.0.41",
+			Device:             device,
+			Package:            packageName,
+			AndroidAPI:         35,
+			Architecture:       "x86_64",
+			PackageVersionCode: 1,
+			PackageSHA256:      strings.Repeat("a", 64),
 		}, nil
 	}
 	runPair := func(
@@ -411,9 +416,13 @@ func TestRunAndroidCheck(t *testing.T) {
 			)
 		}
 		return adb.Target{
-			Version: "1.0.41",
-			Device:  device,
-			Package: packageName,
+			Version:            "1.0.41",
+			Device:             device,
+			Package:            packageName,
+			AndroidAPI:         35,
+			Architecture:       "x86_64",
+			PackageVersionCode: 1,
+			PackageSHA256:      strings.Repeat("a", 64),
 		}, nil
 	}
 	var stdout, stderr bytes.Buffer
@@ -429,10 +438,16 @@ func TestRunAndroidCheck(t *testing.T) {
 		check,
 	)
 
-	const want = "android target ready\n" +
+	want := "android target ready\n" +
 		"adb_version: 1.0.41\n" +
 		"device: emulator-5554\n" +
-		"package: dev.ariadne.fixture\n"
+		"android_api: 35\n" +
+		"architecture: x86_64\n" +
+		"package: dev.ariadne.fixture\n" +
+		"package_version_code: 1\n" +
+		"package_sha256: " + strings.Repeat("a", 64) + "\n" +
+		"ariadne_revision: unknown\n" +
+		"ariadne_modified: false\n"
 	if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
 		t.Fatalf(
 			"runAndroidCheck() = %d, stdout=%q, stderr=%q",
@@ -531,6 +546,25 @@ func TestRunAndroidCheckFailures(t *testing.T) {
 			)
 		}
 	})
+}
+
+func TestIdentityFromSettings(t *testing.T) {
+	revision := strings.Repeat("a", 40)
+	gotRevision, modified := identityFromSettings([]debug.BuildSetting{
+		{Key: "vcs.revision", Value: revision},
+		{Key: "vcs.modified", Value: "true"},
+	})
+	if gotRevision != revision || !modified {
+		t.Fatalf("identityFromSettings() = %q, %t", gotRevision, modified)
+	}
+
+	gotRevision, modified = identityFromSettings([]debug.BuildSetting{
+		{Key: "vcs.revision", Value: "invalid"},
+		{Key: "vcs.modified", Value: "false"},
+	})
+	if gotRevision != "unknown" || modified {
+		t.Fatalf("identityFromSettings() = %q, %t", gotRevision, modified)
+	}
 }
 
 func TestRunReadFailure(t *testing.T) {

@@ -20,11 +20,7 @@ import (
 
 func TestRunPair(t *testing.T) {
 	manifest := sessionManifest()
-	target := Target{
-		Version: "1.0.41",
-		Device:  "emulator-5554",
-		Package: "dev.ariadne.fixture",
-	}
+	target := sessionTarget()
 	var calls [][]string
 	captures := [][]byte{
 		[]byte(`{"schema_version":1,"region":"us-east","variant":"standard"}`),
@@ -186,11 +182,7 @@ func TestRunPairRejectsInvalidStorageObservation(t *testing.T) {
 			err := runPairWith(
 				context.Background(),
 				"adb",
-				Target{
-					Version: "1.0.41",
-					Device:  "emulator-5554",
-					Package: "dev.ariadne.fixture",
-				},
+				sessionTarget(),
 				sessionManifest(),
 				outputDir,
 				run,
@@ -242,11 +234,7 @@ func TestRunPairRecordsStorageCaptureFailure(t *testing.T) {
 	err := runPairWith(
 		context.Background(),
 		"adb",
-		Target{
-			Version: "1.0.41",
-			Device:  "emulator-5554",
-			Package: "dev.ariadne.fixture",
-		},
+		sessionTarget(),
 		sessionManifest(),
 		outputDir,
 		run,
@@ -285,11 +273,7 @@ func TestRunPairCleansNetworkMappingAfterMissingObservation(t *testing.T) {
 	err := runPairWith(
 		ctx,
 		"adb",
-		Target{
-			Version: "1.0.41",
-			Device:  "emulator-5554",
-			Package: "dev.ariadne.fixture",
-		},
+		sessionTarget(),
 		sessionManifest(),
 		outputDir,
 		run,
@@ -338,11 +322,7 @@ func TestRunPairCleansNetworkMappingAfterConnectFailure(t *testing.T) {
 	err := runPairWith(
 		context.Background(),
 		"adb",
-		Target{
-			Version: "1.0.41",
-			Device:  "emulator-5554",
-			Package: "dev.ariadne.fixture",
-		},
+		sessionTarget(),
 		sessionManifest(),
 		outputDir,
 		run,
@@ -388,11 +368,7 @@ func TestRunPairReportsNetworkCleanupFailure(t *testing.T) {
 	err := runPairWith(
 		context.Background(),
 		"adb",
-		Target{
-			Version: "1.0.41",
-			Device:  "emulator-5554",
-			Package: "dev.ariadne.fixture",
-		},
+		sessionTarget(),
 		sessionManifest(),
 		outputDir,
 		run,
@@ -422,11 +398,7 @@ func TestRunPairRejectsUnsafePersonaBeforeCreatingOutput(t *testing.T) {
 	err := runPairWith(
 		context.Background(),
 		"adb",
-		Target{
-			Version: "1.0.41",
-			Device:  "emulator-5554",
-			Package: "dev.ariadne.fixture",
-		},
+		sessionTarget(),
 		manifest,
 		outputDir,
 		func(context.Context, string, ...string) ([]byte, error) {
@@ -447,11 +419,17 @@ func TestRunPairRejectsUnsafePersonaBeforeCreatingOutput(t *testing.T) {
 }
 
 func TestRunPairRejectsInvalidConfiguration(t *testing.T) {
-	validTarget := Target{
-		Version: "1.0.41",
-		Device:  "emulator-5554",
-		Package: "dev.ariadne.fixture",
-	}
+	validTarget := sessionTarget()
+	invalidAPI := validTarget
+	invalidAPI.AndroidAPI = 0
+	invalidArchitecture := validTarget
+	invalidArchitecture.Architecture = ""
+	invalidVersionCode := validTarget
+	invalidVersionCode.PackageVersionCode = 0
+	invalidPackageDigest := validTarget
+	invalidPackageDigest.PackageSHA256 = "invalid"
+	invalidRevision := validTarget
+	invalidRevision.AriadneRevision = "invalid"
 	tests := []struct {
 		name      string
 		binary    string
@@ -490,6 +468,46 @@ func TestRunPairRejectsInvalidConfiguration(t *testing.T) {
 			manifest:  sessionManifest(),
 			outputDir: "run",
 			want:      "version",
+		},
+		{
+			name:      "Android API",
+			binary:    "adb",
+			target:    invalidAPI,
+			manifest:  sessionManifest(),
+			outputDir: "run",
+			want:      "Android API",
+		},
+		{
+			name:      "architecture",
+			binary:    "adb",
+			target:    invalidArchitecture,
+			manifest:  sessionManifest(),
+			outputDir: "run",
+			want:      "architecture",
+		},
+		{
+			name:      "package version",
+			binary:    "adb",
+			target:    invalidVersionCode,
+			manifest:  sessionManifest(),
+			outputDir: "run",
+			want:      "package version",
+		},
+		{
+			name:      "package digest",
+			binary:    "adb",
+			target:    invalidPackageDigest,
+			manifest:  sessionManifest(),
+			outputDir: "run",
+			want:      "SHA-256",
+		},
+		{
+			name:      "Ariadne revision",
+			binary:    "adb",
+			target:    invalidRevision,
+			manifest:  sessionManifest(),
+			outputDir: "run",
+			want:      "revision",
 		},
 		{
 			name:      "manifest",
@@ -538,11 +556,7 @@ func TestRunPairRefusesExistingOutput(t *testing.T) {
 	err := runPairWith(
 		context.Background(),
 		"adb",
-		Target{
-			Version: "1.0.41",
-			Device:  "emulator-5554",
-			Package: "dev.ariadne.fixture",
-		},
+		sessionTarget(),
 		sessionManifest(),
 		outputDir,
 		func(context.Context, string, ...string) ([]byte, error) {
@@ -565,11 +579,7 @@ func TestRunPairReportsOutputParentFailure(t *testing.T) {
 	err := RunPair(
 		context.Background(),
 		"adb",
-		Target{
-			Version: "1.0.41",
-			Device:  "emulator-5554",
-			Package: "dev.ariadne.fixture",
-		},
+		sessionTarget(),
 		sessionManifest(),
 		filepath.Join(parent, "run"),
 	)
@@ -590,11 +600,7 @@ func TestRunPairRecordsFailureAndStops(t *testing.T) {
 	err := runPairWith(
 		context.Background(),
 		"adb",
-		Target{
-			Version: "1.0.41",
-			Device:  "emulator-5554",
-			Package: "dev.ariadne.fixture",
-		},
+		sessionTarget(),
 		sessionManifest(),
 		outputDir,
 		run,
@@ -626,11 +632,7 @@ func TestRunPairRejectsUnexpectedResetOutput(t *testing.T) {
 	err := runPairWith(
 		context.Background(),
 		"adb",
-		Target{
-			Version: "1.0.41",
-			Device:  "emulator-5554",
-			Package: "dev.ariadne.fixture",
-		},
+		sessionTarget(),
 		sessionManifest(),
 		outputDir,
 		func(context.Context, string, ...string) ([]byte, error) {
@@ -682,6 +684,19 @@ func sessionManifest() experiment.Manifest {
 			"email":  "treatment@example.invalid",
 			"region": "us-east",
 		},
+	}
+}
+
+func sessionTarget() Target {
+	return Target{
+		Version:            "1.0.41",
+		Device:             "emulator-5554",
+		Package:            "dev.ariadne.fixture",
+		AndroidAPI:         35,
+		Architecture:       "x86_64",
+		PackageVersionCode: 1,
+		PackageSHA256:      strings.Repeat("a", 64),
+		AriadneRevision:    strings.Repeat("b", 40),
 	}
 }
 

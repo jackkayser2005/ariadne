@@ -11,6 +11,7 @@ import (
 )
 
 func TestCheck(t *testing.T) {
+	const packageDigest = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	var calls [][]string
 	run := func(_ context.Context, binary string, args ...string) ([]byte, error) {
 		calls = append(calls, append([]string{binary}, args...))
@@ -19,9 +20,31 @@ func TestCheck(t *testing.T) {
 			return []byte("Android Debug Bridge version 1.0.41\nVersion 35.0.2\n"), nil
 		case 2:
 			return []byte("device\n"), nil
-		default:
+		case 3:
 			return []byte("package:/data/app/fixture/base.apk\n"), nil
+		case 4:
+			return []byte("35\n"), nil
+		case 5:
+			return []byte("x86_64\n"), nil
+		default:
+			return []byte("package:dev.ariadne.fixture versionCode:1\n"), nil
 		}
+	}
+	hash := func(
+		_ context.Context,
+		binary, device, packagePath string,
+	) (string, error) {
+		if binary != "adb" ||
+			device != "emulator-5554" ||
+			packagePath != "/data/app/fixture/base.apk" {
+			t.Fatalf(
+				"hash() arguments = %q, %q, %q",
+				binary,
+				device,
+				packagePath,
+			)
+		}
+		return packageDigest, nil
 	}
 
 	target, err := checkWith(
@@ -30,13 +53,18 @@ func TestCheck(t *testing.T) {
 		"emulator-5554",
 		"dev.ariadne.fixture",
 		run,
+		hash,
 	)
 	if err != nil {
 		t.Fatalf("checkWith() error = %v", err)
 	}
 	if target.Version != "1.0.41" ||
 		target.Device != "emulator-5554" ||
-		target.Package != "dev.ariadne.fixture" {
+		target.Package != "dev.ariadne.fixture" ||
+		target.AndroidAPI != 35 ||
+		target.Architecture != "x86_64" ||
+		target.PackageVersionCode != 1 ||
+		target.PackageSHA256 != packageDigest {
 		t.Fatalf("checkWith() target = %#v", target)
 	}
 
@@ -44,6 +72,13 @@ func TestCheck(t *testing.T) {
 		{"adb", "version"},
 		{"adb", "-s", "emulator-5554", "get-state"},
 		{"adb", "-s", "emulator-5554", "shell", "pm", "path", "dev.ariadne.fixture"},
+		{"adb", "-s", "emulator-5554", "shell", "getprop", "ro.build.version.sdk"},
+		{"adb", "-s", "emulator-5554", "shell", "getprop", "ro.product.cpu.abi"},
+		{
+			"adb", "-s", "emulator-5554",
+			"shell", "pm", "list", "packages", "--show-versioncode",
+			"dev.ariadne.fixture",
+		},
 	}
 	if !reflect.DeepEqual(calls, wantCalls) {
 		t.Fatalf("checkWith() calls = %#v, want %#v", calls, wantCalls)
@@ -84,6 +119,10 @@ func TestCheckRejectsMissingSelection(t *testing.T) {
 				test.device,
 				test.packageName,
 				run,
+				func(context.Context, string, string, string) (string, error) {
+					t.Fatal("hash called for invalid input")
+					return "", nil
+				},
 			)
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("checkWith() error = %v, want containing %q", err, test.want)
@@ -101,6 +140,7 @@ func TestCheckFailures(t *testing.T) {
 	tests := []struct {
 		name    string
 		run     commandRunner
+		hash    packageHasher
 		wantErr string
 	}{
 		{
@@ -151,16 +191,113 @@ func TestCheckFailures(t *testing.T) {
 			),
 			wantErr: "not installed",
 		},
+		{
+			name: "split package",
+			run: sequence(
+				result("Android Debug Bridge version 1.0.41\n"),
+				result("device\n"),
+				result("package:/base.apk\npackage:/split.apk\n"),
+			),
+			wantErr: "one visible APK",
+		},
+		{
+			name: "Android API command",
+			run: sequence(
+				result("Android Debug Bridge version 1.0.41\n"),
+				result("device\n"),
+				result("package:/base.apk\n"),
+				resultError(secret, errors.New("exit status 1")),
+			),
+			wantErr: "read Android API",
+		},
+		{
+			name: "Android API output",
+			run: sequence(
+				result("Android Debug Bridge version 1.0.41\n"),
+				result("device\n"),
+				result("package:/base.apk\n"),
+				result(secret),
+			),
+			wantErr: "unexpected output",
+		},
+		{
+			name: "architecture command",
+			run: sequence(
+				result("Android Debug Bridge version 1.0.41\n"),
+				result("device\n"),
+				result("package:/base.apk\n"),
+				result("35\n"),
+				resultError(secret, errors.New("exit status 1")),
+			),
+			wantErr: "read architecture",
+		},
+		{
+			name: "architecture output",
+			run: sequence(
+				result("Android Debug Bridge version 1.0.41\n"),
+				result("device\n"),
+				result("package:/base.apk\n"),
+				result("35\n"),
+				result(secret+"/"),
+			),
+			wantErr: "architecture",
+		},
+		{
+			name: "package version command",
+			run: sequence(
+				result("Android Debug Bridge version 1.0.41\n"),
+				result("device\n"),
+				result("package:/base.apk\n"),
+				result("35\n"),
+				result("x86_64\n"),
+				resultError(secret, errors.New("exit status 1")),
+			),
+			wantErr: "read package version",
+		},
+		{
+			name: "package version output",
+			run: sequence(
+				result("Android Debug Bridge version 1.0.41\n"),
+				result("device\n"),
+				result("package:/base.apk\n"),
+				result("35\n"),
+				result("x86_64\n"),
+				result(secret),
+			),
+			wantErr: "package version",
+		},
+		{
+			name: "package hash",
+			run: sequence(
+				result("Android Debug Bridge version 1.0.41\n"),
+				result("device\n"),
+				result("package:/base.apk\n"),
+				result("35\n"),
+				result("x86_64\n"),
+				result("package:dev.ariadne.fixture versionCode:1\n"),
+			),
+			hash: func(context.Context, string, string, string) (string, error) {
+				return "", errors.New("exit status 1")
+			},
+			wantErr: "hash installed package",
+		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			hash := test.hash
+			if hash == nil {
+				hash = func(context.Context, string, string, string) (string, error) {
+					return strings.Repeat("a", 64), nil
+				}
+			}
 			_, err := checkWith(
 				context.Background(),
 				"adb",
 				"emulator-5554",
 				"dev.ariadne.fixture",
 				test.run,
+				hash,
 			)
 			if err == nil || !strings.Contains(err.Error(), test.wantErr) {
 				t.Fatalf("checkWith() error = %v, want containing %q", err, test.wantErr)
@@ -199,6 +336,48 @@ func TestRunCommand(t *testing.T) {
 	}
 }
 
+func TestHashCommand(t *testing.T) {
+	digest, err := hashCommand(
+		context.Background(),
+		os.Args[0],
+		64,
+		"-test.run=TestADBHelperProcess",
+		"--",
+		"digest",
+	)
+	if err != nil {
+		t.Fatalf("hashCommand() error = %v", err)
+	}
+	const want = "f16d05ec6b29248d2c61adb1e9263f78e4f7bace1b955014a2d17872cfe4064d"
+	if digest != want {
+		t.Fatalf("hashCommand() = %q, want %q", digest, want)
+	}
+
+	_, err = hashCommand(
+		context.Background(),
+		os.Args[0],
+		8,
+		"-test.run=TestADBHelperProcess",
+		"--",
+		"oversized-digest",
+	)
+	if err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("hashCommand() error = %v, want size error", err)
+	}
+
+	_, err = hashCommand(
+		context.Background(),
+		os.Args[0],
+		8,
+		"-test.run=TestADBHelperProcess",
+		"--",
+		"empty-digest",
+	)
+	if err == nil || !strings.Contains(err.Error(), "empty") {
+		t.Fatalf("hashCommand() error = %v, want empty error", err)
+	}
+}
+
 func TestADBHelperProcess(t *testing.T) {
 	marker := os.Args[len(os.Args)-1]
 	switch marker {
@@ -210,6 +389,14 @@ func TestADBHelperProcess(t *testing.T) {
 		os.Exit(0)
 	case "exit-seven":
 		os.Exit(7)
+	case "digest":
+		fmt.Print("fixture")
+		os.Exit(0)
+	case "oversized-digest":
+		fmt.Print("123456789")
+		os.Exit(0)
+	case "empty-digest":
+		os.Exit(0)
 	}
 }
 
