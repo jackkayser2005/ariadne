@@ -34,13 +34,14 @@ jq -e \
   (.target.ariadne_revision == $ariadne_revision) and
   (.target.ariadne_modified == false) and
   (.artifacts | length == 6) and
-  (.comparison.schema_version == 2) and
+  (.comparison.schema_version == 3) and
   (.comparison.unchanged_fields == ["region"]) and
   (.comparison.differences | length == 1) and
   (.comparison.unknowns == []) and
   (
     .comparison.differences[0] |
     .field == "variant" and
+    .kind == "changed" and
     .baseline == "standard" and
     .treatment == "personalized" and
     .state == "observed"
@@ -112,7 +113,7 @@ jq -e '
   (.schema_version == 3) and
   (.manifest_name == "experiment-001-email-storage-gap") and
   (.artifacts | length == 5) and
-  (.comparison.schema_version == 2) and
+  (.comparison.schema_version == 3) and
   (.comparison.unchanged_fields == []) and
   (.comparison.differences == []) and
   (.comparison.unknowns | map(.field) == ["region", "variant"]) and

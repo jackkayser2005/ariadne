@@ -10,8 +10,10 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -122,10 +124,11 @@ func Write(runDir string) (Summary, error) {
 			"removed HTTP transport fields from semantic comparison",
 		}
 	} else {
-		if _, err := analysis.NormalizeNetwork(bytes.NewReader(treatment.network)); err != nil {
+		treatmentAvailable, err := analysis.NormalizeNetwork(bytes.NewReader(treatment.network))
+		if err != nil {
 			return Summary{}, fmt.Errorf("treatment: %w", err)
 		}
-		comparison = incompleteTreatmentComparison()
+		comparison = incompleteTreatmentComparison(baselineNormalized, treatmentAvailable)
 		normalizations = []string{
 			"decoded available network body_base64",
 			"required baseline storage and network payload equality",
@@ -415,22 +418,40 @@ func sessionComplete(record adb.SessionRecord) bool {
 	return record.SchemaVersion == 2 || record.Status == "complete"
 }
 
-func incompleteTreatmentComparison() analysis.Comparison {
-	unknowns := make([]analysis.Unknown, 0, 2)
-	for _, field := range []string{"region", "variant"} {
+func incompleteTreatmentComparison(baseline, treatment analysis.Session) analysis.Comparison {
+	fields := make(map[string]struct{}, len(baseline.Fields)+len(treatment.Fields))
+	for field := range baseline.Fields {
+		fields[field] = struct{}{}
+	}
+	for field := range treatment.Fields {
+		fields[field] = struct{}{}
+	}
+
+	unknowns := make([]analysis.Unknown, 0, len(fields))
+	for _, field := range slices.Sorted(maps.Keys(fields)) {
+		references := make([]string, 0, 3)
+		if _, ok := baseline.Fields[field]; ok {
+			references = append(
+				references,
+				"baseline/observations/storage.json#/"+field,
+				"baseline/observations/network.json#decoded-body/"+field,
+			)
+		}
+		if _, ok := treatment.Fields[field]; ok {
+			references = append(
+				references,
+				"treatment/observations/network.json#decoded-body/"+field,
+			)
+		}
 		unknowns = append(unknowns, analysis.Unknown{
-			Field:  field,
-			State:  evidence.Unknown,
-			Reason: "treatment storage observation was not captured",
-			Evidence: []string{
-				"baseline/observations/storage.json#/" + field,
-				"baseline/observations/network.json#decoded-body/" + field,
-				"treatment/observations/network.json#decoded-body/" + field,
-			},
+			Field:    field,
+			State:    evidence.Unknown,
+			Reason:   "treatment storage observation was not captured",
+			Evidence: references,
 		})
 	}
 	return analysis.Comparison{
-		SchemaVersion:   2,
+		SchemaVersion:   3,
 		UnchangedFields: make([]string, 0),
 		Differences:     make([]analysis.Difference, 0),
 		Unknowns:        unknowns,
@@ -530,8 +551,13 @@ func renderReport(evidence document) []byte {
 	for _, difference := range evidence.Comparison.Differences {
 		fmt.Fprintf(&report, "\n### %s\n\n", code(difference.Field))
 		fmt.Fprintf(&report, "- State: %s\n", code(string(difference.State)))
-		fmt.Fprintf(&report, "- Baseline: %s\n", code(difference.Baseline))
-		fmt.Fprintf(&report, "- Treatment: %s\n", code(difference.Treatment))
+		fmt.Fprintf(&report, "- Kind: %s\n", code(difference.Kind))
+		if difference.Kind != "added" {
+			fmt.Fprintf(&report, "- Baseline: %s\n", code(difference.Baseline))
+		}
+		if difference.Kind != "removed" {
+			fmt.Fprintf(&report, "- Treatment: %s\n", code(difference.Treatment))
+		}
 		report.WriteString("- Evidence:\n")
 		for _, reference := range difference.Evidence {
 			fmt.Fprintf(&report, "  - %s\n", code(reference))
