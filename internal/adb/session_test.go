@@ -120,7 +120,10 @@ func TestRunPair(t *testing.T) {
 			t.Fatal(err)
 		}
 		text := string(data)
-		if !strings.Contains(text, `"kind": "`+kind+`"`) ||
+		if !strings.Contains(text, `"schema_version": 3`) ||
+			!strings.Contains(text, `"kind": "`+kind+`"`) ||
+			!strings.Contains(text, `"status": "complete"`) ||
+			strings.Contains(text, `"failure_stage"`) ||
 			!strings.Contains(text, `"exit_code": 0`) ||
 			!strings.Contains(text, `"source": "files/observation.json"`) ||
 			!strings.Contains(text, `"source": "POST /observe"`) ||
@@ -200,7 +203,9 @@ func TestRunPairRejectsInvalidStorageObservation(t *testing.T) {
 				t.Fatal(readErr)
 			}
 			if !strings.Contains(string(data), `"name": "capture_storage"`) ||
-				!strings.Contains(string(data), `"status": "error"`) {
+				!strings.Contains(string(data), `"status": "error"`) ||
+				!strings.Contains(string(data), `"status": "incomplete"`) ||
+				!strings.Contains(string(data), `"failure_stage": "capture_storage"`) {
 				t.Fatalf("failure metadata = %s", data)
 			}
 		})
@@ -295,7 +300,9 @@ func TestRunPairCleansNetworkMappingAfterMissingObservation(t *testing.T) {
 	text := string(data)
 	if !strings.Contains(text, `"name": "capture_network"`) ||
 		!strings.Contains(text, `"name": "disconnect_network"`) ||
-		!strings.Contains(text, `"status": "error"`) {
+		!strings.Contains(text, `"status": "error"`) ||
+		!strings.Contains(text, `"status": "incomplete"`) ||
+		!strings.Contains(text, `"failure_stage": "capture_network"`) {
 		t.Fatalf("failure metadata = %s", data)
 	}
 }
@@ -383,7 +390,9 @@ func TestRunPairReportsNetworkCleanupFailure(t *testing.T) {
 		t.Fatal(readErr)
 	}
 	if !strings.Contains(string(data), `"name": "disconnect_network"`) ||
-		!strings.Contains(string(data), `"status": "error"`) {
+		!strings.Contains(string(data), `"status": "error"`) ||
+		!strings.Contains(string(data), `"status": "incomplete"`) ||
+		!strings.Contains(string(data), `"failure_stage": "disconnect_network"`) {
 		t.Fatalf("failure metadata = %s", data)
 	}
 }
@@ -621,6 +630,8 @@ func TestRunPairRecordsFailureAndStops(t *testing.T) {
 		t.Fatal(readErr)
 	}
 	if !strings.Contains(string(data), `"status": "error"`) ||
+		!strings.Contains(string(data), `"status": "incomplete"`) ||
+		!strings.Contains(string(data), `"failure_stage": "reset"`) ||
 		!strings.Contains(string(data), `"exit_code": -1`) ||
 		strings.Contains(string(data), secret) {
 		t.Fatalf("failure metadata = %s", data)
@@ -651,9 +662,23 @@ func TestFinishSessionReportsWriteFailure(t *testing.T) {
 		filepath.Join(t.TempDir(), "missing"),
 		&record,
 		time.Now,
+		"",
 		nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "write session metadata") {
+		t.Fatalf("finishSession() error = %v", err)
+	}
+}
+
+func TestFinishSessionRejectsInvalidFailureStage(t *testing.T) {
+	err := finishSession(
+		t.TempDir(),
+		&SessionRecord{},
+		time.Now,
+		"",
+		errors.New("failed"),
+	)
+	if err == nil || !strings.Contains(err.Error(), "failure stage") {
 		t.Fatalf("finishSession() error = %v", err)
 	}
 }

@@ -19,9 +19,14 @@ import (
 	"github.com/jackkayser2005/ariadne/internal/experiment"
 )
 
-const sessionSchemaVersion = 2
+const sessionSchemaVersion = 3
 const networkObservationTimeout = 5 * time.Second
 const networkCleanupTimeout = 5 * time.Second
+
+const (
+	sessionStatusComplete   = "complete"
+	sessionStatusIncomplete = "incomplete"
+)
 
 // SessionRecord describes one isolated fixture execution without persona values.
 type SessionRecord struct {
@@ -39,6 +44,8 @@ type SessionRecord struct {
 	PackageSHA256      string       `json:"package_sha256"`
 	AriadneRevision    string       `json:"ariadne_revision"`
 	AriadneModified    bool         `json:"ariadne_modified"`
+	Status             string       `json:"status"`
+	FailureStage       string       `json:"failure_stage,omitempty"`
 	StartedAt          time.Time    `json:"started_at"`
 	FinishedAt         time.Time    `json:"finished_at"`
 	Steps              []StepRecord `json:"steps"`
@@ -202,7 +209,13 @@ func runSession(
 		err = errors.New("reset output was not recognized")
 	}
 	if err != nil {
-		return finishSession(sessionDir, &record, now, fmt.Errorf("%s: reset package: %w", kind, err))
+		return finishSession(
+			sessionDir,
+			&record,
+			now,
+			"reset",
+			fmt.Errorf("%s: reset package: %w", kind, err),
+		)
 	}
 
 	networkCollector, err := collector.Start()
@@ -211,6 +224,7 @@ func runSession(
 			sessionDir,
 			&record,
 			now,
+			"connect_network",
 			fmt.Errorf("%s: start network collector: %w", kind, err),
 		)
 	}
@@ -227,8 +241,10 @@ func runSession(
 	)
 	record.Steps = append(record.Steps, connect)
 	var sessionErr error
+	failureStage := ""
 	if err != nil {
 		sessionErr = fmt.Errorf("%s: connect network collector: %w", kind, err)
+		failureStage = "connect_network"
 	}
 
 	if sessionErr == nil {
@@ -251,6 +267,7 @@ func runSession(
 			start, _, err := runStep(ctx, run, now, "start", binary, args...)
 			record.Steps = append(record.Steps, start)
 			if err != nil {
+				failureStage = "start"
 				return fmt.Errorf("%s: start fixture: %w", kind, err)
 			}
 
@@ -269,6 +286,7 @@ func runSession(
 			}
 			record.Steps = append(record.Steps, captureNetwork)
 			if err != nil {
+				failureStage = "capture_network"
 				return fmt.Errorf("%s: capture network: %w", kind, err)
 			}
 
@@ -276,6 +294,7 @@ func runSession(
 			if err != nil {
 				record.Steps[len(record.Steps)-1].Status = "error"
 				record.Steps[len(record.Steps)-1].ExitCode = -1
+				failureStage = "capture_network"
 				return fmt.Errorf("%s: encode network observation: %w", kind, err)
 			}
 			data = append(data, '\n')
@@ -289,6 +308,7 @@ func runSession(
 			if err != nil {
 				record.Steps[len(record.Steps)-1].Status = "error"
 				record.Steps[len(record.Steps)-1].ExitCode = -1
+				failureStage = "capture_network"
 				return fmt.Errorf("%s: capture network: %w", kind, err)
 			}
 			record.Artifacts = append(record.Artifacts, artifact)
@@ -305,12 +325,14 @@ func runSession(
 			)
 			record.Steps = append(record.Steps, captureStorage)
 			if err != nil {
+				failureStage = "capture_storage"
 				return fmt.Errorf("%s: capture storage: %w", kind, err)
 			}
 			artifact, err = writeStorageObservation(sessionDir, output)
 			if err != nil {
 				record.Steps[len(record.Steps)-1].Status = "error"
 				record.Steps[len(record.Steps)-1].ExitCode = -1
+				failureStage = "capture_storage"
 				return fmt.Errorf("%s: capture storage: %w", kind, err)
 			}
 			record.Artifacts = append(record.Artifacts, artifact)
@@ -336,14 +358,20 @@ func runSession(
 	if disconnectErr != nil {
 		cleanupErr := fmt.Errorf("%s: disconnect network collector: %w", kind, disconnectErr)
 		sessionErr = errors.Join(sessionErr, cleanupErr)
+		if failureStage == "" {
+			failureStage = "disconnect_network"
+		}
 	}
 	if err := networkCollector.Close(); err != nil {
 		sessionErr = errors.Join(
 			sessionErr,
 			fmt.Errorf("%s: close network collector: %w", kind, err),
 		)
+		if failureStage == "" {
+			failureStage = "disconnect_network"
+		}
 	}
-	return finishSession(sessionDir, &record, now, sessionErr)
+	return finishSession(sessionDir, &record, now, failureStage, sessionErr)
 }
 
 func writeStorageObservation(sessionDir string, data []byte) (Artifact, error) {
@@ -411,8 +439,19 @@ func finishSession(
 	sessionDir string,
 	record *SessionRecord,
 	now func() time.Time,
+	failureStage string,
 	sessionErr error,
 ) error {
+	if sessionErr == nil {
+		record.Status = sessionStatusComplete
+		record.FailureStage = ""
+	} else {
+		if !ValidFailureStage(failureStage) {
+			return errors.New("record incomplete session: failure stage is invalid")
+		}
+		record.Status = sessionStatusIncomplete
+		record.FailureStage = failureStage
+	}
 	record.FinishedAt = now().UTC()
 	data, err := json.MarshalIndent(record, "", "  ")
 	if err != nil {
@@ -423,6 +462,21 @@ func finishSession(
 		return fmt.Errorf("write session metadata: %w", err)
 	}
 	return sessionErr
+}
+
+// ValidFailureStage reports whether stage is a bounded session failure category.
+func ValidFailureStage(stage string) bool {
+	switch stage {
+	case "reset",
+		"connect_network",
+		"start",
+		"capture_network",
+		"capture_storage",
+		"disconnect_network":
+		return true
+	default:
+		return false
+	}
 }
 
 func commandExitCode(err error) int {

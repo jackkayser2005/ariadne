@@ -208,8 +208,10 @@ completed directory contains:
 Session metadata includes the selected device, Android API, architecture,
 package version and SHA-256, Ariadne Git revision and modified state, ADB
 version, timestamps, step status, exit codes, and a SHA-256 record for each
-captured artifact. It excludes persona values, command arguments, raw APK
-bytes, and raw ADB output.
+captured artifact. Session schema 3 also records `status` as `complete` or
+`incomplete`. Incomplete sessions record only a controlled `failure_stage`;
+they never persist raw errors. Metadata excludes persona values, command
+arguments, raw APK bytes, and raw ADB output.
 
 The storage artifact is the exact bounded JSON read from the fixture's private
 `files/observation.json` through Android's `run-as` command. Capture fails if

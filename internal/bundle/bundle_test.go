@@ -81,6 +81,14 @@ func TestWrite(t *testing.T) {
 	}
 }
 
+func TestWriteAcceptsLegacySessions(t *testing.T) {
+	runDir := makeRun(t, runOptions{sessionSchemaVersion: 2})
+
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestWriteRequiresRunDirectory(t *testing.T) {
 	_, err := Write(" \t")
 	if err == nil || !strings.Contains(err.Error(), "run directory is required") {
@@ -193,6 +201,36 @@ func TestWriteRejectsInvalidSessions(t *testing.T) {
 			want: "ariadne_revision",
 		},
 		{
+			name: "invalid status",
+			mutate: func(record *adb.SessionRecord) {
+				record.Status = "other"
+			},
+			want: "session status is invalid",
+		},
+		{
+			name: "complete with failure stage",
+			mutate: func(record *adb.SessionRecord) {
+				record.FailureStage = "capture_storage"
+			},
+			want: "complete session failure_stage is invalid",
+		},
+		{
+			name: "incomplete with invalid failure stage",
+			mutate: func(record *adb.SessionRecord) {
+				record.Status = "incomplete"
+				record.FailureStage = "other"
+			},
+			want: "incomplete session failure_stage is invalid",
+		},
+		{
+			name: "incomplete session",
+			mutate: func(record *adb.SessionRecord) {
+				record.Status = "incomplete"
+				record.FailureStage = "capture_storage"
+			},
+			want: "session is incomplete at capture_storage",
+		},
+		{
 			name: "failed step",
 			mutate: func(record *adb.SessionRecord) {
 				record.Steps[2].Status = "error"
@@ -256,6 +294,21 @@ func TestWriteRejectsInvalidSessions(t *testing.T) {
 	}
 }
 
+func TestWriteRejectsMixedSessionSchemas(t *testing.T) {
+	runDir := makeRun(t, runOptions{
+		mutateTreatment: func(record *adb.SessionRecord) {
+			record.SchemaVersion = 2
+			record.Status = ""
+		},
+	})
+
+	_, err := Write(runDir)
+	if err == nil || !strings.Contains(err.Error(), "session metadata disagree") {
+		t.Fatalf("Write() error = %v", err)
+	}
+	assertNoOutputs(t, runDir)
+}
+
 func TestWriteRejectsSessionAndSourceDisagreement(t *testing.T) {
 	for _, test := range []struct {
 		name   string
@@ -305,8 +358,8 @@ func TestWriteRejectsInvalidSessionJSON(t *testing.T) {
 			change: func(input string) string {
 				return strings.Replace(
 					input,
-					`"schema_version": 2,`,
-					`"schema_version": 2, "schema_version": 2,`,
+					`"schema_version": 3,`,
+					`"schema_version": 3, "schema_version": 3,`,
 					1,
 				)
 			},
@@ -411,6 +464,7 @@ func TestWriteNoDifferences(t *testing.T) {
 }
 
 type runOptions struct {
+	sessionSchemaVersion int
 	treatmentStorage     string
 	treatmentNetworkBody string
 	mutateBaseline       func(*adb.SessionRecord)
@@ -420,6 +474,9 @@ type runOptions struct {
 func makeRun(t *testing.T, options runOptions) string {
 	t.Helper()
 	runDir := filepath.Join(t.TempDir(), "run")
+	if options.sessionSchemaVersion == 0 {
+		options.sessionSchemaVersion = 3
+	}
 	if options.treatmentStorage == "" {
 		options.treatmentStorage = treatmentObservation
 	}
@@ -432,6 +489,7 @@ func makeRun(t *testing.T, options runOptions) string {
 		"baseline",
 		baselineObservation,
 		baselineObservation,
+		options.sessionSchemaVersion,
 		options.mutateBaseline,
 	)
 	writeSession(
@@ -440,6 +498,7 @@ func makeRun(t *testing.T, options runOptions) string {
 		"treatment",
 		options.treatmentStorage,
 		options.treatmentNetworkBody,
+		options.sessionSchemaVersion,
 		options.mutateTreatment,
 	)
 	return runDir
@@ -448,6 +507,7 @@ func makeRun(t *testing.T, options runOptions) string {
 func writeSession(
 	t *testing.T,
 	runDir, kind, storageBody, networkBody string,
+	schemaVersion int,
 	mutate func(*adb.SessionRecord),
 ) {
 	t.Helper()
@@ -481,7 +541,7 @@ func writeSession(
 		}
 	}
 	record := adb.SessionRecord{
-		SchemaVersion:      2,
+		SchemaVersion:      schemaVersion,
 		Kind:               kind,
 		ManifestName:       "experiment-001-email",
 		DeclaredVariable:   "email",
@@ -506,6 +566,9 @@ func writeSession(
 				storage,
 			),
 		},
+	}
+	if schemaVersion == 3 {
+		record.Status = "complete"
 	}
 	if mutate != nil {
 		mutate(&record)
