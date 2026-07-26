@@ -165,7 +165,7 @@ func TestWriteIncompleteTreatmentRejectsInvalidNetwork(t *testing.T) {
 	)
 
 	_, err := Write(runDir)
-	if err == nil || !strings.Contains(err.Error(), `field "extra": value must be a string`) {
+	if err == nil || !strings.Contains(err.Error(), "observation field value must be a string") {
 		t.Fatalf("Write() error = %v", err)
 	}
 	if strings.Contains(err.Error(), secret) {

@@ -195,7 +195,7 @@ func decodeObservation(data []byte) (Session, error) {
 		return Session{}, errors.New("input must be valid UTF-8")
 	}
 	if err := jsoncheck.RejectDuplicateKeys(data); err != nil {
-		return Session{}, err
+		return Session{}, errors.New("duplicate object key")
 	}
 
 	var raw map[string]json.RawMessage
@@ -222,14 +222,14 @@ func decodeObservation(data []byte) (Session, error) {
 	for _, field := range slices.Sorted(maps.Keys(raw)) {
 		encoded := raw[field]
 		if !validFieldName(field) {
-			return Session{}, fmt.Errorf("field %q is invalid", field)
+			return Session{}, errors.New("observation field name is invalid")
 		}
 		var value string
 		if err := json.Unmarshal(encoded, &value); err != nil {
-			return Session{}, fmt.Errorf("field %q: value must be a string", field)
+			return Session{}, errors.New("observation field value must be a string")
 		}
 		if !validFieldValue(value) {
-			return Session{}, fmt.Errorf("field %q: value is invalid", field)
+			return Session{}, errors.New("observation field value is invalid")
 		}
 		fields[field] = value
 	}

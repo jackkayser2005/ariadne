@@ -52,19 +52,19 @@ func TestNormalizeRejectsInvalidArtifacts(t *testing.T) {
 			name:    "storage duplicate",
 			storage: `{"schema_version":1,"region":"first","region":"second","variant":"standard"}`,
 			network: networkArtifact(baselineBody),
-			want:    `duplicate key "region"`,
+			want:    "duplicate object key",
 		},
 		{
 			name:    "storage invalid field",
 			storage: strings.Replace(baselineBody, `"variant"`, `"bad/field"`, 1),
 			network: networkArtifact(baselineBody),
-			want:    `field "bad/field" is invalid`,
+			want:    "observation field name is invalid",
 		},
 		{
 			name:    "storage non-string field",
 			storage: strings.Replace(baselineBody, `"standard"`, `1`, 1),
 			network: networkArtifact(baselineBody),
-			want:    `field "variant": value must be a string`,
+			want:    "observation field value must be a string",
 		},
 		{
 			name:    "storage trailing data",
@@ -88,7 +88,7 @@ func TestNormalizeRejectsInvalidArtifacts(t *testing.T) {
 			name:    "storage value",
 			storage: strings.Replace(baselineBody, `"us-east"`, `" bad"`, 1),
 			network: networkArtifact(baselineBody),
-			want:    `field "region": value is invalid`,
+			want:    "observation field value is invalid",
 		},
 		{
 			name:    "network duplicate",
@@ -190,6 +190,15 @@ func TestNormalizeDoesNotExposeValues(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), secret) {
 		t.Fatalf("Normalize() exposed value: %v", err)
+	}
+
+	storage = `{"schema_version":1,"` + secret + `/":"value"}`
+	_, err = Normalize(strings.NewReader(storage), strings.NewReader(network))
+	if err == nil {
+		t.Fatal("Normalize() error = nil")
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Fatalf("Normalize() exposed field name: %v", err)
 	}
 }
 
