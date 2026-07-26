@@ -101,6 +101,72 @@ For the example manifest, the stored `variant` is `standard` for the baseline
 email and `personalized` for the treatment email. Ariadne does not contain this
 rule.
 
+## Reproduce from a fresh checkout
+
+Requirements:
+
+- Go 1.24 or newer
+- JDK 17
+- Android SDK Platform 36, Build Tools 36.0.0, and `adb` on `PATH`
+- one running API 35 Google APIs emulator
+
+Run all commands from the repository root. Replace `emulator-5554` with the
+serial of the emulator you explicitly selected. Android Studio's Device Manager
+can create and start the emulator; `adb devices` shows its serial. Ariadne does
+not enumerate devices. The GitHub workflow uses x86_64, while a local emulator
+may use its host's native ABI; the selected ABI is recorded in the evidence.
+
+Build and test the fixture on Windows:
+
+```console
+fixture\android\gradlew.bat --no-daemon --project-dir fixture\android lintDebug testDebugUnitTest createDebugUnitTestCoverageReport assembleDebug
+```
+
+On Linux or macOS:
+
+```console
+chmod +x fixture/android/gradlew
+fixture/android/gradlew --no-daemon --project-dir fixture/android lintDebug testDebugUnitTest createDebugUnitTestCoverageReport assembleDebug
+```
+
+Install the resulting debug APK:
+
+```console
+adb -s emulator-5554 install -r fixture/android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+Validate the manifest, verify the selected target, and execute the experiment:
+
+```console
+go run ./cmd/ariadne validate examples/experiment-001.json
+go run ./cmd/ariadne android check --device emulator-5554 --package dev.ariadne.fixture
+go run ./cmd/ariadne experiment run --device emulator-5554 --package dev.ariadne.fixture --output .ariadne/runs/experiment-001 examples/experiment-001.json
+go run ./cmd/ariadne experiment report .ariadne/runs/experiment-001
+```
+
+The output directory must not exist before `experiment run`. A successful final
+command reports `experiment-001-email` with one difference. `report.md` must
+show `variant` changing from `standard` to `personalized`, `region` remaining
+stable, and six verified artifacts.
+
+In `evidence.json`, `target.package_sha256` must equal the SHA-256 of the built
+APK, `target.ariadne_revision` must equal `git rev-parse HEAD`, and
+`target.ariadne_modified` must reflect whether the checkout had source changes
+when `go run` built Ariadne.
+
+### Common failures
+
+- If target preflight fails, confirm the selected serial with `adb devices` and
+  reinstall the fixture on that device.
+- If the run directory already exists, choose a new output path. Ariadne does
+  not overwrite prior sessions or reports.
+- If the installed-package hash is unexpected, rebuild and reinstall the same
+  APK before running either session.
+- If report generation fails, inspect each `session.json` step status. Ariadne
+  writes no report until both sessions and all artifact integrity checks pass.
+- If `ariadne_modified` is unexpectedly `true`, inspect `git status --short`
+  before treating the run as reproducible from the recorded revision alone.
+
 ## Run isolated sessions
 
 After installing the fixture, run:
@@ -125,18 +191,18 @@ completed directory contains:
 
 ```text
 .ariadne/runs/experiment-001/
-├── evidence.json
-├── report.md
-├── baseline/
-│   ├── observations/
-│   │   ├── network.json
-│   │   └── storage.json
-│   └── session.json
-└── treatment/
-    ├── observations/
-    │   ├── network.json
-    │   └── storage.json
-    └── session.json
+|-- evidence.json
+|-- report.md
+|-- baseline/
+|   |-- observations/
+|   |   |-- network.json
+|   |   `-- storage.json
+|   `-- session.json
+`-- treatment/
+    |-- observations/
+    |   |-- network.json
+    |   `-- storage.json
+    `-- session.json
 ```
 
 Session metadata includes the selected device, Android API, architecture,
@@ -184,8 +250,12 @@ or disclose persona values. Only the untouched successful run is uploaded.
 - One expected persona-dependent difference is reported.
 - Known timestamp or identifier noise is not reported as causal.
 - Every finding links to raw evidence.
-- Capture gaps appear as unknowns.
+- Capture gaps stop report generation instead of being silently omitted.
 - A new contributor can reproduce the result.
+
+The current experiment does not emit a partial report that classifies capture
+gaps as `unknown`. That requires an evidence format for incomplete runs and is
+deferred until after this complete-run proof.
 
 ## Non-goals
 

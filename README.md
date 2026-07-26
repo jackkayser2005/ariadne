@@ -20,6 +20,18 @@ The first milestone targets an authorized Android test application:
 
 The detailed design and experiment log live in [`docs/`](docs/).
 
+## Reproduce Experiment 001
+
+The complete local procedure is documented in
+[`docs/content/docs/experiments/experiment-001.md`](docs/content/docs/experiments/experiment-001.md#reproduce-from-a-fresh-checkout).
+It builds the authorized fixture, installs it on one explicitly selected
+Android emulator, runs baseline and treatment sessions, and verifies the
+resulting evidence bundle.
+
+The same procedure runs on a real API 35 emulator in GitHub Actions. It also
+proves that missing targets, modified observations, and mismatched package
+provenance prevent evidence publication.
+
 ## Development
 
 Prerequisites:
@@ -47,7 +59,9 @@ cd fixture/android
 ## Automation
 
 Every push and pull request targeting `main` runs formatting, vetting,
-race-enabled tests, and a 90% coverage gate.
+race-enabled tests, and a 90% coverage gate. Changes to Experiment 001's
+runner, fixture, or Go implementation also execute the complete workflow on a
+real API 35 Android emulator.
 
 Documentation changes merged into `main` are built and published through
 GitHub Pages using the repository's **GitHub Actions** publishing source.
