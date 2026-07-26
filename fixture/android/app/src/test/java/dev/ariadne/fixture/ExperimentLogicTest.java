@@ -1,7 +1,9 @@
 package dev.ariadne.fixture;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
@@ -19,5 +21,26 @@ public final class ExperimentLogicTest {
     @Test
     public void missingEmailIsRejected() {
         assertThrows(NullPointerException.class, () -> ExperimentLogic.variantFor(null));
+    }
+
+    @Test
+    public void treatmentNetworkOnlyOmitsTreatmentStorage() {
+        assertFalse(
+                ExperimentLogic.shouldWriteStorage(
+                        "treatment@example.invalid",
+                        "treatment_network_only"));
+    }
+
+    @Test
+    public void treatmentNetworkOnlyKeepsBaselineStorage() {
+        assertTrue(
+                ExperimentLogic.shouldWriteStorage(
+                        "baseline@example.invalid",
+                        "treatment_network_only"));
+    }
+
+    @Test
+    public void defaultModeKeepsTreatmentStorage() {
+        assertTrue(ExperimentLogic.shouldWriteStorage("treatment@example.invalid", null));
     }
 }

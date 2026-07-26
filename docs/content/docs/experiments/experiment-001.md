@@ -236,12 +236,16 @@ network capture succeeds, reporting preserves the five verified artifacts and
 classifies both fixture fields as `unknown`. It does not compare the available
 network value or claim that either field changed or stayed stable. Other
 incomplete session shapes remain unsupported and stop report generation.
+The authorized fixture proof is declared in
+`examples/experiment-001-storage-gap.json` and runs in the real-emulator
+workflow.
 
 The real-emulator workflow also runs failure checks against copies of the
 completed run. It requires Ariadne to reject a nonexistent package, modified
 observation bytes, and baseline/treatment package-digest disagreement. Failed
 report attempts must not create `evidence.json` or `report.md`, write to stdout,
-or disclose persona values. Only the untouched successful run is uploaded.
+or disclose persona values. The workflow uploads both the untouched complete
+run and the verified treatment-storage-gap run.
 
 ## Procedure
 

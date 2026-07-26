@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "name": "experiment-001-email-storage-gap",
+  "variable": "email",
+  "baseline": {
+    "capture_mode": "treatment_network_only",
+    "email": "baseline@example.invalid",
+    "region": "us-east"
+  },
+  "treatment": {
+    "capture_mode": "treatment_network_only",
+    "email": "treatment@example.invalid",
+    "region": "us-east"
+  }
+}
