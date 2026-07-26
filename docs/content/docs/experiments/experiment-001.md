@@ -163,6 +163,12 @@ normalization and comparison. `report.md` is the concise human-readable view.
 For the fixture, it reports one observed `variant` difference supported by both
 storage and network artifacts.
 
+The real-emulator workflow also runs failure checks against copies of the
+completed run. It requires Ariadne to reject a nonexistent package, modified
+observation bytes, and baseline/treatment package-digest disagreement. Failed
+report attempts must not create `evidence.json` or `report.md`, write to stdout,
+or disclose persona values. Only the untouched successful run is uploaded.
+
 ## Procedure
 
 1. Verify the selected emulator, package, and fixture version.
