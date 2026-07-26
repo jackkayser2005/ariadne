@@ -254,6 +254,8 @@ func decodeSession(data []byte, record *adb.SessionRecord) error {
 			"package_sha256":       {},
 			"ariadne_revision":     {},
 			"ariadne_modified":     {},
+			"status":               {},
+			"failure_stage":        {},
 			"started_at":           {},
 			"finished_at":          {},
 			"steps":                {},
@@ -279,7 +281,8 @@ func decodeSession(data []byte, record *adb.SessionRecord) error {
 }
 
 func validateSession(record adb.SessionRecord, kind string) error {
-	if record.SchemaVersion != 2 || record.Kind != kind {
+	if (record.SchemaVersion != 2 && record.SchemaVersion != 3) ||
+		record.Kind != kind {
 		return errors.New("schema_version or kind is invalid")
 	}
 	for name, value := range map[string]string{
@@ -316,6 +319,25 @@ func validateSession(record adb.SessionRecord, kind string) error {
 		record.FinishedAt.Before(record.StartedAt) {
 		return errors.New("session timestamps are invalid")
 	}
+	if record.SchemaVersion == 2 {
+		if record.Status != "" || record.FailureStage != "" {
+			return errors.New("legacy session outcome is invalid")
+		}
+	} else {
+		switch record.Status {
+		case "complete":
+			if record.FailureStage != "" {
+				return errors.New("complete session failure_stage is invalid")
+			}
+		case "incomplete":
+			if !adb.ValidFailureStage(record.FailureStage) {
+				return errors.New("incomplete session failure_stage is invalid")
+			}
+			return fmt.Errorf("session is incomplete at %s", record.FailureStage)
+		default:
+			return errors.New("session status is invalid")
+		}
+	}
 	if len(record.Steps) != len(expectedSteps) {
 		return errors.New("step sequence is incomplete")
 	}
@@ -338,7 +360,8 @@ func validateSession(record adb.SessionRecord, kind string) error {
 }
 
 func validatePair(baseline, treatment adb.SessionRecord) error {
-	if baseline.ManifestName != treatment.ManifestName ||
+	if baseline.SchemaVersion != treatment.SchemaVersion ||
+		baseline.ManifestName != treatment.ManifestName ||
 		baseline.DeclaredVariable != treatment.DeclaredVariable ||
 		baseline.PersonaFields != treatment.PersonaFields ||
 		baseline.ADBVersion != treatment.ADBVersion ||
