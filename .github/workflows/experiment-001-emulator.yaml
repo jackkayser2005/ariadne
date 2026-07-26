@@ -5,6 +5,7 @@ on:
     branches:
       - main
     paths:
+      - ".github/scripts/run-experiment-001.sh"
       - ".github/workflows/experiment-001-emulator.yaml"
       - "cmd/**"
       - "examples/experiment-001.json"
@@ -16,6 +17,7 @@ on:
     branches:
       - main
     paths:
+      - ".github/scripts/run-experiment-001.sh"
       - ".github/workflows/experiment-001-emulator.yaml"
       - "cmd/**"
       - "examples/experiment-001.json"

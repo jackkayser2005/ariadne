@@ -53,9 +53,15 @@ type document struct {
 }
 
 type target struct {
-	ADBVersion string `json:"adb_version"`
-	Device     string `json:"device"`
-	Package    string `json:"package"`
+	ADBVersion         string `json:"adb_version"`
+	Device             string `json:"device"`
+	AndroidAPI         int    `json:"android_api"`
+	Architecture       string `json:"architecture"`
+	Package            string `json:"package"`
+	PackageVersionCode uint64 `json:"package_version_code"`
+	PackageSHA256      string `json:"package_sha256"`
+	AriadneRevision    string `json:"ariadne_revision"`
+	AriadneModified    bool   `json:"ariadne_modified"`
 }
 
 type artifact struct {
@@ -111,13 +117,19 @@ func Write(runDir string) (Summary, error) {
 	artifacts = append(artifacts, treatment.metadata)
 	artifacts = append(artifacts, treatment.artifacts...)
 	evidence := document{
-		SchemaVersion:    1,
+		SchemaVersion:    2,
 		ManifestName:     baseline.record.ManifestName,
 		DeclaredVariable: baseline.record.DeclaredVariable,
 		Target: target{
-			ADBVersion: baseline.record.ADBVersion,
-			Device:     baseline.record.Device,
-			Package:    baseline.record.Package,
+			ADBVersion:         baseline.record.ADBVersion,
+			Device:             baseline.record.Device,
+			AndroidAPI:         baseline.record.AndroidAPI,
+			Architecture:       baseline.record.Architecture,
+			Package:            baseline.record.Package,
+			PackageVersionCode: baseline.record.PackageVersionCode,
+			PackageSHA256:      baseline.record.PackageSHA256,
+			AriadneRevision:    baseline.record.AriadneRevision,
+			AriadneModified:    baseline.record.AriadneModified,
 		},
 		Normalizations: []string{
 			"decoded network body_base64",
@@ -228,18 +240,24 @@ func decodeSession(data []byte, record *adb.SessionRecord) error {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(data, &fields); err == nil {
 		allowed := map[string]struct{}{
-			"schema_version":    {},
-			"kind":              {},
-			"manifest_name":     {},
-			"declared_variable": {},
-			"persona_fields":    {},
-			"adb_version":       {},
-			"device":            {},
-			"package":           {},
-			"started_at":        {},
-			"finished_at":       {},
-			"steps":             {},
-			"artifacts":         {},
+			"schema_version":       {},
+			"kind":                 {},
+			"manifest_name":        {},
+			"declared_variable":    {},
+			"persona_fields":       {},
+			"adb_version":          {},
+			"device":               {},
+			"package":              {},
+			"android_api":          {},
+			"architecture":         {},
+			"package_version_code": {},
+			"package_sha256":       {},
+			"ariadne_revision":     {},
+			"ariadne_modified":     {},
+			"started_at":           {},
+			"finished_at":          {},
+			"steps":                {},
+			"artifacts":            {},
 		}
 		for field := range fields {
 			if _, ok := allowed[field]; !ok {
@@ -261,7 +279,7 @@ func decodeSession(data []byte, record *adb.SessionRecord) error {
 }
 
 func validateSession(record adb.SessionRecord, kind string) error {
-	if record.SchemaVersion != 1 || record.Kind != kind {
+	if record.SchemaVersion != 2 || record.Kind != kind {
 		return errors.New("schema_version or kind is invalid")
 	}
 	for name, value := range map[string]string{
@@ -270,6 +288,9 @@ func validateSession(record adb.SessionRecord, kind string) error {
 		"adb_version":       record.ADBVersion,
 		"device":            record.Device,
 		"package":           record.Package,
+		"architecture":      record.Architecture,
+		"package_sha256":    record.PackageSHA256,
+		"ariadne_revision":  record.AriadneRevision,
 	} {
 		if !validMetadataValue(value) {
 			return fmt.Errorf("%s is invalid", name)
@@ -277,6 +298,18 @@ func validateSession(record adb.SessionRecord, kind string) error {
 	}
 	if record.PersonaFields < 1 {
 		return errors.New("persona_fields is invalid")
+	}
+	if record.AndroidAPI < 1 || record.AndroidAPI > 999 {
+		return errors.New("android_api is invalid")
+	}
+	if record.PackageVersionCode == 0 {
+		return errors.New("package_version_code is invalid")
+	}
+	if !validDigest(record.PackageSHA256) {
+		return errors.New("package_sha256 is invalid")
+	}
+	if !validRevision(record.AriadneRevision) {
+		return errors.New("ariadne_revision is invalid")
 	}
 	if record.StartedAt.IsZero() ||
 		record.FinishedAt.IsZero() ||
@@ -311,6 +344,12 @@ func validatePair(baseline, treatment adb.SessionRecord) error {
 		baseline.ADBVersion != treatment.ADBVersion ||
 		baseline.Device != treatment.Device ||
 		baseline.Package != treatment.Package ||
+		baseline.AndroidAPI != treatment.AndroidAPI ||
+		baseline.Architecture != treatment.Architecture ||
+		baseline.PackageVersionCode != treatment.PackageVersionCode ||
+		baseline.PackageSHA256 != treatment.PackageSHA256 ||
+		baseline.AriadneRevision != treatment.AriadneRevision ||
+		baseline.AriadneModified != treatment.AriadneModified ||
 		treatment.StartedAt.Before(baseline.FinishedAt) {
 		return errors.New("baseline and treatment session metadata disagree")
 	}
@@ -366,13 +405,35 @@ func validMetadataValue(value string) bool {
 		!strings.ContainsFunc(value, unicode.IsControl)
 }
 
+func validRevision(value string) bool {
+	if value == "unknown" {
+		return true
+	}
+	if len(value) != 40 && len(value) != 64 {
+		return false
+	}
+	for _, character := range value {
+		if (character < '0' || character > '9') &&
+			(character < 'a' || character > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 func renderReport(evidence document) []byte {
 	var report strings.Builder
 	report.WriteString("# Evidence Report\n\n")
 	fmt.Fprintf(&report, "- Manifest: %s\n", code(evidence.ManifestName))
 	fmt.Fprintf(&report, "- Declared variable: %s\n", code(evidence.DeclaredVariable))
 	fmt.Fprintf(&report, "- Device: %s\n", code(evidence.Target.Device))
+	fmt.Fprintf(&report, "- Android API: %d\n", evidence.Target.AndroidAPI)
+	fmt.Fprintf(&report, "- Architecture: %s\n", code(evidence.Target.Architecture))
 	fmt.Fprintf(&report, "- Package: %s\n", code(evidence.Target.Package))
+	fmt.Fprintf(&report, "- Package version code: %d\n", evidence.Target.PackageVersionCode)
+	fmt.Fprintf(&report, "- Package SHA-256: %s\n", code(evidence.Target.PackageSHA256))
+	fmt.Fprintf(&report, "- Ariadne revision: %s\n", code(evidence.Target.AriadneRevision))
+	fmt.Fprintf(&report, "- Ariadne modified: %t\n", evidence.Target.AriadneModified)
 	fmt.Fprintf(&report, "- Verified artifacts: %d\n", len(evidence.Artifacts))
 	fmt.Fprintf(&report, "- Observed differences: %d\n", len(evidence.Comparison.Differences))
 

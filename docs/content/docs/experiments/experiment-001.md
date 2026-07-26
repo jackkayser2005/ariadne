@@ -74,11 +74,20 @@ Use `--adb <path>` when `adb` is not on `PATH`. A successful check prints:
 android target ready
 adb_version: 1.0.41
 device: emulator-5554
+android_api: 35
+architecture: x86_64
 package: dev.ariadne.fixture
+package_version_code: 1
+package_sha256: <64 lowercase hexadecimal characters>
+ariadne_revision: <Git commit or unknown>
+ariadne_modified: false
 ```
 
-The check does not enumerate devices, inspect package data, or run the
-experiment.
+The check does not enumerate devices or run the experiment. It reads the
+selected device's API and primary ABI, reads the selected package's version
+code, and streams its installed base APK into SHA-256. The APK is not retained
+or logged. The current check rejects split APK sets and installed APKs larger
+than 256 MiB.
 
 ## Authorized fixture
 
@@ -130,9 +139,11 @@ completed directory contains:
     └── session.json
 ```
 
-Session metadata includes the selected device, package, ADB version, timestamps,
-step status, exit codes, and a SHA-256 record for each captured artifact. It
-excludes persona values, command arguments, and raw ADB output.
+Session metadata includes the selected device, Android API, architecture,
+package version and SHA-256, Ariadne Git revision and modified state, ADB
+version, timestamps, step status, exit codes, and a SHA-256 record for each
+captured artifact. It excludes persona values, command arguments, raw APK
+bytes, and raw ADB output.
 
 The storage artifact is the exact bounded JSON read from the fixture's private
 `files/observation.json` through Android's `run-as` command. Capture fails if
@@ -146,10 +157,11 @@ exact body encoded as base64. It does not collect unrelated request headers.
 The body must be a JSON object no larger than 64 KiB. Ariadne removes the
 reverse mapping before the session ends, including after capture failures.
 
-`evidence.json` verifies session order, successful step records, artifact
-sizes, and SHA-256 digests before recording the normalization and comparison.
-`report.md` is the concise human-readable view. For the fixture, it reports one
-observed `variant` difference supported by both storage and network artifacts.
+`evidence.json` verifies matching target provenance, session order, successful
+step records, artifact sizes, and SHA-256 digests before recording the
+normalization and comparison. `report.md` is the concise human-readable view.
+For the fixture, it reports one observed `variant` difference supported by both
+storage and network artifacts.
 
 ## Procedure
 
