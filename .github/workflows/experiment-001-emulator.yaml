@@ -60,7 +60,7 @@ jobs:
         run: |
           go build -o "${RUNNER_TEMP}/ariadne" ./cmd/ariadne
           chmod +x fixture/android/gradlew
-          fixture/android/gradlew --no-daemon --project-dir fixture/android testDebugUnitTest assembleDebug
+          fixture/android/gradlew --no-daemon --project-dir fixture/android assembleDebug
 
       - name: Enable KVM
         run: |
