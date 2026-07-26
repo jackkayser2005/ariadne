@@ -73,40 +73,7 @@ jobs:
           arch: x86_64
           profile: pixel_7
           emulator-port: 5554
-          script: |
-            adb -s emulator-5554 install -r fixture/android/app/build/outputs/apk/debug/app-debug.apk
-            "${RUNNER_TEMP}/ariadne" android check \
-              --device emulator-5554 \
-              --package dev.ariadne.fixture
-            "${RUNNER_TEMP}/ariadne" experiment run \
-              --device emulator-5554 \
-              --package dev.ariadne.fixture \
-              --output .ariadne/ci/experiment-001 \
-              examples/experiment-001.json
-            "${RUNNER_TEMP}/ariadne" experiment report .ariadne/ci/experiment-001
-
-            jq -e '
-              (.artifacts | length == 6) and
-              (.comparison.unchanged_fields == ["region"]) and
-              (.comparison.differences | length == 1) and
-              (
-                .comparison.differences[0] |
-                .field == "variant" and
-                .baseline == "standard" and
-                .treatment == "personalized" and
-                .state == "observed"
-              )
-            ' .ariadne/ci/experiment-001/evidence.json
-
-            baseline_email="$(jq -r '.baseline.email' examples/experiment-001.json)"
-            treatment_email="$(jq -r '.treatment.email' examples/experiment-001.json)"
-            if grep -R -F -q \
-              -e "${baseline_email}" \
-              -e "${treatment_email}" \
-              .ariadne/ci/experiment-001; then
-              echo "persona value found in evidence output" >&2
-              exit 1
-            fi
+          script: bash .github/scripts/run-experiment-001.sh
 
       - name: Upload evidence
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
