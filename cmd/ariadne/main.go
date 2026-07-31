@@ -6,6 +6,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"os"
 	"runtime/debug"
 	"time"
@@ -13,6 +15,7 @@ import (
 	"github.com/jackkayser2005/ariadne/internal/adb"
 	"github.com/jackkayser2005/ariadne/internal/bundle"
 	"github.com/jackkayser2005/ariadne/internal/experiment"
+	"github.com/jackkayser2005/ariadne/internal/ui"
 )
 
 const usage = `usage:
@@ -25,6 +28,7 @@ const usage = `usage:
   ariadne experiment ask [--json] <run-directory> <question-id>
   ariadne experiment questions [--json]
   ariadne experiment list [--json] <archive-root>
+  ariadne experiment serve [--addr <address>] <archive-root>
 `
 
 const adbCheckTimeout = 10 * time.Second
@@ -61,6 +65,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(args) >= 2 && args[0] == "experiment" && args[1] == "list" {
 		return runList(args[2:], stdout, stderr, bundle.Index)
+	}
+	if len(args) >= 2 && args[0] == "experiment" && args[1] == "serve" {
+		return runServe(args[2:], stdout, stderr, http.ListenAndServe)
 	}
 
 	_, _ = io.WriteString(stderr, usage)
@@ -111,6 +118,7 @@ type bundleFinder func(string, string) (bundle.Finding, error)
 type bundleAsker func(string, string) (bundle.Answer, error)
 type bundleQuestionLister func() []bundle.Question
 type bundleArchiveIndexer func(string) ([]bundle.ArchiveEntry, error)
+type uiServer func(string, http.Handler) error
 
 func runAndroidCheck(
 	args []string,
@@ -520,4 +528,40 @@ func runList(
 		}
 	}
 	return 0
+}
+
+func runServe(
+	args []string,
+	stdout, stderr io.Writer,
+	serve uiServer,
+) int {
+	flags := flag.NewFlagSet("experiment serve", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	address := flags.String("addr", "127.0.0.1:8787", "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+	if !loopbackAddress(*address) {
+		_, _ = io.WriteString(stderr, "ariadne: experiment serve: address must use a loopback IP\n")
+		return 2
+	}
+	if _, err := fmt.Fprintf(stdout, "ariadne: review UI listening at http://%s/\n", *address); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment serve: write output: %v\n", err)
+		return 1
+	}
+	if err := serve(*address, ui.Handler(flags.Arg(0))); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment serve: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func loopbackAddress(address string) bool {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -66,6 +67,7 @@ func TestRunUsage(t *testing.T) {
 		{"experiment", "ask"},
 		{"experiment", "questions", "extra"},
 		{"experiment", "list"},
+		{"experiment", "serve"},
 	}
 
 	for _, args := range tests {
@@ -1016,6 +1018,75 @@ func TestRunListFailures(t *testing.T) {
 			t.Fatalf("runList() = %d, stderr=%q", exitCode, stderr.String())
 		}
 	})
+}
+
+func TestRunServe(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	var address string
+	var handler http.Handler
+	exitCode := runServe(
+		[]string{"--addr", "127.0.0.1:9090", "archive-root"},
+		&stdout,
+		&stderr,
+		func(gotAddress string, gotHandler http.Handler) error {
+			address = gotAddress
+			handler = gotHandler
+			return nil
+		},
+	)
+	if exitCode != 0 || address != "127.0.0.1:9090" || handler == nil ||
+		stdout.String() != "ariadne: review UI listening at http://127.0.0.1:9090/\n" || stderr.Len() != 0 {
+		t.Fatalf("runServe() = %d, address=%q, handler=%v, stdout=%q, stderr=%q", exitCode, address, handler, stdout.String(), stderr.String())
+	}
+}
+
+func TestRunServeFailures(t *testing.T) {
+	for _, args := range [][]string{nil, {"archive-root", "extra"}, {"--unknown", "archive-root"}} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			exitCode := runServe(args, &stdout, &stderr, func(string, http.Handler) error {
+				t.Fatal("server called for invalid usage")
+				return nil
+			})
+			if exitCode != 2 || stdout.Len() != 0 || stderr.String() != usage {
+				t.Fatalf("runServe() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+			}
+		})
+	}
+
+	t.Run("server error", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runServe([]string{"archive-root"}, &stdout, &stderr, func(string, http.Handler) error {
+			return errors.New("listen failed")
+		})
+		if exitCode != 1 || !strings.Contains(stderr.String(), "listen failed") || stdout.Len() == 0 {
+			t.Fatalf("runServe() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("non-loopback address", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runServe([]string{"--addr", "0.0.0.0:9090", "archive-root"}, &stdout, &stderr, func(string, http.Handler) error {
+			t.Fatal("server called for non-loopback address")
+			return nil
+		})
+		if exitCode != 2 || stdout.Len() != 0 || stderr.String() != "ariadne: experiment serve: address must use a loopback IP\n" {
+			t.Fatalf("runServe() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+}
+
+func TestLoopbackAddress(t *testing.T) {
+	for _, address := range []string{"127.0.0.1:8787", "[::1]:8787"} {
+		if !loopbackAddress(address) {
+			t.Errorf("loopbackAddress(%q) = false", address)
+		}
+	}
+	for _, address := range []string{"0.0.0.0:8787", "192.168.1.10:8787", ":8787", "127.0.0.1"} {
+		if loopbackAddress(address) {
+			t.Errorf("loopbackAddress(%q) = true", address)
+		}
+	}
 }
 
 func TestRunAndroidCheck(t *testing.T) {
