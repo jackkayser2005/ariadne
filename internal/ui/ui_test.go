@@ -84,6 +84,42 @@ func TestHandlerRendersReadOnlyReview(t *testing.T) {
 	}
 }
 
+func TestHandlerRendersUnknownReason(t *testing.T) {
+	const reason = "treatment storage observation was not captured"
+	h := newHandler(handler{
+		root: "archive-root",
+		index: func(string) ([]bundle.ArchiveEntry, error) {
+			return []bundle.ArchiveEntry{{Directory: "run-001"}}, nil
+		},
+		ask: func(string, string) (bundle.Answer, error) {
+			return bundle.Answer{
+				Question: "Were all required observations captured for both sessions?",
+				State:    "unknown",
+				Reason:   reason,
+			}, nil
+		},
+		find: func(string, string) (bundle.Finding, error) {
+			return bundle.Finding{
+				Kind:        "unknown",
+				AnswerState: "unknown",
+				State:       "unknown",
+				Reason:      reason,
+			}, nil
+		},
+	})
+
+	for _, path := range []string{
+		"/ask?directory=run-001&question_id=capture-complete",
+		"/finding?directory=run-001&finding_id=sha256:" + strings.Repeat("a", 64),
+	} {
+		recorder := httptest.NewRecorder()
+		h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+		if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), reason) {
+			t.Fatalf("path %q: status = %d, body=%q", path, recorder.Code, recorder.Body.String())
+		}
+	}
+}
+
 func TestHandlerRejectsUnsafeRequests(t *testing.T) {
 	base := handler{
 		root: "archive-root",

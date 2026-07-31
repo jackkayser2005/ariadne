@@ -321,11 +321,12 @@ fi
 storage_gap_finding_json="${failure_dir}/storage-gap-finding.json"
 "${ariadne}" experiment finding --json "${storage_gap_dir}" "${storage_gap_finding_id}" >"${storage_gap_finding_json}"
 jq -e '
-  (keys_unsorted == ["question", "answer_state", "kind", "id", "field", "state", "evidence"]) and
+  (keys_unsorted == ["question", "answer_state", "kind", "id", "field", "state", "reason", "evidence"]) and
   (.answer_state == "unknown") and
   (.kind == "unknown") and
   (.id | test("^sha256:[0-9a-f]{64}$")) and
   (.state == "unknown") and
+  (.reason == "treatment storage observation was not captured") and
   (.evidence | length == 3)
 ' "${storage_gap_finding_json}"
 if grep -F -q \
@@ -356,17 +357,25 @@ for question_id in counterfactual-change capture-complete source-integrity; do
   fi
   question_json="${failure_dir}/storage-gap-question-${question_id}.json"
   expected_state="unknown"
+  expected_reason="treatment storage observation was not captured"
   if [[ "${question_id}" == "source-integrity" ]]; then
     expected_state="observed"
+    expected_reason=""
   fi
   "${ariadne}" experiment ask --json "${storage_gap_dir}" "${question_id}" >"${question_json}"
   jq -e \
     --arg question_id "${question_id}" \
     --arg expected_state "${expected_state}" \
+    --arg expected_reason "${expected_reason}" \
     '
     (.question_id == $question_id) and
     (.question | type == "string") and
     (.answer_state == $expected_state) and
+    (if $expected_reason == "" then
+       (keys_unsorted == ["question_id", "question", "answer_state", "finding_ids"]) and (has("reason") | not)
+     else
+       (keys_unsorted == ["question_id", "question", "answer_state", "reason", "finding_ids"]) and (.reason == $expected_reason)
+     end) and
     (.finding_ids | length == 3) and
     all(.finding_ids[]; test("^sha256:[0-9a-f]{64}$"))
     ' "${question_json}"

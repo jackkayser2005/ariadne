@@ -328,8 +328,18 @@ func TestFindReturnsSafeUnknown(t *testing.T) {
 		finding.Kind != "unknown" ||
 		finding.Classification != "" ||
 		finding.State != evidencestate.Unknown ||
+		finding.Reason != treatmentStorageObservationUnknownReason ||
 		len(finding.Evidence) != 3 {
 		t.Fatalf("Find() = %#v", finding)
+	}
+}
+
+func TestSafeUnknownReasonIsVerifierOwned(t *testing.T) {
+	if got := safeUnknownReason("capture gap"); got != "" {
+		t.Fatalf("safeUnknownReason(untrusted) = %q", got)
+	}
+	if got := safeUnknownReason(treatmentStorageObservationUnknownReason); got != treatmentStorageObservationUnknownReason {
+		t.Fatalf("safeUnknownReason(known) = %q", got)
 	}
 }
 
@@ -390,6 +400,7 @@ func TestAskQuestionCatalog(t *testing.T) {
 		name           string
 		makeRun        func(*testing.T) string
 		wantState      evidencestate.State
+		wantReason     string
 		wantFindingIDs int
 	}{
 		{
@@ -404,6 +415,7 @@ func TestAskQuestionCatalog(t *testing.T) {
 				return makeStorageFailureRun(t, "")
 			},
 			wantState:      evidencestate.Unknown,
+			wantReason:     treatmentStorageObservationUnknownReason,
 			wantFindingIDs: 2,
 		},
 	} {
@@ -422,9 +434,14 @@ func TestAskQuestionCatalog(t *testing.T) {
 				if questionID == "source-integrity" {
 					wantState = evidencestate.Observed
 				}
+				wantReason := test.wantReason
+				if questionID == "source-integrity" {
+					wantReason = ""
+				}
 				if answer.QuestionID != questionID ||
 					answer.Question != question.Text ||
 					answer.State != wantState ||
+					answer.Reason != wantReason ||
 					len(answer.FindingIDs) != test.wantFindingIDs {
 					t.Fatalf("Ask(%q) = %#v", questionID, answer)
 				}

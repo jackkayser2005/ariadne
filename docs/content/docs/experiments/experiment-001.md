@@ -245,10 +245,12 @@ observation or persona values. The
 question command is a fixed, deterministic catalog rather than an arbitrary
 natural-language answerer; it can be rerun after archival and returns the same
 answer state and finding IDs. Add `--json` for a stable, raw-value-free object
-with `question_id`, `question`, `answer_state`, and `finding_ids`; human-readable
-output remains the default. The catalog command exposes the same fixed questions
-without needing a run directory, so a caller can enumerate before asking. The
-completed directory contains:
+with the same fields plus `reason` for an unknown finding when one is available.
+Unknown answers also include the verifier-owned `reason` when one is available;
+complete answers omit it. Human-readable output remains the default. The
+catalog command exposes the same fixed questions without needing a run
+directory, so a caller can enumerate before asking. The completed directory
+contains:
 
 ```text
 .ariadne/runs/experiment-001/
