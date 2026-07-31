@@ -7,6 +7,8 @@ import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
+import java.util.UUID;
+
 public final class ExperimentLogicTest {
     @Test
     public void baselineEmailSelectsStandardVariant() {
@@ -21,6 +23,15 @@ public final class ExperimentLogicTest {
     @Test
     public void missingEmailIsRejected() {
         assertThrows(NullPointerException.class, () -> ExperimentLogic.variantFor(null));
+    }
+
+    @Test
+    public void requestIDsAreValidAndFresh() {
+        String first = ExperimentLogic.requestID();
+        String second = ExperimentLogic.requestID();
+
+        assertEquals(first, UUID.fromString(first).toString());
+        assertFalse(first.equals(second));
     }
 
     @Test

@@ -14,15 +14,18 @@ Two personas will differ in exactly one declared value. The specific value will
 be selected with the fixture application so that the expected influence is
 known without being hard-coded into Ariadne.
 
-## Manifest v1
+## Manifest
 
 The first manifest is intentionally flat:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "experiment-001-email",
   "variable": "email",
+  "volatile_fields": [
+    "request_id"
+  ],
   "baseline": {
     "email": "baseline@example.invalid",
     "region": "us-east"
@@ -36,7 +39,7 @@ The first manifest is intentionally flat:
 
 Both personas must contain the same string keys. Exactly one value must differ,
 and its key must equal `variable`. Nested values and non-string persona values
-are outside v1.
+are not supported by either current manifest schema.
 
 The parser will reject inputs larger than 64 KiB, duplicate JSON keys, unknown
 top-level fields, and trailing data. Validation errors may name fields but must
@@ -59,7 +62,7 @@ Successful validation prints stable metadata without displaying persona values:
 ```text
 valid manifest
 name: experiment-001-email
-schema_version: 1
+schema_version: 2
 variable: email
 persona_fields: 2
 ```
@@ -103,7 +106,8 @@ IPv4 loopback. Cleartext traffic to other destinations is denied.
 
 For the example manifest, the stored `variant` is `standard` for the baseline
 email and `personalized` for the treatment email. Ariadne does not contain this
-rule.
+rule. The fixture also generates a fresh `request_id` for every session and
+uses the same observation bytes for storage and network capture.
 
 ## Reproduce from a fresh checkout
 
@@ -151,7 +155,7 @@ go run ./cmd/ariadne experiment report .ariadne/runs/experiment-001
 The output directory must not exist before `experiment run`. A successful final
 command reports `experiment-001-email` with one difference. `report.md` must
 show `variant` changing from `standard` to `personalized`, `region` remaining
-stable, and six verified artifacts.
+stable, `request_id` normalized, and six verified artifacts.
 
 In `evidence.json`, `target.package_sha256` must equal the SHA-256 of the built
 APK, `target.ariadne_revision` must equal `git rev-parse HEAD`, and
@@ -234,7 +238,8 @@ reverse mapping before the session ends, including after capture failures.
 step records, artifact sizes, and SHA-256 digests before recording the
 normalization and comparison. `report.md` is the concise human-readable view.
 For the fixture, it reports one observed `variant` difference supported by both
-storage and network artifacts.
+storage and network artifacts. The differing raw `request_id` values remain in
+those artifacts but are not copied into `evidence.json` or `report.md`.
 
 Observation schema 1 is a bounded JSON object containing `schema_version: 1`
 and 1 to 64 string fields. Field names are restricted so evidence references
@@ -277,7 +282,8 @@ run and the verified treatment-storage-gap run.
 ## Success criteria
 
 - One expected persona-dependent difference is reported.
-- Known timestamp or identifier noise is not reported as causal.
+- The fixture's unique per-session `request_id` is recorded as normalized, not
+  reported as causal.
 - Every finding links to raw evidence.
 - The supported treatment-storage gap is reported as `unknown`; other gaps stop
   report generation instead of being silently omitted.
