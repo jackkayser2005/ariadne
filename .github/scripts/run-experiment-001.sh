@@ -19,6 +19,14 @@ adb -s emulator-5554 install -r \
 
 "${ariadne}" experiment report "${run_dir}"
 "${ariadne}" experiment verify "${run_dir}"
+verify_json="${RUNNER_TEMP}/ariadne-verify.json"
+"${ariadne}" experiment verify --json "${run_dir}" >"${verify_json}"
+jq -e '
+  (keys_unsorted == ["manifest_name", "differences", "unknowns"]) and
+  (.manifest_name == "experiment-001-email") and
+  (.differences == 1) and
+  (.unknowns == 0)
+' "${verify_json}"
 
 catalog_stdout="${RUNNER_TEMP}/ariadne-question-catalog.stdout"
 "${ariadne}" experiment questions >"${catalog_stdout}"
@@ -275,6 +283,14 @@ test "${storage_gap_baseline_request_id}" != "${storage_gap_treatment_request_id
 storage_gap_report_stdout="${failure_dir}/storage-gap-report.stdout"
 "${ariadne}" experiment report "${storage_gap_dir}" >"${storage_gap_report_stdout}"
 "${ariadne}" experiment verify "${storage_gap_dir}" >"${failure_dir}/storage-gap-verify.stdout"
+storage_gap_verify_json="${failure_dir}/storage-gap-verify.json"
+"${ariadne}" experiment verify --json "${storage_gap_dir}" >"${storage_gap_verify_json}"
+jq -e '
+  (keys_unsorted == ["manifest_name", "differences", "unknowns"]) and
+  (.manifest_name == "experiment-001-email-storage-gap") and
+  (.differences == 0) and
+  (.unknowns == 3)
+' "${storage_gap_verify_json}"
 storage_gap_finding_id="$(jq -r '.comparison.unknowns[0].id' "${storage_gap_dir}/evidence.json")"
 "${ariadne}" experiment finding "${storage_gap_dir}" "${storage_gap_finding_id}" >"${failure_dir}/storage-gap-finding.stdout"
 grep -F -x -q "finding verified" "${failure_dir}/storage-gap-finding.stdout"
@@ -429,6 +445,10 @@ expect_failure \
   "integrity check failed" \
   "${ariadne}" experiment verify "${artifact_dir}"
 expect_failure \
+  "artifact-verify-json" \
+  "integrity check failed" \
+  "${ariadne}" experiment verify --json "${artifact_dir}"
+expect_failure \
   "artifact-finding" \
   "integrity check failed" \
   "${ariadne}" experiment finding "${artifact_dir}" "${finding_id}"
@@ -463,6 +483,10 @@ expect_failure \
   "invalid-finding-json-flag" \
   "usage:" \
   "${ariadne}" experiment finding --json=invalid "${run_dir}" "${finding_id}"
+expect_failure \
+  "invalid-verify-json-flag" \
+  "usage:" \
+  "${ariadne}" experiment verify --json=invalid "${run_dir}"
 expect_failure \
   "unknown-question" \
   "question ID is invalid" \
