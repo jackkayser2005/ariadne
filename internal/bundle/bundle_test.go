@@ -1,6 +1,7 @@
 package bundle
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -92,6 +93,136 @@ func TestWrite(t *testing.T) {
 		if strings.Contains(string(evidence), secret) || strings.Contains(text, secret) {
 			t.Fatalf("bundle exposed persona value %q", secret)
 		}
+	}
+}
+
+func TestVerifyPreservesOutputs(t *testing.T) {
+	runDir := makeRun(t, runOptions{})
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+	evidenceBefore, err := os.ReadFile(filepath.Join(runDir, "evidence.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportBefore, err := os.ReadFile(filepath.Join(runDir, "report.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary, err := Verify(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Differences != 1 || summary.Unknowns != 0 {
+		t.Fatalf("Verify() = %#v", summary)
+	}
+	evidenceAfter, err := os.ReadFile(filepath.Join(runDir, "evidence.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportAfter, err := os.ReadFile(filepath.Join(runDir, "report.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(evidenceBefore, evidenceAfter) || !bytes.Equal(reportBefore, reportAfter) {
+		t.Fatal("Verify() changed existing outputs")
+	}
+}
+
+func TestVerifyRejectsTamperedArtifact(t *testing.T) {
+	runDir := makeRun(t, runOptions{})
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+	evidenceBefore, err := os.ReadFile(filepath.Join(runDir, "evidence.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportBefore, err := os.ReadFile(filepath.Join(runDir, "report.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(runDir, "baseline", "observations", "storage.json")
+	if err := os.WriteFile(path, []byte(`{"tampered":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = Verify(runDir)
+	if err == nil || !strings.Contains(err.Error(), "integrity check failed") {
+		t.Fatalf("Verify() error = %v", err)
+	}
+	evidenceAfter, err := os.ReadFile(filepath.Join(runDir, "evidence.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportAfter, err := os.ReadFile(filepath.Join(runDir, "report.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(evidenceBefore, evidenceAfter) || !bytes.Equal(reportBefore, reportAfter) {
+		t.Fatal("Verify() changed outputs after tamper")
+	}
+}
+
+func TestVerifyRejectsModifiedOutputs(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		path string
+		data []byte
+		want string
+	}{
+		{name: "evidence", path: "evidence.json", data: []byte("\n"), want: "evidence output does not match"},
+		{name: "report", path: "report.md", data: []byte("\n"), want: "report output does not match"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			runDir := makeRun(t, runOptions{})
+			if _, err := Write(runDir); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(runDir, test.path)
+			file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := file.Write(test.data); err != nil {
+				_ = file.Close()
+				t.Fatal(err)
+			}
+			if err := file.Close(); err != nil {
+				t.Fatal(err)
+			}
+			_, err = Verify(runDir)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("Verify() error = %v", err)
+			}
+		})
+	}
+}
+
+func TestVerifyRejectsMissingOutputs(t *testing.T) {
+	for _, name := range []string{"evidence.json", "report.md"} {
+		t.Run(name, func(t *testing.T) {
+			runDir := makeRun(t, runOptions{})
+			if _, err := Write(runDir); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Remove(filepath.Join(runDir, name)); err != nil {
+				t.Fatal(err)
+			}
+			_, err := Verify(runDir)
+			if err == nil || !strings.Contains(err.Error(), "output: open") {
+				t.Fatalf("Verify() error = %v", err)
+			}
+		})
+	}
+}
+
+func TestEncodeOutputsRejectOversizedData(t *testing.T) {
+	evidence := document{ManifestName: strings.Repeat("x", maxOutputBytes)}
+	if _, err := encodeDocument(evidence); err == nil || !strings.Contains(err.Error(), "evidence output exceeds") {
+		t.Fatalf("encodeDocument() error = %v", err)
+	}
+	if _, err := encodeReport(evidence); err == nil || !strings.Contains(err.Error(), "report output exceeds") {
+		t.Fatalf("encodeReport() error = %v", err)
 	}
 }
 

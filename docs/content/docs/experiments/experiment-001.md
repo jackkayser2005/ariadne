@@ -159,6 +159,7 @@ go run ./cmd/ariadne validate examples/experiment-001.json
 go run ./cmd/ariadne android check --device emulator-5554 --package dev.ariadne.fixture
 go run ./cmd/ariadne experiment run --device emulator-5554 --package dev.ariadne.fixture --output .ariadne/runs/experiment-001 examples/experiment-001.json
 go run ./cmd/ariadne experiment report .ariadne/runs/experiment-001
+go run ./cmd/ariadne experiment verify .ariadne/runs/experiment-001
 ```
 
 The output directory must not exist before `experiment run`. A successful final
@@ -202,9 +203,13 @@ outputs:
 
 ```console
 go run ./cmd/ariadne experiment report .ariadne/runs/experiment-001
+go run ./cmd/ariadne experiment verify .ariadne/runs/experiment-001
 ```
 
 The report command refuses existing `evidence.json` or `report.md` files. The
+verify command is non-destructive: it rechecks the sessions, artifact hashes,
+normalization inputs, and existing output bytes without rerunning capture or
+rewriting either file. The
 completed directory contains:
 
 ```text

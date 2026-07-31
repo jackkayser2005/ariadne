@@ -18,6 +18,7 @@ adb -s emulator-5554 install -r \
   examples/experiment-001.json
 
 "${ariadne}" experiment report "${run_dir}"
+"${ariadne}" experiment verify "${run_dir}"
 
 fixture_sha256="$(
   sha256sum fixture/android/app/build/outputs/apk/debug/app-debug.apk |
@@ -178,6 +179,7 @@ test "${storage_gap_baseline_request_id}" != "${storage_gap_treatment_request_id
 
 storage_gap_report_stdout="${failure_dir}/storage-gap-report.stdout"
 "${ariadne}" experiment report "${storage_gap_dir}" >"${storage_gap_report_stdout}"
+"${ariadne}" experiment verify "${storage_gap_dir}" >"${failure_dir}/storage-gap-verify.stdout"
 grep -F -x -q "differences: 0" "${storage_gap_report_stdout}"
 grep -F -x -q "unknowns: 3" "${storage_gap_report_stdout}"
 jq -e \
@@ -250,9 +252,15 @@ expect_failure \
 
 artifact_dir="${failure_dir}/artifact"
 cp -R "${run_dir}" "${artifact_dir}"
-rm "${artifact_dir}/evidence.json" "${artifact_dir}/report.md"
 printf '\nprivate-tamper-marker\n' >> \
   "${artifact_dir}/baseline/observations/storage.json"
+expect_failure \
+  "artifact-verify" \
+  "integrity check failed" \
+  "${ariadne}" experiment verify "${artifact_dir}"
+test -e "${artifact_dir}/evidence.json"
+test -e "${artifact_dir}/report.md"
+rm "${artifact_dir}/evidence.json" "${artifact_dir}/report.md"
 expect_failure \
   "artifact-integrity" \
   "integrity check failed" \
