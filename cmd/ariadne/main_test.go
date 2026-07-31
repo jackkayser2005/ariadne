@@ -63,6 +63,7 @@ func TestRunUsage(t *testing.T) {
 		{"experiment", "unknown"},
 		{"experiment", "verify"},
 		{"experiment", "finding"},
+		{"experiment", "ask"},
 	}
 
 	for _, args := range tests {
@@ -572,6 +573,85 @@ func TestRunFindingFailures(t *testing.T) {
 		)
 		if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
 			t.Fatalf("runFinding() = %d, stderr=%q", exitCode, stderr.String())
+		}
+	})
+}
+
+func TestRunAsk(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	exitCode := runAsk(
+		[]string{"run-directory", "capture-complete"},
+		&stdout,
+		&stderr,
+		func(runDir, questionID string) (bundle.Answer, error) {
+			if runDir != "run-directory" || questionID != "capture-complete" {
+				t.Fatalf("Ask() arguments = %q, %q", runDir, questionID)
+			}
+			return bundle.Answer{
+				QuestionID: "capture-complete",
+				Question:   "Were all required observations captured for both sessions?",
+				State:      "observed",
+				FindingIDs: []string{"sha256:" + strings.Repeat("a", 64)},
+			}, nil
+		},
+	)
+	want := "question answered\n" +
+		"id: capture-complete\n" +
+		"question: Were all required observations captured for both sessions?\n" +
+		"answer_state: observed\n" +
+		"findings:\n" +
+		"- sha256:" + strings.Repeat("a", 64) + "\n"
+	if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+		t.Fatalf("runAsk() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+}
+
+func TestRunAskFailures(t *testing.T) {
+	for _, args := range [][]string{nil, {"run"}, {"run", "one", "two"}} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			exitCode := runAsk(
+				args,
+				&stdout,
+				&stderr,
+				func(string, string) (bundle.Answer, error) {
+					t.Fatal("ask called for invalid usage")
+					return bundle.Answer{}, nil
+				},
+			)
+			if exitCode != 2 || stdout.Len() != 0 || stderr.String() != usage {
+				t.Fatalf("runAsk() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+			}
+		})
+	}
+
+	t.Run("bundle error", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAsk(
+			[]string{"run", "question"},
+			&stdout,
+			&stderr,
+			func(string, string) (bundle.Answer, error) {
+				return bundle.Answer{}, errors.New("invalid bundle")
+			},
+		)
+		if exitCode != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "invalid bundle") {
+			t.Fatalf("runAsk() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("write output", func(t *testing.T) {
+		var stderr bytes.Buffer
+		exitCode := runAsk(
+			[]string{"run", "question"},
+			failingWriter{},
+			&stderr,
+			func(string, string) (bundle.Answer, error) {
+				return bundle.Answer{QuestionID: "question", Question: "question", State: "observed"}, nil
+			},
+		)
+		if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+			t.Fatalf("runAsk() = %d, stderr=%q", exitCode, stderr.String())
 		}
 	})
 }

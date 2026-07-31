@@ -368,6 +368,82 @@ func TestFindRejectsTamperedArtifact(t *testing.T) {
 	}
 }
 
+func TestAskQuestionCatalog(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		makeRun        func(*testing.T) string
+		wantState      evidencestate.State
+		wantFindingIDs int
+	}{
+		{
+			name:           "complete",
+			makeRun:        func(t *testing.T) string { return makeRun(t, runOptions{}) },
+			wantState:      evidencestate.Observed,
+			wantFindingIDs: 1,
+		},
+		{
+			name: "storage gap",
+			makeRun: func(t *testing.T) string {
+				return makeStorageFailureRun(t, "")
+			},
+			wantState:      evidencestate.Unknown,
+			wantFindingIDs: 2,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			runDir := test.makeRun(t)
+			if _, err := Write(runDir); err != nil {
+				t.Fatal(err)
+			}
+			for _, questionID := range []string{
+				"counterfactual-change",
+				"capture-complete",
+				"source-integrity",
+			} {
+				answer, err := Ask(runDir, questionID)
+				if err != nil {
+					t.Fatalf("Ask(%q): %v", questionID, err)
+				}
+				wantState := test.wantState
+				if questionID == "source-integrity" {
+					wantState = evidencestate.Observed
+				}
+				if answer.QuestionID != questionID ||
+					answer.State != wantState ||
+					len(answer.FindingIDs) != test.wantFindingIDs {
+					t.Fatalf("Ask(%q) = %#v", questionID, answer)
+				}
+				if strings.Contains(answer.Question, "standard") ||
+					strings.Contains(answer.Question, "personalized") {
+					t.Fatalf("Ask(%q) exposed observed value: %#v", questionID, answer)
+				}
+				for _, id := range answer.FindingIDs {
+					if !validFindingID(id) {
+						t.Fatalf("Ask(%q) finding ID = %q", questionID, id)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestAskRejectsInvalidOrTamperedBundles(t *testing.T) {
+	runDir := makeRun(t, runOptions{})
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Ask(runDir, "not-a-question"); err == nil || !strings.Contains(err.Error(), "question ID is invalid") {
+		t.Fatalf("Ask() invalid question error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "baseline", "observations", "storage.json"), []byte(`{"tampered":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Ask(runDir, "counterfactual-change")
+	if err == nil || !strings.Contains(err.Error(), "integrity check failed") {
+		t.Fatalf("Ask() tamper error = %v", err)
+	}
+}
+
 func TestVerifyRejectsTamperedArtifact(t *testing.T) {
 	runDir := makeRun(t, runOptions{})
 	if _, err := Write(runDir); err != nil {

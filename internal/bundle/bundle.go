@@ -70,6 +70,14 @@ type Finding struct {
 	Evidence       []string
 }
 
+// Answer is the deterministic result of one bounded bundle question.
+type Answer struct {
+	QuestionID string
+	Question   string
+	State      evidence.State
+	FindingIDs []string
+}
+
 type document struct {
 	SchemaVersion          int                 `json:"schema_version"`
 	ManifestName           string              `json:"manifest_name"`
@@ -172,6 +180,70 @@ func Find(runDir, id string) (Finding, error) {
 		}
 	}
 	return Finding{}, errors.New("finding not found")
+}
+
+// Ask verifies a bundle and answers one bounded question without observed values.
+func Ask(runDir, questionID string) (Answer, error) {
+	if !validQuestionID(questionID) {
+		return Answer{}, errors.New("question ID is invalid")
+	}
+	verified, _, err := verifyDocument(runDir)
+	if err != nil {
+		return Answer{}, err
+	}
+	if verified.SchemaVersion != 7 || verified.Comparison.SchemaVersion != 5 {
+		return Answer{}, errors.New("question catalog requires current evidence schema")
+	}
+	findingIDs := comparisonFindingIDs(verified.Comparison)
+	switch questionID {
+	case "counterfactual-change":
+		return Answer{
+			QuestionID: questionID,
+			Question:   verified.Question,
+			State:      verified.AnswerState,
+			FindingIDs: findingIDs,
+		}, nil
+	case "capture-complete":
+		state := evidence.Observed
+		if len(verified.Comparison.Unknowns) > 0 {
+			state = evidence.Unknown
+		}
+		return Answer{
+			QuestionID: questionID,
+			Question:   "Were all required observations captured for both sessions?",
+			State:      state,
+			FindingIDs: slices.Clone(findingIDs),
+		}, nil
+	case "source-integrity":
+		return Answer{
+			QuestionID: questionID,
+			Question:   "Do the verified findings still match their source artifacts?",
+			State:      evidence.Observed,
+			FindingIDs: slices.Clone(findingIDs),
+		}, nil
+	default:
+		return Answer{}, errors.New("question ID is invalid")
+	}
+}
+
+func validQuestionID(value string) bool {
+	switch value {
+	case "counterfactual-change", "capture-complete", "source-integrity":
+		return true
+	default:
+		return false
+	}
+}
+
+func comparisonFindingIDs(comparison analysis.Comparison) []string {
+	ids := make([]string, 0, len(comparison.Differences)+len(comparison.Unknowns))
+	for _, difference := range comparison.Differences {
+		ids = append(ids, difference.ID)
+	}
+	for _, unknown := range comparison.Unknowns {
+		ids = append(ids, unknown.ID)
+	}
+	return ids
 }
 
 func verifyDocument(runDir string) (document, Summary, error) {

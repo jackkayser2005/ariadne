@@ -21,6 +21,7 @@ const usage = `usage:
   ariadne experiment report <run-directory>
   ariadne experiment verify <run-directory>
   ariadne experiment finding <run-directory> <finding-id>
+  ariadne experiment ask <run-directory> <question-id>
 `
 
 const adbCheckTimeout = 10 * time.Second
@@ -48,6 +49,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(args) >= 2 && args[0] == "experiment" && args[1] == "finding" {
 		return runFinding(args[2:], stdout, stderr, bundle.Find)
+	}
+	if len(args) >= 2 && args[0] == "experiment" && args[1] == "ask" {
+		return runAsk(args[2:], stdout, stderr, bundle.Ask)
 	}
 
 	_, _ = io.WriteString(stderr, usage)
@@ -95,6 +99,7 @@ type pairRunner func(
 ) error
 type bundleWriter func(string) (bundle.Summary, error)
 type bundleFinder func(string, string) (bundle.Finding, error)
+type bundleAsker func(string, string) (bundle.Answer, error)
 
 func runAndroidCheck(
 	args []string,
@@ -352,6 +357,40 @@ func runFinding(
 	for _, reference := range finding.Evidence {
 		if _, err = fmt.Fprintf(stdout, "- %s\n", reference); err != nil {
 			_, _ = fmt.Fprintf(stderr, "ariadne: experiment finding: write output: %v\n", err)
+			return 1
+		}
+	}
+	return 0
+}
+
+func runAsk(
+	args []string,
+	stdout, stderr io.Writer,
+	ask bundleAsker,
+) int {
+	if len(args) != 2 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+
+	answer, err := ask(args[0], args[1])
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask: %v\n", err)
+		return 1
+	}
+	if _, err = fmt.Fprintf(
+		stdout,
+		"question answered\nid: %s\nquestion: %s\nanswer_state: %s\nfindings:\n",
+		answer.QuestionID,
+		answer.Question,
+		answer.State,
+	); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask: write output: %v\n", err)
+		return 1
+	}
+	for _, findingID := range answer.FindingIDs {
+		if _, err = fmt.Fprintf(stdout, "- %s\n", findingID); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask: write output: %v\n", err)
 			return 1
 		}
 	}
