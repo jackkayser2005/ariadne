@@ -165,6 +165,7 @@ go run ./cmd/ariadne experiment questions
 go run ./cmd/ariadne experiment questions --json
 go run ./cmd/ariadne experiment ask .ariadne/runs/experiment-001 counterfactual-change
 go run ./cmd/ariadne experiment ask --json .ariadne/runs/experiment-001 counterfactual-change
+go run ./cmd/ariadne experiment finding --json .ariadne/runs/experiment-001 <finding-id-from-evidence.json>
 ```
 
 The output directory must not exist before `experiment run`. A successful final
@@ -191,7 +192,9 @@ when `go run` built Ariadne.
   before treating the run as reproducible from the recorded revision alone.
 - Finding lookup re-verifies the bundle first and prints only the question,
   answer state, stable ID, field, and source references. It rejects unknown
-  IDs, tampered artifacts, and malformed bundles without writing output.
+  IDs, tampered artifacts, and malformed bundles without writing output. Add
+  `--json` for the same raw-value-free fields in deterministic machine-readable
+  order.
 - The bounded question catalog currently supports `counterfactual-change`,
   `capture-complete`, and `source-integrity`. It returns deterministic answer
   states and finding IDs, and rejects any other question ID. Use

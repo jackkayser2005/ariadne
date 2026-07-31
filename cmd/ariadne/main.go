@@ -21,7 +21,7 @@ const usage = `usage:
   ariadne experiment run [--adb <path>] --device <serial> --package <package> --output <directory> <manifest.json>
   ariadne experiment report <run-directory>
   ariadne experiment verify <run-directory>
-  ariadne experiment finding <run-directory> <finding-id>
+  ariadne experiment finding [--json] <run-directory> <finding-id>
   ariadne experiment ask [--json] <run-directory> <question-id>
   ariadne experiment questions [--json]
 `
@@ -324,15 +324,25 @@ func runFinding(
 	stdout, stderr io.Writer,
 	find bundleFinder,
 ) int {
-	if len(args) != 2 {
+	flags := flag.NewFlagSet("experiment finding", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 2 {
 		_, _ = io.WriteString(stderr, usage)
 		return 2
 	}
 
-	finding, err := find(args[0], args[1])
+	finding, err := find(flags.Arg(0), flags.Arg(1))
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment finding: %v\n", err)
 		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(finding); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment finding: write output: %v\n", err)
+			return 1
+		}
+		return 0
 	}
 	if _, err = fmt.Fprintf(
 		stdout,

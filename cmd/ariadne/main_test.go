@@ -528,6 +528,35 @@ func TestRunFinding(t *testing.T) {
 	}
 }
 
+func TestRunFindingJSON(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	id := "sha256:" + strings.Repeat("a", 64)
+	exitCode := runFinding(
+		[]string{"--json", "run-directory", id},
+		&stdout,
+		&stderr,
+		func(runDir, findingID string) (bundle.Finding, error) {
+			if runDir != "run-directory" || findingID != id {
+				t.Fatalf("Find() arguments = %q, %q", runDir, findingID)
+			}
+			return bundle.Finding{
+				Question:       "Did changing the declared variable influence an observed output?",
+				AnswerState:    "observed",
+				Kind:           "difference",
+				Classification: "changed",
+				ID:             findingID,
+				Field:          "variant",
+				State:          "observed",
+				Evidence:       []string{"baseline/observations/storage.json#/variant"},
+			}, nil
+		},
+	)
+	want := `{"question":"Did changing the declared variable influence an observed output?","answer_state":"observed","kind":"difference","classification":"changed","id":"` + id + `","field":"variant","state":"observed","evidence":["baseline/observations/storage.json#/variant"]}` + "\n"
+	if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+		t.Fatalf("runFinding() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+}
+
 func TestRunFindingFailures(t *testing.T) {
 	for _, args := range [][]string{nil, {"run"}, {"run", "one", "two"}} {
 		t.Run(strings.Join(args, "_"), func(t *testing.T) {
@@ -566,6 +595,37 @@ func TestRunFindingFailures(t *testing.T) {
 		var stderr bytes.Buffer
 		exitCode := runFinding(
 			[]string{"run", "id"},
+			failingWriter{},
+			&stderr,
+			func(string, string) (bundle.Finding, error) {
+				return bundle.Finding{Question: "question", AnswerState: "observed", Kind: "difference", ID: "id", Field: "field", State: "observed"}, nil
+			},
+		)
+		if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+			t.Fatalf("runFinding() = %d, stderr=%q", exitCode, stderr.String())
+		}
+	})
+
+	t.Run("invalid json flag", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runFinding(
+			[]string{"--json=invalid", "run", "id"},
+			&stdout,
+			&stderr,
+			func(string, string) (bundle.Finding, error) {
+				t.Fatal("find called for invalid JSON flag")
+				return bundle.Finding{}, nil
+			},
+		)
+		if exitCode != 2 || stdout.Len() != 0 || stderr.String() != usage {
+			t.Fatalf("runFinding() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("write json output", func(t *testing.T) {
+		var stderr bytes.Buffer
+		exitCode := runFinding(
+			[]string{"--json", "run", "id"},
 			failingWriter{},
 			&stderr,
 			func(string, string) (bundle.Finding, error) {
