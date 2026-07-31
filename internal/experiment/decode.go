@@ -68,6 +68,7 @@ func rejectUnknownTopLevelFields(data []byte) error {
 		"baseline":        {},
 		"treatment":       {},
 		"volatile_fields": {},
+		"tap_resource_id": {},
 	}
 	for field := range fields {
 		if _, ok := allowed[field]; !ok {

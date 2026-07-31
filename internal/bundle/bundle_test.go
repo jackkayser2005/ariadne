@@ -429,7 +429,9 @@ func TestWriteRejectsMixedSessionSchemas(t *testing.T) {
 	runDir := makeRun(t, runOptions{
 		mutateTreatment: func(record *adb.SessionRecord) {
 			record.SchemaVersion = 2
+			record.TapResourceID = ""
 			record.Status = ""
+			record.Steps = append(record.Steps[:3], record.Steps[4:]...)
 		},
 	})
 
@@ -495,8 +497,8 @@ func TestWriteRejectsInvalidSessionJSON(t *testing.T) {
 			change: func(input string) string {
 				return strings.Replace(
 					input,
-					`"schema_version": 4,`,
-					`"schema_version": 4, "schema_version": 4,`,
+					`"schema_version": 5,`,
+					`"schema_version": 5, "schema_version": 5,`,
 					1,
 				)
 			},
@@ -668,8 +670,13 @@ type runOptions struct {
 func markStorageCaptureFailure(record *adb.SessionRecord) {
 	record.Status = "incomplete"
 	record.FailureStage = "capture_storage"
-	record.Steps[4].Status = "error"
-	record.Steps[4].ExitCode = -1
+	for index := range record.Steps {
+		if record.Steps[index].Name == "capture_storage" {
+			record.Steps[index].Status = "error"
+			record.Steps[index].ExitCode = -1
+			break
+		}
+	}
 	record.Artifacts = record.Artifacts[:1]
 }
 
@@ -691,7 +698,7 @@ func makeRun(t *testing.T, options runOptions) string {
 	t.Helper()
 	runDir := filepath.Join(t.TempDir(), "run")
 	if options.sessionSchemaVersion == 0 {
-		options.sessionSchemaVersion = 4
+		options.sessionSchemaVersion = 5
 	}
 	if options.baselineStorage == "" {
 		options.baselineStorage = baselineObservation
@@ -754,8 +761,12 @@ func writeSession(
 	if kind == "treatment" {
 		started = started.Add(20 * time.Second)
 	}
-	steps := make([]adb.StepRecord, len(expectedSteps))
-	for index, name := range expectedSteps {
+	stepNames := expectedSteps
+	if schemaVersion < 5 {
+		stepNames = legacyExpectedSteps
+	}
+	steps := make([]adb.StepRecord, len(stepNames))
+	for index, name := range stepNames {
 		stepStart := started.Add(time.Duration(index+1) * time.Second)
 		steps[index] = adb.StepRecord{
 			Name:       name,
@@ -792,6 +803,9 @@ func writeSession(
 				storage,
 			),
 		},
+	}
+	if schemaVersion >= 5 {
+		record.TapResourceID = "dev.ariadne.fixture:id/observe_button"
 	}
 	if schemaVersion >= 3 {
 		record.Status = "complete"

@@ -5,8 +5,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,7 +21,7 @@ import (
 	"github.com/jackkayser2005/ariadne/internal/experiment"
 )
 
-const sessionSchemaVersion = 4
+const sessionSchemaVersion = 5
 const networkObservationTimeout = 5 * time.Second
 const networkCleanupTimeout = 5 * time.Second
 
@@ -36,6 +38,7 @@ type SessionRecord struct {
 	DeclaredVariable   string       `json:"declared_variable"`
 	PersonaFields      int          `json:"persona_fields"`
 	VolatileFields     []string     `json:"volatile_fields,omitempty"`
+	TapResourceID      string       `json:"tap_resource_id,omitempty"`
 	ADBVersion         string       `json:"adb_version"`
 	Device             string       `json:"device"`
 	Package            string       `json:"package"`
@@ -177,13 +180,18 @@ func runSession(
 		return fmt.Errorf("%s: create session directory: %w", kind, err)
 	}
 
+	schemaVersion := sessionSchemaVersion
+	if manifest.TapResourceID == "" {
+		schemaVersion = 4
+	}
 	record := SessionRecord{
-		SchemaVersion:      sessionSchemaVersion,
+		SchemaVersion:      schemaVersion,
 		Kind:               kind,
 		ManifestName:       manifest.Name,
 		DeclaredVariable:   manifest.Variable,
 		PersonaFields:      len(persona),
 		VolatileFields:     experiment.CanonicalVolatileFields(manifest.VolatileFields),
+		TapResourceID:      manifest.TapResourceID,
 		ADBVersion:         target.Version,
 		Device:             target.Device,
 		Package:            target.Package,
@@ -271,6 +279,22 @@ func runSession(
 			if err != nil {
 				failureStage = "start"
 				return fmt.Errorf("%s: start fixture: %w", kind, err)
+			}
+
+			if manifest.TapResourceID != "" {
+				interact, err := runInteractionStep(
+					ctx,
+					run,
+					now,
+					binary,
+					target.Device,
+					manifest.TapResourceID,
+				)
+				record.Steps = append(record.Steps, interact)
+				if err != nil {
+					failureStage = "interact"
+					return fmt.Errorf("%s: interact with fixture: %w", kind, err)
+				}
 			}
 
 			captureNetwork := StepRecord{
@@ -437,6 +461,156 @@ func runStep(
 	return step, output, err
 }
 
+const uiDumpPath = "/sdcard/ariadne-ui.xml"
+
+type uiHierarchy struct {
+	Nodes []uiNode `xml:"node"`
+}
+
+type uiNode struct {
+	ResourceID string   `xml:"resource-id,attr"`
+	Bounds     string   `xml:"bounds,attr"`
+	Nodes      []uiNode `xml:"node"`
+}
+
+func runInteractionStep(
+	ctx context.Context,
+	run commandRunner,
+	now func() time.Time,
+	binary, device, resourceID string,
+) (StepRecord, error) {
+	step := StepRecord{
+		Name:      "interact",
+		StartedAt: now().UTC(),
+		Status:    "ok",
+	}
+	finish := func(err error) (StepRecord, error) {
+		step.FinishedAt = now().UTC()
+		if err != nil {
+			step.Status = "error"
+			if step.ExitCode == 0 {
+				step.ExitCode = -1
+			}
+		}
+		return step, err
+	}
+	cleanup := func() error {
+		cleanupContext, cancel := context.WithTimeout(
+			context.WithoutCancel(ctx),
+			networkCleanupTimeout,
+		)
+		defer cancel()
+		_, err := run(
+			cleanupContext,
+			binary,
+			"-s", device,
+			"shell", "rm", "--", uiDumpPath,
+		)
+		return err
+	}
+
+	if _, err := run(
+		ctx,
+		binary,
+		"-s", device,
+		"shell", "uiautomator", "dump", "--compressed", uiDumpPath,
+	); err != nil {
+		step.ExitCode = commandExitCode(err)
+		return finish(errors.New("dump UI hierarchy"))
+	}
+
+	dump, err := run(
+		ctx,
+		binary,
+		"-s", device,
+		"shell", "cat", uiDumpPath,
+	)
+	if err != nil {
+		_ = cleanup()
+		step.ExitCode = commandExitCode(err)
+		return finish(errors.New("read UI hierarchy"))
+	}
+
+	coordinates, err := tapCoordinates(dump, resourceID)
+	cleanupErr := cleanup()
+	if err != nil {
+		return finish(err)
+	}
+	if cleanupErr != nil {
+		step.ExitCode = commandExitCode(cleanupErr)
+		return finish(errors.New("remove UI hierarchy"))
+	}
+
+	if _, err := run(
+		ctx,
+		binary,
+		"-s", device,
+		"shell", "input", "tap",
+		strconv.Itoa(coordinates[0]),
+		strconv.Itoa(coordinates[1]),
+	); err != nil {
+		step.ExitCode = commandExitCode(err)
+		return finish(errors.New("tap fixture control"))
+	}
+	return finish(nil)
+}
+
+func tapCoordinates(data []byte, resourceID string) ([2]int, error) {
+	if resourceID == "" || len(data) > 256<<10 {
+		return [2]int{}, errors.New("UI hierarchy is invalid")
+	}
+	var hierarchy uiHierarchy
+	decoder := xml.NewDecoder(io.LimitReader(bytes.NewReader(data), 256<<10+1))
+	if err := decoder.Decode(&hierarchy); err != nil {
+		return [2]int{}, errors.New("UI hierarchy is invalid")
+	}
+	var trailing struct{}
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return [2]int{}, errors.New("UI hierarchy is invalid")
+	}
+	var match uiNode
+	count := 0
+	var visit func([]uiNode)
+	visit = func(nodes []uiNode) {
+		for index := range nodes {
+			node := nodes[index]
+			if node.ResourceID == resourceID {
+				count++
+				if count == 1 {
+					match = node
+				}
+			}
+			visit(node.Nodes)
+		}
+	}
+	visit(hierarchy.Nodes)
+	if count != 1 {
+		return [2]int{}, errors.New("fixture control was not found uniquely")
+	}
+	return parseBounds(match.Bounds)
+}
+
+func parseBounds(value string) ([2]int, error) {
+	parts := strings.FieldsFunc(value, func(r rune) bool {
+		return r == '[' || r == ']' || r == ','
+	})
+	if len(parts) != 4 {
+		return [2]int{}, errors.New("fixture control bounds are invalid")
+	}
+	values := make([]int, len(parts))
+	for index, part := range parts {
+		parsed, err := strconv.Atoi(part)
+		if err != nil || parsed < 0 || parsed > 10000 {
+			return [2]int{}, errors.New("fixture control bounds are invalid")
+		}
+		values[index] = parsed
+	}
+	if values[2] <= values[0] || values[3] <= values[1] {
+		return [2]int{}, errors.New("fixture control bounds are invalid")
+	}
+	return [2]int{(values[0] + values[2]) / 2, (values[1] + values[3]) / 2}, nil
+}
+
 func finishSession(
 	sessionDir string,
 	record *SessionRecord,
@@ -472,6 +646,7 @@ func ValidFailureStage(stage string) bool {
 	case "reset",
 		"connect_network",
 		"start",
+		"interact",
 		"capture_network",
 		"capture_storage",
 		"disconnect_network":

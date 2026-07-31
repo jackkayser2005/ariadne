@@ -1,10 +1,11 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "experiment-001-email",
   "variable": "email",
   "volatile_fields": [
     "request_id"
   ],
+  "tap_resource_id": "dev.ariadne.fixture:id/observe_button",
   "baseline": {
     "email": "baseline@example.invalid",
     "region": "us-east"

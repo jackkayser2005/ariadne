@@ -12,7 +12,7 @@ import (
 )
 
 // CurrentSchemaVersion is the manifest version supported by this build.
-const CurrentSchemaVersion = 2
+const CurrentSchemaVersion = 3
 
 const maxVolatileFields = 64
 
@@ -49,6 +49,7 @@ type Manifest struct {
 	Baseline       Persona  `json:"baseline"`
 	Treatment      Persona  `json:"treatment"`
 	VolatileFields []string `json:"volatile_fields,omitempty"`
+	TapResourceID  string   `json:"tap_resource_id,omitempty"`
 }
 
 // Validate reports whether the manifest describes exactly one declared change.
@@ -58,6 +59,12 @@ func (m Manifest) Validate() error {
 	}
 	if m.SchemaVersion == 1 && len(m.VolatileFields) > 0 {
 		return errors.New("volatile_fields: require schema_version 2")
+	}
+	if m.SchemaVersion < 3 && m.TapResourceID != "" {
+		return errors.New("tap_resource_id: require schema_version 3")
+	}
+	if m.SchemaVersion >= 3 && !ValidResourceID(m.TapResourceID) {
+		return errors.New("tap_resource_id: invalid resource identifier")
 	}
 	if err := ValidateVolatileFields(m.VolatileFields); err != nil {
 		return err
@@ -150,6 +157,22 @@ func validObservationFieldName(value string) bool {
 			character >= 'A' && character <= 'Z'
 		isDigit := character >= '0' && character <= '9'
 		if !isLetter && !isDigit && !strings.ContainsRune("._:-", character) {
+			return false
+		}
+	}
+	return true
+}
+
+// ValidResourceID reports whether value is a bounded Android resource identifier.
+func ValidResourceID(value string) bool {
+	if value == "" || len(value) > 256 {
+		return false
+	}
+	for _, character := range value {
+		isLetter := character >= 'a' && character <= 'z' ||
+			character >= 'A' && character <= 'Z'
+		isDigit := character >= '0' && character <= '9'
+		if !isLetter && !isDigit && !strings.ContainsRune("._:/-", character) {
 			return false
 		}
 	}

@@ -2,6 +2,8 @@ package dev.ariadne.fixture;
 
 import android.app.Activity;
 import android.os.Bundle;
+import android.view.View;
+import android.widget.Button;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -15,25 +17,38 @@ public final class MainActivity extends Activity {
     static final String OBSERVATION_FILE = "observation.json";
     private static final int REPORT_TIMEOUT_MILLIS = 5_000;
 
+    private String email;
+    private String region;
+    private String captureMode;
+    private int collectorPort;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        String email = getIntent().getStringExtra("email");
-        String region = getIntent().getStringExtra("region");
+        email = getIntent().getStringExtra("email");
+        region = getIntent().getStringExtra("region");
         if (email == null || region == null) {
             setResult(RESULT_CANCELED);
             finish();
             return;
         }
 
+        captureMode = getIntent().getStringExtra("capture_mode");
+        collectorPort = getIntent().getIntExtra("collector_port", 0);
+        setContentView(R.layout.activity_main);
+        Button observeButton = findViewById(R.id.observe_button);
+        observeButton.setOnClickListener(this::runObservation);
+        observeButton.requestFocus();
+    }
+
+    private void runObservation(View view) {
+        view.setEnabled(false);
         try {
             byte[] observation = observationFor(email, region);
-            String captureMode = getIntent().getStringExtra("capture_mode");
             if (ExperimentLogic.shouldWriteStorage(email, captureMode)) {
                 writeObservation(observation);
             }
-            int collectorPort = getIntent().getIntExtra("collector_port", 0);
             if (collectorPort != 0) {
                 reportObservation(collectorPort, observation);
             }

@@ -35,6 +35,12 @@ func TestDecode(t *testing.T) {
 			`"name": "experiment-001-email"`,
 			`"name": "experiment-001-email", "volatile_fields": ["request_id"]`,
 		).Replace(validJSON)},
+		{name: "valid v3", input: strings.NewReplacer(
+			`"schema_version": 1`,
+			`"schema_version": 3`,
+			`"name": "experiment-001-email"`,
+			`"name": "experiment-001-email", "tap_resource_id": "dev.ariadne.fixture:id/observe_button"`,
+		).Replace(validJSON)},
 		{name: "empty", input: " \n", wantErr: "empty input"},
 		{name: "malformed", input: `{"schema_version":`, wantErr: "unexpected end of input"},
 		{name: "duplicate top-level key", input: `{

@@ -1,8 +1,9 @@
 # Android Fixture
 
 `dev.ariadne.fixture` is the authorized target for Experiment 001. ADB starts
-`MainActivity` with `email` and `region` string extras. The activity writes
-`files/observation.json` and exits. When ADB also supplies an integer
+`MainActivity` with `email` and `region` string extras. The activity renders
+one `Run observation` button; the runner taps that declared control before the
+activity writes `files/observation.json` and exits. When ADB also supplies an integer
 `collector_port`, the activity posts the same JSON to
 `http://127.0.0.1:<port>/observe`.
 
