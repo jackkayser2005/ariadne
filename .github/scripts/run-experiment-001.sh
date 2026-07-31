@@ -146,7 +146,7 @@ jq -e \
   --arg contract_digest "${storage_gap_contract_digest}" \
   '
   (.status == "complete") and
-  (.schema_version == 7) and
+  (.schema_version == 6) and
   (.tap_resource_id == "dev.ariadne.fixture:id/observe_button") and
   (.manifest_contract_sha256 == $contract_digest) and
   any(.steps[]; .name == "interact" and .status == "ok" and .exit_code == 0) and
@@ -186,7 +186,7 @@ grep -F -x -q "unknowns: 3" "${storage_gap_report_stdout}"
 jq -e \
   --arg contract_digest "${storage_gap_contract_digest}" \
   '
-  (.schema_version == 6) and
+  (.schema_version == 7) and
   (.manifest_contract_sha256 == $contract_digest) and
   (.question == "Did changing email influence an observed output?") and
   (.answer_state == "unknown") and
