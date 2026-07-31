@@ -62,6 +62,8 @@ type document struct {
 	ManifestName           string              `json:"manifest_name"`
 	DeclaredVariable       string              `json:"declared_variable"`
 	ManifestContractSHA256 string              `json:"manifest_contract_sha256,omitempty"`
+	Question               string              `json:"question,omitempty"`
+	AnswerState            evidence.State      `json:"answer_state,omitempty"`
 	Target                 target              `json:"target"`
 	Normalizations         []string            `json:"normalizations"`
 	Artifacts              []artifact          `json:"artifacts"`
@@ -163,14 +165,23 @@ func Write(runDir string) (Summary, error) {
 	artifacts = append(artifacts, treatment.metadata)
 	artifacts = append(artifacts, treatment.artifacts...)
 	evidenceSchemaVersion := 4
+	question := ""
+	answerState := evidence.State("")
 	if baseline.record.ManifestContractSHA256 != "" {
-		evidenceSchemaVersion = 5
+		evidenceSchemaVersion = 6
+		question = "Did changing " + baseline.record.DeclaredVariable + " influence an observed output?"
+		answerState = evidence.Observed
+		if !sessionComplete(treatment.record) {
+			answerState = evidence.Unknown
+		}
 	}
 	evidence := document{
 		SchemaVersion:          evidenceSchemaVersion,
 		ManifestName:           baseline.record.ManifestName,
 		DeclaredVariable:       baseline.record.DeclaredVariable,
 		ManifestContractSHA256: baseline.record.ManifestContractSHA256,
+		Question:               question,
+		AnswerState:            answerState,
 		Target: target{
 			ADBVersion:         baseline.record.ADBVersion,
 			Device:             baseline.record.Device,
@@ -597,6 +608,10 @@ func renderReport(evidence document) []byte {
 			"- Manifest contract SHA-256: %s\n",
 			code(evidence.ManifestContractSHA256),
 		)
+	}
+	if evidence.Question != "" {
+		fmt.Fprintf(&report, "- Question: %s\n", code(evidence.Question))
+		fmt.Fprintf(&report, "- Answer state: %s\n", code(string(evidence.AnswerState)))
 	}
 	fmt.Fprintf(&report, "- Device: %s\n", code(evidence.Target.Device))
 	fmt.Fprintf(&report, "- Android API: %d\n", evidence.Target.AndroidAPI)

@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackkayser2005/ariadne/internal/adb"
 	"github.com/jackkayser2005/ariadne/internal/collector"
+	evidencestate "github.com/jackkayser2005/ariadne/internal/evidence"
 )
 
 const (
@@ -41,7 +42,9 @@ func TestWrite(t *testing.T) {
 	if err := json.Unmarshal(evidence, &document); err != nil {
 		t.Fatal(err)
 	}
-	if document.SchemaVersion != 5 ||
+	if document.SchemaVersion != 6 ||
+		document.Question != "Did changing email influence an observed output?" ||
+		document.AnswerState != evidencestate.Observed ||
 		document.Comparison.SchemaVersion != 4 ||
 		len(document.Artifacts) != 6 ||
 		len(document.Comparison.Differences) != 1 ||
@@ -78,6 +81,8 @@ func TestWrite(t *testing.T) {
 		"Ariadne revision: <code>" + strings.Repeat("b", 40) + "</code>",
 		"Ariadne modified: false",
 		"Manifest contract SHA-256: <code>",
+		"Question: <code>Did changing email influence an observed output?</code>",
+		"Answer state: <code>observed</code>",
 	} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("report missing %q:\n%s", expected, text)
@@ -127,7 +132,9 @@ func TestWriteIncompleteTreatment(t *testing.T) {
 	if err := json.Unmarshal(data, &document); err != nil {
 		t.Fatal(err)
 	}
-	if document.SchemaVersion != 5 ||
+	if document.SchemaVersion != 6 ||
+		document.Question != "Did changing email influence an observed output?" ||
+		document.AnswerState != evidencestate.Unknown ||
 		len(document.Artifacts) != 5 ||
 		len(document.Comparison.UnchangedFields) != 0 ||
 		len(document.Comparison.Differences) != 0 ||
@@ -155,6 +162,8 @@ func TestWriteIncompleteTreatment(t *testing.T) {
 		"## Unknowns",
 		"treatment storage observation was not captured",
 		"No stable fields were established.",
+		"Question: <code>Did changing email influence an observed output?</code>",
+		"Answer state: <code>unknown</code>",
 	} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("report missing %q:\n%s", expected, text)

@@ -250,12 +250,14 @@ reverse mapping before the session ends, including after capture failures.
 
 `evidence.json` verifies matching target provenance, session order, successful
 step records, artifact sizes, and SHA-256 digests before recording the
-normalization and comparison. Current evidence schema 5 also records the
-manifest contract digest. The digest covers only schema version, manifest
-name, declared variable, persona field names, volatile fields, and the stable
-tap resource ID; it never includes persona values. Legacy session-schema-4
-runs continue to produce readable evidence schema 4. `report.md` is the
-concise human-readable view.
+normalization and comparison. Current evidence schema 6 also records the
+manifest contract digest, the safe question `Did changing <variable> influence
+an observed output?`, and its answer state. A complete pair is `observed`; the
+supported treatment-storage gap is `unknown`. The digest covers only schema
+version, manifest name, declared variable, persona field names, volatile
+fields, and the stable tap resource ID; it never includes persona values.
+Legacy session-schema-4 and schema-5 runs continue to produce readable
+evidence. `report.md` is the concise human-readable view.
 For the fixture, it reports one observed `variant` difference supported by both
 storage and network artifacts. The differing raw `request_id` values remain in
 those artifacts but are not copied into `evidence.json` or `report.md`.

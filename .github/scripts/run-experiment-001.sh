@@ -26,8 +26,10 @@ fixture_sha256="$(
 jq -e \
   --arg fixture_sha256 "${fixture_sha256}" \
   --arg ariadne_revision "${GITHUB_SHA}" '
-  (.schema_version == 5) and
+  (.schema_version == 6) and
   (.manifest_contract_sha256 | test("^[0-9a-f]{64}$")) and
+  (.question == "Did changing email influence an observed output?") and
+  (.answer_state == "observed") and
   (.target.android_api == 35) and
   (.target.architecture == "x86_64") and
   (.target.package_version_code == 1) and
@@ -181,8 +183,10 @@ grep -F -x -q "unknowns: 3" "${storage_gap_report_stdout}"
 jq -e \
   --arg contract_digest "${storage_gap_contract_digest}" \
   '
-  (.schema_version == 5) and
+  (.schema_version == 6) and
   (.manifest_contract_sha256 == $contract_digest) and
+  (.question == "Did changing email influence an observed output?") and
+  (.answer_state == "unknown") and
   (.manifest_name == "experiment-001-email-storage-gap") and
   (.artifacts | length == 5) and
   (.comparison.schema_version == 4) and
