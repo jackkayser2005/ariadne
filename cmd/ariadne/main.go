@@ -19,6 +19,7 @@ const usage = `usage:
   ariadne android check [--adb <path>] --device <serial> --package <package>
   ariadne experiment run [--adb <path>] --device <serial> --package <package> --output <directory> <manifest.json>
   ariadne experiment report <run-directory>
+  ariadne experiment verify <run-directory>
 `
 
 const adbCheckTimeout = 10 * time.Second
@@ -40,6 +41,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(args) >= 2 && args[0] == "experiment" && args[1] == "report" {
 		return runReport(args[2:], stdout, stderr, bundle.Write)
+	}
+	if len(args) >= 2 && args[0] == "experiment" && args[1] == "verify" {
+		return runVerify(args[2:], stdout, stderr, bundle.Verify)
 	}
 
 	_, _ = io.WriteString(stderr, usage)
@@ -265,6 +269,35 @@ func runReport(
 	)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment report: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func runVerify(
+	args []string,
+	stdout, stderr io.Writer,
+	verify bundleWriter,
+) int {
+	if len(args) != 1 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+
+	summary, err := verify(args[0])
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment verify: %v\n", err)
+		return 1
+	}
+	_, err = fmt.Fprintf(
+		stdout,
+		"evidence bundle verified\nname: %s\ndifferences: %d\nunknowns: %d\n",
+		summary.ManifestName,
+		summary.Differences,
+		summary.Unknowns,
+	)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment verify: write output: %v\n", err)
 		return 1
 	}
 	return 0

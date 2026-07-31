@@ -29,6 +29,7 @@ const (
 	maxSessionBytes = 64 << 10
 	maxStorageBytes = 64 << 10
 	maxNetworkBytes = 96 << 10
+	maxOutputBytes  = 128 << 10
 )
 
 var expectedSteps = []string{
@@ -98,20 +99,70 @@ type loadedSession struct {
 
 // Write verifies runDir and creates evidence.json and report.md without overwriting.
 func Write(runDir string) (Summary, error) {
+	evidence, summary, err := buildDocument(runDir)
+	if err != nil {
+		return Summary{}, err
+	}
+	evidenceData, err := encodeDocument(evidence)
+	if err != nil {
+		return Summary{}, err
+	}
+	reportData, err := encodeReport(evidence)
+	if err != nil {
+		return Summary{}, err
+	}
+	if err := writeOutputs(runDir, evidenceData, reportData); err != nil {
+		return Summary{}, err
+	}
+	return summary, nil
+}
+
+// Verify checks an existing evidence bundle without writing either output.
+func Verify(runDir string) (Summary, error) {
+	evidence, summary, err := buildDocument(runDir)
+	if err != nil {
+		return Summary{}, err
+	}
+	evidenceData, err := encodeDocument(evidence)
+	if err != nil {
+		return Summary{}, err
+	}
+	existingEvidence, err := readFileBounded(filepath.Join(runDir, "evidence.json"), maxOutputBytes)
+	if err != nil {
+		return Summary{}, fmt.Errorf("evidence output: %w", err)
+	}
+	if !bytes.Equal(existingEvidence, evidenceData) {
+		return Summary{}, errors.New("evidence output does not match verified artifacts")
+	}
+	existingReport, err := readFileBounded(filepath.Join(runDir, "report.md"), maxOutputBytes)
+	if err != nil {
+		return Summary{}, fmt.Errorf("report output: %w", err)
+	}
+	reportData, err := encodeReport(evidence)
+	if err != nil {
+		return Summary{}, err
+	}
+	if !bytes.Equal(existingReport, reportData) {
+		return Summary{}, errors.New("report output does not match verified artifacts")
+	}
+	return summary, nil
+}
+
+func buildDocument(runDir string) (document, Summary, error) {
 	if strings.TrimSpace(runDir) == "" {
-		return Summary{}, errors.New("run directory is required")
+		return document{}, Summary{}, errors.New("run directory is required")
 	}
 
 	baseline, err := loadSession(runDir, "baseline")
 	if err != nil {
-		return Summary{}, err
+		return document{}, Summary{}, err
 	}
 	treatment, err := loadSession(runDir, "treatment")
 	if err != nil {
-		return Summary{}, err
+		return document{}, Summary{}, err
 	}
 	if err := validatePair(baseline.record, treatment.record); err != nil {
-		return Summary{}, err
+		return document{}, Summary{}, err
 	}
 
 	baselineNormalized, err := analysis.Normalize(
@@ -119,7 +170,7 @@ func Write(runDir string) (Summary, error) {
 		bytes.NewReader(baseline.network),
 	)
 	if err != nil {
-		return Summary{}, fmt.Errorf("baseline: %w", err)
+		return document{}, Summary{}, fmt.Errorf("baseline: %w", err)
 	}
 	var comparison analysis.Comparison
 	var normalizations []string
@@ -129,7 +180,7 @@ func Write(runDir string) (Summary, error) {
 			bytes.NewReader(treatment.network),
 		)
 		if err != nil {
-			return Summary{}, fmt.Errorf("treatment: %w", err)
+			return document{}, Summary{}, fmt.Errorf("treatment: %w", err)
 		}
 		comparison = analysis.Compare(
 			baselineNormalized,
@@ -150,7 +201,7 @@ func Write(runDir string) (Summary, error) {
 	} else {
 		treatmentAvailable, err := analysis.NormalizeNetwork(bytes.NewReader(treatment.network))
 		if err != nil {
-			return Summary{}, fmt.Errorf("treatment: %w", err)
+			return document{}, Summary{}, fmt.Errorf("treatment: %w", err)
 		}
 		comparison = incompleteTreatmentComparison(baselineNormalized, treatmentAvailable)
 		normalizations = []string{
@@ -198,20 +249,31 @@ func Write(runDir string) (Summary, error) {
 		Comparison:     comparison,
 	}
 
-	evidenceData, err := json.MarshalIndent(evidence, "", "  ")
-	if err != nil {
-		return Summary{}, fmt.Errorf("encode evidence: %w", err)
-	}
-	evidenceData = append(evidenceData, '\n')
-	reportData := renderReport(evidence)
-	if err := writeOutputs(runDir, evidenceData, reportData); err != nil {
-		return Summary{}, err
-	}
-	return Summary{
+	return evidence, Summary{
 		ManifestName: baseline.record.ManifestName,
 		Differences:  len(comparison.Differences),
 		Unknowns:     len(comparison.Unknowns),
 	}, nil
+}
+
+func encodeDocument(evidence document) ([]byte, error) {
+	data, err := json.MarshalIndent(evidence, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("encode evidence: %w", err)
+	}
+	data = append(data, '\n')
+	if len(data) > maxOutputBytes {
+		return nil, fmt.Errorf("evidence output exceeds %d-byte limit", maxOutputBytes)
+	}
+	return data, nil
+}
+
+func encodeReport(evidence document) ([]byte, error) {
+	data := renderReport(evidence)
+	if len(data) > maxOutputBytes {
+		return nil, fmt.Errorf("report output exceeds %d-byte limit", maxOutputBytes)
+	}
+	return data, nil
 }
 
 func loadSession(runDir, kind string) (loadedSession, error) {
