@@ -58,13 +58,14 @@ type Summary struct {
 }
 
 type document struct {
-	SchemaVersion    int                 `json:"schema_version"`
-	ManifestName     string              `json:"manifest_name"`
-	DeclaredVariable string              `json:"declared_variable"`
-	Target           target              `json:"target"`
-	Normalizations   []string            `json:"normalizations"`
-	Artifacts        []artifact          `json:"artifacts"`
-	Comparison       analysis.Comparison `json:"comparison"`
+	SchemaVersion          int                 `json:"schema_version"`
+	ManifestName           string              `json:"manifest_name"`
+	DeclaredVariable       string              `json:"declared_variable"`
+	ManifestContractSHA256 string              `json:"manifest_contract_sha256,omitempty"`
+	Target                 target              `json:"target"`
+	Normalizations         []string            `json:"normalizations"`
+	Artifacts              []artifact          `json:"artifacts"`
+	Comparison             analysis.Comparison `json:"comparison"`
 }
 
 type target struct {
@@ -161,10 +162,15 @@ func Write(runDir string) (Summary, error) {
 	artifacts = append(artifacts, baseline.artifacts...)
 	artifacts = append(artifacts, treatment.metadata)
 	artifacts = append(artifacts, treatment.artifacts...)
+	evidenceSchemaVersion := 4
+	if baseline.record.ManifestContractSHA256 != "" {
+		evidenceSchemaVersion = 5
+	}
 	evidence := document{
-		SchemaVersion:    4,
-		ManifestName:     baseline.record.ManifestName,
-		DeclaredVariable: baseline.record.DeclaredVariable,
+		SchemaVersion:          evidenceSchemaVersion,
+		ManifestName:           baseline.record.ManifestName,
+		DeclaredVariable:       baseline.record.DeclaredVariable,
+		ManifestContractSHA256: baseline.record.ManifestContractSHA256,
 		Target: target{
 			ADBVersion:         baseline.record.ADBVersion,
 			Device:             baseline.record.Device,
@@ -290,28 +296,29 @@ func decodeSession(data []byte, record *adb.SessionRecord) error {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(data, &fields); err == nil {
 		allowed := map[string]struct{}{
-			"schema_version":       {},
-			"kind":                 {},
-			"manifest_name":        {},
-			"declared_variable":    {},
-			"persona_fields":       {},
-			"volatile_fields":      {},
-			"tap_resource_id":      {},
-			"adb_version":          {},
-			"device":               {},
-			"package":              {},
-			"android_api":          {},
-			"architecture":         {},
-			"package_version_code": {},
-			"package_sha256":       {},
-			"ariadne_revision":     {},
-			"ariadne_modified":     {},
-			"status":               {},
-			"failure_stage":        {},
-			"started_at":           {},
-			"finished_at":          {},
-			"steps":                {},
-			"artifacts":            {},
+			"schema_version":           {},
+			"kind":                     {},
+			"manifest_name":            {},
+			"declared_variable":        {},
+			"persona_fields":           {},
+			"volatile_fields":          {},
+			"tap_resource_id":          {},
+			"manifest_contract_sha256": {},
+			"adb_version":              {},
+			"device":                   {},
+			"package":                  {},
+			"android_api":              {},
+			"architecture":             {},
+			"package_version_code":     {},
+			"package_sha256":           {},
+			"ariadne_revision":         {},
+			"ariadne_modified":         {},
+			"status":                   {},
+			"failure_stage":            {},
+			"started_at":               {},
+			"finished_at":              {},
+			"steps":                    {},
+			"artifacts":                {},
 		}
 		for field := range fields {
 			if _, ok := allowed[field]; !ok {
@@ -336,7 +343,8 @@ func validateSession(record adb.SessionRecord, kind string) error {
 	if (record.SchemaVersion != 2 &&
 		record.SchemaVersion != 3 &&
 		record.SchemaVersion != 4 &&
-		record.SchemaVersion != 5) ||
+		record.SchemaVersion != 5 &&
+		record.SchemaVersion != 6) ||
 		record.Kind != kind {
 		return errors.New("schema_version or kind is invalid")
 	}
@@ -368,6 +376,12 @@ func validateSession(record adb.SessionRecord, kind string) error {
 	}
 	if record.SchemaVersion >= 5 && !experiment.ValidResourceID(record.TapResourceID) {
 		return errors.New("tap_resource_id is invalid")
+	}
+	if record.SchemaVersion < 6 && record.ManifestContractSHA256 != "" {
+		return errors.New("legacy session manifest_contract_sha256 is invalid")
+	}
+	if record.SchemaVersion >= 6 && !validDigest(record.ManifestContractSHA256) {
+		return errors.New("manifest_contract_sha256 is invalid")
 	}
 	if !slices.IsSorted(record.VolatileFields) {
 		return errors.New("volatile_fields are not canonical")
@@ -455,6 +469,7 @@ func validatePair(baseline, treatment adb.SessionRecord) error {
 		baseline.AriadneRevision != treatment.AriadneRevision ||
 		baseline.AriadneModified != treatment.AriadneModified ||
 		baseline.TapResourceID != treatment.TapResourceID ||
+		baseline.ManifestContractSHA256 != treatment.ManifestContractSHA256 ||
 		treatment.StartedAt.Before(baseline.FinishedAt) {
 		return errors.New("baseline and treatment session metadata disagree")
 	}
@@ -576,6 +591,13 @@ func renderReport(evidence document) []byte {
 	report.WriteString("# Evidence Report\n\n")
 	fmt.Fprintf(&report, "- Manifest: %s\n", code(evidence.ManifestName))
 	fmt.Fprintf(&report, "- Declared variable: %s\n", code(evidence.DeclaredVariable))
+	if evidence.ManifestContractSHA256 != "" {
+		fmt.Fprintf(
+			&report,
+			"- Manifest contract SHA-256: %s\n",
+			code(evidence.ManifestContractSHA256),
+		)
+	}
 	fmt.Fprintf(&report, "- Device: %s\n", code(evidence.Target.Device))
 	fmt.Fprintf(&report, "- Android API: %d\n", evidence.Target.AndroidAPI)
 	fmt.Fprintf(&report, "- Architecture: %s\n", code(evidence.Target.Architecture))

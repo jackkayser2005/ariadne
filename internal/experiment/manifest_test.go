@@ -135,3 +135,20 @@ func TestCanonicalVolatileFields(t *testing.T) {
 		t.Fatalf("CanonicalVolatileFields() = %v", got)
 	}
 }
+
+func TestContractDigestExcludesPersonaValues(t *testing.T) {
+	manifest := validManifest()
+	first := manifest.ContractDigest()
+	manifest.Baseline["email"] = "different-baseline@example.invalid"
+	manifest.Treatment["email"] = "different-treatment@example.invalid"
+	second := manifest.ContractDigest()
+	if first != second || len(first) != 64 {
+		t.Fatalf("ContractDigest() changed with persona values: %q != %q", first, second)
+	}
+	manifest.Baseline["locale"] = "en-US"
+	manifest.Treatment["locale"] = "en-US"
+	third := manifest.ContractDigest()
+	if third == first {
+		t.Fatal("ContractDigest() did not change with persona fields")
+	}
+}

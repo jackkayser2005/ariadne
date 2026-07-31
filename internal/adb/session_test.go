@@ -149,6 +149,7 @@ func TestRunPairUsesStableResourceInteraction(t *testing.T) {
 	manifest := sessionManifest()
 	manifest.SchemaVersion = 3
 	manifest.TapResourceID = "dev.ariadne.fixture:id/observe_button"
+	contractDigest := manifest.ContractDigest()
 	target := sessionTarget()
 	var calls [][]string
 	var startArgs []string
@@ -223,8 +224,9 @@ func TestRunPairUsesStableResourceInteraction(t *testing.T) {
 			t.Fatal(err)
 		}
 		text := string(data)
-		if !strings.Contains(text, `"schema_version": 5`) ||
+		if !strings.Contains(text, `"schema_version": 6`) ||
 			!strings.Contains(text, `"tap_resource_id": "dev.ariadne.fixture:id/observe_button"`) ||
+			!strings.Contains(text, `"manifest_contract_sha256": "`+contractDigest+`"`) ||
 			!strings.Contains(text, `"name": "interact"`) {
 			t.Fatalf("%s session metadata = %s", kind, text)
 		}

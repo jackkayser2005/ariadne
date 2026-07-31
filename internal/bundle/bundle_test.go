@@ -41,7 +41,7 @@ func TestWrite(t *testing.T) {
 	if err := json.Unmarshal(evidence, &document); err != nil {
 		t.Fatal(err)
 	}
-	if document.SchemaVersion != 4 ||
+	if document.SchemaVersion != 5 ||
 		document.Comparison.SchemaVersion != 4 ||
 		len(document.Artifacts) != 6 ||
 		len(document.Comparison.Differences) != 1 ||
@@ -52,7 +52,8 @@ func TestWrite(t *testing.T) {
 		document.Target.Architecture != "x86_64" ||
 		document.Target.PackageVersionCode != 1 ||
 		document.Target.PackageSHA256 != strings.Repeat("a", 64) ||
-		document.Target.AriadneRevision != strings.Repeat("b", 40) {
+		document.Target.AriadneRevision != strings.Repeat("b", 40) ||
+		document.ManifestContractSHA256 != strings.Repeat("c", 64) {
 		t.Fatalf("evidence = %#v", document)
 	}
 
@@ -76,6 +77,7 @@ func TestWrite(t *testing.T) {
 		"Package SHA-256: <code>" + strings.Repeat("a", 64) + "</code>",
 		"Ariadne revision: <code>" + strings.Repeat("b", 40) + "</code>",
 		"Ariadne modified: false",
+		"Manifest contract SHA-256: <code>",
 	} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("report missing %q:\n%s", expected, text)
@@ -90,6 +92,14 @@ func TestWrite(t *testing.T) {
 
 func TestWriteAcceptsLegacySessions(t *testing.T) {
 	runDir := makeRun(t, runOptions{sessionSchemaVersion: 2})
+
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWriteAcceptsStableIDSessionsWithoutContract(t *testing.T) {
+	runDir := makeRun(t, runOptions{sessionSchemaVersion: 5})
 
 	if _, err := Write(runDir); err != nil {
 		t.Fatal(err)
@@ -117,7 +127,7 @@ func TestWriteIncompleteTreatment(t *testing.T) {
 	if err := json.Unmarshal(data, &document); err != nil {
 		t.Fatal(err)
 	}
-	if document.SchemaVersion != 4 ||
+	if document.SchemaVersion != 5 ||
 		len(document.Artifacts) != 5 ||
 		len(document.Comparison.UnchangedFields) != 0 ||
 		len(document.Comparison.Differences) != 0 ||
@@ -316,6 +326,21 @@ func TestWriteRejectsInvalidSessions(t *testing.T) {
 			want: "package_sha256",
 		},
 		{
+			name: "manifest contract digest",
+			mutate: func(record *adb.SessionRecord) {
+				record.ManifestContractSHA256 = "invalid"
+			},
+			want: "manifest_contract_sha256",
+		},
+		{
+			name: "legacy manifest contract digest",
+			mutate: func(record *adb.SessionRecord) {
+				record.SchemaVersion = 5
+				record.ManifestContractSHA256 = strings.Repeat("c", 64)
+			},
+			want: "legacy session manifest_contract_sha256",
+		},
+		{
 			name: "Ariadne revision",
 			mutate: func(record *adb.SessionRecord) {
 				record.AriadneRevision = "invalid"
@@ -430,6 +455,7 @@ func TestWriteRejectsMixedSessionSchemas(t *testing.T) {
 		mutateTreatment: func(record *adb.SessionRecord) {
 			record.SchemaVersion = 2
 			record.TapResourceID = ""
+			record.ManifestContractSHA256 = ""
 			record.Status = ""
 			record.Steps = append(record.Steps[:3], record.Steps[4:]...)
 		},
@@ -465,6 +491,12 @@ func TestWriteRejectsSessionAndSourceDisagreement(t *testing.T) {
 				record.VolatileFields = []string{"request_id"}
 			},
 		},
+		{
+			name: "manifest contract digest",
+			mutate: func(record *adb.SessionRecord) {
+				record.ManifestContractSHA256 = strings.Repeat("d", 64)
+			},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			runDir := makeRun(t, runOptions{mutateTreatment: test.mutate})
@@ -497,8 +529,8 @@ func TestWriteRejectsInvalidSessionJSON(t *testing.T) {
 			change: func(input string) string {
 				return strings.Replace(
 					input,
-					`"schema_version": 5,`,
-					`"schema_version": 5, "schema_version": 5,`,
+					`"schema_version": 6,`,
+					`"schema_version": 6, "schema_version": 6,`,
 					1,
 				)
 			},
@@ -698,7 +730,7 @@ func makeRun(t *testing.T, options runOptions) string {
 	t.Helper()
 	runDir := filepath.Join(t.TempDir(), "run")
 	if options.sessionSchemaVersion == 0 {
-		options.sessionSchemaVersion = 5
+		options.sessionSchemaVersion = 6
 	}
 	if options.baselineStorage == "" {
 		options.baselineStorage = baselineObservation
@@ -806,6 +838,9 @@ func writeSession(
 	}
 	if schemaVersion >= 5 {
 		record.TapResourceID = "dev.ariadne.fixture:id/observe_button"
+	}
+	if schemaVersion >= 6 {
+		record.ManifestContractSHA256 = strings.Repeat("c", 64)
 	}
 	if schemaVersion >= 3 {
 		record.Status = "complete"

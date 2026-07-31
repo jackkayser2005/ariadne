@@ -29,11 +29,17 @@ func TestRunValidate(t *testing.T) {
 
 	exitCode := run([]string{"validate", path}, &stdout, &stderr)
 
-	const want = "valid manifest\n" +
+	manifest, err := experiment.Decode(strings.NewReader(validManifest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	contractDigest := manifest.ContractDigest()
+	want := "valid manifest\n" +
 		"name: experiment-001-email\n" +
 		"schema_version: 1\n" +
 		"variable: email\n" +
-		"persona_fields: 2\n"
+		"persona_fields: 2\n" +
+		"manifest_contract_sha256: " + contractDigest + "\n"
 	if exitCode != 0 {
 		t.Fatalf("run() exit code = %d, stderr = %q", exitCode, stderr.String())
 	}

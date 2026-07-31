@@ -69,6 +69,7 @@ name: experiment-001-email
 schema_version: 3
 variable: email
 persona_fields: 2
+manifest_contract_sha256: <64 lowercase hexadecimal characters>
 ```
 
 ## Android target preflight
@@ -226,12 +227,14 @@ Session metadata includes the selected device, Android API, architecture,
 package version and SHA-256, Ariadne Git revision and modified state, ADB
 version, timestamps, step status, exit codes, and a SHA-256 record for each
 captured artifact. Session schemas 3 and 4 remain readable for launch-only
-runs; current schema 5 records `tap_resource_id` and the successful `interact`
-step. All current schemas record `status` as `complete` or `incomplete`.
-Incomplete sessions record only a controlled `failure_stage`; they never
-persist raw errors. Metadata excludes persona values, command arguments, raw
-APK bytes, and raw ADB output. Schemas 4 and 5 also record the manifest's
-sorted `volatile_fields` declaration without observation values.
+runs; schema 5 remains readable for stable-ID runs without a contract digest;
+current schema 6 records `tap_resource_id`, the structural
+`manifest_contract_sha256`, and the successful `interact` step. All current
+schemas record `status` as `complete` or `incomplete`. Incomplete sessions
+record only a controlled `failure_stage`; they never persist raw errors.
+Metadata excludes persona values, command arguments, raw APK bytes, and raw
+ADB output. Schemas 4, 5, and 6 also record the manifest's sorted
+`volatile_fields` declaration without observation values.
 
 The storage artifact is the exact bounded JSON read from the fixture's private
 `files/observation.json` through Android's `run-as` command. Capture fails if
@@ -247,7 +250,12 @@ reverse mapping before the session ends, including after capture failures.
 
 `evidence.json` verifies matching target provenance, session order, successful
 step records, artifact sizes, and SHA-256 digests before recording the
-normalization and comparison. `report.md` is the concise human-readable view.
+normalization and comparison. Current evidence schema 5 also records the
+manifest contract digest. The digest covers only schema version, manifest
+name, declared variable, persona field names, volatile fields, and the stable
+tap resource ID; it never includes persona values. Legacy session-schema-4
+runs continue to produce readable evidence schema 4. `report.md` is the
+concise human-readable view.
 For the fixture, it reports one observed `variant` difference supported by both
 storage and network artifacts. The differing raw `request_id` values remain in
 those artifacts but are not copied into `evidence.json` or `report.md`.
