@@ -3,9 +3,12 @@ package experiment
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"unicode"
@@ -177,4 +180,27 @@ func ValidResourceID(value string) bool {
 		}
 	}
 	return true
+}
+
+// ContractDigest returns a stable digest of the manifest structure without
+// including either persona's values. Call it after Validate.
+func (m Manifest) ContractDigest() string {
+	contract := struct {
+		SchemaVersion  int      `json:"schema_version"`
+		Name           string   `json:"name"`
+		Variable       string   `json:"variable"`
+		PersonaFields  []string `json:"persona_fields"`
+		VolatileFields []string `json:"volatile_fields,omitempty"`
+		TapResourceID  string   `json:"tap_resource_id,omitempty"`
+	}{
+		SchemaVersion:  m.SchemaVersion,
+		Name:           m.Name,
+		Variable:       m.Variable,
+		PersonaFields:  slices.Sorted(maps.Keys(m.Baseline)),
+		VolatileFields: CanonicalVolatileFields(m.VolatileFields),
+		TapResourceID:  m.TapResourceID,
+	}
+	data, _ := json.Marshal(contract)
+	digest := sha256.Sum256(data)
+	return hex.EncodeToString(digest[:])
 }

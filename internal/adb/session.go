@@ -21,7 +21,7 @@ import (
 	"github.com/jackkayser2005/ariadne/internal/experiment"
 )
 
-const sessionSchemaVersion = 5
+const sessionSchemaVersion = 6
 const networkObservationTimeout = 5 * time.Second
 const networkCleanupTimeout = 5 * time.Second
 
@@ -32,28 +32,29 @@ const (
 
 // SessionRecord describes one isolated fixture execution without persona values.
 type SessionRecord struct {
-	SchemaVersion      int          `json:"schema_version"`
-	Kind               string       `json:"kind"`
-	ManifestName       string       `json:"manifest_name"`
-	DeclaredVariable   string       `json:"declared_variable"`
-	PersonaFields      int          `json:"persona_fields"`
-	VolatileFields     []string     `json:"volatile_fields,omitempty"`
-	TapResourceID      string       `json:"tap_resource_id,omitempty"`
-	ADBVersion         string       `json:"adb_version"`
-	Device             string       `json:"device"`
-	Package            string       `json:"package"`
-	AndroidAPI         int          `json:"android_api"`
-	Architecture       string       `json:"architecture"`
-	PackageVersionCode uint64       `json:"package_version_code"`
-	PackageSHA256      string       `json:"package_sha256"`
-	AriadneRevision    string       `json:"ariadne_revision"`
-	AriadneModified    bool         `json:"ariadne_modified"`
-	Status             string       `json:"status"`
-	FailureStage       string       `json:"failure_stage,omitempty"`
-	StartedAt          time.Time    `json:"started_at"`
-	FinishedAt         time.Time    `json:"finished_at"`
-	Steps              []StepRecord `json:"steps"`
-	Artifacts          []Artifact   `json:"artifacts,omitempty"`
+	SchemaVersion          int          `json:"schema_version"`
+	Kind                   string       `json:"kind"`
+	ManifestName           string       `json:"manifest_name"`
+	DeclaredVariable       string       `json:"declared_variable"`
+	PersonaFields          int          `json:"persona_fields"`
+	VolatileFields         []string     `json:"volatile_fields,omitempty"`
+	TapResourceID          string       `json:"tap_resource_id,omitempty"`
+	ManifestContractSHA256 string       `json:"manifest_contract_sha256,omitempty"`
+	ADBVersion             string       `json:"adb_version"`
+	Device                 string       `json:"device"`
+	Package                string       `json:"package"`
+	AndroidAPI             int          `json:"android_api"`
+	Architecture           string       `json:"architecture"`
+	PackageVersionCode     uint64       `json:"package_version_code"`
+	PackageSHA256          string       `json:"package_sha256"`
+	AriadneRevision        string       `json:"ariadne_revision"`
+	AriadneModified        bool         `json:"ariadne_modified"`
+	Status                 string       `json:"status"`
+	FailureStage           string       `json:"failure_stage,omitempty"`
+	StartedAt              time.Time    `json:"started_at"`
+	FinishedAt             time.Time    `json:"finished_at"`
+	Steps                  []StepRecord `json:"steps"`
+	Artifacts              []Artifact   `json:"artifacts,omitempty"`
 }
 
 // StepRecord describes one session operation without arguments or output.
@@ -181,27 +182,31 @@ func runSession(
 	}
 
 	schemaVersion := sessionSchemaVersion
+	manifestContractSHA256 := ""
 	if manifest.TapResourceID == "" {
 		schemaVersion = 4
+	} else {
+		manifestContractSHA256 = manifest.ContractDigest()
 	}
 	record := SessionRecord{
-		SchemaVersion:      schemaVersion,
-		Kind:               kind,
-		ManifestName:       manifest.Name,
-		DeclaredVariable:   manifest.Variable,
-		PersonaFields:      len(persona),
-		VolatileFields:     experiment.CanonicalVolatileFields(manifest.VolatileFields),
-		TapResourceID:      manifest.TapResourceID,
-		ADBVersion:         target.Version,
-		Device:             target.Device,
-		Package:            target.Package,
-		AndroidAPI:         target.AndroidAPI,
-		Architecture:       target.Architecture,
-		PackageVersionCode: target.PackageVersionCode,
-		PackageSHA256:      target.PackageSHA256,
-		AriadneRevision:    target.AriadneRevision,
-		AriadneModified:    target.AriadneModified,
-		StartedAt:          now().UTC(),
+		SchemaVersion:          schemaVersion,
+		Kind:                   kind,
+		ManifestName:           manifest.Name,
+		DeclaredVariable:       manifest.Variable,
+		PersonaFields:          len(persona),
+		VolatileFields:         experiment.CanonicalVolatileFields(manifest.VolatileFields),
+		TapResourceID:          manifest.TapResourceID,
+		ManifestContractSHA256: manifestContractSHA256,
+		ADBVersion:             target.Version,
+		Device:                 target.Device,
+		Package:                target.Package,
+		AndroidAPI:             target.AndroidAPI,
+		Architecture:           target.Architecture,
+		PackageVersionCode:     target.PackageVersionCode,
+		PackageSHA256:          target.PackageSHA256,
+		AriadneRevision:        target.AriadneRevision,
+		AriadneModified:        target.AriadneModified,
+		StartedAt:              now().UTC(),
 	}
 
 	reset, output, err := runStep(

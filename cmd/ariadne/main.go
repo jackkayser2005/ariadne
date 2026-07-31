@@ -59,14 +59,16 @@ func runValidate(path string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stderr, "ariadne: validate: %v\n", err)
 		return 1
 	}
+	contractDigest := manifest.ContractDigest()
 
 	_, err = fmt.Fprintf(
 		stdout,
-		"valid manifest\nname: %s\nschema_version: %d\nvariable: %s\npersona_fields: %d\n",
+		"valid manifest\nname: %s\nschema_version: %d\nvariable: %s\npersona_fields: %d\nmanifest_contract_sha256: %s\n",
 		manifest.Name,
 		manifest.SchemaVersion,
 		manifest.Variable,
 		len(manifest.Baseline),
+		contractDigest,
 	)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: validate: write output: %v\n", err)

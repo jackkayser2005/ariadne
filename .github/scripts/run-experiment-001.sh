@@ -26,7 +26,8 @@ fixture_sha256="$(
 jq -e \
   --arg fixture_sha256 "${fixture_sha256}" \
   --arg ariadne_revision "${GITHUB_SHA}" '
-  (.schema_version == 4) and
+  (.schema_version == 5) and
+  (.manifest_contract_sha256 | test("^[0-9a-f]{64}$")) and
   (.target.android_api == 35) and
   (.target.architecture == "x86_64") and
   (.target.package_version_code == 1) and
@@ -53,13 +54,17 @@ jq -e \
   )
 ' "${run_dir}/evidence.json"
 
+contract_digest="$(jq -r '.manifest_contract_sha256' "${run_dir}/evidence.json")"
+
 tap_resource_id="dev.ariadne.fixture:id/observe_button"
 for session in baseline treatment; do
   jq -e \
     --arg tap_resource_id "${tap_resource_id}" \
+    --arg contract_digest "${contract_digest}" \
     '
-    (.schema_version == 5) and
+    (.schema_version == 6) and
     (.tap_resource_id == $tap_resource_id) and
+    (.manifest_contract_sha256 == $contract_digest) and
     (.status == "complete") and
     any(.steps[]; .name == "interact" and .status == "ok" and .exit_code == 0)
     ' "${run_dir}/${session}/session.json"
@@ -132,17 +137,24 @@ test -e "${storage_gap_dir}/baseline/observations/storage.json"
 test -e "${storage_gap_dir}/baseline/observations/network.json"
 test -e "${storage_gap_dir}/treatment/observations/network.json"
 test ! -e "${storage_gap_dir}/treatment/observations/storage.json"
-jq -e '
+storage_gap_contract_digest="$(jq -r '.manifest_contract_sha256' "${storage_gap_dir}/baseline/session.json")"
+jq -e \
+  --arg contract_digest "${storage_gap_contract_digest}" \
+  '
   (.status == "complete") and
-  (.schema_version == 5) and
+  (.schema_version == 6) and
   (.tap_resource_id == "dev.ariadne.fixture:id/observe_button") and
+  (.manifest_contract_sha256 == $contract_digest) and
   any(.steps[]; .name == "interact" and .status == "ok" and .exit_code == 0) and
   (.artifacts | length == 2)
 ' "${storage_gap_dir}/baseline/session.json"
-jq -e '
+jq -e \
+  --arg contract_digest "${storage_gap_contract_digest}" \
+  '
   (.status == "incomplete") and
-  (.schema_version == 5) and
+  (.schema_version == 6) and
   (.tap_resource_id == "dev.ariadne.fixture:id/observe_button") and
+  (.manifest_contract_sha256 == $contract_digest) and
   any(.steps[]; .name == "interact" and .status == "ok" and .exit_code == 0) and
   (.failure_stage == "capture_storage") and
   (.artifacts | length == 1) and
@@ -166,8 +178,11 @@ storage_gap_report_stdout="${failure_dir}/storage-gap-report.stdout"
 "${ariadne}" experiment report "${storage_gap_dir}" >"${storage_gap_report_stdout}"
 grep -F -x -q "differences: 0" "${storage_gap_report_stdout}"
 grep -F -x -q "unknowns: 3" "${storage_gap_report_stdout}"
-jq -e '
-  (.schema_version == 4) and
+jq -e \
+  --arg contract_digest "${storage_gap_contract_digest}" \
+  '
+  (.schema_version == 5) and
+  (.manifest_contract_sha256 == $contract_digest) and
   (.manifest_name == "experiment-001-email-storage-gap") and
   (.artifacts | length == 5) and
   (.comparison.schema_version == 4) and
