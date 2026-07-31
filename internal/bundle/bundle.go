@@ -53,9 +53,9 @@ var legacyExpectedSteps = []string{
 
 // Summary describes a completed evidence bundle without observed values.
 type Summary struct {
-	ManifestName string
-	Differences  int
-	Unknowns     int
+	ManifestName string `json:"manifest_name"`
+	Differences  int    `json:"differences"`
+	Unknowns     int    `json:"unknowns"`
 }
 
 // Finding is the safe, raw-value-free view of one verified conclusion.

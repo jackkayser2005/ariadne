@@ -440,6 +440,29 @@ func TestRunVerify(t *testing.T) {
 	}
 }
 
+func TestRunVerifyJSON(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	exitCode := runVerify(
+		[]string{"--json", "run-directory"},
+		&stdout,
+		&stderr,
+		func(path string) (bundle.Summary, error) {
+			if path != "run-directory" {
+				t.Fatalf("verify() path = %q", path)
+			}
+			return bundle.Summary{
+				ManifestName: "experiment-001-email",
+				Differences:  1,
+				Unknowns:     0,
+			}, nil
+		},
+	)
+	const want = `{"manifest_name":"experiment-001-email","differences":1,"unknowns":0}` + "\n"
+	if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+		t.Fatalf("runVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+}
+
 func TestRunVerifyFailures(t *testing.T) {
 	for _, args := range [][]string{nil, {"one", "two"}} {
 		t.Run(strings.Join(args, "_"), func(t *testing.T) {
@@ -478,6 +501,37 @@ func TestRunVerifyFailures(t *testing.T) {
 		var stderr bytes.Buffer
 		exitCode := runVerify(
 			[]string{"run"},
+			failingWriter{},
+			&stderr,
+			func(string) (bundle.Summary, error) {
+				return bundle.Summary{ManifestName: "experiment-001"}, nil
+			},
+		)
+		if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+			t.Fatalf("runVerify() = %d, stderr=%q", exitCode, stderr.String())
+		}
+	})
+
+	t.Run("invalid json flag", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runVerify(
+			[]string{"--json=invalid", "run"},
+			&stdout,
+			&stderr,
+			func(string) (bundle.Summary, error) {
+				t.Fatal("verify called for invalid JSON flag")
+				return bundle.Summary{}, nil
+			},
+		)
+		if exitCode != 2 || stdout.Len() != 0 || stderr.String() != usage {
+			t.Fatalf("runVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("write json output", func(t *testing.T) {
+		var stderr bytes.Buffer
+		exitCode := runVerify(
+			[]string{"--json", "run"},
 			failingWriter{},
 			&stderr,
 			func(string) (bundle.Summary, error) {

@@ -20,7 +20,7 @@ const usage = `usage:
   ariadne android check [--adb <path>] --device <serial> --package <package>
   ariadne experiment run [--adb <path>] --device <serial> --package <package> --output <directory> <manifest.json>
   ariadne experiment report <run-directory>
-  ariadne experiment verify <run-directory>
+  ariadne experiment verify [--json] <run-directory>
   ariadne experiment finding [--json] <run-directory> <finding-id>
   ariadne experiment ask [--json] <run-directory> <question-id>
   ariadne experiment questions [--json]
@@ -295,15 +295,25 @@ func runVerify(
 	stdout, stderr io.Writer,
 	verify bundleWriter,
 ) int {
-	if len(args) != 1 {
+	flags := flag.NewFlagSet("experiment verify", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
 		_, _ = io.WriteString(stderr, usage)
 		return 2
 	}
 
-	summary, err := verify(args[0])
+	summary, err := verify(flags.Arg(0))
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment verify: %v\n", err)
 		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(summary); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment verify: write output: %v\n", err)
+			return 1
+		}
+		return 0
 	}
 	_, err = fmt.Fprintf(
 		stdout,
