@@ -27,7 +27,7 @@ fixture_sha256="$(
 jq -e \
   --arg fixture_sha256 "${fixture_sha256}" \
   --arg ariadne_revision "${GITHUB_SHA}" '
-  (.schema_version == 6) and
+  (.schema_version == 7) and
   (.manifest_contract_sha256 | test("^[0-9a-f]{64}$")) and
   (.question == "Did changing email influence an observed output?") and
   (.answer_state == "observed") and
@@ -38,7 +38,7 @@ jq -e \
   (.target.ariadne_revision == $ariadne_revision) and
   (.target.ariadne_modified == false) and
   (.artifacts | length == 6) and
-  (.comparison.schema_version == 4) and
+  (.comparison.schema_version == 5) and
   (.comparison.unchanged_fields == ["region"]) and
   (.comparison.normalized_fields == ["request_id"]) and
   (.comparison.differences | length == 1) and
@@ -51,6 +51,7 @@ jq -e \
     .comparison.differences[0] |
     .field == "variant" and
     .kind == "changed" and
+    (.id | test("^sha256:[0-9a-f]{64}$")) and
     .baseline == "standard" and
     .treatment == "personalized" and
     .state == "observed"
@@ -145,7 +146,7 @@ jq -e \
   --arg contract_digest "${storage_gap_contract_digest}" \
   '
   (.status == "complete") and
-  (.schema_version == 6) and
+  (.schema_version == 7) and
   (.tap_resource_id == "dev.ariadne.fixture:id/observe_button") and
   (.manifest_contract_sha256 == $contract_digest) and
   any(.steps[]; .name == "interact" and .status == "ok" and .exit_code == 0) and
@@ -191,13 +192,14 @@ jq -e \
   (.answer_state == "unknown") and
   (.manifest_name == "experiment-001-email-storage-gap") and
   (.artifacts | length == 5) and
-  (.comparison.schema_version == 4) and
+  (.comparison.schema_version == 5) and
   (.comparison.unchanged_fields == []) and
   (.comparison.normalized_fields == []) and
   (.comparison.differences == []) and
   (.comparison.unknowns | map(.field) == ["region", "request_id", "variant"]) and
   all(
     .comparison.unknowns[];
+    (.id | test("^sha256:[0-9a-f]{64}$")) and
     .state == "unknown" and
     .reason == "treatment storage observation was not captured" and
     (.evidence | length == 3)

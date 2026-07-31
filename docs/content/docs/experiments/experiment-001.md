@@ -255,10 +255,13 @@ reverse mapping before the session ends, including after capture failures.
 
 `evidence.json` verifies matching target provenance, session order, successful
 step records, artifact sizes, and SHA-256 digests before recording the
-normalization and comparison. Current evidence schema 6 also records the
+normalization and comparison. Current evidence schema 7 also records the
 manifest contract digest, the safe question `Did changing <variable> influence
-an observed output?`, and its answer state. A complete pair is `observed`; the
-supported treatment-storage gap is `unknown`. The digest covers only schema
+an observed output?`, its answer state, and deterministic SHA-256 IDs for each
+difference or unknown. Each finding ID includes its source path and the digest
+of the immutable artifact it references; it never includes observed values. A
+complete pair is `observed`; the supported treatment-storage gap is `unknown`.
+The manifest contract digest covers only schema
 version, manifest name, declared variable, persona field names, volatile
 fields, and the stable tap resource ID; it never includes persona values.
 Legacy session-schema-4 and schema-5 runs continue to produce readable

@@ -40,6 +40,8 @@ type Comparison struct {
 
 // Difference records one added, removed, or changed field between sessions.
 type Difference struct {
+	// ID is a deterministic identity when the difference is attached to a bundle.
+	ID        string         `json:"id,omitempty"`
 	Field     string         `json:"field"`
 	Kind      string         `json:"kind"`
 	Baseline  string         `json:"baseline,omitempty"`
@@ -50,6 +52,8 @@ type Difference struct {
 
 // Unknown records a field that the available capture cannot establish.
 type Unknown struct {
+	// ID is a deterministic identity when the unknown is attached to a bundle.
+	ID       string         `json:"id,omitempty"`
 	Field    string         `json:"field"`
 	State    evidence.State `json:"state"`
 	Reason   string         `json:"reason"`

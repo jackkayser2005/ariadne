@@ -99,7 +99,7 @@ type loadedSession struct {
 
 // Write verifies runDir and creates evidence.json and report.md without overwriting.
 func Write(runDir string) (Summary, error) {
-	evidence, summary, err := buildDocument(runDir)
+	evidence, summary, err := buildDocument(runDir, true)
 	if err != nil {
 		return Summary{}, err
 	}
@@ -119,17 +119,24 @@ func Write(runDir string) (Summary, error) {
 
 // Verify checks an existing evidence bundle without writing either output.
 func Verify(runDir string) (Summary, error) {
-	evidence, summary, err := buildDocument(runDir)
+	if strings.TrimSpace(runDir) == "" {
+		return Summary{}, errors.New("run directory is required")
+	}
+	existingEvidence, err := readFileBounded(filepath.Join(runDir, "evidence.json"), maxOutputBytes)
+	if err != nil {
+		return Summary{}, fmt.Errorf("evidence output: %w", err)
+	}
+	outputSchemaVersion, err := evidenceOutputSchema(existingEvidence)
+	if err != nil {
+		return Summary{}, fmt.Errorf("evidence output: %w", err)
+	}
+	evidence, summary, err := buildDocument(runDir, outputSchemaVersion == 7)
 	if err != nil {
 		return Summary{}, err
 	}
 	evidenceData, err := encodeDocument(evidence)
 	if err != nil {
 		return Summary{}, err
-	}
-	existingEvidence, err := readFileBounded(filepath.Join(runDir, "evidence.json"), maxOutputBytes)
-	if err != nil {
-		return Summary{}, fmt.Errorf("evidence output: %w", err)
 	}
 	if !bytes.Equal(existingEvidence, evidenceData) {
 		return Summary{}, errors.New("evidence output does not match verified artifacts")
@@ -148,7 +155,7 @@ func Verify(runDir string) (Summary, error) {
 	return summary, nil
 }
 
-func buildDocument(runDir string) (document, Summary, error) {
+func buildDocument(runDir string, includeFindingIDs bool) (document, Summary, error) {
 	if strings.TrimSpace(runDir) == "" {
 		return document{}, Summary{}, errors.New("run directory is required")
 	}
@@ -225,6 +232,12 @@ func buildDocument(runDir string) (document, Summary, error) {
 		if !sessionComplete(treatment.record) {
 			answerState = evidence.Unknown
 		}
+		if includeFindingIDs {
+			evidenceSchemaVersion = 7
+			if err := assignFindingIDs(&comparison, artifacts); err != nil {
+				return document{}, Summary{}, err
+			}
+		}
 	}
 	evidence := document{
 		SchemaVersion:          evidenceSchemaVersion,
@@ -254,6 +267,90 @@ func buildDocument(runDir string) (document, Summary, error) {
 		Differences:  len(comparison.Differences),
 		Unknowns:     len(comparison.Unknowns),
 	}, nil
+}
+
+func evidenceOutputSchema(data []byte) (int, error) {
+	if err := jsoncheck.RejectDuplicateKeys(data); err != nil {
+		return 0, fmt.Errorf("invalid schema_version: %w", err)
+	}
+	var header struct {
+		SchemaVersion int `json:"schema_version"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	if err := decoder.Decode(&header); err != nil {
+		return 0, fmt.Errorf("invalid schema_version: %w", err)
+	}
+	var trailing json.RawMessage
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return 0, errors.New("invalid schema_version: trailing data")
+	}
+	if header.SchemaVersion != 4 && header.SchemaVersion != 6 && header.SchemaVersion != 7 {
+		return 0, errors.New("unsupported schema_version")
+	}
+	return header.SchemaVersion, nil
+}
+
+func assignFindingIDs(comparison *analysis.Comparison, artifacts []artifact) error {
+	digests := make(map[string]string, len(artifacts))
+	for _, item := range artifacts {
+		digests[item.Path] = item.SHA256
+	}
+	for index := range comparison.Differences {
+		difference := &comparison.Differences[index]
+		id, err := findingID(
+			"difference",
+			difference.Field,
+			string(difference.State),
+			difference.Kind,
+			difference.Evidence,
+			digests,
+		)
+		if err != nil {
+			return err
+		}
+		difference.ID = id
+	}
+	for index := range comparison.Unknowns {
+		unknown := &comparison.Unknowns[index]
+		id, err := findingID(
+			"unknown",
+			unknown.Field,
+			string(unknown.State),
+			unknown.Reason,
+			unknown.Evidence,
+			digests,
+		)
+		if err != nil {
+			return err
+		}
+		unknown.ID = id
+	}
+	comparison.SchemaVersion = 5
+	return nil
+}
+
+func findingID(
+	kind, field, state, qualifier string,
+	references []string,
+	digests map[string]string,
+) (string, error) {
+	if len(references) == 0 {
+		return "", fmt.Errorf("finding %q has no evidence references", field)
+	}
+	parts := []string{"ariadne:finding:v1", kind, field, state, qualifier}
+	for _, reference := range references {
+		path, _, ok := strings.Cut(reference, "#")
+		if !ok || path == "" {
+			return "", fmt.Errorf("finding %q has invalid evidence reference", field)
+		}
+		digest, ok := digests[path]
+		if !ok {
+			return "", fmt.Errorf("finding %q references missing artifact %q", field, path)
+		}
+		parts = append(parts, reference, digest)
+	}
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+	return "sha256:" + hex.EncodeToString(sum[:]), nil
 }
 
 func encodeDocument(evidence document) ([]byte, error) {
@@ -697,6 +794,9 @@ func renderReport(evidence document) []byte {
 	}
 	for _, difference := range evidence.Comparison.Differences {
 		fmt.Fprintf(&report, "\n### %s\n\n", code(difference.Field))
+		if difference.ID != "" {
+			fmt.Fprintf(&report, "- Finding ID: %s\n", code(difference.ID))
+		}
 		fmt.Fprintf(&report, "- State: %s\n", code(string(difference.State)))
 		fmt.Fprintf(&report, "- Kind: %s\n", code(difference.Kind))
 		if difference.Kind != "added" {
@@ -715,6 +815,9 @@ func renderReport(evidence document) []byte {
 		report.WriteString("\n## Unknowns\n")
 		for _, unknown := range evidence.Comparison.Unknowns {
 			fmt.Fprintf(&report, "\n### %s\n\n", code(unknown.Field))
+			if unknown.ID != "" {
+				fmt.Fprintf(&report, "- Finding ID: %s\n", code(unknown.ID))
+			}
 			fmt.Fprintf(&report, "- State: %s\n", code(string(unknown.State)))
 			fmt.Fprintf(&report, "- Reason: %s\n", html.EscapeString(unknown.Reason))
 			report.WriteString("- Available evidence:\n")

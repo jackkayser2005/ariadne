@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jackkayser2005/ariadne/internal/adb"
+	"github.com/jackkayser2005/ariadne/internal/analysis"
 	"github.com/jackkayser2005/ariadne/internal/collector"
 	evidencestate "github.com/jackkayser2005/ariadne/internal/evidence"
 )
@@ -43,15 +44,16 @@ func TestWrite(t *testing.T) {
 	if err := json.Unmarshal(evidence, &document); err != nil {
 		t.Fatal(err)
 	}
-	if document.SchemaVersion != 6 ||
+	if document.SchemaVersion != 7 ||
 		document.Question != "Did changing email influence an observed output?" ||
 		document.AnswerState != evidencestate.Observed ||
-		document.Comparison.SchemaVersion != 4 ||
+		document.Comparison.SchemaVersion != 5 ||
 		len(document.Artifacts) != 6 ||
 		len(document.Comparison.Differences) != 1 ||
 		len(document.Comparison.Unknowns) != 0 ||
 		document.Comparison.Differences[0].Field != "variant" ||
 		document.Comparison.Differences[0].Kind != "changed" ||
+		!strings.HasPrefix(document.Comparison.Differences[0].ID, "sha256:") ||
 		document.Target.AndroidAPI != 35 ||
 		document.Target.Architecture != "x86_64" ||
 		document.Target.PackageVersionCode != 1 ||
@@ -71,6 +73,7 @@ func TestWrite(t *testing.T) {
 		"Observed differences: 1",
 		"Unknown conclusions: 0",
 		"<code>variant</code>",
+		"Finding ID: <code>sha256:",
 		"Kind: <code>changed</code>",
 		"<code>standard</code>",
 		"<code>personalized</code>",
@@ -93,6 +96,73 @@ func TestWrite(t *testing.T) {
 		if strings.Contains(string(evidence), secret) || strings.Contains(text, secret) {
 			t.Fatalf("bundle exposed persona value %q", secret)
 		}
+	}
+}
+
+func TestFindingIDsAreDigestBacked(t *testing.T) {
+	artifacts := []artifact{
+		{Path: "baseline/observations/storage.json", SHA256: strings.Repeat("a", 64)},
+		{Path: "treatment/observations/storage.json", SHA256: strings.Repeat("b", 64)},
+	}
+	comparison := analysis.Comparison{
+		Differences: []analysis.Difference{{
+			Field:     "variant",
+			Kind:      "changed",
+			Baseline:  "standard",
+			Treatment: "personalized",
+			State:     evidencestate.Observed,
+			Evidence: []string{
+				"baseline/observations/storage.json#/variant",
+				"treatment/observations/storage.json#/variant",
+			},
+		}},
+		Unknowns: []analysis.Unknown{{
+			Field:    "region",
+			State:    evidencestate.Unknown,
+			Reason:   "capture gap",
+			Evidence: []string{"baseline/observations/storage.json#/region"},
+		}},
+	}
+	if err := assignFindingIDs(&comparison, artifacts); err != nil {
+		t.Fatal(err)
+	}
+	differenceID := comparison.Differences[0].ID
+	unknownID := comparison.Unknowns[0].ID
+	if differenceID == "" || unknownID == "" || differenceID == unknownID {
+		t.Fatalf("finding IDs = %q, %q", differenceID, unknownID)
+	}
+	if strings.Contains(differenceID, "standard") || strings.Contains(differenceID, "personalized") {
+		t.Fatalf("difference ID exposed an observed value: %q", differenceID)
+	}
+
+	comparison.Differences[0].Baseline = "changed-value"
+	comparison.Differences[0].Treatment = "another-value"
+	if err := assignFindingIDs(&comparison, artifacts); err != nil {
+		t.Fatal(err)
+	}
+	if comparison.Differences[0].ID != differenceID {
+		t.Fatalf("value-only change changed ID: %q != %q", comparison.Differences[0].ID, differenceID)
+	}
+	artifacts[0].SHA256 = strings.Repeat("c", 64)
+	if err := assignFindingIDs(&comparison, artifacts); err != nil {
+		t.Fatal(err)
+	}
+	if comparison.Differences[0].ID == differenceID {
+		t.Fatal("artifact digest change did not change finding ID")
+	}
+}
+
+func TestFindingIDsRejectMissingSources(t *testing.T) {
+	comparison := analysis.Comparison{
+		Differences: []analysis.Difference{{
+			Field:    "variant",
+			Kind:     "changed",
+			State:    evidencestate.Observed,
+			Evidence: []string{"baseline/observations/missing.json#/variant"},
+		}},
+	}
+	if err := assignFindingIDs(&comparison, nil); err == nil || !strings.Contains(err.Error(), "missing artifact") {
+		t.Fatalf("assignFindingIDs() error = %v", err)
 	}
 }
 
@@ -126,6 +196,63 @@ func TestVerifyPreservesOutputs(t *testing.T) {
 	}
 	if !bytes.Equal(evidenceBefore, evidenceAfter) || !bytes.Equal(reportBefore, reportAfter) {
 		t.Fatal("Verify() changed existing outputs")
+	}
+}
+
+func TestVerifyRequiresRunDirectory(t *testing.T) {
+	_, err := Verify(" \t")
+	if err == nil || !strings.Contains(err.Error(), "run directory is required") {
+		t.Fatalf("Verify() error = %v", err)
+	}
+}
+
+func TestVerifyAcceptsLegacyEvidenceSchemas(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		options        runOptions
+		evidenceSchema int
+	}{
+		{name: "schema-4", options: runOptions{sessionSchemaVersion: 2}, evidenceSchema: 4},
+		{name: "schema-6", options: runOptions{}, evidenceSchema: 6},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			runDir := makeRun(t, test.options)
+			document, _, err := buildDocument(runDir, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			evidenceData, err := encodeDocument(document)
+			if err != nil {
+				t.Fatal(err)
+			}
+			reportData, err := encodeReport(document)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := writeOutputs(runDir, evidenceData, reportData); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Verify(runDir); err != nil {
+				t.Fatal(err)
+			}
+			if document.SchemaVersion != test.evidenceSchema || document.Comparison.SchemaVersion != 4 {
+				t.Fatalf("legacy document = %#v", document)
+			}
+			if len(document.Comparison.Differences) != 1 || document.Comparison.Differences[0].ID != "" {
+				t.Fatalf("legacy findings = %#v", document.Comparison.Differences)
+			}
+		})
+	}
+}
+
+func TestVerifyRejectsUnsupportedEvidenceSchema(t *testing.T) {
+	runDir := makeRun(t, runOptions{})
+	if err := os.WriteFile(filepath.Join(runDir, "evidence.json"), []byte("{\"schema_version\":8}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Verify(runDir)
+	if err == nil || !strings.Contains(err.Error(), "unsupported schema_version") {
+		t.Fatalf("Verify() error = %v", err)
 	}
 }
 
@@ -263,9 +390,10 @@ func TestWriteIncompleteTreatment(t *testing.T) {
 	if err := json.Unmarshal(data, &document); err != nil {
 		t.Fatal(err)
 	}
-	if document.SchemaVersion != 6 ||
+	if document.SchemaVersion != 7 ||
 		document.Question != "Did changing email influence an observed output?" ||
 		document.AnswerState != evidencestate.Unknown ||
+		document.Comparison.SchemaVersion != 5 ||
 		len(document.Artifacts) != 5 ||
 		len(document.Comparison.UnchangedFields) != 0 ||
 		len(document.Comparison.Differences) != 0 ||
@@ -275,7 +403,8 @@ func TestWriteIncompleteTreatment(t *testing.T) {
 	for _, unknown := range document.Comparison.Unknowns {
 		if unknown.State != "unknown" ||
 			unknown.Reason != "treatment storage observation was not captured" ||
-			len(unknown.Evidence) != 3 {
+			len(unknown.Evidence) != 3 ||
+			!strings.HasPrefix(unknown.ID, "sha256:") {
 			t.Fatalf("unknown = %#v", unknown)
 		}
 	}
@@ -291,6 +420,7 @@ func TestWriteIncompleteTreatment(t *testing.T) {
 		"Unknown conclusions: 2",
 		"No counterfactual difference was established.",
 		"## Unknowns",
+		"Finding ID: <code>sha256:",
 		"treatment storage observation was not captured",
 		"No stable fields were established.",
 		"Question: <code>Did changing email influence an observed output?</code>",
