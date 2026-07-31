@@ -63,7 +63,12 @@ jq -e '
   (.id | test("^sha256:[0-9a-f]{64}$")) and
   (.field == "variant") and
   (.state == "observed") and
-  (.evidence == ["baseline/observations/storage.json#/variant"])
+  (.evidence == [
+    "baseline/observations/storage.json#/variant",
+    "baseline/observations/network.json#decoded-body/variant",
+    "treatment/observations/storage.json#/variant",
+    "treatment/observations/network.json#decoded-body/variant"
+  ])
 ' "${finding_json}"
 if grep -F -q \
   -e "standard" \
