@@ -65,6 +65,7 @@ func TestRunUsage(t *testing.T) {
 		{"experiment", "finding"},
 		{"experiment", "ask"},
 		{"experiment", "questions", "extra"},
+		{"experiment", "list"},
 	}
 
 	for _, args := range tests {
@@ -902,6 +903,117 @@ func TestRunQuestionsFailures(t *testing.T) {
 		})
 		if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
 			t.Fatalf("runQuestions() = %d, stderr=%q", exitCode, stderr.String())
+		}
+	})
+}
+
+func TestRunList(t *testing.T) {
+	entries := []bundle.ArchiveEntry{
+		{Directory: "a-run", ManifestName: "experiment-001-email", Differences: 1},
+		{Directory: "z-run", ManifestName: "experiment-001-email", Unknowns: 3},
+	}
+
+	t.Run("human", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runList(
+			[]string{"archive-root"},
+			&stdout,
+			&stderr,
+			func(root string) ([]bundle.ArchiveEntry, error) {
+				if root != "archive-root" {
+					t.Fatalf("Index() root = %q", root)
+				}
+				return entries, nil
+			},
+		)
+		want := "archived bundles\n" +
+			"- directory: a-run\n" +
+			"  manifest_name: experiment-001-email\n" +
+			"  differences: 1\n" +
+			"  unknowns: 0\n" +
+			"- directory: z-run\n" +
+			"  manifest_name: experiment-001-email\n" +
+			"  differences: 0\n" +
+			"  unknowns: 3\n"
+		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+			t.Fatalf("runList() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("json", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runList(
+			[]string{"--json", "archive-root"},
+			&stdout,
+			&stderr,
+			func(string) ([]bundle.ArchiveEntry, error) { return entries, nil },
+		)
+		want := `[{"directory":"a-run","manifest_name":"experiment-001-email","differences":1,"unknowns":0},{"directory":"z-run","manifest_name":"experiment-001-email","differences":0,"unknowns":3}]` + "\n"
+		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+			t.Fatalf("runList() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+}
+
+func TestRunListFailures(t *testing.T) {
+	for _, args := range [][]string{nil, {"archive-root", "extra"}, {"--json=invalid", "archive-root"}} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			exitCode := runList(
+				args,
+				&stdout,
+				&stderr,
+				func(string) ([]bundle.ArchiveEntry, error) {
+					t.Fatal("Index called for invalid usage")
+					return nil, nil
+				},
+			)
+			if exitCode != 2 || stdout.Len() != 0 || stderr.String() != usage {
+				t.Fatalf("runList() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+			}
+		})
+	}
+
+	t.Run("archive error", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runList(
+			[]string{"archive-root"},
+			&stdout,
+			&stderr,
+			func(string) ([]bundle.ArchiveEntry, error) { return nil, errors.New("archive entry is invalid") },
+		)
+		if exitCode != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "archive entry is invalid") {
+			t.Fatalf("runList() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("write output", func(t *testing.T) {
+		var stderr bytes.Buffer
+		exitCode := runList(
+			[]string{"archive-root"},
+			failingWriter{},
+			&stderr,
+			func(string) ([]bundle.ArchiveEntry, error) {
+				return []bundle.ArchiveEntry{{Directory: "run"}}, nil
+			},
+		)
+		if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+			t.Fatalf("runList() = %d, stderr=%q", exitCode, stderr.String())
+		}
+	})
+
+	t.Run("write json output", func(t *testing.T) {
+		var stderr bytes.Buffer
+		exitCode := runList(
+			[]string{"--json", "archive-root"},
+			failingWriter{},
+			&stderr,
+			func(string) ([]bundle.ArchiveEntry, error) {
+				return []bundle.ArchiveEntry{{Directory: "run"}}, nil
+			},
+		)
+		if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+			t.Fatalf("runList() = %d, stderr=%q", exitCode, stderr.String())
 		}
 	})
 }

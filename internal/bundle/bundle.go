@@ -856,12 +856,70 @@ func artifactByPath(artifacts []adb.Artifact, path string) (adb.Artifact, bool) 
 	return found, count == 1
 }
 
+func pathSafetyError(info os.FileInfo) error {
+	if info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("symbolic links are not allowed")
+	}
+	if info.Mode()&os.ModeIrregular != 0 {
+		return errors.New("reparse points and other irregular path components are not allowed")
+	}
+	return nil
+}
+
+func lstatNoSymlinkPath(path string) (os.FileInfo, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	volume := filepath.VolumeName(absolute)
+	remainder := strings.TrimPrefix(absolute, volume)
+	current := volume
+	separator := string(filepath.Separator)
+	if strings.HasPrefix(remainder, separator) {
+		current += separator
+		remainder = strings.TrimPrefix(remainder, separator)
+	}
+	if remainder == "" {
+		return os.Lstat(current)
+	}
+
+	var info os.FileInfo
+	for _, component := range strings.Split(remainder, separator) {
+		if component == "" || component == "." {
+			continue
+		}
+		current = filepath.Join(current, component)
+		info, err = os.Lstat(current)
+		if err != nil {
+			return nil, err
+		}
+		if err := pathSafetyError(info); err != nil {
+			return nil, err
+		}
+	}
+	return info, nil
+}
+
 func readFileBounded(path string, limit int64) ([]byte, error) {
+	info, err := lstatNoSymlinkPath(path)
+	if err != nil {
+		return nil, fmt.Errorf("open: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("open: regular file required")
+	}
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open: %w", err)
 	}
 	defer file.Close()
+	openedInfo, err := file.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("stat after open: %w", err)
+	}
+	if !os.SameFile(info, openedInfo) {
+		return nil, errors.New("open: path changed during verification")
+	}
 	data, err := io.ReadAll(io.LimitReader(file, limit+1))
 	if err != nil {
 		return nil, fmt.Errorf("read: %w", err)
