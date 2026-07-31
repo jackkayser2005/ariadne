@@ -1,10 +1,11 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "experiment-001-email-storage-gap",
   "variable": "email",
   "volatile_fields": [
     "request_id"
   ],
+  "tap_resource_id": "dev.ariadne.fixture:id/observe_button",
   "baseline": {
     "capture_mode": "treatment_network_only",
     "email": "baseline@example.invalid",

@@ -53,6 +53,18 @@ jq -e \
   )
 ' "${run_dir}/evidence.json"
 
+tap_resource_id="dev.ariadne.fixture:id/observe_button"
+for session in baseline treatment; do
+  jq -e \
+    --arg tap_resource_id "${tap_resource_id}" \
+    '
+    (.schema_version == 5) and
+    (.tap_resource_id == $tap_resource_id) and
+    (.status == "complete") and
+    any(.steps[]; .name == "interact" and .status == "ok" and .exit_code == 0)
+    ' "${run_dir}/${session}/session.json"
+done
+
 baseline_request_id="$(
   jq -r '.request_id' "${run_dir}/baseline/observations/storage.json"
 )"
@@ -122,10 +134,16 @@ test -e "${storage_gap_dir}/treatment/observations/network.json"
 test ! -e "${storage_gap_dir}/treatment/observations/storage.json"
 jq -e '
   (.status == "complete") and
+  (.schema_version == 5) and
+  (.tap_resource_id == "dev.ariadne.fixture:id/observe_button") and
+  any(.steps[]; .name == "interact" and .status == "ok" and .exit_code == 0) and
   (.artifacts | length == 2)
 ' "${storage_gap_dir}/baseline/session.json"
 jq -e '
   (.status == "incomplete") and
+  (.schema_version == 5) and
+  (.tap_resource_id == "dev.ariadne.fixture:id/observe_button") and
+  any(.steps[]; .name == "interact" and .status == "ok" and .exit_code == 0) and
   (.failure_stage == "capture_storage") and
   (.artifacts | length == 1) and
   (.artifacts[0].path == "observations/network.json") and

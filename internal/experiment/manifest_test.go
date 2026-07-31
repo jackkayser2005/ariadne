@@ -15,14 +15,21 @@ func TestManifestValidate(t *testing.T) {
 		{name: "legacy version", change: func(m *Manifest) {
 			m.SchemaVersion = 1
 			m.VolatileFields = nil
+			m.TapResourceID = ""
 		}},
 		{name: "unsupported version", change: func(m *Manifest) {
-			m.SchemaVersion = 3
+			m.SchemaVersion = 4
 		}, wantErr: "schema_version"},
 		{name: "volatile fields require v2", change: func(m *Manifest) {
 			m.SchemaVersion = 1
 			m.VolatileFields = []string{"request_id"}
 		}, wantErr: "require schema_version 2"},
+		{name: "tap resource requires v3", change: func(m *Manifest) {
+			m.SchemaVersion = 2
+		}, wantErr: "require schema_version 3"},
+		{name: "invalid tap resource", change: func(m *Manifest) {
+			m.TapResourceID = "dev.ariadne.fixture:id/observe button"
+		}, wantErr: "resource identifier"},
 		{name: "invalid volatile field", change: func(m *Manifest) {
 			m.VolatileFields = []string{"request/id"}
 		}, wantErr: "field name is invalid"},
@@ -118,6 +125,7 @@ func validManifest() Manifest {
 			"region": "us-east",
 		},
 		VolatileFields: []string{"request_id"},
+		TapResourceID:  "dev.ariadne.fixture:id/observe_button",
 	}
 }
 

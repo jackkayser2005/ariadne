@@ -35,6 +35,16 @@ var expectedSteps = []string{
 	"reset",
 	"connect_network",
 	"start",
+	"interact",
+	"capture_network",
+	"capture_storage",
+	"disconnect_network",
+}
+
+var legacyExpectedSteps = []string{
+	"reset",
+	"connect_network",
+	"start",
 	"capture_network",
 	"capture_storage",
 	"disconnect_network",
@@ -286,6 +296,7 @@ func decodeSession(data []byte, record *adb.SessionRecord) error {
 			"declared_variable":    {},
 			"persona_fields":       {},
 			"volatile_fields":      {},
+			"tap_resource_id":      {},
 			"adb_version":          {},
 			"device":               {},
 			"package":              {},
@@ -324,7 +335,8 @@ func decodeSession(data []byte, record *adb.SessionRecord) error {
 func validateSession(record adb.SessionRecord, kind string) error {
 	if (record.SchemaVersion != 2 &&
 		record.SchemaVersion != 3 &&
-		record.SchemaVersion != 4) ||
+		record.SchemaVersion != 4 &&
+		record.SchemaVersion != 5) ||
 		record.Kind != kind {
 		return errors.New("schema_version or kind is invalid")
 	}
@@ -350,6 +362,12 @@ func validateSession(record adb.SessionRecord, kind string) error {
 	}
 	if err := experiment.ValidateVolatileFields(record.VolatileFields); err != nil {
 		return err
+	}
+	if record.SchemaVersion < 5 && record.TapResourceID != "" {
+		return errors.New("legacy session tap_resource_id is invalid")
+	}
+	if record.SchemaVersion >= 5 && !experiment.ValidResourceID(record.TapResourceID) {
+		return errors.New("tap_resource_id is invalid")
 	}
 	if !slices.IsSorted(record.VolatileFields) {
 		return errors.New("volatile_fields are not canonical")
@@ -392,11 +410,15 @@ func validateSession(record adb.SessionRecord, kind string) error {
 			return errors.New("session status is invalid")
 		}
 	}
-	if len(record.Steps) != len(expectedSteps) {
+	steps := expectedSteps
+	if record.SchemaVersion < 5 {
+		steps = legacyExpectedSteps
+	}
+	if len(record.Steps) != len(steps) {
 		return errors.New("step sequence is incomplete")
 	}
 	previous := record.StartedAt
-	for index, expected := range expectedSteps {
+	for index, expected := range steps {
 		step := record.Steps[index]
 		statusValid := step.Status == "ok" && step.ExitCode == 0
 		if !sessionComplete(record) && expected == "capture_storage" {
@@ -432,6 +454,7 @@ func validatePair(baseline, treatment adb.SessionRecord) error {
 		baseline.PackageSHA256 != treatment.PackageSHA256 ||
 		baseline.AriadneRevision != treatment.AriadneRevision ||
 		baseline.AriadneModified != treatment.AriadneModified ||
+		baseline.TapResourceID != treatment.TapResourceID ||
 		treatment.StartedAt.Before(baseline.FinishedAt) {
 		return errors.New("baseline and treatment session metadata disagree")
 	}

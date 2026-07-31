@@ -20,12 +20,13 @@ The first manifest is intentionally flat:
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "name": "experiment-001-email",
   "variable": "email",
   "volatile_fields": [
     "request_id"
   ],
+  "tap_resource_id": "dev.ariadne.fixture:id/observe_button",
   "baseline": {
     "email": "baseline@example.invalid",
     "region": "us-east"
@@ -46,8 +47,11 @@ top-level fields, and trailing data. Validation errors may name fields but must
 never include persona values.
 
 Manifest schema 2 adds an optional `volatile_fields` array of unique observation
-field names. Schema 1 remains accepted but cannot declare normalization rules.
-The list is limited to 64 names and is stored in sorted order with each session.
+field names. Schema 3 adds the required `tap_resource_id` stable resource ID for
+one authorized fixture action. Schema 1 and 2 remain accepted for launch-only
+sessions. The list is limited to 64 names and is stored in sorted order with
+each session. Resource IDs are bounded ASCII identifiers; coordinates are never
+stored in the manifest.
 
 ## Validate a manifest
 
@@ -62,7 +66,7 @@ Successful validation prints stable metadata without displaying persona values:
 ```text
 valid manifest
 name: experiment-001-email
-schema_version: 2
+schema_version: 3
 variable: email
 persona_fields: 2
 ```
@@ -99,10 +103,14 @@ than 256 MiB.
 ## Authorized fixture
 
 The fixture package is `dev.ariadne.fixture`. Its exported activity accepts
-`email` and `region` string extras, writes `files/observation.json`, and exits.
-It requests Android's normal `INTERNET` permission. It sends no request unless
-the runner supplies `collector_port`; when supplied, it posts the same JSON to
-IPv4 loopback. Cleartext traffic to other destinations is denied.
+`email` and `region` string extras, renders the `observe_button` control, and
+waits for that control before writing `files/observation.json` and exiting. The
+runner resolves the exact declared resource ID from a bounded UI hierarchy and
+taps its center; it does not use coordinates from the manifest or arbitrary
+shell commands. The activity requests Android's normal `INTERNET` permission.
+It sends no request unless the runner supplies `collector_port`; when supplied,
+it posts the same JSON to IPv4 loopback. Cleartext traffic to other destinations
+is denied.
 
 For the example manifest, the stored `variant` is `standard` for the baseline
 email and `personalized` for the treatment email. Ariadne does not contain this
@@ -185,7 +193,8 @@ go run ./cmd/ariadne experiment run --device emulator-5554 --package dev.ariadne
 
 The output directory must not already exist. Ariadne clears the selected
 package before each session, starts `.MainActivity` with the persona fields,
-and captures the raw session artifacts.
+performs the one manifest-declared resource-ID interaction, and captures the
+raw session artifacts.
 
 After both sessions succeed, verify the artifacts and write the evidence
 outputs:
@@ -216,11 +225,13 @@ completed directory contains:
 Session metadata includes the selected device, Android API, architecture,
 package version and SHA-256, Ariadne Git revision and modified state, ADB
 version, timestamps, step status, exit codes, and a SHA-256 record for each
-captured artifact. Session schemas 3 and 4 record `status` as `complete` or
-`incomplete`. Incomplete sessions record only a controlled `failure_stage`;
-they never persist raw errors. Metadata excludes persona values, command
-arguments, raw APK bytes, and raw ADB output. Schema 4 also records the
-manifest's sorted `volatile_fields` declaration without observation values.
+captured artifact. Session schemas 3 and 4 remain readable for launch-only
+runs; current schema 5 records `tap_resource_id` and the successful `interact`
+step. All current schemas record `status` as `complete` or `incomplete`.
+Incomplete sessions record only a controlled `failure_stage`; they never
+persist raw errors. Metadata excludes persona values, command arguments, raw
+APK bytes, and raw ADB output. Schemas 4 and 5 also record the manifest's
+sorted `volatile_fields` declaration without observation values.
 
 The storage artifact is the exact bounded JSON read from the fixture's private
 `files/observation.json` through Android's `run-as` command. Capture fails if
