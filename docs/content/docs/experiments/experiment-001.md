@@ -161,6 +161,8 @@ go run ./cmd/ariadne experiment run --device emulator-5554 --package dev.ariadne
 go run ./cmd/ariadne experiment report .ariadne/runs/experiment-001
 go run ./cmd/ariadne experiment verify .ariadne/runs/experiment-001
 go run ./cmd/ariadne experiment finding .ariadne/runs/experiment-001 <finding-id-from-evidence.json>
+go run ./cmd/ariadne experiment questions
+go run ./cmd/ariadne experiment questions --json
 go run ./cmd/ariadne experiment ask .ariadne/runs/experiment-001 counterfactual-change
 go run ./cmd/ariadne experiment ask --json .ariadne/runs/experiment-001 counterfactual-change
 ```
@@ -192,7 +194,9 @@ when `go run` built Ariadne.
   IDs, tampered artifacts, and malformed bundles without writing output.
 - The bounded question catalog currently supports `counterfactual-change`,
   `capture-complete`, and `source-integrity`. It returns deterministic answer
-  states and finding IDs, and rejects any other question ID.
+  states and finding IDs, and rejects any other question ID. Use
+  `experiment questions --json` to enumerate those IDs and their safe display
+  text before asking one.
 
 ## Run isolated sessions
 
@@ -227,7 +231,8 @@ question command is a fixed, deterministic catalog rather than an arbitrary
 natural-language answerer; it can be rerun after archival and returns the same
 answer state and finding IDs. Add `--json` for a stable, raw-value-free object
 with `question_id`, `question`, `answer_state`, and `finding_ids`; human-readable
-output remains the default. The
+output remains the default. The catalog command exposes the same fixed questions
+without needing a run directory, so a caller can enumerate before asking. The
 completed directory contains:
 
 ```text

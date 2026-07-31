@@ -20,6 +20,24 @@ adb -s emulator-5554 install -r \
 "${ariadne}" experiment report "${run_dir}"
 "${ariadne}" experiment verify "${run_dir}"
 
+catalog_stdout="${RUNNER_TEMP}/ariadne-question-catalog.stdout"
+"${ariadne}" experiment questions >"${catalog_stdout}"
+grep -F -x -q "question catalog" "${catalog_stdout}"
+grep -F -x -q -- "- id: counterfactual-change" "${catalog_stdout}"
+grep -F -x -q -- "- id: capture-complete" "${catalog_stdout}"
+grep -F -x -q -- "- id: source-integrity" "${catalog_stdout}"
+catalog_json="${RUNNER_TEMP}/ariadne-question-catalog.json"
+"${ariadne}" experiment questions --json >"${catalog_json}"
+jq -e '
+  (map(keys_unsorted) == [["id", "question"], ["id", "question"], ["id", "question"]]) and
+  (map(.id) == ["counterfactual-change", "capture-complete", "source-integrity"]) and
+  (map(.question) == [
+    "Did changing the declared variable influence an observed output?",
+    "Were all required observations captured for both sessions?",
+    "Do the verified findings still match their source artifacts?"
+  ])
+' "${catalog_json}"
+
 finding_id="$(jq -r '.comparison.differences[0].id' "${run_dir}/evidence.json")"
 finding_stdout="${RUNNER_TEMP}/ariadne-finding.stdout"
 "${ariadne}" experiment finding "${run_dir}" "${finding_id}" >"${finding_stdout}"

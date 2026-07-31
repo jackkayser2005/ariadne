@@ -78,6 +78,30 @@ type Answer struct {
 	FindingIDs []string       `json:"finding_ids"`
 }
 
+// Question describes one bounded question available for a verified bundle.
+type Question struct {
+	ID   string `json:"id"`
+	Text string `json:"question"`
+}
+
+// Questions returns the fixed question catalog in stable order.
+func Questions() []Question {
+	return []Question{
+		{
+			ID:   "counterfactual-change",
+			Text: "Did changing the declared variable influence an observed output?",
+		},
+		{
+			ID:   "capture-complete",
+			Text: "Were all required observations captured for both sessions?",
+		},
+		{
+			ID:   "source-integrity",
+			Text: "Do the verified findings still match their source artifacts?",
+		},
+	}
+}
+
 type document struct {
 	SchemaVersion          int                 `json:"schema_version"`
 	ManifestName           string              `json:"manifest_name"`
@@ -184,7 +208,8 @@ func Find(runDir, id string) (Finding, error) {
 
 // Ask verifies a bundle and answers one bounded question without observed values.
 func Ask(runDir, questionID string) (Answer, error) {
-	if !validQuestionID(questionID) {
+	catalogQuestion, ok := questionForID(questionID)
+	if !ok {
 		return Answer{}, errors.New("question ID is invalid")
 	}
 	verified, _, err := verifyDocument(runDir)
@@ -199,7 +224,7 @@ func Ask(runDir, questionID string) (Answer, error) {
 	case "counterfactual-change":
 		return Answer{
 			QuestionID: questionID,
-			Question:   verified.Question,
+			Question:   catalogQuestion.Text,
 			State:      verified.AnswerState,
 			FindingIDs: findingIDs,
 		}, nil
@@ -210,14 +235,14 @@ func Ask(runDir, questionID string) (Answer, error) {
 		}
 		return Answer{
 			QuestionID: questionID,
-			Question:   "Were all required observations captured for both sessions?",
+			Question:   catalogQuestion.Text,
 			State:      state,
 			FindingIDs: slices.Clone(findingIDs),
 		}, nil
 	case "source-integrity":
 		return Answer{
 			QuestionID: questionID,
-			Question:   "Do the verified findings still match their source artifacts?",
+			Question:   catalogQuestion.Text,
 			State:      evidence.Observed,
 			FindingIDs: slices.Clone(findingIDs),
 		}, nil
@@ -226,13 +251,13 @@ func Ask(runDir, questionID string) (Answer, error) {
 	}
 }
 
-func validQuestionID(value string) bool {
-	switch value {
-	case "counterfactual-change", "capture-complete", "source-integrity":
-		return true
-	default:
-		return false
+func questionForID(id string) (Question, bool) {
+	for _, question := range Questions() {
+		if question.ID == id {
+			return question, true
+		}
 	}
+	return Question{}, false
 }
 
 func comparisonFindingIDs(comparison analysis.Comparison) []string {

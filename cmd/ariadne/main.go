@@ -23,6 +23,7 @@ const usage = `usage:
   ariadne experiment verify <run-directory>
   ariadne experiment finding <run-directory> <finding-id>
   ariadne experiment ask [--json] <run-directory> <question-id>
+  ariadne experiment questions [--json]
 `
 
 const adbCheckTimeout = 10 * time.Second
@@ -53,6 +54,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(args) >= 2 && args[0] == "experiment" && args[1] == "ask" {
 		return runAsk(args[2:], stdout, stderr, bundle.Ask)
+	}
+	if len(args) >= 2 && args[0] == "experiment" && args[1] == "questions" {
+		return runQuestions(args[2:], stdout, stderr, bundle.Questions)
 	}
 
 	_, _ = io.WriteString(stderr, usage)
@@ -101,6 +105,7 @@ type pairRunner func(
 type bundleWriter func(string) (bundle.Summary, error)
 type bundleFinder func(string, string) (bundle.Finding, error)
 type bundleAsker func(string, string) (bundle.Answer, error)
+type bundleQuestionLister func() []bundle.Question
 
 func runAndroidCheck(
 	args []string,
@@ -402,6 +407,45 @@ func runAsk(
 	for _, findingID := range answer.FindingIDs {
 		if _, err = fmt.Fprintf(stdout, "- %s\n", findingID); err != nil {
 			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask: write output: %v\n", err)
+			return 1
+		}
+	}
+	return 0
+}
+
+func runQuestions(
+	args []string,
+	stdout, stderr io.Writer,
+	list bundleQuestionLister,
+) int {
+	flags := flag.NewFlagSet("experiment questions", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 0 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+
+	questions := list()
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(questions); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment questions: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if _, err := io.WriteString(stdout, "question catalog\n"); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment questions: write output: %v\n", err)
+		return 1
+	}
+	for _, question := range questions {
+		if _, err := fmt.Fprintf(
+			stdout,
+			"- id: %s\n  question: %s\n",
+			question.ID,
+			question.Text,
+		); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment questions: write output: %v\n", err)
 			return 1
 		}
 	}
