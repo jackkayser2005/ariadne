@@ -62,6 +62,7 @@ func TestRunUsage(t *testing.T) {
 		{"experiment"},
 		{"experiment", "unknown"},
 		{"experiment", "verify"},
+		{"experiment", "finding"},
 	}
 
 	for _, args := range tests {
@@ -483,6 +484,94 @@ func TestRunVerifyFailures(t *testing.T) {
 		)
 		if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
 			t.Fatalf("runVerify() = %d, stderr=%q", exitCode, stderr.String())
+		}
+	})
+}
+
+func TestRunFinding(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	exitCode := runFinding(
+		[]string{"run-directory", "sha256:" + strings.Repeat("a", 64)},
+		&stdout,
+		&stderr,
+		func(runDir, id string) (bundle.Finding, error) {
+			if runDir != "run-directory" || id != "sha256:"+strings.Repeat("a", 64) {
+				t.Fatalf("Find() arguments = %q, %q", runDir, id)
+			}
+			return bundle.Finding{
+				Question:       "Did changing email influence an observed output?",
+				AnswerState:    "observed",
+				Kind:           "difference",
+				Classification: "changed",
+				ID:             id,
+				Field:          "variant",
+				State:          "observed",
+				Evidence:       []string{"baseline/observations/storage.json#/variant"},
+			}, nil
+		},
+	)
+	const want = "finding verified\n" +
+		"question: Did changing email influence an observed output?\n" +
+		"answer_state: observed\n" +
+		"kind: difference\n" +
+		"classification: changed\n" +
+		"id: sha256:" +
+		"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n" +
+		"field: variant\n" +
+		"state: observed\n" +
+		"evidence:\n" +
+		"- baseline/observations/storage.json#/variant\n"
+	if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+		t.Fatalf("runFinding() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+}
+
+func TestRunFindingFailures(t *testing.T) {
+	for _, args := range [][]string{nil, {"run"}, {"run", "one", "two"}} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			exitCode := runFinding(
+				args,
+				&stdout,
+				&stderr,
+				func(string, string) (bundle.Finding, error) {
+					t.Fatal("find called for invalid usage")
+					return bundle.Finding{}, nil
+				},
+			)
+			if exitCode != 2 || stdout.Len() != 0 || stderr.String() != usage {
+				t.Fatalf("runFinding() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+			}
+		})
+	}
+
+	t.Run("bundle error", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runFinding(
+			[]string{"run", "id"},
+			&stdout,
+			&stderr,
+			func(string, string) (bundle.Finding, error) {
+				return bundle.Finding{}, errors.New("invalid bundle")
+			},
+		)
+		if exitCode != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "invalid bundle") {
+			t.Fatalf("runFinding() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("write output", func(t *testing.T) {
+		var stderr bytes.Buffer
+		exitCode := runFinding(
+			[]string{"run", "id"},
+			failingWriter{},
+			&stderr,
+			func(string, string) (bundle.Finding, error) {
+				return bundle.Finding{Question: "question", AnswerState: "observed", Kind: "difference", ID: "id", Field: "field", State: "observed"}, nil
+			},
+		)
+		if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+			t.Fatalf("runFinding() = %d, stderr=%q", exitCode, stderr.String())
 		}
 	})
 }

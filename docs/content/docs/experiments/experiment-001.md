@@ -160,6 +160,7 @@ go run ./cmd/ariadne android check --device emulator-5554 --package dev.ariadne.
 go run ./cmd/ariadne experiment run --device emulator-5554 --package dev.ariadne.fixture --output .ariadne/runs/experiment-001 examples/experiment-001.json
 go run ./cmd/ariadne experiment report .ariadne/runs/experiment-001
 go run ./cmd/ariadne experiment verify .ariadne/runs/experiment-001
+go run ./cmd/ariadne experiment finding .ariadne/runs/experiment-001 <finding-id-from-evidence.json>
 ```
 
 The output directory must not exist before `experiment run`. A successful final
@@ -184,6 +185,9 @@ when `go run` built Ariadne.
   fails closed for unsupported capture shapes or artifact integrity failures.
 - If `ariadne_modified` is unexpectedly `true`, inspect `git status --short`
   before treating the run as reproducible from the recorded revision alone.
+- Finding lookup re-verifies the bundle first and prints only the question,
+  answer state, stable ID, field, and source references. It rejects unknown
+  IDs, tampered artifacts, and malformed bundles without writing output.
 
 ## Run isolated sessions
 
@@ -204,12 +208,15 @@ outputs:
 ```console
 go run ./cmd/ariadne experiment report .ariadne/runs/experiment-001
 go run ./cmd/ariadne experiment verify .ariadne/runs/experiment-001
+go run ./cmd/ariadne experiment finding .ariadne/runs/experiment-001 <finding-id-from-evidence.json>
 ```
 
 The report command refuses existing `evidence.json` or `report.md` files. The
 verify command is non-destructive: it rechecks the sessions, artifact hashes,
 normalization inputs, and existing output bytes without rerunning capture or
-rewriting either file. The
+rewriting either file. The finding command uses that same verification path and
+returns the safe question state plus source references without returning raw
+observation or persona values. The
 completed directory contains:
 
 ```text
