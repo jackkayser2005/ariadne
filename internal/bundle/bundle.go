@@ -30,6 +30,8 @@ const (
 	maxStorageBytes = 64 << 10
 	maxNetworkBytes = 96 << 10
 	maxOutputBytes  = 128 << 10
+
+	treatmentStorageObservationUnknownReason = "treatment storage observation was not captured"
 )
 
 var expectedSteps = []string{
@@ -67,6 +69,7 @@ type Finding struct {
 	ID             string         `json:"id"`
 	Field          string         `json:"field"`
 	State          evidence.State `json:"state"`
+	Reason         string         `json:"reason,omitempty"`
 	Evidence       []string       `json:"evidence"`
 }
 
@@ -75,6 +78,7 @@ type Answer struct {
 	QuestionID string         `json:"question_id"`
 	Question   string         `json:"question"`
 	State      evidence.State `json:"answer_state"`
+	Reason     string         `json:"reason,omitempty"`
 	FindingIDs []string       `json:"finding_ids"`
 }
 
@@ -199,6 +203,7 @@ func Find(runDir, id string) (Finding, error) {
 				ID:          unknown.ID,
 				Field:       unknown.Field,
 				State:       unknown.State,
+				Reason:      safeUnknownReason(unknown.Reason),
 				Evidence:    slices.Clone(unknown.Evidence),
 			}, nil
 		}
@@ -220,12 +225,17 @@ func Ask(runDir, questionID string) (Answer, error) {
 		return Answer{}, errors.New("question catalog requires current evidence schema")
 	}
 	findingIDs := comparisonFindingIDs(verified.Comparison)
+	unknownReason := ""
+	if verified.AnswerState == evidence.Unknown {
+		unknownReason = comparisonUnknownReason(verified.Comparison)
+	}
 	switch questionID {
 	case "counterfactual-change":
 		return Answer{
 			QuestionID: questionID,
 			Question:   catalogQuestion.Text,
 			State:      verified.AnswerState,
+			Reason:     unknownReason,
 			FindingIDs: findingIDs,
 		}, nil
 	case "capture-complete":
@@ -237,6 +247,7 @@ func Ask(runDir, questionID string) (Answer, error) {
 			QuestionID: questionID,
 			Question:   catalogQuestion.Text,
 			State:      state,
+			Reason:     unknownReason,
 			FindingIDs: slices.Clone(findingIDs),
 		}, nil
 	case "source-integrity":
@@ -249,6 +260,23 @@ func Ask(runDir, questionID string) (Answer, error) {
 	default:
 		return Answer{}, errors.New("question ID is invalid")
 	}
+}
+
+func comparisonUnknownReason(comparison analysis.Comparison) string {
+	for _, unknown := range comparison.Unknowns {
+		if reason := safeUnknownReason(unknown.Reason); reason != "" {
+			return reason
+		}
+	}
+	return ""
+}
+
+// safeUnknownReason exposes only reasons owned by the current verifier.
+func safeUnknownReason(reason string) string {
+	if reason == treatmentStorageObservationUnknownReason {
+		return reason
+	}
+	return ""
 }
 
 func questionForID(id string) (Question, bool) {
@@ -831,7 +859,7 @@ func incompleteTreatmentComparison(baseline, treatment analysis.Session) analysi
 		unknowns = append(unknowns, analysis.Unknown{
 			Field:    field,
 			State:    evidence.Unknown,
-			Reason:   "treatment storage observation was not captured",
+			Reason:   treatmentStorageObservationUnknownReason,
 			Evidence: references,
 		})
 	}

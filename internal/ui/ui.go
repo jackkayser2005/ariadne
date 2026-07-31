@@ -292,6 +292,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
     <h1>Question result</h1>
     <p class="question">{{.Answer.Question}}</p>
     <span class="status status-{{.Answer.State}}">{{.Answer.State}}</span>
+    {{with .Answer.Reason}}<p class="context">Why unknown: {{.}}</p>{{end}}
     <section class="panel" style="margin-top: 28px">
       <h2>Referenced findings</h2>
       {{if .Answer.FindingIDs}}
@@ -317,6 +318,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
         {{with .Finding.Classification}}<dt>classification</dt><dd>{{.}}</dd>{{end}}
         <dt>answer state</dt><dd>{{.Finding.AnswerState}}</dd>
         <dt>finding state</dt><dd>{{.Finding.State}}</dd>
+        {{with .Finding.Reason}}<dt>reason</dt><dd>{{.}}</dd>{{end}}
       </dl>
       <h2>Evidence sources</h2>
       <ul>
