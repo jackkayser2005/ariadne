@@ -49,6 +49,26 @@ for question_id in counterfactual-change capture-complete source-integrity; do
     echo "question answer exposed observed value" >&2
     exit 1
   fi
+  question_json="${RUNNER_TEMP}/ariadne-question-${question_id}.json"
+  "${ariadne}" experiment ask --json "${run_dir}" "${question_id}" >"${question_json}"
+  jq -e \
+    --arg question_id "${question_id}" \
+    '
+    (keys_unsorted == ["question_id", "question", "answer_state", "finding_ids"]) and
+    (.question_id == $question_id) and
+    (.question | type == "string") and
+    (.answer_state == "observed") and
+    (.finding_ids | length == 1) and
+    all(.finding_ids[]; test("^sha256:[0-9a-f]{64}$"))
+    ' "${question_json}"
+  if grep -F -q \
+    -e "standard" \
+    -e "personalized" \
+    -e "request_id" \
+    "${question_json}"; then
+    echo "JSON question answer exposed observed value" >&2
+    exit 1
+  fi
 done
 
 fixture_sha256="$(
@@ -243,6 +263,30 @@ for question_id in counterfactual-change capture-complete source-integrity; do
     echo "storage gap question answer exposed observed value" >&2
     exit 1
   fi
+  question_json="${failure_dir}/storage-gap-question-${question_id}.json"
+  expected_state="unknown"
+  if [[ "${question_id}" == "source-integrity" ]]; then
+    expected_state="observed"
+  fi
+  "${ariadne}" experiment ask --json "${storage_gap_dir}" "${question_id}" >"${question_json}"
+  jq -e \
+    --arg question_id "${question_id}" \
+    --arg expected_state "${expected_state}" \
+    '
+    (.question_id == $question_id) and
+    (.question | type == "string") and
+    (.answer_state == $expected_state) and
+    (.finding_ids | length == 3) and
+    all(.finding_ids[]; test("^sha256:[0-9a-f]{64}$"))
+    ' "${question_json}"
+  if grep -F -q \
+    -e "standard" \
+    -e "personalized" \
+    -e "request_id" \
+    "${question_json}"; then
+    echo "storage gap JSON question answer exposed observed value" >&2
+    exit 1
+  fi
 done
 grep -F -x -q "differences: 0" "${storage_gap_report_stdout}"
 grep -F -x -q "unknowns: 3" "${storage_gap_report_stdout}"
@@ -331,6 +375,10 @@ expect_failure \
   "artifact-ask" \
   "integrity check failed" \
   "${ariadne}" experiment ask "${artifact_dir}" "counterfactual-change"
+expect_failure \
+  "artifact-ask-json" \
+  "integrity check failed" \
+  "${ariadne}" experiment ask --json "${artifact_dir}" "counterfactual-change"
 test -e "${artifact_dir}/evidence.json"
 test -e "${artifact_dir}/report.md"
 rm "${artifact_dir}/evidence.json" "${artifact_dir}/report.md"
@@ -350,6 +398,10 @@ expect_failure \
   "unknown-question" \
   "question ID is invalid" \
   "${ariadne}" experiment ask "${run_dir}" "not-a-question"
+expect_failure \
+  "invalid-json-flag" \
+  "usage:" \
+  "${ariadne}" experiment ask --json=invalid "${run_dir}" "counterfactual-change"
 
 provenance_dir="${failure_dir}/provenance"
 cp -R "${run_dir}" "${provenance_dir}"

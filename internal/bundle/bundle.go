@@ -72,10 +72,10 @@ type Finding struct {
 
 // Answer is the deterministic result of one bounded bundle question.
 type Answer struct {
-	QuestionID string
-	Question   string
-	State      evidence.State
-	FindingIDs []string
+	QuestionID string         `json:"question_id"`
+	Question   string         `json:"question"`
+	State      evidence.State `json:"answer_state"`
+	FindingIDs []string       `json:"finding_ids"`
 }
 
 type document struct {

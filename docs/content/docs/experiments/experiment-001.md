@@ -162,6 +162,7 @@ go run ./cmd/ariadne experiment report .ariadne/runs/experiment-001
 go run ./cmd/ariadne experiment verify .ariadne/runs/experiment-001
 go run ./cmd/ariadne experiment finding .ariadne/runs/experiment-001 <finding-id-from-evidence.json>
 go run ./cmd/ariadne experiment ask .ariadne/runs/experiment-001 counterfactual-change
+go run ./cmd/ariadne experiment ask --json .ariadne/runs/experiment-001 counterfactual-change
 ```
 
 The output directory must not exist before `experiment run`. A successful final
@@ -224,7 +225,9 @@ returns the safe question state plus source references without returning raw
 observation or persona values. The
 question command is a fixed, deterministic catalog rather than an arbitrary
 natural-language answerer; it can be rerun after archival and returns the same
-answer state and finding IDs. The
+answer state and finding IDs. Add `--json` for a stable, raw-value-free object
+with `question_id`, `question`, `answer_state`, and `finding_ids`; human-readable
+output remains the default. The
 completed directory contains:
 
 ```text
