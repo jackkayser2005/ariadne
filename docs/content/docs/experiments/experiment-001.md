@@ -161,6 +161,7 @@ go run ./cmd/ariadne experiment run --device emulator-5554 --package dev.ariadne
 go run ./cmd/ariadne experiment report .ariadne/runs/experiment-001
 go run ./cmd/ariadne experiment verify .ariadne/runs/experiment-001
 go run ./cmd/ariadne experiment finding .ariadne/runs/experiment-001 <finding-id-from-evidence.json>
+go run ./cmd/ariadne experiment ask .ariadne/runs/experiment-001 counterfactual-change
 ```
 
 The output directory must not exist before `experiment run`. A successful final
@@ -188,6 +189,9 @@ when `go run` built Ariadne.
 - Finding lookup re-verifies the bundle first and prints only the question,
   answer state, stable ID, field, and source references. It rejects unknown
   IDs, tampered artifacts, and malformed bundles without writing output.
+- The bounded question catalog currently supports `counterfactual-change`,
+  `capture-complete`, and `source-integrity`. It returns deterministic answer
+  states and finding IDs, and rejects any other question ID.
 
 ## Run isolated sessions
 
@@ -209,6 +213,7 @@ outputs:
 go run ./cmd/ariadne experiment report .ariadne/runs/experiment-001
 go run ./cmd/ariadne experiment verify .ariadne/runs/experiment-001
 go run ./cmd/ariadne experiment finding .ariadne/runs/experiment-001 <finding-id-from-evidence.json>
+go run ./cmd/ariadne experiment ask .ariadne/runs/experiment-001 counterfactual-change
 ```
 
 The report command refuses existing `evidence.json` or `report.md` files. The
@@ -217,6 +222,9 @@ normalization inputs, and existing output bytes without rerunning capture or
 rewriting either file. The finding command uses that same verification path and
 returns the safe question state plus source references without returning raw
 observation or persona values. The
+question command is a fixed, deterministic catalog rather than an arbitrary
+natural-language answerer; it can be rerun after archival and returns the same
+answer state and finding IDs. The
 completed directory contains:
 
 ```text

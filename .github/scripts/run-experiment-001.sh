@@ -35,6 +35,21 @@ if grep -F -q \
   echo "finding lookup exposed observed value" >&2
   exit 1
 fi
+for question_id in counterfactual-change capture-complete source-integrity; do
+  question_stdout="${RUNNER_TEMP}/ariadne-question-${question_id}.stdout"
+  "${ariadne}" experiment ask "${run_dir}" "${question_id}" >"${question_stdout}"
+  grep -F -x -q "question answered" "${question_stdout}"
+  grep -F -x -q "id: ${question_id}" "${question_stdout}"
+  grep -F -q "sha256:" "${question_stdout}"
+  if grep -F -q \
+    -e "standard" \
+    -e "personalized" \
+    -e "request_id" \
+    "${question_stdout}"; then
+    echo "question answer exposed observed value" >&2
+    exit 1
+  fi
+done
 
 fixture_sha256="$(
   sha256sum fixture/android/app/build/outputs/apk/debug/app-debug.apk |
@@ -210,6 +225,25 @@ if grep -F -q \
   echo "storage gap finding lookup exposed observed value" >&2
   exit 1
 fi
+for question_id in counterfactual-change capture-complete source-integrity; do
+  question_stdout="${failure_dir}/storage-gap-question-${question_id}.stdout"
+  "${ariadne}" experiment ask "${storage_gap_dir}" "${question_id}" >"${question_stdout}"
+  grep -F -x -q "question answered" "${question_stdout}"
+  grep -F -x -q "id: ${question_id}" "${question_stdout}"
+  if [[ "${question_id}" == "source-integrity" ]]; then
+    grep -F -x -q "answer_state: observed" "${question_stdout}"
+  else
+    grep -F -x -q "answer_state: unknown" "${question_stdout}"
+  fi
+  if grep -F -q \
+    -e "standard" \
+    -e "personalized" \
+    -e "request_id" \
+    "${question_stdout}"; then
+    echo "storage gap question answer exposed observed value" >&2
+    exit 1
+  fi
+done
 grep -F -x -q "differences: 0" "${storage_gap_report_stdout}"
 grep -F -x -q "unknowns: 3" "${storage_gap_report_stdout}"
 jq -e \
@@ -293,6 +327,10 @@ expect_failure \
   "artifact-finding" \
   "integrity check failed" \
   "${ariadne}" experiment finding "${artifact_dir}" "${finding_id}"
+expect_failure \
+  "artifact-ask" \
+  "integrity check failed" \
+  "${ariadne}" experiment ask "${artifact_dir}" "counterfactual-change"
 test -e "${artifact_dir}/evidence.json"
 test -e "${artifact_dir}/report.md"
 rm "${artifact_dir}/evidence.json" "${artifact_dir}/report.md"
@@ -308,6 +346,10 @@ expect_failure \
   "finding not found" \
   "${ariadne}" experiment finding "${run_dir}" \
   "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+expect_failure \
+  "unknown-question" \
+  "question ID is invalid" \
+  "${ariadne}" experiment ask "${run_dir}" "not-a-question"
 
 provenance_dir="${failure_dir}/provenance"
 cp -R "${run_dir}" "${provenance_dir}"
