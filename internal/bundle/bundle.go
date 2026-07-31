@@ -60,14 +60,14 @@ type Summary struct {
 
 // Finding is the safe, raw-value-free view of one verified conclusion.
 type Finding struct {
-	Question       string
-	AnswerState    evidence.State
-	Kind           string
-	Classification string
-	ID             string
-	Field          string
-	State          evidence.State
-	Evidence       []string
+	Question       string         `json:"question"`
+	AnswerState    evidence.State `json:"answer_state"`
+	Kind           string         `json:"kind"`
+	Classification string         `json:"classification,omitempty"`
+	ID             string         `json:"id"`
+	Field          string         `json:"field"`
+	State          evidence.State `json:"state"`
+	Evidence       []string       `json:"evidence"`
 }
 
 // Answer is the deterministic result of one bounded bundle question.

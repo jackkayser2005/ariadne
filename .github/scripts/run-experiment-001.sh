@@ -53,6 +53,26 @@ if grep -F -q \
   echo "finding lookup exposed observed value" >&2
   exit 1
 fi
+finding_json="${RUNNER_TEMP}/ariadne-finding.json"
+"${ariadne}" experiment finding --json "${run_dir}" "${finding_id}" >"${finding_json}"
+jq -e '
+  (keys_unsorted == ["question", "answer_state", "kind", "classification", "id", "field", "state", "evidence"]) and
+  (.answer_state == "observed") and
+  (.kind == "difference") and
+  (.classification == "changed") and
+  (.id | test("^sha256:[0-9a-f]{64}$")) and
+  (.field == "variant") and
+  (.state == "observed") and
+  (.evidence == ["baseline/observations/storage.json#/variant"])
+' "${finding_json}"
+if grep -F -q \
+  -e "standard" \
+  -e "personalized" \
+  -e "request_id" \
+  "${finding_json}"; then
+  echo "JSON finding lookup exposed observed value" >&2
+  exit 1
+fi
 for question_id in counterfactual-change capture-complete source-integrity; do
   question_stdout="${RUNNER_TEMP}/ariadne-question-${question_id}.stdout"
   "${ariadne}" experiment ask "${run_dir}" "${question_id}" >"${question_stdout}"
@@ -263,6 +283,24 @@ if grep -F -q \
   echo "storage gap finding lookup exposed observed value" >&2
   exit 1
 fi
+storage_gap_finding_json="${failure_dir}/storage-gap-finding.json"
+"${ariadne}" experiment finding --json "${storage_gap_dir}" "${storage_gap_finding_id}" >"${storage_gap_finding_json}"
+jq -e '
+  (keys_unsorted == ["question", "answer_state", "kind", "id", "field", "state", "evidence"]) and
+  (.answer_state == "unknown") and
+  (.kind == "unknown") and
+  (.id | test("^sha256:[0-9a-f]{64}$")) and
+  (.state == "unknown") and
+  (.evidence | length == 3)
+' "${storage_gap_finding_json}"
+if grep -F -q \
+  -e "standard" \
+  -e "personalized" \
+  -e "request_id" \
+  "${storage_gap_finding_json}"; then
+  echo "storage gap JSON finding lookup exposed observed value" >&2
+  exit 1
+fi
 for question_id in counterfactual-change capture-complete source-integrity; do
   question_stdout="${failure_dir}/storage-gap-question-${question_id}.stdout"
   "${ariadne}" experiment ask "${storage_gap_dir}" "${question_id}" >"${question_stdout}"
@@ -390,6 +428,10 @@ expect_failure \
   "integrity check failed" \
   "${ariadne}" experiment finding "${artifact_dir}" "${finding_id}"
 expect_failure \
+  "artifact-finding-json" \
+  "integrity check failed" \
+  "${ariadne}" experiment finding --json "${artifact_dir}" "${finding_id}"
+expect_failure \
   "artifact-ask" \
   "integrity check failed" \
   "${ariadne}" experiment ask "${artifact_dir}" "counterfactual-change"
@@ -412,6 +454,10 @@ expect_failure \
   "finding not found" \
   "${ariadne}" experiment finding "${run_dir}" \
   "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+expect_failure \
+  "invalid-finding-json-flag" \
+  "usage:" \
+  "${ariadne}" experiment finding --json=invalid "${run_dir}" "${finding_id}"
 expect_failure \
   "unknown-question" \
   "question ID is invalid" \
