@@ -48,6 +48,7 @@ public final class MainActivity extends Activity {
         JSONObject observation = new JSONObject()
                 .put("schema_version", 1)
                 .put("region", region)
+                .put("request_id", ExperimentLogic.requestID())
                 .put("variant", ExperimentLogic.variantFor(email));
         return observation.toString().getBytes(StandardCharsets.UTF_8);
     }

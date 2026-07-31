@@ -36,9 +36,13 @@ jq -e \
   (.artifacts | length == 6) and
   (.comparison.schema_version == 4) and
   (.comparison.unchanged_fields == ["region"]) and
-  (.comparison.normalized_fields == []) and
+  (.comparison.normalized_fields == ["request_id"]) and
   (.comparison.differences | length == 1) and
   (.comparison.unknowns == []) and
+  (
+    .normalizations |
+    index("removed declared volatile observation field request_id from comparison") != null
+  ) and
   (
     .comparison.differences[0] |
     .field == "variant" and
@@ -48,6 +52,27 @@ jq -e \
     .state == "observed"
   )
 ' "${run_dir}/evidence.json"
+
+baseline_request_id="$(
+  jq -r '.request_id' "${run_dir}/baseline/observations/storage.json"
+)"
+treatment_request_id="$(
+  jq -r '.request_id' "${run_dir}/treatment/observations/storage.json"
+)"
+test -n "${baseline_request_id}"
+test -n "${treatment_request_id}"
+test "${baseline_request_id}" != "${treatment_request_id}"
+if grep -F -q \
+  -e "${baseline_request_id}" \
+  -e "${treatment_request_id}" \
+  "${run_dir}/evidence.json" \
+  "${run_dir}/report.md"; then
+  echo "volatile value found in normalized evidence output" >&2
+  exit 1
+fi
+grep -F -q \
+  "removed declared volatile observation field request_id from comparison" \
+  "${run_dir}/report.md"
 
 baseline_email="$(jq -r '.baseline.email' examples/experiment-001.json)"
 treatment_email="$(jq -r '.treatment.email' examples/experiment-001.json)"
@@ -80,6 +105,7 @@ if [[ -s "${storage_gap_stdout}" ]]; then
 fi
 if ! grep -F -q "capture storage" "${storage_gap_stderr}"; then
   echo "storage gap: expected capture failure was not reported" >&2
+  cat "${storage_gap_stderr}" >&2
   exit 1
 fi
 if grep -F -q \
@@ -106,10 +132,22 @@ jq -e '
   any(.steps[]; .name == "capture_storage" and .status == "error")
 ' "${storage_gap_dir}/treatment/session.json"
 
+storage_gap_baseline_request_id="$(
+  jq -r '.request_id' \
+    "${storage_gap_dir}/baseline/observations/storage.json"
+)"
+storage_gap_treatment_request_id="$(
+  jq -r '.body_base64 | @base64d | fromjson | .request_id' \
+    "${storage_gap_dir}/treatment/observations/network.json"
+)"
+test -n "${storage_gap_baseline_request_id}"
+test -n "${storage_gap_treatment_request_id}"
+test "${storage_gap_baseline_request_id}" != "${storage_gap_treatment_request_id}"
+
 storage_gap_report_stdout="${failure_dir}/storage-gap-report.stdout"
 "${ariadne}" experiment report "${storage_gap_dir}" >"${storage_gap_report_stdout}"
 grep -F -x -q "differences: 0" "${storage_gap_report_stdout}"
-grep -F -x -q "unknowns: 2" "${storage_gap_report_stdout}"
+grep -F -x -q "unknowns: 3" "${storage_gap_report_stdout}"
 jq -e '
   (.schema_version == 4) and
   (.manifest_name == "experiment-001-email-storage-gap") and
@@ -118,7 +156,7 @@ jq -e '
   (.comparison.unchanged_fields == []) and
   (.comparison.normalized_fields == []) and
   (.comparison.differences == []) and
-  (.comparison.unknowns | map(.field) == ["region", "variant"]) and
+  (.comparison.unknowns | map(.field) == ["region", "request_id", "variant"]) and
   all(
     .comparison.unknowns[];
     .state == "unknown" and
@@ -129,6 +167,8 @@ jq -e '
 if grep -F -q \
   -e "standard" \
   -e "personalized" \
+  -e "${storage_gap_baseline_request_id}" \
+  -e "${storage_gap_treatment_request_id}" \
   "${storage_gap_dir}/evidence.json" \
   "${storage_gap_dir}/report.md"; then
   echo "storage gap: partial report disclosed an observed value" >&2
