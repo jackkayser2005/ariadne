@@ -27,6 +27,20 @@ jq -e '
   (.differences == 1) and
   (.unknowns == 0)
 ' "${verify_json}"
+list_stdout="${RUNNER_TEMP}/ariadne-list.stdout"
+"${ariadne}" experiment list ".ariadne/ci" >"${list_stdout}"
+grep -F -x -q "archived bundles" "${list_stdout}"
+grep -F -x -q -- "- directory: experiment-001" "${list_stdout}"
+list_json="${RUNNER_TEMP}/ariadne-list.json"
+"${ariadne}" experiment list --json ".ariadne/ci" >"${list_json}"
+jq -e '
+  (length == 1) and
+  (.[0] | keys_unsorted == ["directory", "manifest_name", "differences", "unknowns"]) and
+  (.[0].directory == "experiment-001") and
+  (.[0].manifest_name == "experiment-001-email") and
+  (.[0].differences == 1) and
+  (.[0].unknowns == 0)
+' "${list_json}"
 
 catalog_stdout="${RUNNER_TEMP}/ariadne-question-catalog.stdout"
 "${ariadne}" experiment questions >"${catalog_stdout}"
@@ -474,6 +488,22 @@ expect_failure \
 test ! -e "${artifact_dir}/evidence.json"
 test ! -e "${artifact_dir}/report.md"
 
+intermediate_list_root="${failure_dir}/intermediate-list"
+mkdir "${intermediate_list_root}"
+intermediate_symlink_dir="${intermediate_list_root}/intermediate-symlink"
+cp -R "${run_dir}" "${intermediate_symlink_dir}"
+outside_observations="${failure_dir}/outside-observations"
+mv "${intermediate_symlink_dir}/baseline/observations" "${outside_observations}"
+ln -s "${outside_observations}" "${intermediate_symlink_dir}/baseline/observations"
+expect_failure \
+  "intermediate-symlink-verify" \
+  "symbolic links are not allowed" \
+  "${ariadne}" experiment verify --json "${intermediate_symlink_dir}"
+expect_failure \
+  "intermediate-symlink-list" \
+  "symbolic links are not allowed" \
+  "${ariadne}" experiment list --json "${intermediate_list_root}"
+
 expect_failure \
   "unknown-finding" \
   "finding not found" \
@@ -487,6 +517,10 @@ expect_failure \
   "invalid-verify-json-flag" \
   "usage:" \
   "${ariadne}" experiment verify --json=invalid "${run_dir}"
+expect_failure \
+  "invalid-list-json-flag" \
+  "usage:" \
+  "${ariadne}" experiment list --json=invalid ".ariadne/ci"
 expect_failure \
   "unknown-question" \
   "question ID is invalid" \

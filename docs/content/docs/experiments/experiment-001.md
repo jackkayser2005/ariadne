@@ -161,6 +161,7 @@ go run ./cmd/ariadne experiment run --device emulator-5554 --package dev.ariadne
 go run ./cmd/ariadne experiment report .ariadne/runs/experiment-001
 go run ./cmd/ariadne experiment verify .ariadne/runs/experiment-001
 go run ./cmd/ariadne experiment verify --json .ariadne/runs/experiment-001
+go run ./cmd/ariadne experiment list --json .ariadne/runs
 go run ./cmd/ariadne experiment finding .ariadne/runs/experiment-001 <finding-id-from-evidence.json>
 go run ./cmd/ariadne experiment questions
 go run ./cmd/ariadne experiment questions --json
@@ -191,6 +192,9 @@ when `go run` built Ariadne.
   fails closed for unsupported capture shapes or artifact integrity failures.
 - Verification can use `--json` for the stable raw-value-free fields
   `manifest_name`, `differences`, and `unknowns`; it remains non-destructive.
+- `experiment list --json <archive-root>` inspects only immediate child
+  directories, rejects symbolic links, and returns only relative directory
+  names plus verified summary fields.
 - If `ariadne_modified` is unexpectedly `true`, inspect `git status --short`
   before treating the run as reproducible from the recorded revision alone.
 - Finding lookup re-verifies the bundle first and prints only the question,

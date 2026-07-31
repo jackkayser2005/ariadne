@@ -24,6 +24,7 @@ const usage = `usage:
   ariadne experiment finding [--json] <run-directory> <finding-id>
   ariadne experiment ask [--json] <run-directory> <question-id>
   ariadne experiment questions [--json]
+  ariadne experiment list [--json] <archive-root>
 `
 
 const adbCheckTimeout = 10 * time.Second
@@ -57,6 +58,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(args) >= 2 && args[0] == "experiment" && args[1] == "questions" {
 		return runQuestions(args[2:], stdout, stderr, bundle.Questions)
+	}
+	if len(args) >= 2 && args[0] == "experiment" && args[1] == "list" {
+		return runList(args[2:], stdout, stderr, bundle.Index)
 	}
 
 	_, _ = io.WriteString(stderr, usage)
@@ -106,6 +110,7 @@ type bundleWriter func(string) (bundle.Summary, error)
 type bundleFinder func(string, string) (bundle.Finding, error)
 type bundleAsker func(string, string) (bundle.Answer, error)
 type bundleQuestionLister func() []bundle.Question
+type bundleArchiveIndexer func(string) ([]bundle.ArchiveEntry, error)
 
 func runAndroidCheck(
 	args []string,
@@ -466,6 +471,51 @@ func runQuestions(
 			question.Text,
 		); err != nil {
 			_, _ = fmt.Fprintf(stderr, "ariadne: experiment questions: write output: %v\n", err)
+			return 1
+		}
+	}
+	return 0
+}
+
+func runList(
+	args []string,
+	stdout, stderr io.Writer,
+	index bundleArchiveIndexer,
+) int {
+	flags := flag.NewFlagSet("experiment list", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+
+	entries, err := index(flags.Arg(0))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment list: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(entries); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment list: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if _, err := io.WriteString(stdout, "archived bundles\n"); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment list: write output: %v\n", err)
+		return 1
+	}
+	for _, entry := range entries {
+		if _, err := fmt.Fprintf(
+			stdout,
+			"- directory: %s\n  manifest_name: %s\n  differences: %d\n  unknowns: %d\n",
+			entry.Directory,
+			entry.ManifestName,
+			entry.Differences,
+			entry.Unknowns,
+		); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment list: write output: %v\n", err)
 			return 1
 		}
 	}
