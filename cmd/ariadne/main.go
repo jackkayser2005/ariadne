@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -21,7 +22,7 @@ const usage = `usage:
   ariadne experiment report <run-directory>
   ariadne experiment verify <run-directory>
   ariadne experiment finding <run-directory> <finding-id>
-  ariadne experiment ask <run-directory> <question-id>
+  ariadne experiment ask [--json] <run-directory> <question-id>
 `
 
 const adbCheckTimeout = 10 * time.Second
@@ -368,15 +369,25 @@ func runAsk(
 	stdout, stderr io.Writer,
 	ask bundleAsker,
 ) int {
-	if len(args) != 2 {
+	flags := flag.NewFlagSet("experiment ask", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 2 {
 		_, _ = io.WriteString(stderr, usage)
 		return 2
 	}
 
-	answer, err := ask(args[0], args[1])
+	answer, err := ask(flags.Arg(0), flags.Arg(1))
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask: %v\n", err)
 		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(answer); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask: write output: %v\n", err)
+			return 1
+		}
+		return 0
 	}
 	if _, err = fmt.Fprintf(
 		stdout,

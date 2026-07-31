@@ -606,6 +606,31 @@ func TestRunAsk(t *testing.T) {
 	}
 }
 
+func TestRunAskJSON(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	findingID := "sha256:" + strings.Repeat("a", 64)
+	exitCode := runAsk(
+		[]string{"--json", "run-directory", "capture-complete"},
+		&stdout,
+		&stderr,
+		func(runDir, questionID string) (bundle.Answer, error) {
+			if runDir != "run-directory" || questionID != "capture-complete" {
+				t.Fatalf("Ask() arguments = %q, %q", runDir, questionID)
+			}
+			return bundle.Answer{
+				QuestionID: "capture-complete",
+				Question:   "Were all required observations captured for both sessions?",
+				State:      "observed",
+				FindingIDs: []string{findingID},
+			}, nil
+		},
+	)
+	want := `{"question_id":"capture-complete","question":"Were all required observations captured for both sessions?","answer_state":"observed","finding_ids":["` + findingID + `"]}` + "\n"
+	if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+		t.Fatalf("runAsk() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+}
+
 func TestRunAskFailures(t *testing.T) {
 	for _, args := range [][]string{nil, {"run"}, {"run", "one", "two"}} {
 		t.Run(strings.Join(args, "_"), func(t *testing.T) {
@@ -644,6 +669,37 @@ func TestRunAskFailures(t *testing.T) {
 		var stderr bytes.Buffer
 		exitCode := runAsk(
 			[]string{"run", "question"},
+			failingWriter{},
+			&stderr,
+			func(string, string) (bundle.Answer, error) {
+				return bundle.Answer{QuestionID: "question", Question: "question", State: "observed"}, nil
+			},
+		)
+		if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+			t.Fatalf("runAsk() = %d, stderr=%q", exitCode, stderr.String())
+		}
+	})
+
+	t.Run("invalid json flag", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAsk(
+			[]string{"--json=invalid", "run", "question"},
+			&stdout,
+			&stderr,
+			func(string, string) (bundle.Answer, error) {
+				t.Fatal("ask called for invalid JSON flag")
+				return bundle.Answer{}, nil
+			},
+		)
+		if exitCode != 2 || stdout.Len() != 0 || stderr.String() != usage {
+			t.Fatalf("runAsk() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("write json output", func(t *testing.T) {
+		var stderr bytes.Buffer
+		exitCode := runAsk(
+			[]string{"--json", "run", "question"},
 			failingWriter{},
 			&stderr,
 			func(string, string) (bundle.Answer, error) {
