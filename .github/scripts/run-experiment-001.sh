@@ -20,6 +20,22 @@ adb -s emulator-5554 install -r \
 "${ariadne}" experiment report "${run_dir}"
 "${ariadne}" experiment verify "${run_dir}"
 
+finding_id="$(jq -r '.comparison.differences[0].id' "${run_dir}/evidence.json")"
+finding_stdout="${RUNNER_TEMP}/ariadne-finding.stdout"
+"${ariadne}" experiment finding "${run_dir}" "${finding_id}" >"${finding_stdout}"
+grep -F -x -q "finding verified" "${finding_stdout}"
+grep -F -x -q "kind: difference" "${finding_stdout}"
+grep -F -x -q "field: variant" "${finding_stdout}"
+grep -F -q "baseline/observations/storage.json#/variant" "${finding_stdout}"
+if grep -F -q \
+  -e "standard" \
+  -e "personalized" \
+  -e "request_id" \
+  "${finding_stdout}"; then
+  echo "finding lookup exposed observed value" >&2
+  exit 1
+fi
+
 fixture_sha256="$(
   sha256sum fixture/android/app/build/outputs/apk/debug/app-debug.apk |
     cut -d " " -f 1
@@ -181,6 +197,19 @@ test "${storage_gap_baseline_request_id}" != "${storage_gap_treatment_request_id
 storage_gap_report_stdout="${failure_dir}/storage-gap-report.stdout"
 "${ariadne}" experiment report "${storage_gap_dir}" >"${storage_gap_report_stdout}"
 "${ariadne}" experiment verify "${storage_gap_dir}" >"${failure_dir}/storage-gap-verify.stdout"
+storage_gap_finding_id="$(jq -r '.comparison.unknowns[0].id' "${storage_gap_dir}/evidence.json")"
+"${ariadne}" experiment finding "${storage_gap_dir}" "${storage_gap_finding_id}" >"${failure_dir}/storage-gap-finding.stdout"
+grep -F -x -q "finding verified" "${failure_dir}/storage-gap-finding.stdout"
+grep -F -x -q "answer_state: unknown" "${failure_dir}/storage-gap-finding.stdout"
+grep -F -x -q "kind: unknown" "${failure_dir}/storage-gap-finding.stdout"
+if grep -F -q \
+  -e "standard" \
+  -e "personalized" \
+  -e "request_id" \
+  "${failure_dir}/storage-gap-finding.stdout"; then
+  echo "storage gap finding lookup exposed observed value" >&2
+  exit 1
+fi
 grep -F -x -q "differences: 0" "${storage_gap_report_stdout}"
 grep -F -x -q "unknowns: 3" "${storage_gap_report_stdout}"
 jq -e \
@@ -260,6 +289,10 @@ expect_failure \
   "artifact-verify" \
   "integrity check failed" \
   "${ariadne}" experiment verify "${artifact_dir}"
+expect_failure \
+  "artifact-finding" \
+  "integrity check failed" \
+  "${ariadne}" experiment finding "${artifact_dir}" "${finding_id}"
 test -e "${artifact_dir}/evidence.json"
 test -e "${artifact_dir}/report.md"
 rm "${artifact_dir}/evidence.json" "${artifact_dir}/report.md"
@@ -269,6 +302,12 @@ expect_failure \
   "${ariadne}" experiment report "${artifact_dir}"
 test ! -e "${artifact_dir}/evidence.json"
 test ! -e "${artifact_dir}/report.md"
+
+expect_failure \
+  "unknown-finding" \
+  "finding not found" \
+  "${ariadne}" experiment finding "${run_dir}" \
+  "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
 
 provenance_dir="${failure_dir}/provenance"
 cp -R "${run_dir}" "${provenance_dir}"

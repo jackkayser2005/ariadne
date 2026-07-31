@@ -20,6 +20,7 @@ const usage = `usage:
   ariadne experiment run [--adb <path>] --device <serial> --package <package> --output <directory> <manifest.json>
   ariadne experiment report <run-directory>
   ariadne experiment verify <run-directory>
+  ariadne experiment finding <run-directory> <finding-id>
 `
 
 const adbCheckTimeout = 10 * time.Second
@@ -44,6 +45,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(args) >= 2 && args[0] == "experiment" && args[1] == "verify" {
 		return runVerify(args[2:], stdout, stderr, bundle.Verify)
+	}
+	if len(args) >= 2 && args[0] == "experiment" && args[1] == "finding" {
+		return runFinding(args[2:], stdout, stderr, bundle.Find)
 	}
 
 	_, _ = io.WriteString(stderr, usage)
@@ -90,6 +94,7 @@ type pairRunner func(
 	string,
 ) error
 type bundleWriter func(string) (bundle.Summary, error)
+type bundleFinder func(string, string) (bundle.Finding, error)
 
 func runAndroidCheck(
 	args []string,
@@ -299,6 +304,56 @@ func runVerify(
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment verify: write output: %v\n", err)
 		return 1
+	}
+	return 0
+}
+
+func runFinding(
+	args []string,
+	stdout, stderr io.Writer,
+	find bundleFinder,
+) int {
+	if len(args) != 2 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+
+	finding, err := find(args[0], args[1])
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment finding: %v\n", err)
+		return 1
+	}
+	if _, err = fmt.Fprintf(
+		stdout,
+		"finding verified\nquestion: %s\nanswer_state: %s\nkind: %s\n",
+		finding.Question,
+		finding.AnswerState,
+		finding.Kind,
+	); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment finding: write output: %v\n", err)
+		return 1
+	}
+	if finding.Classification != "" {
+		if _, err = fmt.Fprintf(stdout, "classification: %s\n", finding.Classification); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment finding: write output: %v\n", err)
+			return 1
+		}
+	}
+	if _, err = fmt.Fprintf(
+		stdout,
+		"id: %s\nfield: %s\nstate: %s\nevidence:\n",
+		finding.ID,
+		finding.Field,
+		finding.State,
+	); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment finding: write output: %v\n", err)
+		return 1
+	}
+	for _, reference := range finding.Evidence {
+		if _, err = fmt.Fprintf(stdout, "- %s\n", reference); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment finding: write output: %v\n", err)
+			return 1
+		}
 	}
 	return 0
 }

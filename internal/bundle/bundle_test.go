@@ -256,6 +256,118 @@ func TestVerifyRejectsUnsupportedEvidenceSchema(t *testing.T) {
 	}
 }
 
+func TestFindReturnsSafeDifference(t *testing.T) {
+	runDir := makeRun(t, runOptions{})
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(runDir, "evidence.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document document
+	if err := json.Unmarshal(data, &document); err != nil {
+		t.Fatal(err)
+	}
+	evidenceBefore, err := os.ReadFile(filepath.Join(runDir, "evidence.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportBefore, err := os.ReadFile(filepath.Join(runDir, "report.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	finding, err := Find(runDir, document.Comparison.Differences[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if finding.Question != document.Question ||
+		finding.AnswerState != evidencestate.Observed ||
+		finding.Kind != "difference" ||
+		finding.Classification != "changed" ||
+		finding.Field != "variant" ||
+		finding.State != evidencestate.Observed ||
+		len(finding.Evidence) != 4 {
+		t.Fatalf("Find() = %#v", finding)
+	}
+	if strings.Contains(strings.Join(finding.Evidence, " "), "standard") ||
+		strings.Contains(strings.Join(finding.Evidence, " "), "personalized") {
+		t.Fatalf("Find() exposed observed values: %#v", finding)
+	}
+	evidenceAfter, err := os.ReadFile(filepath.Join(runDir, "evidence.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportAfter, err := os.ReadFile(filepath.Join(runDir, "report.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(evidenceBefore, evidenceAfter) || !bytes.Equal(reportBefore, reportAfter) {
+		t.Fatal("Find() changed outputs")
+	}
+}
+
+func TestFindReturnsSafeUnknown(t *testing.T) {
+	runDir := makeStorageFailureRun(t, "")
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(runDir, "evidence.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document document
+	if err := json.Unmarshal(data, &document); err != nil {
+		t.Fatal(err)
+	}
+	finding, err := Find(runDir, document.Comparison.Unknowns[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if finding.AnswerState != evidencestate.Unknown ||
+		finding.Kind != "unknown" ||
+		finding.Classification != "" ||
+		finding.State != evidencestate.Unknown ||
+		len(finding.Evidence) != 3 {
+		t.Fatalf("Find() = %#v", finding)
+	}
+}
+
+func TestFindRejectsInvalidOrUnknownID(t *testing.T) {
+	runDir := makeRun(t, runOptions{})
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Find(runDir, "not-a-finding-id"); err == nil || !strings.Contains(err.Error(), "ID is invalid") {
+		t.Fatalf("Find() invalid ID error = %v", err)
+	}
+	if _, err := Find(runDir, "sha256:"+strings.Repeat("f", 64)); err == nil || !strings.Contains(err.Error(), "finding not found") {
+		t.Fatalf("Find() unknown ID error = %v", err)
+	}
+}
+
+func TestFindRejectsTamperedArtifact(t *testing.T) {
+	runDir := makeRun(t, runOptions{})
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(runDir, "evidence.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document document
+	if err := json.Unmarshal(data, &document); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "baseline", "observations", "storage.json"), []byte(`{"tampered":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = Find(runDir, document.Comparison.Differences[0].ID)
+	if err == nil || !strings.Contains(err.Error(), "integrity check failed") {
+		t.Fatalf("Find() tamper error = %v", err)
+	}
+}
+
 func TestVerifyRejectsTamperedArtifact(t *testing.T) {
 	runDir := makeRun(t, runOptions{})
 	if _, err := Write(runDir); err != nil {

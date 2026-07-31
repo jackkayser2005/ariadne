@@ -58,6 +58,18 @@ type Summary struct {
 	Unknowns     int
 }
 
+// Finding is the safe, raw-value-free view of one verified conclusion.
+type Finding struct {
+	Question       string
+	AnswerState    evidence.State
+	Kind           string
+	Classification string
+	ID             string
+	Field          string
+	State          evidence.State
+	Evidence       []string
+}
+
 type document struct {
 	SchemaVersion          int                 `json:"schema_version"`
 	ManifestName           string              `json:"manifest_name"`
@@ -119,40 +131,84 @@ func Write(runDir string) (Summary, error) {
 
 // Verify checks an existing evidence bundle without writing either output.
 func Verify(runDir string) (Summary, error) {
+	_, summary, err := verifyDocument(runDir)
+	return summary, err
+}
+
+// Find verifies a bundle and returns one finding without observed values.
+func Find(runDir, id string) (Finding, error) {
+	if !validFindingID(id) {
+		return Finding{}, errors.New("finding ID is invalid")
+	}
+	evidence, _, err := verifyDocument(runDir)
+	if err != nil {
+		return Finding{}, err
+	}
+	for _, difference := range evidence.Comparison.Differences {
+		if difference.ID == id {
+			return Finding{
+				Question:       evidence.Question,
+				AnswerState:    evidence.AnswerState,
+				Kind:           "difference",
+				Classification: difference.Kind,
+				ID:             difference.ID,
+				Field:          difference.Field,
+				State:          difference.State,
+				Evidence:       slices.Clone(difference.Evidence),
+			}, nil
+		}
+	}
+	for _, unknown := range evidence.Comparison.Unknowns {
+		if unknown.ID == id {
+			return Finding{
+				Question:    evidence.Question,
+				AnswerState: evidence.AnswerState,
+				Kind:        "unknown",
+				ID:          unknown.ID,
+				Field:       unknown.Field,
+				State:       unknown.State,
+				Evidence:    slices.Clone(unknown.Evidence),
+			}, nil
+		}
+	}
+	return Finding{}, errors.New("finding not found")
+}
+
+func verifyDocument(runDir string) (document, Summary, error) {
 	if strings.TrimSpace(runDir) == "" {
-		return Summary{}, errors.New("run directory is required")
+		return document{}, Summary{}, errors.New("run directory is required")
 	}
 	existingEvidence, err := readFileBounded(filepath.Join(runDir, "evidence.json"), maxOutputBytes)
 	if err != nil {
-		return Summary{}, fmt.Errorf("evidence output: %w", err)
+		return document{}, Summary{}, fmt.Errorf("evidence output: %w", err)
 	}
 	outputSchemaVersion, err := evidenceOutputSchema(existingEvidence)
 	if err != nil {
-		return Summary{}, fmt.Errorf("evidence output: %w", err)
+		return document{}, Summary{}, fmt.Errorf("evidence output: %w", err)
 	}
 	evidence, summary, err := buildDocument(runDir, outputSchemaVersion == 7)
 	if err != nil {
-		return Summary{}, err
+		return document{}, Summary{}, err
 	}
 	evidenceData, err := encodeDocument(evidence)
 	if err != nil {
-		return Summary{}, err
+		return document{}, Summary{}, err
 	}
 	if !bytes.Equal(existingEvidence, evidenceData) {
-		return Summary{}, errors.New("evidence output does not match verified artifacts")
+		return document{}, Summary{}, errors.New("evidence output does not match verified artifacts")
 	}
 	existingReport, err := readFileBounded(filepath.Join(runDir, "report.md"), maxOutputBytes)
 	if err != nil {
-		return Summary{}, fmt.Errorf("report output: %w", err)
+		return document{}, Summary{}, fmt.Errorf("report output: %w", err)
 	}
 	reportData, err := encodeReport(evidence)
 	if err != nil {
-		return Summary{}, err
+		return document{}, Summary{}, err
 	}
 	if !bytes.Equal(existingReport, reportData) {
-		return Summary{}, errors.New("report output does not match verified artifacts")
+		return document{}, Summary{}, errors.New("report output does not match verified artifacts")
 	}
-	return summary, nil
+	return evidence, summary, nil
 }
 
 func buildDocument(runDir string, includeFindingIDs bool) (document, Summary, error) {
@@ -731,6 +787,11 @@ func artifactFor(path string, data []byte) artifact {
 func validDigest(value string) bool {
 	decoded, err := hex.DecodeString(value)
 	return err == nil && len(decoded) == sha256.Size && value == strings.ToLower(value)
+}
+
+func validFindingID(value string) bool {
+	const prefix = "sha256:"
+	return strings.HasPrefix(value, prefix) && validDigest(value[len(prefix):])
 }
 
 func validMetadataValue(value string) bool {
