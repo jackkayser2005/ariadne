@@ -368,6 +368,23 @@ func TestFindRejectsTamperedArtifact(t *testing.T) {
 	}
 }
 
+func TestQuestions(t *testing.T) {
+	want := []Question{
+		{ID: "counterfactual-change", Text: "Did changing the declared variable influence an observed output?"},
+		{ID: "capture-complete", Text: "Were all required observations captured for both sessions?"},
+		{ID: "source-integrity", Text: "Do the verified findings still match their source artifacts?"},
+	}
+	got := Questions()
+	if len(got) != len(want) {
+		t.Fatalf("Questions() length = %d, want %d", len(got), len(want))
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("Questions()[%d] = %#v, want %#v", index, got[index], want[index])
+		}
+	}
+}
+
 func TestAskQuestionCatalog(t *testing.T) {
 	for _, test := range []struct {
 		name           string
@@ -395,11 +412,8 @@ func TestAskQuestionCatalog(t *testing.T) {
 			if _, err := Write(runDir); err != nil {
 				t.Fatal(err)
 			}
-			for _, questionID := range []string{
-				"counterfactual-change",
-				"capture-complete",
-				"source-integrity",
-			} {
+			for _, question := range Questions() {
+				questionID := question.ID
 				answer, err := Ask(runDir, questionID)
 				if err != nil {
 					t.Fatalf("Ask(%q): %v", questionID, err)
@@ -409,6 +423,7 @@ func TestAskQuestionCatalog(t *testing.T) {
 					wantState = evidencestate.Observed
 				}
 				if answer.QuestionID != questionID ||
+					answer.Question != question.Text ||
 					answer.State != wantState ||
 					len(answer.FindingIDs) != test.wantFindingIDs {
 					t.Fatalf("Ask(%q) = %#v", questionID, answer)

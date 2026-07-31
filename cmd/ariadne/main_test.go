@@ -64,6 +64,7 @@ func TestRunUsage(t *testing.T) {
 		{"experiment", "verify"},
 		{"experiment", "finding"},
 		{"experiment", "ask"},
+		{"experiment", "questions", "extra"},
 	}
 
 	for _, args := range tests {
@@ -708,6 +709,85 @@ func TestRunAskFailures(t *testing.T) {
 		)
 		if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
 			t.Fatalf("runAsk() = %d, stderr=%q", exitCode, stderr.String())
+		}
+	})
+}
+
+func TestRunQuestions(t *testing.T) {
+	questions := []bundle.Question{
+		{ID: "counterfactual-change", Text: "Did changing the declared variable influence an observed output?"},
+		{ID: "capture-complete", Text: "Were all required observations captured for both sessions?"},
+	}
+
+	t.Run("human", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runQuestions(
+			nil,
+			&stdout,
+			&stderr,
+			func() []bundle.Question { return questions },
+		)
+		want := "question catalog\n" +
+			"- id: counterfactual-change\n" +
+			"  question: Did changing the declared variable influence an observed output?\n" +
+			"- id: capture-complete\n" +
+			"  question: Were all required observations captured for both sessions?\n"
+		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+			t.Fatalf("runQuestions() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("json", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runQuestions(
+			[]string{"--json"},
+			&stdout,
+			&stderr,
+			func() []bundle.Question { return questions },
+		)
+		want := `[{"id":"counterfactual-change","question":"Did changing the declared variable influence an observed output?"},{"id":"capture-complete","question":"Were all required observations captured for both sessions?"}]` + "\n"
+		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+			t.Fatalf("runQuestions() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+}
+
+func TestRunQuestionsFailures(t *testing.T) {
+	for _, args := range [][]string{{"extra"}, {"--json", "extra"}, {"--json=invalid"}} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			exitCode := runQuestions(
+				args,
+				&stdout,
+				&stderr,
+				func() []bundle.Question {
+					t.Fatal("list called for invalid usage")
+					return nil
+				},
+			)
+			if exitCode != 2 || stdout.Len() != 0 || stderr.String() != usage {
+				t.Fatalf("runQuestions() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+			}
+		})
+	}
+
+	t.Run("write output", func(t *testing.T) {
+		var stderr bytes.Buffer
+		exitCode := runQuestions(nil, failingWriter{}, &stderr, func() []bundle.Question {
+			return []bundle.Question{{ID: "question", Text: "question"}}
+		})
+		if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+			t.Fatalf("runQuestions() = %d, stderr=%q", exitCode, stderr.String())
+		}
+	})
+
+	t.Run("write json output", func(t *testing.T) {
+		var stderr bytes.Buffer
+		exitCode := runQuestions([]string{"--json"}, failingWriter{}, &stderr, func() []bundle.Question {
+			return []bundle.Question{{ID: "question", Text: "question"}}
+		})
+		if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+			t.Fatalf("runQuestions() = %d, stderr=%q", exitCode, stderr.String())
 		}
 	})
 }
