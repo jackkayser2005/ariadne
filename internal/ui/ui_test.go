@@ -65,7 +65,7 @@ func TestHandlerRendersReadOnlyReview(t *testing.T) {
 		want []string
 	}{
 		{name: "index", path: "/", want: []string{"Archived bundles", "run-001", "&lt;manifest&gt;"}},
-		{name: "run", path: "/run?directory=run-001", want: []string{"Verified provenance", "Did it change?", strings.Repeat("c", 64), "&lt;revision&gt;", "clean"}},
+		{name: "run", path: "/run?directory=run-001", want: []string{"Verified provenance", "Bounded question board", "Did it change?", "Open answer details", findingID, strings.Repeat("c", 64), "&lt;revision&gt;", "clean"}},
 		{name: "ask", path: "/ask?directory=run-001&question_id=counterfactual-change", want: []string{"Question result", "observed", findingID}},
 		{name: "finding", path: "/finding?directory=run-001&finding_id=" + findingID, want: []string{"Finding detail", "network.body", "baseline/network.json", "&lt;safe-source&gt;"}},
 	}
@@ -139,6 +139,27 @@ func TestHandlerOmitsEmptyProvenance(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/run?directory=legacy-run", nil))
 	if recorder.Code != http.StatusOK || strings.Contains(recorder.Body.String(), "Verified provenance") {
+		t.Fatalf("status = %d, body=%q", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestHandlerFailsClosedForUnavailableQuestions(t *testing.T) {
+	h := newHandler(handler{
+		root: "archive-root",
+		index: func(string) ([]bundle.ArchiveEntry, error) {
+			return []bundle.ArchiveEntry{{Directory: "legacy-run"}}, nil
+		},
+		verify: func(string) (bundle.Summary, error) { return bundle.Summary{ManifestName: "legacy"}, nil },
+		questions: func() []bundle.Question {
+			return []bundle.Question{{ID: "counterfactual-change", Text: "private question"}}
+		},
+		ask: func(string, string) (bundle.Answer, error) {
+			return bundle.Answer{}, errors.New("private question failure")
+		},
+	})
+	recorder := httptest.NewRecorder()
+	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/run?directory=legacy-run", nil))
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "Bounded questions unavailable") || strings.Contains(recorder.Body.String(), "private") {
 		t.Fatalf("status = %d, body=%q", recorder.Code, recorder.Body.String())
 	}
 }
