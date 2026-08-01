@@ -201,7 +201,8 @@ when `go run` built Ariadne.
   it lists verified bundles and links to the same bounded questions and finding
   references without rendering observations. A bundle page also shows safe
   provenance context: its bounded question and answer state, manifest contract
-  digest, recorded Ariadne revision, and modified-worktree flag.
+  digest, recorded Ariadne revision, and modified-worktree flag, followed by a
+  re-verified board for the fixed question catalog.
 - If `ariadne_modified` is unexpectedly `true`, inspect `git status --short`
   before treating the run as reproducible from the recorded revision alone.
 - Finding lookup re-verifies the bundle first and prints only the question,

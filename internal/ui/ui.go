@@ -25,7 +25,7 @@ type pageData struct {
 	Directory string
 	Entries   []bundle.ArchiveEntry
 	Summary   bundle.Summary
-	Questions []bundle.Question
+	Answers   []bundle.Answer
 	Answer    bundle.Answer
 	Finding   bundle.Finding
 }
@@ -94,12 +94,22 @@ func (h handler) handleRun(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bundle is no longer verifiable", http.StatusUnprocessableEntity)
 		return
 	}
+	questions := h.questions()
+	answers := make([]bundle.Answer, 0, len(questions))
+	for _, question := range questions {
+		answer, err := h.ask(runDir, question.ID)
+		if err != nil {
+			answers = nil
+			break
+		}
+		answers = append(answers, answer)
+	}
 	render(w, pageData{
 		View:      "run",
 		Title:     "Bundle review — Ariadne",
 		Directory: directory,
 		Summary:   summary,
-		Questions: h.questions(),
+		Answers:   answers,
 	})
 }
 
@@ -214,11 +224,9 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
     .metrics { display: flex; gap: 22px; margin: 22px 0; }
     .metric { display: grid; gap: 2px; }
     .metric-value { font-size: 27px; font-weight: 750; line-height: 1; }
-    .button, .question-link { display: inline-flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--accent); border-radius: 10px; color: var(--accent); background: transparent; padding: 10px 13px; font-weight: 700; text-decoration: none; }
-    .button:hover, .question-link:hover { color: #fff; background: var(--accent); }
+    .button { display: inline-flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--accent); border-radius: 10px; color: var(--accent); background: transparent; padding: 10px 13px; font-weight: 700; text-decoration: none; }
+    .button:hover { color: #fff; background: var(--accent); }
     .question-list { display: grid; gap: 10px; margin-top: 18px; }
-    .question-link small { color: var(--muted); font-weight: 500; }
-    .question-link:hover small { color: #dff6f2; }
     .back { display: inline-block; margin-bottom: 26px; color: var(--accent); font-weight: 700; text-decoration: none; }
     .status { display: inline-block; border-radius: 999px; background: var(--accent-soft); color: var(--accent); padding: 5px 11px; font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
     .status-unknown { background: var(--warning-soft); color: var(--warning); }
@@ -288,15 +296,31 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       <p class="context">This context is structural metadata only; observations and persona values are not rendered.</p>
     </section>
     {{end}}
-    <section class="panel">
-      <h2>Ask a bounded question</h2>
-      <p class="context">Each answer is re-verified from the bundle before it is shown.</p>
+    {{if .Answers}}
+    <section>
+      <div class="section-head"><h2>Bounded question board</h2><span class="context">re-verified now</span></div>
       <div class="question-list">
-      {{range .Questions}}
-        <a class="question-link" href="/ask?directory={{query $.Directory}}&amp;question_id={{query .ID}}"><span>{{.Text}}</span><small>{{.ID}}</small></a>
+      {{range .Answers}}
+        <article class="panel question-card">
+          <div class="section-head"><h3>{{.Question}}</h3><span class="status status-{{.State}}">{{.State}}</span></div>
+          {{with .Reason}}<p class="context">Why unknown: {{.}}</p>{{end}}
+          {{if .FindingIDs}}
+          <p class="context">Referenced findings</p>
+          <ul>
+          {{range .FindingIDs}}<li><a class="finding" href="/finding?directory={{query $.Directory}}&amp;finding_id={{query .}}">{{.}}</a></li>{{end}}
+          </ul>
+          {{else}}<p class="context">No finding references were produced for this question.</p>{{end}}
+          <a class="button" href="/ask?directory={{query $.Directory}}&amp;question_id={{query .QuestionID}}">Open answer details <span aria-hidden="true">→</span></a>
+        </article>
       {{end}}
       </div>
     </section>
+    {{else}}
+    <section class="panel">
+      <h2>Bounded questions unavailable</h2>
+      <p class="context">This verified bundle does not support the current question catalog. Its safe summary remains available.</p>
+    </section>
+    {{end}}
 
   {{else if eq .View "ask"}}
     <a class="back" href="/run?directory={{query .Directory}}">← Bundle review</a>
