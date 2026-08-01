@@ -27,7 +27,14 @@ func TestHandlerRendersReadOnlyReview(t *testing.T) {
 			if !strings.HasSuffix(runDir, "run-001") {
 				t.Fatalf("Verify() run directory = %q", runDir)
 			}
-			return bundle.Summary{ManifestName: "<manifest>", Differences: 1}, nil
+			return bundle.Summary{
+				ManifestName:           "<manifest>",
+				Differences:            1,
+				Question:               "Did it change?",
+				AnswerState:            "observed",
+				ManifestContractSHA256: strings.Repeat("c", 64),
+				AriadneRevision:        "<revision>",
+			}, nil
 		},
 		questions: func() []bundle.Question {
 			return []bundle.Question{{ID: "counterfactual-change", Text: "Did it change?"}}
@@ -58,7 +65,7 @@ func TestHandlerRendersReadOnlyReview(t *testing.T) {
 		want []string
 	}{
 		{name: "index", path: "/", want: []string{"Archived bundles", "run-001", "&lt;manifest&gt;"}},
-		{name: "run", path: "/run?directory=run-001", want: []string{"Ask a bounded question", "Did it change?"}},
+		{name: "run", path: "/run?directory=run-001", want: []string{"Verified provenance", "Did it change?", strings.Repeat("c", 64), "&lt;revision&gt;", "clean"}},
 		{name: "ask", path: "/ask?directory=run-001&question_id=counterfactual-change", want: []string{"Question result", "observed", findingID}},
 		{name: "finding", path: "/finding?directory=run-001&finding_id=" + findingID, want: []string{"Finding detail", "network.body", "baseline/network.json", "&lt;safe-source&gt;"}},
 	}
@@ -117,6 +124,22 @@ func TestHandlerRendersUnknownReason(t *testing.T) {
 		if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), reason) {
 			t.Fatalf("path %q: status = %d, body=%q", path, recorder.Code, recorder.Body.String())
 		}
+	}
+}
+
+func TestHandlerOmitsEmptyProvenance(t *testing.T) {
+	h := newHandler(handler{
+		root: "archive-root",
+		index: func(string) ([]bundle.ArchiveEntry, error) {
+			return []bundle.ArchiveEntry{{Directory: "legacy-run"}}, nil
+		},
+		verify:    func(string) (bundle.Summary, error) { return bundle.Summary{ManifestName: "legacy"}, nil },
+		questions: func() []bundle.Question { return nil },
+	})
+	recorder := httptest.NewRecorder()
+	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/run?directory=legacy-run", nil))
+	if recorder.Code != http.StatusOK || strings.Contains(recorder.Body.String(), "Verified provenance") {
+		t.Fatalf("status = %d, body=%q", recorder.Code, recorder.Body.String())
 	}
 }
 

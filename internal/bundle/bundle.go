@@ -55,9 +55,14 @@ var legacyExpectedSteps = []string{
 
 // Summary describes a completed evidence bundle without observed values.
 type Summary struct {
-	ManifestName string `json:"manifest_name"`
-	Differences  int    `json:"differences"`
-	Unknowns     int    `json:"unknowns"`
+	ManifestName           string         `json:"manifest_name"`
+	Differences            int            `json:"differences"`
+	Unknowns               int            `json:"unknowns"`
+	Question               string         `json:"-"`
+	AnswerState            evidence.State `json:"-"`
+	ManifestContractSHA256 string         `json:"-"`
+	AriadneRevision        string         `json:"-"`
+	AriadneModified        bool           `json:"-"`
 }
 
 // Finding is the safe, raw-value-free view of one verified conclusion.
@@ -444,9 +449,14 @@ func buildDocument(runDir string, includeFindingIDs bool) (document, Summary, er
 	}
 
 	return evidence, Summary{
-		ManifestName: baseline.record.ManifestName,
-		Differences:  len(comparison.Differences),
-		Unknowns:     len(comparison.Unknowns),
+		ManifestName:           evidence.ManifestName,
+		Differences:            len(comparison.Differences),
+		Unknowns:               len(comparison.Unknowns),
+		Question:               evidence.Question,
+		AnswerState:            evidence.AnswerState,
+		ManifestContractSHA256: evidence.ManifestContractSHA256,
+		AriadneRevision:        evidence.Target.AriadneRevision,
+		AriadneModified:        evidence.Target.AriadneModified,
 	}, nil
 }
 
