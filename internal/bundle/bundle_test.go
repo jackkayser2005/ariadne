@@ -32,7 +32,12 @@ func TestWrite(t *testing.T) {
 	}
 	if summary.ManifestName != "experiment-001-email" ||
 		summary.Differences != 1 ||
-		summary.Unknowns != 0 {
+		summary.Unknowns != 0 ||
+		summary.Question != "Did changing email influence an observed output?" ||
+		summary.AnswerState != evidencestate.Observed ||
+		summary.ManifestContractSHA256 != strings.Repeat("c", 64) ||
+		summary.AriadneRevision != strings.Repeat("b", 40) ||
+		summary.AriadneModified {
 		t.Fatalf("Write() = %#v", summary)
 	}
 
@@ -576,16 +581,24 @@ func TestEncodeOutputsRejectOversizedData(t *testing.T) {
 func TestWriteAcceptsLegacySessions(t *testing.T) {
 	runDir := makeRun(t, runOptions{sessionSchemaVersion: 2})
 
-	if _, err := Write(runDir); err != nil {
+	summary, err := Write(runDir)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if summary.Question != "" || summary.AnswerState != "" || summary.ManifestContractSHA256 != "" {
+		t.Fatalf("legacy summary = %#v", summary)
 	}
 }
 
 func TestWriteAcceptsStableIDSessionsWithoutContract(t *testing.T) {
 	runDir := makeRun(t, runOptions{sessionSchemaVersion: 5})
 
-	if _, err := Write(runDir); err != nil {
+	summary, err := Write(runDir)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if summary.Question != "" || summary.AnswerState != "" || summary.ManifestContractSHA256 != "" {
+		t.Fatalf("stable-ID summary = %#v", summary)
 	}
 }
 

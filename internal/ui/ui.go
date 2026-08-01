@@ -276,6 +276,18 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       <span class="metric"><strong class="metric-value">{{.Summary.Differences}}</strong><span class="metric-label">differences</span></span>
       <span class="metric"><strong class="metric-value">{{.Summary.Unknowns}}</strong><span class="metric-label">unknowns</span></span>
     </div>
+    {{if or .Summary.Question .Summary.AnswerState .Summary.ManifestContractSHA256 .Summary.AriadneRevision}}
+    <section class="panel">
+      <h2>Verified provenance</h2>
+      <dl>
+        {{with .Summary.Question}}<dt>question</dt><dd>{{.}}</dd>{{end}}
+        {{with .Summary.AnswerState}}<dt>answer state</dt><dd><span class="status status-{{.}}">{{.}}</span></dd>{{end}}
+        {{with .Summary.ManifestContractSHA256}}<dt>manifest contract</dt><dd>{{.}}</dd>{{end}}
+        {{with .Summary.AriadneRevision}}<dt>Ariadne revision</dt><dd>{{.}}</dd><dt>working tree</dt><dd>{{if $.Summary.AriadneModified}}modified{{else}}clean{{end}}</dd>{{end}}
+      </dl>
+      <p class="context">This context is structural metadata only; observations and persona values are not rendered.</p>
+    </section>
+    {{end}}
     <section class="panel">
       <h2>Ask a bounded question</h2>
       <p class="context">Each answer is re-verified from the bundle before it is shown.</p>

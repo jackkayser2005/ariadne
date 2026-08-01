@@ -423,9 +423,14 @@ func TestRunVerify(t *testing.T) {
 				t.Fatalf("verify() path = %q", path)
 			}
 			return bundle.Summary{
-				ManifestName: "experiment-001-email",
-				Differences:  1,
-				Unknowns:     0,
+				ManifestName:           "experiment-001-email",
+				Differences:            1,
+				Unknowns:               0,
+				Question:               "private question",
+				AnswerState:            "observed",
+				ManifestContractSHA256: strings.Repeat("c", 64),
+				AriadneRevision:        strings.Repeat("b", 40),
+				AriadneModified:        true,
 			}, nil
 		},
 	)
