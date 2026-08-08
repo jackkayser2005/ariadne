@@ -124,6 +124,11 @@ func (h handler) handleAsk(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "question not found", http.StatusNotFound)
 		return
 	}
+	summary, err := h.verify(runDir)
+	if err != nil {
+		http.Error(w, "bundle is no longer verifiable", http.StatusUnprocessableEntity)
+		return
+	}
 	answer, err := h.ask(runDir, questionID)
 	if err != nil {
 		http.Error(w, "question unavailable", http.StatusUnprocessableEntity)
@@ -133,6 +138,7 @@ func (h handler) handleAsk(w http.ResponseWriter, r *http.Request) {
 		View:      "ask",
 		Title:     "Question review — Ariadne",
 		Directory: directory,
+		Summary:   summary,
 		Answer:    answer,
 	})
 }
@@ -148,6 +154,11 @@ func (h handler) handleFinding(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "finding not found", http.StatusNotFound)
 		return
 	}
+	summary, err := h.verify(runDir)
+	if err != nil {
+		http.Error(w, "bundle is no longer verifiable", http.StatusUnprocessableEntity)
+		return
+	}
 	finding, err := h.find(runDir, findingID)
 	if err != nil {
 		http.Error(w, "finding unavailable", http.StatusUnprocessableEntity)
@@ -157,6 +168,7 @@ func (h handler) handleFinding(w http.ResponseWriter, r *http.Request) {
 		View:      "finding",
 		Title:     "Finding review — Ariadne",
 		Directory: directory,
+		Summary:   summary,
 		Finding:   finding,
 	})
 }
@@ -249,6 +261,21 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
     <span class="context">counterfactual evidence review · read only</span>
   </header>
 
+  {{define "provenance"}}
+  {{if or .Summary.Question .Summary.AnswerState .Summary.ManifestContractSHA256 .Summary.AriadneRevision}}
+  <section class="panel">
+    <h2>Verified provenance</h2>
+    <dl>
+      {{with .Summary.Question}}<dt>question</dt><dd>{{.}}</dd>{{end}}
+      {{with .Summary.AnswerState}}<dt>answer state</dt><dd><span class="status status-{{.}}">{{.}}</span></dd>{{end}}
+      {{with .Summary.ManifestContractSHA256}}<dt>manifest contract</dt><dd>{{.}}</dd>{{end}}
+      {{with .Summary.AriadneRevision}}<dt>Ariadne revision</dt><dd>{{.}}</dd><dt>working tree</dt><dd>{{if $.Summary.AriadneModified}}modified{{else}}clean{{end}}</dd>{{end}}
+    </dl>
+    <p class="context">This context is structural metadata only; observations and persona values are not rendered.</p>
+  </section>
+  {{end}}
+  {{end}}
+
   {{if eq .View "index"}}
     <section class="hero">
       <p class="eyebrow">verified archive</p>
@@ -284,18 +311,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       <span class="metric"><strong class="metric-value">{{.Summary.Differences}}</strong><span class="metric-label">differences</span></span>
       <span class="metric"><strong class="metric-value">{{.Summary.Unknowns}}</strong><span class="metric-label">unknowns</span></span>
     </div>
-    {{if or .Summary.Question .Summary.AnswerState .Summary.ManifestContractSHA256 .Summary.AriadneRevision}}
-    <section class="panel">
-      <h2>Verified provenance</h2>
-      <dl>
-        {{with .Summary.Question}}<dt>question</dt><dd>{{.}}</dd>{{end}}
-        {{with .Summary.AnswerState}}<dt>answer state</dt><dd><span class="status status-{{.}}">{{.}}</span></dd>{{end}}
-        {{with .Summary.ManifestContractSHA256}}<dt>manifest contract</dt><dd>{{.}}</dd>{{end}}
-        {{with .Summary.AriadneRevision}}<dt>Ariadne revision</dt><dd>{{.}}</dd><dt>working tree</dt><dd>{{if $.Summary.AriadneModified}}modified{{else}}clean{{end}}</dd>{{end}}
-      </dl>
-      <p class="context">This context is structural metadata only; observations and persona values are not rendered.</p>
-    </section>
-    {{end}}
+    {{template "provenance" .}}
     {{if .Answers}}
     <section>
       <div class="section-head"><h2>Bounded question board</h2><span class="context">re-verified now</span></div>
@@ -329,6 +345,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
     <p class="question">{{.Answer.Question}}</p>
     <span class="status status-{{.Answer.State}}">{{.Answer.State}}</span>
     {{with .Answer.Reason}}<p class="context">Why unknown: {{.}}</p>{{end}}
+    {{template "provenance" .}}
     <section class="panel" style="margin-top: 28px">
       <h2>Referenced findings</h2>
       {{if .Answer.FindingIDs}}
@@ -347,6 +364,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
     <p class="eyebrow">{{.Finding.Kind}} · {{.Finding.State}} · {{.Directory}}</p>
     <h1>Finding detail</h1>
     <p class="lede">This is a verified, raw-value-free finding reference.</p>
+    {{template "provenance" .}}
     <section class="panel">
       <dl>
         <dt>id</dt><dd>{{.Finding.ID}}</dd>
