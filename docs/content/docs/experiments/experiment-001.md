@@ -199,8 +199,9 @@ when `go run` built Ariadne.
 - `experiment serve <archive-root>` starts a localhost-only, read-only review
   page at `http://127.0.0.1:8787/`; only loopback IP addresses are accepted, and
   it lists verified bundles and links to the same bounded questions and finding
-  references without rendering observations. A bundle page also shows safe
-  provenance context: its bounded question and answer state, manifest contract
+  references without rendering observations. The archive page can re-check one
+  fixed bounded question across all verified bundles. A bundle page also shows
+  safe provenance context: its bounded question and answer state, manifest contract
   digest, recorded Ariadne revision, and modified-worktree flag, followed by a
   re-verified board for the fixed question catalog. Question and finding detail
   pages retain that same context after following a link.
