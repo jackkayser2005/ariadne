@@ -66,8 +66,8 @@ func TestHandlerRendersReadOnlyReview(t *testing.T) {
 	}{
 		{name: "index", path: "/", want: []string{"Archived bundles", "run-001", "&lt;manifest&gt;"}},
 		{name: "run", path: "/run?directory=run-001", want: []string{"Verified provenance", "Bounded question board", "Did it change?", "Open answer details", findingID, strings.Repeat("c", 64), "&lt;revision&gt;", "clean"}},
-		{name: "ask", path: "/ask?directory=run-001&question_id=counterfactual-change", want: []string{"Question result", "observed", findingID}},
-		{name: "finding", path: "/finding?directory=run-001&finding_id=" + findingID, want: []string{"Finding detail", "network.body", "baseline/network.json", "&lt;safe-source&gt;"}},
+		{name: "ask", path: "/ask?directory=run-001&question_id=counterfactual-change", want: []string{"Question result", "observed", findingID, "Verified provenance", strings.Repeat("c", 64), "&lt;revision&gt;", "clean"}},
+		{name: "finding", path: "/finding?directory=run-001&finding_id=" + findingID, want: []string{"Finding detail", "network.body", "baseline/network.json", "&lt;safe-source&gt;", "Verified provenance", strings.Repeat("c", 64), "&lt;revision&gt;", "clean"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -97,6 +97,14 @@ func TestHandlerRendersUnknownReason(t *testing.T) {
 		root: "archive-root",
 		index: func(string) ([]bundle.ArchiveEntry, error) {
 			return []bundle.ArchiveEntry{{Directory: "run-001"}}, nil
+		},
+		verify: func(string) (bundle.Summary, error) {
+			return bundle.Summary{
+				Question:               "<question>",
+				AnswerState:            "observed",
+				ManifestContractSHA256: strings.Repeat("c", 64),
+				AriadneRevision:        "<revision>",
+			}, nil
 		},
 		ask: func(string, string) (bundle.Answer, error) {
 			return bundle.Answer{
@@ -248,6 +256,21 @@ func TestHandlerRejectsUnsafeRequests(t *testing.T) {
 			}
 			if strings.Contains(recorder.Body.String(), "private") {
 				t.Fatal("body disclosed internal error")
+			}
+		})
+	}
+
+	for _, path := range []string{
+		"/ask?directory=run-001&question_id=counterfactual-change",
+		"/finding?directory=run-001&finding_id=sha256:" + strings.Repeat("a", 64),
+	} {
+		t.Run("deep verification error "+path, func(t *testing.T) {
+			broken := base
+			broken.verify = func(string) (bundle.Summary, error) { return bundle.Summary{}, errors.New("private verify failure") }
+			recorder := httptest.NewRecorder()
+			newHandler(broken).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+			if recorder.Code != http.StatusUnprocessableEntity || recorder.Body.String() != "bundle is no longer verifiable\n" {
+				t.Fatalf("path %q: status = %d, body=%q", path, recorder.Code, recorder.Body.String())
 			}
 		})
 	}
