@@ -19,15 +19,25 @@ type handler struct {
 	find      func(string, string) (bundle.Finding, error)
 }
 
+type archiveQuestionResult struct {
+	Directory    string
+	ManifestName string
+	Answer       bundle.Answer
+	Available    bool
+}
+
 type pageData struct {
-	View      string
-	Title     string
-	Directory string
-	Entries   []bundle.ArchiveEntry
-	Summary   bundle.Summary
-	Answers   []bundle.Answer
-	Answer    bundle.Answer
-	Finding   bundle.Finding
+	View             string
+	Title            string
+	Directory        string
+	Entries          []bundle.ArchiveEntry
+	Questions        []bundle.Question
+	SelectedQuestion bundle.Question
+	ArchiveAnswers   []archiveQuestionResult
+	Summary          bundle.Summary
+	Answers          []bundle.Answer
+	Answer           bundle.Answer
+	Finding          bundle.Finding
 }
 
 // Handler returns a read-only HTTP handler for one explicitly supplied archive root.
@@ -72,10 +82,37 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "archive unavailable", http.StatusInternalServerError)
 		return
 	}
+	var questions []bundle.Question
+	if h.questions != nil {
+		questions = h.questions()
+	}
+	selectedQuestion, questionID := bundle.Question{}, r.URL.Query().Get("question_id")
+	var archiveAnswers []archiveQuestionResult
+	if questionID != "" {
+		var ok bool
+		selectedQuestion, ok = questionForID(questions, questionID)
+		if !ok {
+			http.Error(w, "question not found", http.StatusNotFound)
+			return
+		}
+		archiveAnswers = make([]archiveQuestionResult, 0, len(entries))
+		for _, entry := range entries {
+			answer, err := h.ask(filepath.Join(h.root, entry.Directory), questionID)
+			archiveAnswers = append(archiveAnswers, archiveQuestionResult{
+				Directory:    entry.Directory,
+				ManifestName: entry.ManifestName,
+				Answer:       answer,
+				Available:    err == nil,
+			})
+		}
+	}
 	render(w, pageData{
-		View:    "index",
-		Title:   "Ariadne — evidence review",
-		Entries: entries,
+		View:             "index",
+		Title:            "Ariadne — evidence review",
+		Entries:          entries,
+		Questions:        questions,
+		SelectedQuestion: selectedQuestion,
+		ArchiveAnswers:   archiveAnswers,
 	})
 }
 
@@ -189,6 +226,15 @@ func (h handler) bundlePath(directory string) (string, bool) {
 	return "", false
 }
 
+func questionForID(questions []bundle.Question, id string) (bundle.Question, bool) {
+	for _, question := range questions {
+		if question.ID == id {
+			return question, true
+		}
+	}
+	return bundle.Question{}, false
+}
+
 func getOnly(w http.ResponseWriter, r *http.Request) bool {
 	if r.Method == http.MethodGet {
 		return true
@@ -238,10 +284,12 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
     .metric-value { font-size: 27px; font-weight: 750; line-height: 1; }
     .button { display: inline-flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--accent); border-radius: 10px; color: var(--accent); background: transparent; padding: 10px 13px; font-weight: 700; text-decoration: none; }
     .button:hover { color: #fff; background: var(--accent); }
+    .question-links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
     .question-list { display: grid; gap: 10px; margin-top: 18px; }
     .back { display: inline-block; margin-bottom: 26px; color: var(--accent); font-weight: 700; text-decoration: none; }
     .status { display: inline-block; border-radius: 999px; background: var(--accent-soft); color: var(--accent); padding: 5px 11px; font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
     .status-unknown { background: var(--warning-soft); color: var(--warning); }
+    .status-unavailable { background: var(--line); color: var(--muted); }
     .question { max-width: 700px; margin: 20px 0 28px; font-size: 25px; letter-spacing: -.02em; }
     dl { display: grid; grid-template-columns: 150px 1fr; gap: 10px 18px; margin: 20px 0 30px; }
     dt { color: var(--muted); font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
@@ -282,6 +330,36 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       <h1>Review what changed.</h1>
       <p class="lede">Start from a verified bundle, ask one bounded question, and follow its safe finding references. Captured values never appear here.</p>
     </section>
+    <section class="panel">
+      <div class="section-head"><h2>Ask across this archive</h2><span class="context">fixed, read only</span></div>
+      <p class="context">Choose one bounded question to re-check against every verified bundle.</p>
+      <div class="question-links" aria-label="Bounded questions">
+      {{range .Questions}}<a class="button" href="/?question_id={{query .ID}}">{{.Text}}</a>{{end}}
+      </div>
+    </section>
+    {{if .SelectedQuestion.ID}}
+    <section>
+      <div class="section-head"><h2>Question lens</h2><span class="context">re-verified now</span></div>
+      <p class="question">{{.SelectedQuestion.Text}}</p>
+      <div class="grid">
+      {{range .ArchiveAnswers}}
+        <article class="card">
+          <p class="eyebrow">bundle</p>
+          <h3>{{.ManifestName}}</h3>
+          <p class="directory">{{.Directory}}</p>
+          {{if .Available}}
+            <span class="status status-{{.Answer.State}}">{{.Answer.State}}</span>
+            {{with .Answer.Reason}}<p class="context">Why unknown: {{.}}</p>{{end}}
+            <a class="button" href="/ask?directory={{query .Directory}}&amp;question_id={{query $.SelectedQuestion.ID}}">Open answer details <span aria-hidden="true">→</span></a>
+          {{else}}
+            <span class="status status-unavailable">unavailable</span>
+            <p class="context">This bundle does not support the current bounded question.</p>
+          {{end}}
+        </article>
+      {{end}}
+      </div>
+    </section>
+    {{end}}
     <section>
       <div class="section-head"><h2>Archived bundles</h2><span class="context">{{len .Entries}} available</span></div>
       {{if .Entries}}
