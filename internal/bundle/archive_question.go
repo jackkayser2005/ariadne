@@ -4,6 +4,7 @@ import (
 	"errors"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/jackkayser2005/ariadne/internal/evidence"
 )
@@ -96,6 +97,11 @@ func sortArchiveQuestionResults(results []ArchiveQuestionResult) {
 		}
 		if right.RecordedAt == "" {
 			return true
+		}
+		leftTime, leftErr := time.Parse(time.RFC3339Nano, left.RecordedAt)
+		rightTime, rightErr := time.Parse(time.RFC3339Nano, right.RecordedAt)
+		if leftErr == nil && rightErr == nil && !leftTime.Equal(rightTime) {
+			return leftTime.Before(rightTime)
 		}
 		return left.RecordedAt < right.RecordedAt
 	})

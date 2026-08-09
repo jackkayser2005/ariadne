@@ -99,10 +99,11 @@ func TestSortArchiveQuestionResults(t *testing.T) {
 		{Directory: "run-z", RecordedAt: "2026-07-25T12:00:00Z"},
 		{Directory: "legacy"},
 		{Directory: "run-old", RecordedAt: "2026-07-24T12:00:00Z"},
+		{Directory: "run-fraction", RecordedAt: "2026-07-25T12:00:00.1Z"},
 		{Directory: "run-a", RecordedAt: "2026-07-25T12:00:00Z"},
 	}
 	sortArchiveQuestionResults(results)
-	want := []string{"run-old", "run-a", "run-z", "legacy"}
+	want := []string{"run-old", "run-a", "run-z", "run-fraction", "legacy"}
 	for index, result := range results {
 		if result.Directory != want[index] {
 			t.Fatalf("sortArchiveQuestionResults() = %#v, want %v", results, want)
