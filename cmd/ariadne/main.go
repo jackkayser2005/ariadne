@@ -28,6 +28,7 @@ const usage = `usage:
   ariadne experiment verify [--json] <run-directory>
   ariadne experiment finding [--json] <run-directory> <finding-id>
   ariadne experiment ask [--json] <run-directory> <question-id>
+  ariadne experiment ask-archive [--json] <archive-root> <question-id>
   ariadne experiment questions [--json]
   ariadne experiment list [--json] <archive-root>
   ariadne experiment serve [--addr <address>] <archive-root>
@@ -67,6 +68,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(args) >= 2 && args[0] == "experiment" && args[1] == "ask" {
 		return runAsk(args[2:], stdout, stderr, bundle.Ask)
+	}
+	if len(args) >= 2 && args[0] == "experiment" && args[1] == "ask-archive" {
+		return runAskArchive(args[2:], stdout, stderr, bundle.AskArchive)
 	}
 	if len(args) >= 2 && args[0] == "experiment" && args[1] == "questions" {
 		return runQuestions(args[2:], stdout, stderr, bundle.Questions)
@@ -126,6 +130,7 @@ type bundleExporter func(string, string) (bundle.ExportSummary, error)
 type bundleExportVerifier func(string) (bundle.ExportVerificationSummary, error)
 type bundleFinder func(string, string) (bundle.Finding, error)
 type bundleAsker func(string, string) (bundle.Answer, error)
+type bundleArchiveQuestionAsker func(string, string) (bundle.ArchiveQuestionReport, error)
 type bundleQuestionLister func() []bundle.Question
 type bundleArchiveIndexer func(string) ([]bundle.ArchiveEntry, error)
 type uiServer func(string, http.Handler) error
@@ -515,6 +520,87 @@ func runAsk(
 		if _, err = fmt.Fprintf(stdout, "- %s\n", findingID); err != nil {
 			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask: write output: %v\n", err)
 			return 1
+		}
+	}
+	return 0
+}
+
+func runAskArchive(
+	args []string,
+	stdout, stderr io.Writer,
+	ask bundleArchiveQuestionAsker,
+) int {
+	flags := flag.NewFlagSet("experiment ask-archive", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 2 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+
+	report, err := ask(flags.Arg(0), flags.Arg(1))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(report); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if _, err := fmt.Fprintf(
+		stdout,
+		"archive question answered\nid: %s\nquestion: %s\nobserved: %d\nunknown: %d\nunavailable: %d\nchecked: %d\nresults:\n",
+		report.QuestionID,
+		report.Question,
+		report.Summary.Observed,
+		report.Summary.Unknown,
+		report.Summary.Unavailable,
+		report.Summary.Checked,
+	); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive: write output: %v\n", err)
+		return 1
+	}
+	for _, result := range report.Results {
+		if _, err := fmt.Fprintf(
+			stdout,
+			"- directory: %s\n  manifest_name: %s\n",
+			result.Directory,
+			result.ManifestName,
+		); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive: write output: %v\n", err)
+			return 1
+		}
+		if result.RecordedAt != "" {
+			if _, err := fmt.Fprintf(stdout, "  recorded_at: %s\n", result.RecordedAt); err != nil {
+				_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive: write output: %v\n", err)
+				return 1
+			}
+		}
+		if !result.Available {
+			if _, err := io.WriteString(stdout, "  answer_state: unavailable\n"); err != nil {
+				_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive: write output: %v\n", err)
+				return 1
+			}
+			continue
+		}
+		if _, err := fmt.Fprintf(stdout, "  answer_state: %s\n  findings:\n", result.Answer.State); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive: write output: %v\n", err)
+			return 1
+		}
+		if result.Answer.Reason != "" {
+			if _, err := fmt.Fprintf(stdout, "  reason: %s\n", result.Answer.Reason); err != nil {
+				_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive: write output: %v\n", err)
+				return 1
+			}
+		}
+		for _, findingID := range result.Answer.FindingIDs {
+			if _, err := fmt.Fprintf(stdout, "  - %s\n", findingID); err != nil {
+				_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive: write output: %v\n", err)
+				return 1
+			}
 		}
 	}
 	return 0

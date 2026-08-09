@@ -60,6 +60,20 @@ jq -e '
   ])
 ' "${catalog_json}"
 
+archive_question_json="${RUNNER_TEMP}/ariadne-archive-question.json"
+"${ariadne}" experiment ask-archive --json ".ariadne/ci" counterfactual-change >"${archive_question_json}"
+jq -e '
+  (keys_unsorted == ["question_id", "question", "summary", "results"]) and
+  (.question_id == "counterfactual-change") and
+  (.summary | keys_unsorted == ["observed", "unknown", "unavailable", "checked"]) and
+  (.summary == {observed: 1, unknown: 0, unavailable: 0, checked: 1}) and
+  (.results | length == 1) and
+  (.results[0] | keys_unsorted == ["directory", "manifest_name", "recorded_at", "answer", "available"]) and
+  (.results[0].directory == "experiment-001") and
+  (.results[0].available == true) and
+  (.results[0].answer.answer_state == "observed")
+' "${archive_question_json}"
+
 finding_id="$(jq -r '.comparison.differences[0].id' "${run_dir}/evidence.json")"
 finding_stdout="${RUNNER_TEMP}/ariadne-finding.stdout"
 "${ariadne}" experiment finding "${run_dir}" "${finding_id}" >"${finding_stdout}"

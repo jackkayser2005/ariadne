@@ -67,6 +67,7 @@ func TestRunUsage(t *testing.T) {
 		{"experiment", "verify"},
 		{"experiment", "finding"},
 		{"experiment", "ask"},
+		{"experiment", "ask-archive"},
 		{"experiment", "questions", "extra"},
 		{"experiment", "list"},
 		{"experiment", "serve"},
@@ -1016,6 +1017,151 @@ func TestRunAskFailures(t *testing.T) {
 		)
 		if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
 			t.Fatalf("runAsk() = %d, stderr=%q", exitCode, stderr.String())
+		}
+	})
+}
+
+func TestRunAskArchive(t *testing.T) {
+	findingID := "sha256:" + strings.Repeat("a", 64)
+	report := bundle.ArchiveQuestionReport{
+		QuestionID: "counterfactual-change",
+		Question:   "Did it change?",
+		Summary: bundle.ArchiveQuestionSummary{
+			Observed:    1,
+			Unavailable: 1,
+			Checked:     2,
+		},
+		Results: []bundle.ArchiveQuestionResult{
+			{
+				Directory:    "old-run",
+				ManifestName: "current",
+				RecordedAt:   "2026-07-24T12:00:00Z",
+				Answer: &bundle.Answer{
+					QuestionID: "counterfactual-change",
+					Question:   "Did it change?",
+					State:      "observed",
+					FindingIDs: []string{findingID},
+				},
+				Available: true,
+			},
+			{
+				Directory:    "legacy-run",
+				ManifestName: "legacy",
+			},
+		},
+	}
+
+	t.Run("human", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchive(
+			[]string{"archive-root", "counterfactual-change"},
+			&stdout,
+			&stderr,
+			func(root, questionID string) (bundle.ArchiveQuestionReport, error) {
+				if root != "archive-root" || questionID != "counterfactual-change" {
+					t.Fatalf("AskArchive() arguments = %q, %q", root, questionID)
+				}
+				return report, nil
+			},
+		)
+		want := "archive question answered\n" +
+			"id: counterfactual-change\n" +
+			"question: Did it change?\n" +
+			"observed: 1\n" +
+			"unknown: 0\n" +
+			"unavailable: 1\n" +
+			"checked: 2\n" +
+			"results:\n" +
+			"- directory: old-run\n" +
+			"  manifest_name: current\n" +
+			"  recorded_at: 2026-07-24T12:00:00Z\n" +
+			"  answer_state: observed\n" +
+			"  findings:\n" +
+			"  - " + findingID + "\n" +
+			"- directory: legacy-run\n" +
+			"  manifest_name: legacy\n" +
+			"  answer_state: unavailable\n"
+		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+			t.Fatalf("runAskArchive() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("json", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchive(
+			[]string{"--json", "archive-root", "counterfactual-change"},
+			&stdout,
+			&stderr,
+			func(string, string) (bundle.ArchiveQuestionReport, error) { return report, nil },
+		)
+		want := `{"question_id":"counterfactual-change","question":"Did it change?","summary":{"observed":1,"unknown":0,"unavailable":1,"checked":2},"results":[{"directory":"old-run","manifest_name":"current","recorded_at":"2026-07-24T12:00:00Z","answer":{"question_id":"counterfactual-change","question":"Did it change?","answer_state":"observed","finding_ids":["` + findingID + `"]},"available":true},{"directory":"legacy-run","manifest_name":"legacy","available":false}]}` + "\n"
+		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+			t.Fatalf("runAskArchive() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+}
+
+func TestRunAskArchiveFailures(t *testing.T) {
+	for _, args := range [][]string{nil, {"archive-root"}, {"archive-root", "question", "extra"}, {"--json=invalid", "archive-root", "question"}} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			exitCode := runAskArchive(
+				args,
+				&stdout,
+				&stderr,
+				func(string, string) (bundle.ArchiveQuestionReport, error) {
+					t.Fatal("AskArchive called for invalid usage")
+					return bundle.ArchiveQuestionReport{}, nil
+				},
+			)
+			if exitCode != 2 || stdout.Len() != 0 || stderr.String() != usage {
+				t.Fatalf("runAskArchive() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+			}
+		})
+	}
+
+	t.Run("archive error", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchive(
+			[]string{"archive-root", "question"},
+			&stdout,
+			&stderr,
+			func(string, string) (bundle.ArchiveQuestionReport, error) {
+				return bundle.ArchiveQuestionReport{}, errors.New("archive unavailable")
+			},
+		)
+		if exitCode != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "archive unavailable") {
+			t.Fatalf("runAskArchive() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("write output", func(t *testing.T) {
+		var stderr bytes.Buffer
+		exitCode := runAskArchive(
+			[]string{"archive-root", "question"},
+			failingWriter{},
+			&stderr,
+			func(string, string) (bundle.ArchiveQuestionReport, error) {
+				return bundle.ArchiveQuestionReport{QuestionID: "question", Question: "question"}, nil
+			},
+		)
+		if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+			t.Fatalf("runAskArchive() = %d, stderr=%q", exitCode, stderr.String())
+		}
+	})
+
+	t.Run("write json output", func(t *testing.T) {
+		var stderr bytes.Buffer
+		exitCode := runAskArchive(
+			[]string{"--json", "archive-root", "question"},
+			failingWriter{},
+			&stderr,
+			func(string, string) (bundle.ArchiveQuestionReport, error) {
+				return bundle.ArchiveQuestionReport{QuestionID: "question", Question: "question"}, nil
+			},
+		)
+		if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+			t.Fatalf("runAskArchive() = %d, stderr=%q", exitCode, stderr.String())
 		}
 	})
 }

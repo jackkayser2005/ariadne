@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/jackkayser2005/ariadne/internal/bundle"
 	"github.com/jackkayser2005/ariadne/internal/evidence"
@@ -149,6 +150,11 @@ func sortArchiveQuestionResults(results []archiveQuestionResult) {
 		}
 		if right.Summary.RecordedAt == "" {
 			return true
+		}
+		leftTime, leftErr := time.Parse(time.RFC3339Nano, left.Summary.RecordedAt)
+		rightTime, rightErr := time.Parse(time.RFC3339Nano, right.Summary.RecordedAt)
+		if leftErr == nil && rightErr == nil && !leftTime.Equal(rightTime) {
+			return leftTime.Before(rightTime)
 		}
 		return left.Summary.RecordedAt < right.Summary.RecordedAt
 	})
