@@ -162,6 +162,7 @@ go run ./cmd/ariadne experiment report .ariadne/runs/experiment-001
 go run ./cmd/ariadne experiment export .ariadne/runs/experiment-001 .ariadne/runs/experiment-001.redacted.json
 go run ./cmd/ariadne experiment export verify --json .ariadne/runs/experiment-001.redacted.json
 go run ./cmd/ariadne experiment export verify --json --expect-sha256 <export-sha256> .ariadne/runs/experiment-001.redacted.json
+go run ./cmd/ariadne experiment export ask --json .ariadne/runs/experiment-001.redacted.json counterfactual-change
 go run ./cmd/ariadne experiment verify .ariadne/runs/experiment-001
 go run ./cmd/ariadne experiment verify --json .ariadne/runs/experiment-001
 go run ./cmd/ariadne experiment list --json .ariadne/runs
@@ -224,6 +225,11 @@ when `go run` built Ariadne.
   identity matches. A successful result proves only that the export satisfies
   Ariadne's structural contract; it does not prove the original source
   evidence.
+- `experiment export ask [--json] <export.json> counterfactual-change` verifies
+  the projection and answers its one embedded counterfactual question using
+  only the redacted answer state and finding IDs. `capture-complete` and
+  `source-integrity` remain unavailable because they require the authoritative
+  evidence bundle.
 - `experiment list --json <archive-root>` inspects only immediate child
   directories, rejects symbolic links, and returns only relative directory
   names plus verified summary fields.
@@ -437,6 +443,11 @@ needed for local analysis.
 The companion `export verify` command can check the received projection's
 shape and content identity without the source run, but it intentionally makes
 no claim about the truth of the source evidence.
+The companion `export ask` command can answer only the fixed
+`counterfactual-change` question carried by a current export. It uses the
+catalog question text rather than the export's source-specific wording and
+fails closed for unsupported questions or legacy exports without an answer
+state.
 
 Observation schema 1 is a bounded JSON object containing `schema_version: 1`
 and 1 to 64 string fields. Field names are restricted so evidence references

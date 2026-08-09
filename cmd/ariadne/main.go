@@ -25,6 +25,7 @@ const usage = `usage:
   ariadne experiment report <run-directory>
   ariadne experiment export <run-directory> <export.json>
   ariadne experiment export verify [--json] [--expect-sha256 <digest>] <export.json>
+  ariadne experiment export ask [--json] <export.json> <question-id>
   ariadne experiment verify [--json] <run-directory>
   ariadne experiment finding [--json] <run-directory> <finding-id>
   ariadne experiment ask [--json] <run-directory> <question-id>
@@ -63,6 +64,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(args) >= 3 && args[0] == "experiment" && args[1] == "export" && args[2] == "verify" {
 		return runExportVerify(args[3:], stdout, stderr, bundle.VerifyExport)
+	}
+	if len(args) >= 3 && args[0] == "experiment" && args[1] == "export" && args[2] == "ask" {
+		return runExportAsk(args[3:], stdout, stderr, bundle.AskExport)
 	}
 	if len(args) >= 2 && args[0] == "experiment" && args[1] == "export" {
 		return runExport(args[2:], stdout, stderr, bundle.Export)
@@ -541,7 +545,24 @@ func runAsk(
 	stdout, stderr io.Writer,
 	ask bundleAsker,
 ) int {
-	flags := flag.NewFlagSet("experiment ask", flag.ContinueOnError)
+	return runQuestion(args, "experiment ask", stdout, stderr, ask)
+}
+
+func runExportAsk(
+	args []string,
+	stdout, stderr io.Writer,
+	ask bundleAsker,
+) int {
+	return runQuestion(args, "experiment export ask", stdout, stderr, ask)
+}
+
+func runQuestion(
+	args []string,
+	command string,
+	stdout, stderr io.Writer,
+	ask bundleAsker,
+) int {
+	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	jsonOutput := flags.Bool("json", false, "")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 2 {
@@ -551,12 +572,12 @@ func runAsk(
 
 	answer, err := ask(flags.Arg(0), flags.Arg(1))
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "ariadne: %s: %v\n", command, err)
 		return 1
 	}
 	if *jsonOutput {
 		if err := json.NewEncoder(stdout).Encode(answer); err != nil {
-			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask: write output: %v\n", err)
+			_, _ = fmt.Fprintf(stderr, "ariadne: %s: write output: %v\n", command, err)
 			return 1
 		}
 		return 0
@@ -568,12 +589,12 @@ func runAsk(
 		answer.Question,
 		answer.State,
 	); err != nil {
-		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask: write output: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "ariadne: %s: write output: %v\n", command, err)
 		return 1
 	}
 	for _, findingID := range answer.FindingIDs {
 		if _, err = fmt.Fprintf(stdout, "- %s\n", findingID); err != nil {
-			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask: write output: %v\n", err)
+			_, _ = fmt.Fprintf(stderr, "ariadne: %s: write output: %v\n", command, err)
 			return 1
 		}
 	}

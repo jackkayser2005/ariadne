@@ -245,6 +245,75 @@ func TestVerifyExportSupportsUnknowns(t *testing.T) {
 	}
 }
 
+func TestAskExportUsesOnlyEmbeddedCounterfactualAnswer(t *testing.T) {
+	runDir := makeRun(t, runOptions{})
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+	exportPath := filepath.Join(t.TempDir(), "redacted.json")
+	if _, err := Export(runDir, exportPath); err != nil {
+		t.Fatal(err)
+	}
+
+	answer, err := AskExport(exportPath, "counterfactual-change")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if answer.QuestionID != "counterfactual-change" ||
+		answer.Question != "Did changing the declared variable influence an observed output?" ||
+		answer.State != evidencestate.Observed ||
+		answer.Reason != "" ||
+		len(answer.FindingIDs) != 1 ||
+		!validFindingID(answer.FindingIDs[0]) {
+		t.Fatalf("AskExport() = %#v", answer)
+	}
+	if strings.Contains(answer.Question, "email") {
+		t.Fatalf("AskExport() exposed source-specific wording: %#v", answer)
+	}
+
+	if _, err := AskExport(exportPath, "capture-complete"); err == nil ||
+		!strings.Contains(err.Error(), "cannot answer this question") {
+		t.Fatalf("AskExport() unsupported question error = %v", err)
+	}
+	if _, err := AskExport(exportPath, "not-a-question"); err == nil ||
+		!strings.Contains(err.Error(), "question ID is invalid") {
+		t.Fatalf("AskExport() invalid question error = %v", err)
+	}
+}
+
+func TestAskExportPreservesBoundedUnknownAndRejectsLegacyAnswer(t *testing.T) {
+	unknownRun := makeStorageFailureRun(t, "")
+	if _, err := Write(unknownRun); err != nil {
+		t.Fatal(err)
+	}
+	unknownExport := filepath.Join(t.TempDir(), "unknown-redacted.json")
+	if _, err := Export(unknownRun, unknownExport); err != nil {
+		t.Fatal(err)
+	}
+	answer, err := AskExport(unknownExport, "counterfactual-change")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if answer.State != evidencestate.Unknown ||
+		answer.Reason != treatmentStorageObservationUnknownReason ||
+		len(answer.FindingIDs) != 2 {
+		t.Fatalf("AskExport() unknown = %#v", answer)
+	}
+
+	legacyRun := makeRun(t, runOptions{sessionSchemaVersion: 4})
+	if _, err := Write(legacyRun); err != nil {
+		t.Fatal(err)
+	}
+	legacyExport := filepath.Join(t.TempDir(), "legacy-redacted.json")
+	if _, err := Export(legacyRun, legacyExport); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AskExport(legacyExport, "counterfactual-change"); err == nil ||
+		!strings.Contains(err.Error(), "has no counterfactual answer") {
+		t.Fatalf("AskExport() legacy error = %v", err)
+	}
+}
+
 func TestVerifyExportRejectsInvalidEnvelope(t *testing.T) {
 	runDir := makeRun(t, runOptions{})
 	if _, err := Write(runDir); err != nil {

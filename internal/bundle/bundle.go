@@ -313,19 +313,9 @@ func Export(runDir, exportPath string) (ExportSummary, error) {
 // VerifyExport checks a redacted export without requiring its source bundle.
 // It validates the export contract, not the truth of the original evidence.
 func VerifyExport(exportPath string) (ExportVerificationSummary, error) {
-	if strings.TrimSpace(exportPath) == "" {
-		return ExportVerificationSummary{}, errors.New("export path is required")
-	}
-	data, err := readFileBounded(exportPath, maxOutputBytes)
+	export, err := readVerifiedRedactedDocument(exportPath)
 	if err != nil {
-		return ExportVerificationSummary{}, fmt.Errorf("redacted export: %w", err)
-	}
-	export, err := decodeRedactedDocument(data)
-	if err != nil {
-		return ExportVerificationSummary{}, fmt.Errorf("redacted export: %w", err)
-	}
-	if err := validateRedactedDocument(export); err != nil {
-		return ExportVerificationSummary{}, fmt.Errorf("redacted export: %w", err)
+		return ExportVerificationSummary{}, err
 	}
 	exportSHA256, err := redactedExportSHA256(export)
 	if err != nil {
@@ -336,6 +326,73 @@ func VerifyExport(exportPath string) (ExportVerificationSummary, error) {
 		SourceEvidenceSHA256: export.SourceEvidenceSHA256,
 		ExportSHA256:         exportSHA256,
 	}, nil
+}
+
+// AskExport answers the one counterfactual question carried by a verified export.
+// It never reconstructs a question from redacted metadata or raw observations.
+func AskExport(exportPath, questionID string) (Answer, error) {
+	catalogQuestion, ok := questionForID(questionID)
+	if !ok {
+		return Answer{}, errors.New("question ID is invalid")
+	}
+	if questionID != "counterfactual-change" {
+		return Answer{}, errors.New("redacted export cannot answer this question")
+	}
+	export, err := readVerifiedRedactedDocument(exportPath)
+	if err != nil {
+		return Answer{}, err
+	}
+	if export.AnswerState == "" {
+		return Answer{}, errors.New("redacted export has no counterfactual answer")
+	}
+	if export.AnswerState != evidence.Observed && export.AnswerState != evidence.Unknown {
+		return Answer{}, errors.New("redacted export counterfactual answer state is invalid")
+	}
+	findingIDs := make([]string, 0, len(export.Comparison.Differences)+len(export.Comparison.Unknowns))
+	for _, difference := range export.Comparison.Differences {
+		if difference.ID != "" {
+			findingIDs = append(findingIDs, difference.ID)
+		}
+	}
+	for _, unknown := range export.Comparison.Unknowns {
+		if unknown.ID != "" {
+			findingIDs = append(findingIDs, unknown.ID)
+		}
+	}
+	unknownReason := ""
+	if export.AnswerState == evidence.Unknown {
+		for _, unknown := range export.Comparison.Unknowns {
+			if reason := safeUnknownReason(unknown.Reason); reason != "" {
+				unknownReason = reason
+				break
+			}
+		}
+	}
+	return Answer{
+		QuestionID: questionID,
+		Question:   catalogQuestion.Text,
+		State:      export.AnswerState,
+		Reason:     unknownReason,
+		FindingIDs: findingIDs,
+	}, nil
+}
+
+func readVerifiedRedactedDocument(exportPath string) (redactedDocument, error) {
+	if strings.TrimSpace(exportPath) == "" {
+		return redactedDocument{}, errors.New("export path is required")
+	}
+	data, err := readFileBounded(exportPath, maxOutputBytes)
+	if err != nil {
+		return redactedDocument{}, fmt.Errorf("redacted export: %w", err)
+	}
+	export, err := decodeRedactedDocument(data)
+	if err != nil {
+		return redactedDocument{}, fmt.Errorf("redacted export: %w", err)
+	}
+	if err := validateRedactedDocument(export); err != nil {
+		return redactedDocument{}, fmt.Errorf("redacted export: %w", err)
+	}
+	return export, nil
 }
 
 // Find verifies a bundle and returns one finding without observed values.

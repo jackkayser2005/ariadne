@@ -45,6 +45,16 @@ jq -e --arg source_sha256 "${source_evidence_sha256}" --arg export_sha256 "${exp
   (.source_evidence_sha256 == $source_sha256) and
   (.export_sha256 == $export_sha256)
 ' "${redacted_export_verify_json}"
+redacted_export_answer_json="${RUNNER_TEMP}/ariadne-redacted-export-answer.json"
+"${ariadne}" experiment export ask --json \
+  "${redacted_export_json}" counterfactual-change >"${redacted_export_answer_json}"
+jq -e '
+  (keys_unsorted == ["question_id", "question", "answer_state", "finding_ids"]) and
+  (.question_id == "counterfactual-change") and
+  (.question == "Did changing the declared variable influence an observed output?") and
+  (.answer_state == "observed") and
+  ((.finding_ids | length) == 1)
+' "${redacted_export_answer_json}"
 if grep -F -q \
   -e "standard" \
   -e "personalized" \

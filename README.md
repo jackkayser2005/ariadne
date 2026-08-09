@@ -26,6 +26,11 @@ export structurally, and optionally require the expected identity, with
 That identity covers only the raw-value-free export content; it does not prove
 the underlying evidence.
 
+A verified export can answer its embedded counterfactual question offline with
+`experiment export ask --json <export.json> counterfactual-change`. Questions
+about capture completeness or source integrity remain unavailable without the
+authoritative evidence bundle.
+
 ## Reproduce Experiment 001
 
 The complete local procedure is documented in

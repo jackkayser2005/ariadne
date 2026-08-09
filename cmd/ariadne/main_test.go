@@ -64,6 +64,7 @@ func TestRunUsage(t *testing.T) {
 		{"experiment", "unknown"},
 		{"experiment", "export"},
 		{"experiment", "export", "verify"},
+		{"experiment", "export", "ask"},
 		{"experiment", "verify"},
 		{"experiment", "finding"},
 		{"experiment", "ask"},
@@ -653,6 +654,91 @@ func TestRunExportVerifyFailures(t *testing.T) {
 		)
 		if exitCode != 2 || stdout.Len() != 0 || stderr.String() != usage {
 			t.Fatalf("runExportVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+}
+
+func TestRunExportAsk(t *testing.T) {
+	findingID := "sha256:" + strings.Repeat("a", 64)
+	var stdout, stderr bytes.Buffer
+	exitCode := runExportAsk(
+		[]string{"export.json", "counterfactual-change"},
+		&stdout,
+		&stderr,
+		func(path, questionID string) (bundle.Answer, error) {
+			if path != "export.json" || questionID != "counterfactual-change" {
+				t.Fatalf("AskExport() arguments = %q, %q", path, questionID)
+			}
+			return bundle.Answer{
+				QuestionID: "counterfactual-change",
+				Question:   "Did changing the declared variable influence an observed output?",
+				State:      "observed",
+				FindingIDs: []string{findingID},
+			}, nil
+		},
+	)
+	want := "question answered\n" +
+		"id: counterfactual-change\n" +
+		"question: Did changing the declared variable influence an observed output?\n" +
+		"answer_state: observed\n" +
+		"findings:\n" +
+		"- " + findingID + "\n"
+	if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+		t.Fatalf("runExportAsk() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	exitCode = runExportAsk(
+		[]string{"--json", "export.json", "counterfactual-change"},
+		&stdout,
+		&stderr,
+		func(string, string) (bundle.Answer, error) {
+			return bundle.Answer{
+				QuestionID: "counterfactual-change",
+				Question:   "Did changing the declared variable influence an observed output?",
+				State:      "observed",
+				FindingIDs: []string{findingID},
+			}, nil
+		},
+	)
+	wantJSON := `{"question_id":"counterfactual-change","question":"Did changing the declared variable influence an observed output?","answer_state":"observed","finding_ids":["` + findingID + `"]}` + "\n"
+	if exitCode != 0 || stdout.String() != wantJSON || stderr.Len() != 0 {
+		t.Fatalf("runExportAsk() JSON = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+}
+
+func TestRunExportAskFailures(t *testing.T) {
+	for _, args := range [][]string{nil, {"export.json"}, {"export.json", "question", "extra"}} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			exitCode := runExportAsk(
+				args,
+				&stdout,
+				&stderr,
+				func(string, string) (bundle.Answer, error) {
+					t.Fatal("ask called for invalid usage")
+					return bundle.Answer{}, nil
+				},
+			)
+			if exitCode != 2 || stdout.Len() != 0 || stderr.String() != usage {
+				t.Fatalf("runExportAsk() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+			}
+		})
+	}
+
+	t.Run("export error", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runExportAsk(
+			[]string{"export.json", "counterfactual-change"},
+			&stdout,
+			&stderr,
+			func(string, string) (bundle.Answer, error) {
+				return bundle.Answer{}, errors.New("invalid export")
+			},
+		)
+		if exitCode != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "experiment export ask: invalid export") {
+			t.Fatalf("runExportAsk() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
 		}
 	})
 }
