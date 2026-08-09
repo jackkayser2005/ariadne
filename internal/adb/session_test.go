@@ -159,6 +159,8 @@ func TestRunPairUsesStableResourceInteraction(t *testing.T) {
 		[]byte(`{"schema_version":1,"region":"us-east","variant":"personalized"}`),
 	}
 	ui := []byte(`<hierarchy><node resource-id="" bounds="[0,0][1000,1000]"><node resource-id="dev.ariadne.fixture:id/observe_button" bounds="[100,200][300,400]" /></node></hierarchy>`)
+	duplicateUI := []byte(`<hierarchy><node resource-id="dev.ariadne.fixture:id/observe_button" bounds="[0,0][100,100]" /><node resource-id="dev.ariadne.fixture:id/observe_button" bounds="[100,100][200,200]" /></hierarchy>`)
+	uiDumps := 0
 	run := func(_ context.Context, binary string, args ...string) ([]byte, error) {
 		calls = append(calls, append([]string{binary}, args...))
 		if args[3] == "pm" {
@@ -175,6 +177,10 @@ func TestRunPairUsesStableResourceInteraction(t *testing.T) {
 			return nil, nil
 		}
 		if args[3] == "cat" {
+			uiDumps++
+			if uiDumps == 1 {
+				return duplicateUI, nil
+			}
 			return ui, nil
 		}
 		if args[3] == "input" {
@@ -217,6 +223,9 @@ func TestRunPairUsesStableResourceInteraction(t *testing.T) {
 	}
 	if !seenDump || !seenTap {
 		t.Fatalf("interaction calls missing from %#v", calls)
+	}
+	if uiDumps < 3 {
+		t.Fatalf("UI hierarchy was not retried before tapping: %d dumps", uiDumps)
 	}
 	for _, kind := range []string{"baseline", "treatment"} {
 		data, err := os.ReadFile(filepath.Join(outputDir, kind, "session.json"))
