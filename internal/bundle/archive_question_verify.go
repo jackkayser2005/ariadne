@@ -61,7 +61,91 @@ func decodeArchiveQuestionReport(data []byte) (ArchiveQuestionReport, error) {
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 		return ArchiveQuestionReport{}, errors.New("trailing data")
 	}
+	if err := validateArchiveQuestionJSON(data); err != nil {
+		return ArchiveQuestionReport{}, err
+	}
 	return report, nil
+}
+
+func validateArchiveQuestionJSON(data []byte) error {
+	root, err := archiveQuestionObject(data,
+		[]string{"schema_version", "question_id", "question", "summary", "results"}, nil)
+	if err != nil {
+		return err
+	}
+	if _, err := archiveQuestionObject(root["summary"],
+		[]string{"observed", "unknown", "unavailable", "checked"}, nil); err != nil {
+		return fmt.Errorf("summary: %w", err)
+	}
+	results, err := archiveQuestionArray(root["results"], "results")
+	if err != nil {
+		return err
+	}
+	for _, rawResult := range results {
+		result, err := archiveQuestionObject(rawResult,
+			[]string{"directory", "manifest_name", "available"},
+			[]string{"recorded_at", "provenance", "answer"})
+		if err != nil {
+			return fmt.Errorf("result: %w", err)
+		}
+		if provenance, ok := result["provenance"]; ok {
+			if _, err := archiveQuestionObject(provenance,
+				[]string{"manifest_contract_sha256", "source_evidence_sha256", "ariadne_revision", "ariadne_modified"}, nil); err != nil {
+				return fmt.Errorf("provenance: %w", err)
+			}
+		}
+		if answer, ok := result["answer"]; ok {
+			answerObject, err := archiveQuestionObject(answer,
+				[]string{"question_id", "question", "answer_state", "finding_ids"},
+				[]string{"reason"})
+			if err != nil {
+				return fmt.Errorf("answer: %w", err)
+			}
+			if _, err := archiveQuestionArray(answerObject["finding_ids"], "finding_ids"); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func archiveQuestionObject(data []byte, required, optional []string) (map[string]json.RawMessage, error) {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(data, &object); err != nil {
+		return nil, fmt.Errorf("object: %w", err)
+	}
+	if object == nil {
+		return nil, errors.New("object is required")
+	}
+	allowed := make(map[string]struct{}, len(required)+len(optional))
+	for _, key := range required {
+		allowed[key] = struct{}{}
+	}
+	for _, key := range optional {
+		allowed[key] = struct{}{}
+	}
+	for key := range object {
+		if _, ok := allowed[key]; !ok {
+			return nil, fmt.Errorf("unknown field %q", key)
+		}
+	}
+	for _, key := range required {
+		if _, ok := object[key]; !ok {
+			return nil, fmt.Errorf("missing required field %q", key)
+		}
+	}
+	return object, nil
+}
+
+func archiveQuestionArray(data []byte, field string) ([]json.RawMessage, error) {
+	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+		return nil, fmt.Errorf("%s must be an array", field)
+	}
+	var values []json.RawMessage
+	if err := json.Unmarshal(data, &values); err != nil {
+		return nil, fmt.Errorf("%s must be an array: %w", field, err)
+	}
+	return values, nil
 }
 
 func validateArchiveQuestionReport(report ArchiveQuestionReport) error {
