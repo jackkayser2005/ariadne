@@ -37,6 +37,7 @@ reflection snapshots without exposing captured values:
 
 ```console
 go run ./cmd/ariadne experiment ask-archive verify --json <reflection.json>
+go run ./cmd/ariadne experiment ask-archive save --json <archive-root> <question-id> <reflection.json>
 go run ./cmd/ariadne experiment ask-archive compare --json <older-reflection.json> <newer-reflection.json>
 go run ./cmd/ariadne experiment ask-archive compare-current --json <older-reflection.json> <archive-root>
 go run ./cmd/ariadne experiment ask-archive transitions --json <reflection-1.json> <reflection-2.json> ...
@@ -50,6 +51,11 @@ each adjacent pair in caller-supplied order and reports only safe reflection
 identities and aggregate change counts.
 The saved transition ledger can be structurally re-verified and given an
 expected content identity before another tool consumes it.
+
+Use `ask-archive save` to create a new snapshot with exclusive file creation;
+it never overwrites an existing reflection. The command returns the same
+canonical identity used by offline verification, so saved snapshots can feed
+the comparison and transition commands without exposing captured values.
 
 The read-only review page exposes the same canonical SHA-256 identity for the
 currently derived archive question report. It is computed in memory, contains

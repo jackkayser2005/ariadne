@@ -61,7 +61,15 @@ jq -e '
 ' "${catalog_json}"
 
 archive_question_json="${RUNNER_TEMP}/ariadne-archive-question.json"
-"${ariadne}" experiment ask-archive --json ".ariadne/ci" counterfactual-change >"${archive_question_json}"
+archive_question_save_summary_json="${RUNNER_TEMP}/ariadne-archive-question-save-summary.json"
+"${ariadne}" experiment ask-archive save --json ".ariadne/ci" counterfactual-change "${archive_question_json}" >"${archive_question_save_summary_json}"
+jq -e '
+  (keys_unsorted == ["schema_version", "question_id", "checked", "reflection_sha256"]) and
+  (.schema_version == 2) and
+  (.question_id == "counterfactual-change") and
+  (.checked == 1) and
+  (.reflection_sha256 | test("^[0-9a-f]{64}$"))
+' "${archive_question_save_summary_json}"
 jq -e '
   (keys_unsorted == ["schema_version", "question_id", "question", "summary", "results"]) and
   (.schema_version == 2) and

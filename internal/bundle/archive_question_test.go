@@ -56,6 +56,45 @@ func TestAskArchiveReturnsOrderedSafeResults(t *testing.T) {
 	}
 }
 
+func TestSaveArchiveQuestionReport(t *testing.T) {
+	root := t.TempDir()
+	archiveRun(t, root, "current", runOptions{})
+	reportPath := filepath.Join(t.TempDir(), "reflection.json")
+
+	summary, err := SaveArchiveQuestionReport(root, "counterfactual-change", reportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	verified, err := VerifyArchiveQuestionReport(reportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary != verified || summary.QuestionID != "counterfactual-change" || summary.Checked != 1 || !validDigest(summary.ReflectionSHA256) {
+		t.Fatalf("SaveArchiveQuestionReport() summary = %#v, verified = %#v", summary, verified)
+	}
+	data, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) == 0 || data[len(data)-1] != '\n' {
+		t.Fatalf("saved report does not end with a newline: %q", data)
+	}
+	for _, rawValue := range []string{"standard", "personalized", "baseline@example.invalid", "treatment@example.invalid", "emulator-5554"} {
+		if strings.Contains(string(data), rawValue) {
+			t.Fatalf("SaveArchiveQuestionReport() exposed raw value %q: %s", rawValue, data)
+		}
+	}
+	if _, err := SaveArchiveQuestionReport(root, "counterfactual-change", reportPath); err == nil || !strings.Contains(err.Error(), "file exists") {
+		t.Fatalf("second SaveArchiveQuestionReport() error = %v", err)
+	}
+}
+
+func TestSaveArchiveQuestionReportRequiresPath(t *testing.T) {
+	if _, err := SaveArchiveQuestionReport(t.TempDir(), "counterfactual-change", " "); err == nil || !strings.Contains(err.Error(), "path is required") {
+		t.Fatalf("SaveArchiveQuestionReport() error = %v", err)
+	}
+}
+
 func TestAskArchiveCountsUnknownAndUnavailable(t *testing.T) {
 	root := t.TempDir()
 	archiveRun(t, root, "complete", runOptions{})

@@ -171,6 +171,7 @@ go run ./cmd/ariadne experiment questions --json
 go run ./cmd/ariadne experiment ask .ariadne/runs/experiment-001 counterfactual-change
 go run ./cmd/ariadne experiment ask --json .ariadne/runs/experiment-001 counterfactual-change
 go run ./cmd/ariadne experiment ask-archive --json .ariadne/runs counterfactual-change
+go run ./cmd/ariadne experiment ask-archive save --json .ariadne/runs counterfactual-change .ariadne/archive-question.json
 go run ./cmd/ariadne experiment ask-archive verify --json .ariadne/archive-question.json
 go run ./cmd/ariadne experiment ask-archive verify --json --expect-sha256 <reflection-sha256> .ariadne/archive-question.json
 go run ./cmd/ariadne experiment ask-archive compare --json <older-report.json> <newer-report.json>
@@ -232,6 +233,11 @@ when `go run` built Ariadne.
   digest points back to the authoritative bundle but does not make this
   derived reflection view authoritative. It never returns observed or persona
   values and does not infer a trend.
+- `experiment ask-archive save [--json] <archive-root> <question-id> <report.json>`
+  derives and saves one validated raw-value-free reflection with exclusive
+  file creation. It refuses to overwrite an existing path and returns the same
+  canonical reflection identity used by offline verification. The saved report
+  can then be supplied to `compare` or `transitions`.
 - `experiment ask-archive compare [--json] <older-report.json> <newer-report.json>`
   re-verifies two saved reflections and compares only their per-directory answer
   states. It returns `same` or `changed` when the directory membership matches,

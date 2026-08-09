@@ -29,6 +29,7 @@ const usage = `usage:
   ariadne experiment finding [--json] <run-directory> <finding-id>
   ariadne experiment ask [--json] <run-directory> <question-id>
   ariadne experiment ask-archive [--json] <archive-root> <question-id>
+  ariadne experiment ask-archive save [--json] <archive-root> <question-id> <report.json>
   ariadne experiment ask-archive compare [--json] <older-report.json> <newer-report.json>
   ariadne experiment ask-archive compare-current [--json] <older-report.json> <archive-root>
   ariadne experiment ask-archive transitions [--json] <report-1.json> <report-2.json> ...
@@ -78,6 +79,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runAskArchiveVerify(args[3:], stdout, stderr, bundle.VerifyArchiveQuestionReport)
 	}
 	if len(args) >= 2 && args[0] == "experiment" && args[1] == "ask-archive" {
+		if len(args) >= 3 && args[2] == "save" {
+			return runAskArchiveSave(args[3:], stdout, stderr, bundle.SaveArchiveQuestionReport)
+		}
 		if len(args) >= 4 && args[2] == "transitions" && args[3] == "verify" {
 			return runAskArchiveTransitionsVerify(args[4:], stdout, stderr, bundle.VerifyArchiveQuestionTransitionHistory)
 		}
@@ -151,6 +155,7 @@ type bundleExportVerifier func(string) (bundle.ExportVerificationSummary, error)
 type bundleFinder func(string, string) (bundle.Finding, error)
 type bundleAsker func(string, string) (bundle.Answer, error)
 type bundleArchiveQuestionAsker func(string, string) (bundle.ArchiveQuestionReport, error)
+type bundleArchiveQuestionSaver func(string, string, string) (bundle.ArchiveQuestionVerificationSummary, error)
 type bundleArchiveQuestionReportVerifier func(string) (bundle.ArchiveQuestionVerificationSummary, error)
 type bundleArchiveQuestionReportComparer func(string, string) (bundle.ArchiveQuestionComparison, error)
 type bundleArchiveQuestionTransitionComparer func([]string) (bundle.ArchiveQuestionTransitionHistory, error)
@@ -630,6 +635,45 @@ func runAskArchive(
 				return 1
 			}
 		}
+	}
+	return 0
+}
+
+func runAskArchiveSave(
+	args []string,
+	stdout, stderr io.Writer,
+	save bundleArchiveQuestionSaver,
+) int {
+	flags := flag.NewFlagSet("experiment ask-archive save", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 3 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+
+	summary, err := save(flags.Arg(0), flags.Arg(1), flags.Arg(2))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive save: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(summary); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive save: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if _, err := fmt.Fprintf(
+		stdout,
+		"archive question saved\nschema_version: %d\nquestion_id: %s\nchecked: %d\nreflection_sha256: %s\n",
+		summary.SchemaVersion,
+		summary.QuestionID,
+		summary.Checked,
+		summary.ReflectionSHA256,
+	); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive save: write output: %v\n", err)
+		return 1
 	}
 	return 0
 }

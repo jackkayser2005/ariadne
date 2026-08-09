@@ -68,6 +68,7 @@ func TestRunUsage(t *testing.T) {
 		{"experiment", "finding"},
 		{"experiment", "ask"},
 		{"experiment", "ask-archive"},
+		{"experiment", "ask-archive", "save"},
 		{"experiment", "ask-archive", "compare"},
 		{"experiment", "ask-archive", "compare-current"},
 		{"experiment", "ask-archive", "transitions"},
@@ -1110,6 +1111,107 @@ func TestRunAskArchive(t *testing.T) {
 			t.Fatalf("runAskArchive() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
 		}
 	})
+}
+
+func TestRunAskArchiveSave(t *testing.T) {
+	summary := bundle.ArchiveQuestionVerificationSummary{
+		SchemaVersion:    2,
+		QuestionID:       "counterfactual-change",
+		Checked:          2,
+		ReflectionSHA256: strings.Repeat("a", 64),
+	}
+
+	t.Run("human", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveSave(
+			[]string{"archive-root", "counterfactual-change", "reflection.json"},
+			&stdout,
+			&stderr,
+			func(root, questionID, reportPath string) (bundle.ArchiveQuestionVerificationSummary, error) {
+				if root != "archive-root" || questionID != "counterfactual-change" || reportPath != "reflection.json" {
+					t.Fatalf("SaveArchiveQuestionReport() arguments = %q, %q, %q", root, questionID, reportPath)
+				}
+				return summary, nil
+			},
+		)
+		want := "archive question saved\n" +
+			"schema_version: 2\n" +
+			"question_id: counterfactual-change\n" +
+			"checked: 2\n" +
+			"reflection_sha256: " + strings.Repeat("a", 64) + "\n"
+		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+			t.Fatalf("runAskArchiveSave() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("json", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveSave(
+			[]string{"--json", "archive-root", "counterfactual-change", "reflection.json"},
+			&stdout,
+			&stderr,
+			func(string, string, string) (bundle.ArchiveQuestionVerificationSummary, error) { return summary, nil },
+		)
+		want := `{"schema_version":2,"question_id":"counterfactual-change","checked":2,"reflection_sha256":"` + strings.Repeat("a", 64) + `"}` + "\n"
+		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+			t.Fatalf("runAskArchiveSave() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+}
+
+func TestRunAskArchiveSaveFailures(t *testing.T) {
+	for _, args := range [][]string{nil, {"archive-root", "question"}, {"archive-root", "question", "report.json", "extra"}, {"--json=invalid", "archive-root", "question", "report.json"}} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			exitCode := runAskArchiveSave(
+				args,
+				&stdout,
+				&stderr,
+				func(string, string, string) (bundle.ArchiveQuestionVerificationSummary, error) {
+					t.Fatal("SaveArchiveQuestionReport called for invalid usage")
+					return bundle.ArchiveQuestionVerificationSummary{}, nil
+				},
+			)
+			if exitCode != 2 || stdout.Len() != 0 || stderr.String() != usage {
+				t.Fatalf("runAskArchiveSave() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+			}
+		})
+	}
+
+	t.Run("save error", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveSave(
+			[]string{"archive-root", "question", "report.json"},
+			&stdout,
+			&stderr,
+			func(string, string, string) (bundle.ArchiveQuestionVerificationSummary, error) {
+				return bundle.ArchiveQuestionVerificationSummary{}, errors.New("report path is invalid")
+			},
+		)
+		if exitCode != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "report path is invalid") {
+			t.Fatalf("runAskArchiveSave() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	for _, args := range [][]string{
+		{"archive-root", "question", "report.json"},
+		{"--json", "archive-root", "question", "report.json"},
+	} {
+		t.Run("write output "+strings.Join(args, "_"), func(t *testing.T) {
+			var stderr bytes.Buffer
+			exitCode := runAskArchiveSave(
+				args,
+				failingWriter{},
+				&stderr,
+				func(string, string, string) (bundle.ArchiveQuestionVerificationSummary, error) {
+					return bundle.ArchiveQuestionVerificationSummary{}, nil
+				},
+			)
+			if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+				t.Fatalf("runAskArchiveSave() = %d, stderr=%q", exitCode, stderr.String())
+			}
+		})
+	}
 }
 
 func TestRunAskArchiveCompare(t *testing.T) {

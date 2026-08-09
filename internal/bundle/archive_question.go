@@ -1,9 +1,11 @@
 package bundle
 
 import (
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/jackkayser2005/ariadne/internal/evidence"
@@ -106,6 +108,36 @@ func AskArchive(archiveRoot, questionID string) (ArchiveQuestionReport, error) {
 	}
 	sortArchiveQuestionResults(report.Results)
 	return report, nil
+}
+
+// SaveArchiveQuestionReport writes one validated archive question reflection
+// without overwriting an existing path.
+func SaveArchiveQuestionReport(archiveRoot, questionID, reportPath string) (ArchiveQuestionVerificationSummary, error) {
+	if strings.TrimSpace(reportPath) == "" {
+		return ArchiveQuestionVerificationSummary{}, errors.New("archive question report path is required")
+	}
+	report, err := AskArchive(archiveRoot, questionID)
+	if err != nil {
+		return ArchiveQuestionVerificationSummary{}, err
+	}
+	reflectionSHA256, err := ArchiveQuestionReportReflectionSHA256(report)
+	if err != nil {
+		return ArchiveQuestionVerificationSummary{}, err
+	}
+	data, err := json.Marshal(report)
+	if err != nil {
+		return ArchiveQuestionVerificationSummary{}, err
+	}
+	data = append(data, '\n')
+	if err := writeExclusive(reportPath, data); err != nil {
+		return ArchiveQuestionVerificationSummary{}, err
+	}
+	return ArchiveQuestionVerificationSummary{
+		SchemaVersion:    report.SchemaVersion,
+		QuestionID:       report.QuestionID,
+		Checked:          report.Summary.Checked,
+		ReflectionSHA256: reflectionSHA256,
+	}, nil
 }
 
 func sortArchiveQuestionResults(results []ArchiveQuestionResult) {
