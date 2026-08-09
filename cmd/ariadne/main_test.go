@@ -63,6 +63,7 @@ func TestRunUsage(t *testing.T) {
 		{"experiment"},
 		{"experiment", "unknown"},
 		{"experiment", "export"},
+		{"experiment", "export", "verify"},
 		{"experiment", "verify"},
 		{"experiment", "finding"},
 		{"experiment", "ask"},
@@ -489,6 +490,109 @@ func TestRunExportFailures(t *testing.T) {
 		)
 		if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
 			t.Fatalf("runExport() = %d, stderr=%q", exitCode, stderr.String())
+		}
+	})
+}
+
+func TestRunExportVerify(t *testing.T) {
+	digest := strings.Repeat("a", 64)
+	var stdout, stderr bytes.Buffer
+	exitCode := runExportVerify(
+		[]string{"export.json"},
+		&stdout,
+		&stderr,
+		func(path string) (bundle.ExportVerificationSummary, error) {
+			if path != "export.json" {
+				t.Fatalf("VerifyExport() path = %q", path)
+			}
+			return bundle.ExportVerificationSummary{SchemaVersion: 1, SourceEvidenceSHA256: digest}, nil
+		},
+	)
+	want := "redacted export verified\nschema_version: 1\nsource_evidence_sha256: " + digest + "\n"
+	if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+		t.Fatalf("runExportVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+}
+
+func TestRunExportVerifyJSON(t *testing.T) {
+	digest := strings.Repeat("a", 64)
+	var stdout, stderr bytes.Buffer
+	exitCode := runExportVerify(
+		[]string{"--json", "export.json"},
+		&stdout,
+		&stderr,
+		func(string) (bundle.ExportVerificationSummary, error) {
+			return bundle.ExportVerificationSummary{SchemaVersion: 1, SourceEvidenceSHA256: digest}, nil
+		},
+	)
+	want := `{"schema_version":1,"source_evidence_sha256":"` + digest + `"}` + "\n"
+	if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+		t.Fatalf("runExportVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+}
+
+func TestRunExportVerifyFailures(t *testing.T) {
+	for _, args := range [][]string{nil, {"one", "two"}} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			exitCode := runExportVerify(
+				args,
+				&stdout,
+				&stderr,
+				func(string) (bundle.ExportVerificationSummary, error) {
+					t.Fatal("verify called for invalid usage")
+					return bundle.ExportVerificationSummary{}, nil
+				},
+			)
+			if exitCode != 2 || stdout.Len() != 0 || stderr.String() != usage {
+				t.Fatalf("runExportVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+			}
+		})
+	}
+
+	t.Run("verify error", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runExportVerify(
+			[]string{"export.json"},
+			&stdout,
+			&stderr,
+			func(string) (bundle.ExportVerificationSummary, error) {
+				return bundle.ExportVerificationSummary{}, errors.New("invalid export")
+			},
+		)
+		if exitCode != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "invalid export") {
+			t.Fatalf("runExportVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("write output", func(t *testing.T) {
+		var stderr bytes.Buffer
+		exitCode := runExportVerify(
+			[]string{"export.json"},
+			failingWriter{},
+			&stderr,
+			func(string) (bundle.ExportVerificationSummary, error) {
+				return bundle.ExportVerificationSummary{SchemaVersion: 1}, nil
+			},
+		)
+		if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+			t.Fatalf("runExportVerify() = %d, stderr=%q", exitCode, stderr.String())
+		}
+	})
+
+	t.Run("invalid json flag", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runExportVerify(
+			[]string{"--json=invalid", "export.json"},
+			&stdout,
+			&stderr,
+			func(string) (bundle.ExportVerificationSummary, error) {
+				t.Fatal("verify called for invalid JSON flag")
+				return bundle.ExportVerificationSummary{}, nil
+			},
+		)
+		if exitCode != 2 || stdout.Len() != 0 || stderr.String() != usage {
+			t.Fatalf("runExportVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
 		}
 	})
 }

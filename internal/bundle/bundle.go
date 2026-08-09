@@ -27,10 +27,11 @@ import (
 )
 
 const (
-	maxSessionBytes = 64 << 10
-	maxStorageBytes = 64 << 10
-	maxNetworkBytes = 96 << 10
-	maxOutputBytes  = 128 << 10
+	maxSessionBytes             = 64 << 10
+	maxStorageBytes             = 64 << 10
+	maxNetworkBytes             = 96 << 10
+	maxOutputBytes              = 128 << 10
+	redactedExportSchemaVersion = 1
 
 	treatmentStorageObservationUnknownReason = "treatment storage observation was not captured"
 )
@@ -82,6 +83,12 @@ type Summary struct {
 
 // ExportSummary describes a successful raw-value-free export.
 type ExportSummary struct {
+	SourceEvidenceSHA256 string `json:"source_evidence_sha256"`
+}
+
+// ExportVerificationSummary describes a structurally valid redacted export.
+type ExportVerificationSummary struct {
+	SchemaVersion        int    `json:"schema_version"`
 	SourceEvidenceSHA256 string `json:"source_evidence_sha256"`
 }
 
@@ -260,7 +267,7 @@ func Export(runDir, exportPath string) (ExportSummary, error) {
 	sum := sha256.Sum256(existingEvidence)
 	sourceDigest := hex.EncodeToString(sum[:])
 	redacted := redactedDocument{
-		SchemaVersion:               1,
+		SchemaVersion:               redactedExportSchemaVersion,
 		SourceEvidenceSchemaVersion: evidence.SchemaVersion,
 		Redacted:                    true,
 		SourceEvidenceSHA256:        sourceDigest,
@@ -290,6 +297,29 @@ func Export(runDir, exportPath string) (ExportSummary, error) {
 		return ExportSummary{}, err
 	}
 	return ExportSummary{SourceEvidenceSHA256: sourceDigest}, nil
+}
+
+// VerifyExport checks a redacted export without requiring its source bundle.
+// It validates the export contract, not the truth of the original evidence.
+func VerifyExport(exportPath string) (ExportVerificationSummary, error) {
+	if strings.TrimSpace(exportPath) == "" {
+		return ExportVerificationSummary{}, errors.New("export path is required")
+	}
+	data, err := readFileBounded(exportPath, maxOutputBytes)
+	if err != nil {
+		return ExportVerificationSummary{}, fmt.Errorf("redacted export: %w", err)
+	}
+	export, err := decodeRedactedDocument(data)
+	if err != nil {
+		return ExportVerificationSummary{}, fmt.Errorf("redacted export: %w", err)
+	}
+	if err := validateRedactedDocument(export); err != nil {
+		return ExportVerificationSummary{}, fmt.Errorf("redacted export: %w", err)
+	}
+	return ExportVerificationSummary{
+		SchemaVersion:        export.SchemaVersion,
+		SourceEvidenceSHA256: export.SourceEvidenceSHA256,
+	}, nil
 }
 
 // Find verifies a bundle and returns one finding without observed values.
@@ -725,6 +755,132 @@ func encodeRedactedDocument(export redactedDocument) ([]byte, error) {
 		return nil, fmt.Errorf("redacted export exceeds %d-byte limit", maxOutputBytes)
 	}
 	return data, nil
+}
+
+func decodeRedactedDocument(data []byte) (redactedDocument, error) {
+	if err := jsoncheck.RejectDuplicateKeys(data); err != nil {
+		return redactedDocument{}, err
+	}
+	var export redactedDocument
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&export); err != nil {
+		return redactedDocument{}, fmt.Errorf("decode: %w", err)
+	}
+	var trailing json.RawMessage
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return redactedDocument{}, errors.New("trailing data")
+	}
+	return export, nil
+}
+
+func validateRedactedDocument(export redactedDocument) error {
+	if export.SchemaVersion != redactedExportSchemaVersion {
+		return errors.New("unsupported schema_version")
+	}
+	if !export.Redacted {
+		return errors.New("redacted marker is required")
+	}
+	if !validDigest(export.SourceEvidenceSHA256) {
+		return errors.New("source_evidence_sha256 is invalid")
+	}
+	switch export.SourceEvidenceSchemaVersion {
+	case 4, 6, 7:
+	default:
+		return errors.New("unsupported source_evidence_schema_version")
+	}
+	if export.ManifestName == "" || !validMetadataValue(export.ManifestName) ||
+		export.DeclaredVariable == "" || !validMetadataValue(export.DeclaredVariable) {
+		return errors.New("manifest metadata is invalid")
+	}
+	if export.ManifestContractSHA256 != "" && !validDigest(export.ManifestContractSHA256) {
+		return errors.New("manifest_contract_sha256 is invalid")
+	}
+	if export.AnswerState != "" && !export.AnswerState.Valid() {
+		return errors.New("answer_state is invalid")
+	}
+	if export.Target.AndroidAPI < 1 || export.Target.AndroidAPI > 999 ||
+		!validMetadataValue(export.Target.Architecture) ||
+		!validMetadataValue(export.Target.Package) ||
+		export.Target.PackageVersionCode == 0 ||
+		!validDigest(export.Target.PackageSHA256) ||
+		!validRevision(export.Target.AriadneRevision) {
+		return errors.New("target metadata is invalid")
+	}
+	for _, item := range export.Artifacts {
+		if item.Path == "" || item.SizeBytes < 0 || !validDigest(item.SHA256) {
+			return errors.New("artifact metadata is invalid")
+		}
+	}
+	expectedComparisonSchema := 4
+	if export.SourceEvidenceSchemaVersion == 7 {
+		expectedComparisonSchema = 5
+	}
+	if export.Comparison.SchemaVersion != expectedComparisonSchema {
+		return errors.New("comparison schema_version is incompatible")
+	}
+	for _, field := range append(
+		slices.Clone(export.Comparison.UnchangedFields),
+		append(slices.Clone(export.Comparison.NormalizedFields), differenceFields(export.Comparison.Differences)...)...,
+	) {
+		if !validExportField(field) {
+			return errors.New("comparison field is invalid")
+		}
+	}
+	for _, difference := range export.Comparison.Differences {
+		if !validExportField(difference.Field) ||
+			(difference.Kind != "added" && difference.Kind != "removed" && difference.Kind != "changed") ||
+			!difference.State.Valid() ||
+			(difference.ID != "" && !validFindingID(difference.ID)) ||
+			len(difference.Evidence) == 0 {
+			return errors.New("difference is invalid")
+		}
+	}
+	for _, unknown := range export.Comparison.Unknowns {
+		if !validExportField(unknown.Field) ||
+			unknown.State != evidence.Unknown ||
+			(unknown.ID != "" && !validFindingID(unknown.ID)) ||
+			(unknown.Reason != "" && safeUnknownReason(unknown.Reason) == "") ||
+			len(unknown.Evidence) == 0 {
+			return errors.New("unknown is invalid")
+		}
+	}
+	if export.SourceEvidenceSchemaVersion == 7 {
+		for _, difference := range export.Comparison.Differences {
+			if difference.ID == "" {
+				return errors.New("current difference ID is required")
+			}
+		}
+		for _, unknown := range export.Comparison.Unknowns {
+			if unknown.ID == "" {
+				return errors.New("current unknown ID is required")
+			}
+		}
+	} else {
+		for _, difference := range export.Comparison.Differences {
+			if difference.ID != "" {
+				return errors.New("legacy difference ID is invalid")
+			}
+		}
+		for _, unknown := range export.Comparison.Unknowns {
+			if unknown.ID != "" {
+				return errors.New("legacy unknown ID is invalid")
+			}
+		}
+	}
+	return nil
+}
+
+func validExportField(field string) bool {
+	return experiment.ValidateVolatileFields([]string{field}) == nil
+}
+
+func differenceFields(differences []redactedDifference) []string {
+	fields := make([]string, 0, len(differences))
+	for _, difference := range differences {
+		fields = append(fields, difference.Field)
+	}
+	return fields
 }
 
 func encodeReport(evidence document) ([]byte, error) {
