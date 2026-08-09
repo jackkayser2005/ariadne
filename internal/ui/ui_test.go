@@ -40,6 +40,7 @@ func TestHandlerRendersReadOnlyReview(t *testing.T) {
 				TargetArchitecture:       "<architecture>",
 				TargetPackageVersionCode: 7,
 				TargetPackageSHA256:      strings.Repeat("d", 64),
+				Normalizations:           []string{"<normalization>", "second normalization"},
 			}, nil
 		},
 		questions: func() []bundle.Question {
@@ -71,7 +72,7 @@ func TestHandlerRendersReadOnlyReview(t *testing.T) {
 		want []string
 	}{
 		{name: "index", path: "/", want: []string{"Archived bundles", "Ask across this archive", "Did it change?", "run-001", "&lt;manifest&gt;"}},
-		{name: "archive question lens", path: "/?question_id=counterfactual-change", want: []string{"Question lens", "Did it change?", "observed", "Verified provenance", "recorded (UTC)", "2026-07-25T12:00:00Z", "target package", "&lt;package&gt;", "Android API", "35", "architecture", "&lt;architecture&gt;", "package version", "7", "package SHA-256", strings.Repeat("d", 64), strings.Repeat("c", 64), "&lt;revision&gt;", "clean", "Open answer details", "run-001", "&lt;manifest&gt;"}},
+		{name: "archive question lens", path: "/?question_id=counterfactual-change", want: []string{"Question lens", "Did it change?", "observed", "Verified provenance", "recorded (UTC)", "2026-07-25T12:00:00Z", "target package", "&lt;package&gt;", "Android API", "35", "architecture", "&lt;architecture&gt;", "package version", "7", "package SHA-256", strings.Repeat("d", 64), "normalization", "&lt;normalization&gt;", "second normalization", strings.Repeat("c", 64), "&lt;revision&gt;", "clean", "Open answer details", "run-001", "&lt;manifest&gt;"}},
 		{name: "run", path: "/run?directory=run-001", want: []string{"Verified provenance", "recorded (UTC)", "2026-07-25T12:00:00Z", "target package", "&lt;package&gt;", "Bounded question board", "Did it change?", "Open answer details", findingID, strings.Repeat("c", 64), "&lt;revision&gt;", "clean"}},
 		{name: "ask", path: "/ask?directory=run-001&question_id=counterfactual-change", want: []string{"Question result", "observed", findingID, "Verified provenance", "recorded (UTC)", "2026-07-25T12:00:00Z", "target package", "&lt;package&gt;", strings.Repeat("d", 64), strings.Repeat("c", 64), "&lt;revision&gt;", "clean"}},
 		{name: "finding", path: "/finding?directory=run-001&finding_id=" + findingID, want: []string{"Finding detail", "network.body", "baseline/network.json", "&lt;safe-source&gt;", "Verified provenance", "target package", "&lt;package&gt;", "Android API", "35", strings.Repeat("d", 64), "recorded (UTC)", "2026-07-25T12:00:00Z", strings.Repeat("c", 64), "&lt;revision&gt;", "clean"}},

@@ -43,6 +43,10 @@ func TestWrite(t *testing.T) {
 		summary.TargetArchitecture != "x86_64" ||
 		summary.TargetPackageVersionCode != 1 ||
 		summary.TargetPackageSHA256 != strings.Repeat("a", 64) ||
+		len(summary.Normalizations) != 3 ||
+		summary.Normalizations[0] != "decoded network body_base64" ||
+		summary.Normalizations[1] != "required storage and network payload equality per session" ||
+		summary.Normalizations[2] != "removed HTTP transport fields from semantic comparison" ||
 		summary.AriadneModified {
 		t.Fatalf("Write() = %#v", summary)
 	}
