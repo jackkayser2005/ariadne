@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/jackkayser2005/ariadne/internal/bundle"
+	"github.com/jackkayser2005/ariadne/internal/evidence"
 )
 
 type handler struct {
@@ -27,6 +28,13 @@ type archiveQuestionResult struct {
 	Available    bool
 }
 
+type archiveQuestionSummary struct {
+	Total       int
+	Observed    int
+	Unknown     int
+	Unavailable int
+}
+
 type pageData struct {
 	View             string
 	Title            string
@@ -35,6 +43,7 @@ type pageData struct {
 	Questions        []bundle.Question
 	SelectedQuestion bundle.Question
 	ArchiveAnswers   []archiveQuestionResult
+	ArchiveSummary   archiveQuestionSummary
 	Summary          bundle.Summary
 	Answers          []bundle.Answer
 	Answer           bundle.Answer
@@ -89,6 +98,7 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 	selectedQuestion, questionID := bundle.Question{}, r.URL.Query().Get("question_id")
 	var archiveAnswers []archiveQuestionResult
+	var archiveSummary archiveQuestionSummary
 	if questionID != "" {
 		var ok bool
 		selectedQuestion, ok = questionForID(questions, questionID)
@@ -113,6 +123,7 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 				Available:    askErr == nil,
 			})
 		}
+		archiveSummary = summarizeArchiveAnswers(archiveAnswers)
 	}
 	render(w, pageData{
 		View:             "index",
@@ -121,7 +132,25 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		Questions:        questions,
 		SelectedQuestion: selectedQuestion,
 		ArchiveAnswers:   archiveAnswers,
+		ArchiveSummary:   archiveSummary,
 	})
+}
+
+func summarizeArchiveAnswers(results []archiveQuestionResult) archiveQuestionSummary {
+	summary := archiveQuestionSummary{Total: len(results)}
+	for _, result := range results {
+		if !result.Available {
+			summary.Unavailable++
+			continue
+		}
+		switch result.Answer.State {
+		case evidence.Observed:
+			summary.Observed++
+		case evidence.Unknown:
+			summary.Unknown++
+		}
+	}
+	return summary
 }
 
 func (h handler) handleRun(w http.ResponseWriter, r *http.Request) {
@@ -356,6 +385,12 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
     <section>
       <div class="section-head"><h2>Question lens</h2><span class="context">re-verified now</span></div>
       <p class="question">{{.SelectedQuestion.Text}}</p>
+      <div class="metrics panel" aria-label="Archive question summary">
+        <span class="metric"><strong class="metric-value">{{.ArchiveSummary.Observed}}</strong><span class="metric-label">observed</span></span>
+        <span class="metric"><strong class="metric-value">{{.ArchiveSummary.Unknown}}</strong><span class="metric-label">unknown</span></span>
+        <span class="metric"><strong class="metric-value">{{.ArchiveSummary.Unavailable}}</strong><span class="metric-label">unavailable</span></span>
+        <span class="metric"><strong class="metric-value">{{.ArchiveSummary.Total}}</strong><span class="metric-label">checked</span></span>
+      </div>
       <div class="grid">
       {{range .ArchiveAnswers}}
         <article class="card">
