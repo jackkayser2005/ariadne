@@ -150,6 +150,15 @@ func TestExportIsVerifiedAndRawValueFree(t *testing.T) {
 	if err := json.Unmarshal(exportData, &exported); err != nil {
 		t.Fatal(err)
 	}
+	canonicalExport, err := json.Marshal(exported)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exportSum := sha256.Sum256(canonicalExport)
+	wantExportDigest := hex.EncodeToString(exportSum[:])
+	if summary.ExportSHA256 != wantExportDigest || verification.ExportSHA256 != wantExportDigest {
+		t.Fatalf("export identity = %q, %q, want %q", summary.ExportSHA256, verification.ExportSHA256, wantExportDigest)
+	}
 	if !exported.Redacted ||
 		exported.SchemaVersion != 1 ||
 		exported.SourceEvidenceSchemaVersion != 7 ||
@@ -181,6 +190,13 @@ func TestExportIsVerifiedAndRawValueFree(t *testing.T) {
 		if strings.Contains(raw, secret) {
 			t.Fatalf("export exposed redacted value %q: %s", secret, raw)
 		}
+	}
+	if err := os.WriteFile(exportPath, canonicalExport, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	formattedVerification, err := VerifyExport(exportPath)
+	if err != nil || formattedVerification.ExportSHA256 != wantExportDigest {
+		t.Fatalf("VerifyExport() formatted content = %#v, error = %v", formattedVerification, err)
 	}
 
 	if _, err := Export(runDir, exportPath); err == nil || !strings.Contains(err.Error(), "file exists") {

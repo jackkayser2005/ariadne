@@ -20,6 +20,12 @@ The first milestone targets an authorized Android test application:
 
 The detailed design and experiment log live in [`docs/`](docs/).
 
+The shareable export has its own canonical SHA-256 identity. Verify a received
+export structurally, and optionally require the expected identity, with
+`experiment export verify --json --expect-sha256 <export-sha256> <export.json>`.
+That identity covers only the raw-value-free export content; it does not prove
+the underlying evidence.
+
 ## Reproduce Experiment 001
 
 The complete local procedure is documented in

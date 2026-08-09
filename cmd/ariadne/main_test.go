@@ -433,10 +433,10 @@ func TestRunExport(t *testing.T) {
 			if runDir != "run-directory" || exportPath != "export.json" {
 				t.Fatalf("Export() arguments = %q, %q", runDir, exportPath)
 			}
-			return bundle.ExportSummary{SourceEvidenceSHA256: digest}, nil
+			return bundle.ExportSummary{SourceEvidenceSHA256: digest, ExportSHA256: digest}, nil
 		},
 	)
-	want := "redacted export complete\nsource_evidence_sha256: " + digest + "\n"
+	want := "redacted export complete\nsource_evidence_sha256: " + digest + "\nexport_sha256: " + digest + "\n"
 	if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
 		t.Fatalf(
 			"runExport() = %d, stdout=%q, stderr=%q",
@@ -493,7 +493,7 @@ func TestRunExportFailures(t *testing.T) {
 			failingWriter{},
 			&stderr,
 			func(string, string) (bundle.ExportSummary, error) {
-				return bundle.ExportSummary{SourceEvidenceSHA256: strings.Repeat("a", 64)}, nil
+				return bundle.ExportSummary{SourceEvidenceSHA256: strings.Repeat("a", 64), ExportSHA256: strings.Repeat("a", 64)}, nil
 			},
 		)
 		if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
@@ -513,10 +513,10 @@ func TestRunExportVerify(t *testing.T) {
 			if path != "export.json" {
 				t.Fatalf("VerifyExport() path = %q", path)
 			}
-			return bundle.ExportVerificationSummary{SchemaVersion: 1, SourceEvidenceSHA256: digest}, nil
+			return bundle.ExportVerificationSummary{SchemaVersion: 1, SourceEvidenceSHA256: digest, ExportSHA256: digest}, nil
 		},
 	)
-	want := "redacted export verified\nschema_version: 1\nsource_evidence_sha256: " + digest + "\n"
+	want := "redacted export verified\nschema_version: 1\nsource_evidence_sha256: " + digest + "\nexport_sha256: " + digest + "\n"
 	if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
 		t.Fatalf("runExportVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
 	}
@@ -530,13 +530,65 @@ func TestRunExportVerifyJSON(t *testing.T) {
 		&stdout,
 		&stderr,
 		func(string) (bundle.ExportVerificationSummary, error) {
-			return bundle.ExportVerificationSummary{SchemaVersion: 1, SourceEvidenceSHA256: digest}, nil
+			return bundle.ExportVerificationSummary{SchemaVersion: 1, SourceEvidenceSHA256: digest, ExportSHA256: digest}, nil
 		},
 	)
-	want := `{"schema_version":1,"source_evidence_sha256":"` + digest + `"}` + "\n"
+	want := `{"schema_version":1,"source_evidence_sha256":"` + digest + `","export_sha256":"` + digest + `"}` + "\n"
 	if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
 		t.Fatalf("runExportVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
 	}
+}
+
+func TestRunExportVerifyExpectedIdentity(t *testing.T) {
+	expected := strings.Repeat("a", 64)
+
+	t.Run("match", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runExportVerify(
+			[]string{"--expect-sha256", expected, "export.json"},
+			&stdout,
+			&stderr,
+			func(string) (bundle.ExportVerificationSummary, error) {
+				return bundle.ExportVerificationSummary{SchemaVersion: 1, ExportSHA256: expected}, nil
+			},
+		)
+		if exitCode != 0 || stdout.Len() == 0 || stderr.Len() != 0 {
+			t.Fatalf("runExportVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	for _, value := range []string{"bad", ""} {
+		t.Run("invalid "+value, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			exitCode := runExportVerify(
+				[]string{"--expect-sha256=" + value, "export.json"},
+				&stdout,
+				&stderr,
+				func(string) (bundle.ExportVerificationSummary, error) {
+					t.Fatal("VerifyExport called for invalid expected identity")
+					return bundle.ExportVerificationSummary{}, nil
+				},
+			)
+			if exitCode != 2 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "expect-sha256 must be") {
+				t.Fatalf("runExportVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+			}
+		})
+	}
+
+	t.Run("mismatch", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runExportVerify(
+			[]string{"--expect-sha256", strings.Repeat("b", 64), "export.json"},
+			&stdout,
+			&stderr,
+			func(string) (bundle.ExportVerificationSummary, error) {
+				return bundle.ExportVerificationSummary{SchemaVersion: 1, ExportSHA256: expected}, nil
+			},
+		)
+		if exitCode != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "redacted export SHA-256 mismatch") {
+			t.Fatalf("runExportVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
 }
 
 func TestRunExportVerifyFailures(t *testing.T) {

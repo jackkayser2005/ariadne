@@ -86,12 +86,14 @@ type Summary struct {
 // ExportSummary describes a successful raw-value-free export.
 type ExportSummary struct {
 	SourceEvidenceSHA256 string `json:"source_evidence_sha256"`
+	ExportSHA256         string `json:"export_sha256"`
 }
 
 // ExportVerificationSummary describes a structurally valid redacted export.
 type ExportVerificationSummary struct {
 	SchemaVersion        int    `json:"schema_version"`
 	SourceEvidenceSHA256 string `json:"source_evidence_sha256"`
+	ExportSHA256         string `json:"export_sha256"`
 }
 
 // Finding is the safe, raw-value-free view of one verified conclusion.
@@ -291,6 +293,13 @@ func Export(runDir, exportPath string) (ExportSummary, error) {
 		Artifacts:      slices.Clone(evidence.Artifacts),
 		Comparison:     redactedComparisonFor(evidence.Comparison),
 	}
+	if err := validateRedactedDocument(redacted); err != nil {
+		return ExportSummary{}, fmt.Errorf("redacted export: %w", err)
+	}
+	exportSHA256, err := redactedExportSHA256(redacted)
+	if err != nil {
+		return ExportSummary{}, err
+	}
 	exportData, err := encodeRedactedDocument(redacted)
 	if err != nil {
 		return ExportSummary{}, err
@@ -298,7 +307,7 @@ func Export(runDir, exportPath string) (ExportSummary, error) {
 	if err := writeExclusive(exportPath, exportData); err != nil {
 		return ExportSummary{}, err
 	}
-	return ExportSummary{SourceEvidenceSHA256: sourceDigest}, nil
+	return ExportSummary{SourceEvidenceSHA256: sourceDigest, ExportSHA256: exportSHA256}, nil
 }
 
 // VerifyExport checks a redacted export without requiring its source bundle.
@@ -318,9 +327,14 @@ func VerifyExport(exportPath string) (ExportVerificationSummary, error) {
 	if err := validateRedactedDocument(export); err != nil {
 		return ExportVerificationSummary{}, fmt.Errorf("redacted export: %w", err)
 	}
+	exportSHA256, err := redactedExportSHA256(export)
+	if err != nil {
+		return ExportVerificationSummary{}, fmt.Errorf("redacted export: %w", err)
+	}
 	return ExportVerificationSummary{
 		SchemaVersion:        export.SchemaVersion,
 		SourceEvidenceSHA256: export.SourceEvidenceSHA256,
+		ExportSHA256:         exportSHA256,
 	}, nil
 }
 
@@ -759,6 +773,15 @@ func encodeRedactedDocument(export redactedDocument) ([]byte, error) {
 		return nil, fmt.Errorf("redacted export exceeds %d-byte limit", maxOutputBytes)
 	}
 	return data, nil
+}
+
+func redactedExportSHA256(export redactedDocument) (string, error) {
+	data, err := json.Marshal(export)
+	if err != nil {
+		return "", fmt.Errorf("canonicalize redacted export: %w", err)
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
 }
 
 func decodeRedactedDocument(data []byte) (redactedDocument, error) {

@@ -24,7 +24,7 @@ const usage = `usage:
   ariadne experiment run [--adb <path>] --device <serial> --package <package> --output <directory> <manifest.json>
   ariadne experiment report <run-directory>
   ariadne experiment export <run-directory> <export.json>
-  ariadne experiment export verify [--json] <export.json>
+  ariadne experiment export verify [--json] [--expect-sha256 <digest>] <export.json>
   ariadne experiment verify [--json] <run-directory>
   ariadne experiment finding [--json] <run-directory> <finding-id>
   ariadne experiment ask [--json] <run-directory> <question-id>
@@ -373,8 +373,9 @@ func runExport(
 	}
 	_, err = fmt.Fprintf(
 		stdout,
-		"redacted export complete\nsource_evidence_sha256: %s\n",
+		"redacted export complete\nsource_evidence_sha256: %s\nexport_sha256: %s\n",
 		summary.SourceEvidenceSHA256,
+		summary.ExportSHA256,
 	)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment export: write output: %v\n", err)
@@ -391,14 +392,29 @@ func runExportVerify(
 	flags := flag.NewFlagSet("experiment export verify", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	jsonOutput := flags.Bool("json", false, "")
+	expectedSHA256 := flags.String("expect-sha256", "", "")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
 		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+	expectedSHA256Provided := false
+	flags.Visit(func(visited *flag.Flag) {
+		if visited.Name == "expect-sha256" {
+			expectedSHA256Provided = true
+		}
+	})
+	if expectedSHA256Provided && !validReflectionSHA256(*expectedSHA256) {
+		_, _ = io.WriteString(stderr, "ariadne: experiment export verify: expect-sha256 must be a lowercase 64-character SHA-256 digest\n")
 		return 2
 	}
 
 	summary, err := verify(flags.Arg(0))
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment export verify: %v\n", err)
+		return 1
+	}
+	if expectedSHA256Provided && summary.ExportSHA256 != *expectedSHA256 {
+		_, _ = io.WriteString(stderr, "ariadne: experiment export verify: redacted export SHA-256 mismatch\n")
 		return 1
 	}
 	if *jsonOutput {
@@ -410,9 +426,10 @@ func runExportVerify(
 	}
 	if _, err = fmt.Fprintf(
 		stdout,
-		"redacted export verified\nschema_version: %d\nsource_evidence_sha256: %s\n",
+		"redacted export verified\nschema_version: %d\nsource_evidence_sha256: %s\nexport_sha256: %s\n",
 		summary.SchemaVersion,
 		summary.SourceEvidenceSHA256,
+		summary.ExportSHA256,
 	); err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment export verify: write output: %v\n", err)
 		return 1

@@ -27,6 +27,32 @@ jq -e '
   (.differences == 1) and
   (.unknowns == 0)
 ' "${verify_json}"
+redacted_export_json="${RUNNER_TEMP}/ariadne-redacted-export.json"
+redacted_export_stdout="${RUNNER_TEMP}/ariadne-redacted-export.stdout"
+"${ariadne}" experiment export "${run_dir}" "${redacted_export_json}" >"${redacted_export_stdout}"
+grep -F -x -q "redacted export complete" "${redacted_export_stdout}"
+source_evidence_sha256="$(sed -n 's/^source_evidence_sha256: //p' "${redacted_export_stdout}")"
+export_sha256="$(sed -n 's/^export_sha256: //p' "${redacted_export_stdout}")"
+[[ "${source_evidence_sha256}" =~ ^[0-9a-f]{64}$ ]]
+[[ "${export_sha256}" =~ ^[0-9a-f]{64}$ ]]
+redacted_export_verify_json="${RUNNER_TEMP}/ariadne-redacted-export-verified.json"
+"${ariadne}" experiment export verify --json \
+  --expect-sha256 "${export_sha256}" \
+  "${redacted_export_json}" >"${redacted_export_verify_json}"
+jq -e --arg source_sha256 "${source_evidence_sha256}" --arg export_sha256 "${export_sha256}" '
+  (keys_unsorted == ["schema_version", "source_evidence_sha256", "export_sha256"]) and
+  (.schema_version == 1) and
+  (.source_evidence_sha256 == $source_sha256) and
+  (.export_sha256 == $export_sha256)
+' "${redacted_export_verify_json}"
+if grep -F -q \
+  -e "standard" \
+  -e "personalized" \
+  -e "emulator-5554" \
+  "${redacted_export_json}"; then
+  echo "redacted export exposed a raw value or device identity" >&2
+  exit 1
+fi
 list_stdout="${RUNNER_TEMP}/ariadne-list.stdout"
 "${ariadne}" experiment list ".ariadne/ci" >"${list_stdout}"
 grep -F -x -q "archived bundles" "${list_stdout}"
