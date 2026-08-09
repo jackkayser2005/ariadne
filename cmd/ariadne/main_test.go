@@ -68,6 +68,7 @@ func TestRunUsage(t *testing.T) {
 		{"experiment", "finding"},
 		{"experiment", "ask"},
 		{"experiment", "ask-archive"},
+		{"experiment", "ask-archive", "verify"},
 		{"experiment", "questions", "extra"},
 		{"experiment", "list"},
 		{"experiment", "serve"},
@@ -1170,6 +1171,103 @@ func TestRunAskArchiveFailures(t *testing.T) {
 			t.Fatalf("runAskArchive() = %d, stderr=%q", exitCode, stderr.String())
 		}
 	})
+}
+
+func TestRunAskArchiveVerify(t *testing.T) {
+	summary := bundle.ArchiveQuestionVerificationSummary{
+		SchemaVersion: 2,
+		QuestionID:    "counterfactual-change",
+		Checked:       3,
+	}
+
+	t.Run("human", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveVerify(
+			[]string{"report.json"},
+			&stdout,
+			&stderr,
+			func(path string) (bundle.ArchiveQuestionVerificationSummary, error) {
+				if path != "report.json" {
+					t.Fatalf("VerifyArchiveQuestionReport() path = %q", path)
+				}
+				return summary, nil
+			},
+		)
+		want := "archive question report structurally verified\n" +
+			"schema_version: 2\n" +
+			"question_id: counterfactual-change\n" +
+			"checked: 3\n" +
+			"note: this does not prove the underlying evidence\n"
+		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+			t.Fatalf("runAskArchiveVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("json", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveVerify(
+			[]string{"--json", "report.json"},
+			&stdout,
+			&stderr,
+			func(string) (bundle.ArchiveQuestionVerificationSummary, error) { return summary, nil },
+		)
+		want := `{"schema_version":2,"question_id":"counterfactual-change","checked":3}` + "\n"
+		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+			t.Fatalf("runAskArchiveVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+}
+
+func TestRunAskArchiveVerifyFailures(t *testing.T) {
+	for _, args := range [][]string{nil, {"report.json", "extra"}, {"--json=invalid", "report.json"}} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			exitCode := runAskArchiveVerify(
+				args,
+				&stdout,
+				&stderr,
+				func(string) (bundle.ArchiveQuestionVerificationSummary, error) {
+					t.Fatal("VerifyArchiveQuestionReport called for invalid usage")
+					return bundle.ArchiveQuestionVerificationSummary{}, nil
+				},
+			)
+			if exitCode != 2 || stdout.Len() != 0 || stderr.String() != usage {
+				t.Fatalf("runAskArchiveVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+			}
+		})
+	}
+
+	t.Run("verification error", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveVerify(
+			[]string{"report.json"},
+			&stdout,
+			&stderr,
+			func(string) (bundle.ArchiveQuestionVerificationSummary, error) {
+				return bundle.ArchiveQuestionVerificationSummary{}, errors.New("report is invalid")
+			},
+		)
+		if exitCode != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "report is invalid") {
+			t.Fatalf("runAskArchiveVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	for _, args := range [][]string{{"report.json"}, {"--json", "report.json"}} {
+		t.Run("write output "+strings.Join(args, "_"), func(t *testing.T) {
+			var stderr bytes.Buffer
+			exitCode := runAskArchiveVerify(
+				args,
+				failingWriter{},
+				&stderr,
+				func(string) (bundle.ArchiveQuestionVerificationSummary, error) {
+					return bundle.ArchiveQuestionVerificationSummary{SchemaVersion: 2, QuestionID: "question"}, nil
+				},
+			)
+			if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+				t.Fatalf("runAskArchiveVerify() = %d, stderr=%q", exitCode, stderr.String())
+			}
+		})
+	}
 }
 
 func TestRunQuestions(t *testing.T) {

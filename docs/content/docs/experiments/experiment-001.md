@@ -171,6 +171,7 @@ go run ./cmd/ariadne experiment questions --json
 go run ./cmd/ariadne experiment ask .ariadne/runs/experiment-001 counterfactual-change
 go run ./cmd/ariadne experiment ask --json .ariadne/runs/experiment-001 counterfactual-change
 go run ./cmd/ariadne experiment ask-archive --json .ariadne/runs counterfactual-change
+go run ./cmd/ariadne experiment ask-archive verify --json .ariadne/archive-question.json
 go run ./cmd/ariadne experiment finding --json .ariadne/runs/experiment-001 <finding-id-from-evidence.json>
 ```
 
@@ -226,6 +227,11 @@ when `go run` built Ariadne.
   digest points back to the authoritative bundle but does not make this
   derived reflection view authoritative. It never returns observed or persona
   values and does not infer a trend.
+- `experiment ask-archive verify [--json] <report.json>` checks a saved
+  archive-reflection report offline for its schema, fixed question catalog,
+  safe metadata, answer states, provenance digests, and deterministic ordering.
+  A successful result proves only that the derived report satisfies Ariadne's
+  structural contract; it does not re-verify or prove the underlying evidence.
 - `experiment serve <archive-root>` starts a localhost-only, read-only review
   page at `http://127.0.0.1:8787/`; only loopback IP addresses are accepted, and
   it lists verified bundles and links to the same bounded questions and finding
