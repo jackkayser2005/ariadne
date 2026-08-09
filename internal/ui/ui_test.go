@@ -34,6 +34,7 @@ func TestHandlerRendersReadOnlyReview(t *testing.T) {
 				AnswerState:            "observed",
 				ManifestContractSHA256: strings.Repeat("c", 64),
 				AriadneRevision:        "<revision>",
+				RecordedAt:             "2026-07-25T12:00:00Z",
 			}, nil
 		},
 		questions: func() []bundle.Question {
@@ -65,10 +66,10 @@ func TestHandlerRendersReadOnlyReview(t *testing.T) {
 		want []string
 	}{
 		{name: "index", path: "/", want: []string{"Archived bundles", "Ask across this archive", "Did it change?", "run-001", "&lt;manifest&gt;"}},
-		{name: "archive question lens", path: "/?question_id=counterfactual-change", want: []string{"Question lens", "Did it change?", "observed", "Verified provenance", strings.Repeat("c", 64), "&lt;revision&gt;", "clean", "Open answer details", "run-001", "&lt;manifest&gt;"}},
-		{name: "run", path: "/run?directory=run-001", want: []string{"Verified provenance", "Bounded question board", "Did it change?", "Open answer details", findingID, strings.Repeat("c", 64), "&lt;revision&gt;", "clean"}},
-		{name: "ask", path: "/ask?directory=run-001&question_id=counterfactual-change", want: []string{"Question result", "observed", findingID, "Verified provenance", strings.Repeat("c", 64), "&lt;revision&gt;", "clean"}},
-		{name: "finding", path: "/finding?directory=run-001&finding_id=" + findingID, want: []string{"Finding detail", "network.body", "baseline/network.json", "&lt;safe-source&gt;", "Verified provenance", strings.Repeat("c", 64), "&lt;revision&gt;", "clean"}},
+		{name: "archive question lens", path: "/?question_id=counterfactual-change", want: []string{"Question lens", "Did it change?", "observed", "Verified provenance", "recorded (UTC)", "2026-07-25T12:00:00Z", strings.Repeat("c", 64), "&lt;revision&gt;", "clean", "Open answer details", "run-001", "&lt;manifest&gt;"}},
+		{name: "run", path: "/run?directory=run-001", want: []string{"Verified provenance", "recorded (UTC)", "2026-07-25T12:00:00Z", "Bounded question board", "Did it change?", "Open answer details", findingID, strings.Repeat("c", 64), "&lt;revision&gt;", "clean"}},
+		{name: "ask", path: "/ask?directory=run-001&question_id=counterfactual-change", want: []string{"Question result", "observed", findingID, "Verified provenance", "recorded (UTC)", "2026-07-25T12:00:00Z", strings.Repeat("c", 64), "&lt;revision&gt;", "clean"}},
+		{name: "finding", path: "/finding?directory=run-001&finding_id=" + findingID, want: []string{"Finding detail", "network.body", "baseline/network.json", "&lt;safe-source&gt;", "Verified provenance", "recorded (UTC)", "2026-07-25T12:00:00Z", strings.Repeat("c", 64), "&lt;revision&gt;", "clean"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
