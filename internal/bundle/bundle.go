@@ -63,8 +63,10 @@ type Summary struct {
 	Question               string         `json:"-"`
 	AnswerState            evidence.State `json:"-"`
 	ManifestContractSHA256 string         `json:"-"`
-	AriadneRevision        string         `json:"-"`
-	AriadneModified        bool           `json:"-"`
+	// EvidenceSHA256 is the digest of the verified authoritative evidence.json.
+	EvidenceSHA256  string `json:"-"`
+	AriadneRevision string `json:"-"`
+	AriadneModified bool   `json:"-"`
 	// RecordedAt is the verified baseline session start in UTC for current bundles.
 	RecordedAt string `json:"-"`
 	// TargetPackage is the verified package identity for the selected target.
@@ -489,6 +491,8 @@ func verifyDocumentWithOutput(runDir string) (document, Summary, []byte, error) 
 	if !bytes.Equal(existingReport, reportData) {
 		return document{}, Summary{}, nil, errors.New("report output does not match verified artifacts")
 	}
+	evidenceDigest := sha256.Sum256(existingEvidence)
+	summary.EvidenceSHA256 = hex.EncodeToString(evidenceDigest[:])
 	return evidence, summary, existingEvidence, nil
 }
 

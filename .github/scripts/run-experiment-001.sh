@@ -72,6 +72,7 @@ jq -e '
   (.results[0] | keys_unsorted == ["directory", "manifest_name", "recorded_at", "provenance", "answer", "available"]) and
   (.results[0].directory == "experiment-001") and
   (.results[0].provenance.manifest_contract_sha256 | length == 64) and
+  (.results[0].provenance.source_evidence_sha256 | length == 64) and
   (.results[0].provenance.ariadne_revision | length > 0) and
   (.results[0].provenance.ariadne_modified == false) and
   (.results[0].available == true) and

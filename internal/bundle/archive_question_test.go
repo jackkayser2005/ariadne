@@ -1,6 +1,8 @@
 package bundle
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -27,7 +29,12 @@ func TestAskArchiveReturnsOrderedSafeResults(t *testing.T) {
 		t.Fatalf("AskArchive() results = %#v", report.Results)
 	}
 	for _, result := range report.Results {
-		if !result.Available || result.Answer == nil || result.Answer.State != "observed" || result.RecordedAt == "" || result.Provenance == nil || result.Provenance.ManifestContractSHA256 != strings.Repeat("c", 64) || result.Provenance.AriadneRevision != strings.Repeat("b", 40) || result.Provenance.AriadneModified {
+		evidence, err := os.ReadFile(filepath.Join(root, result.Directory, "evidence.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		evidenceDigest := sha256.Sum256(evidence)
+		if !result.Available || result.Answer == nil || result.Answer.State != "observed" || result.RecordedAt == "" || result.Provenance == nil || result.Provenance.ManifestContractSHA256 != strings.Repeat("c", 64) || result.Provenance.SourceEvidenceSHA256 != hex.EncodeToString(evidenceDigest[:]) || result.Provenance.AriadneRevision != strings.Repeat("b", 40) || result.Provenance.AriadneModified {
 			t.Fatalf("AskArchive() result = %#v", result)
 		}
 	}

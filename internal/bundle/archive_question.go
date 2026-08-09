@@ -23,6 +23,7 @@ type ArchiveQuestionSummary struct {
 // exposing captured observations.
 type ArchiveQuestionProvenance struct {
 	ManifestContractSHA256 string `json:"manifest_contract_sha256"`
+	SourceEvidenceSHA256   string `json:"source_evidence_sha256"`
 	AriadneRevision        string `json:"ariadne_revision"`
 	AriadneModified        bool   `json:"ariadne_modified"`
 }
@@ -78,6 +79,7 @@ func AskArchive(archiveRoot, questionID string) (ArchiveQuestionReport, error) {
 			if verified.ManifestContractSHA256 != "" {
 				result.Provenance = &ArchiveQuestionProvenance{
 					ManifestContractSHA256: verified.ManifestContractSHA256,
+					SourceEvidenceSHA256:   verified.EvidenceSHA256,
 					AriadneRevision:        verified.AriadneRevision,
 					AriadneModified:        verified.AriadneModified,
 				}
