@@ -14,12 +14,13 @@ import (
 )
 
 type handler struct {
-	root      string
-	index     func(string) ([]bundle.ArchiveEntry, error)
-	verify    func(string) (bundle.Summary, error)
-	questions func() []bundle.Question
-	ask       func(string, string) (bundle.Answer, error)
-	find      func(string, string) (bundle.Finding, error)
+	root       string
+	index      func(string) ([]bundle.ArchiveEntry, error)
+	verify     func(string) (bundle.Summary, error)
+	questions  func() []bundle.Question
+	ask        func(string, string) (bundle.Answer, error)
+	askArchive func(string, string) (bundle.ArchiveQuestionReport, error)
+	find       func(string, string) (bundle.Finding, error)
 }
 
 type archiveQuestionResult struct {
@@ -38,29 +39,34 @@ type archiveQuestionSummary struct {
 }
 
 type pageData struct {
-	View             string
-	Title            string
-	Directory        string
-	Entries          []bundle.ArchiveEntry
-	Questions        []bundle.Question
-	SelectedQuestion bundle.Question
-	ArchiveAnswers   []archiveQuestionResult
-	ArchiveSummary   archiveQuestionSummary
-	Summary          bundle.Summary
-	Answers          []bundle.Answer
-	Answer           bundle.Answer
-	Finding          bundle.Finding
+	View                       string
+	Title                      string
+	Directory                  string
+	Entries                    []bundle.ArchiveEntry
+	Questions                  []bundle.Question
+	SelectedQuestion           bundle.Question
+	ArchiveAnswers             []archiveQuestionResult
+	ArchiveSummary             archiveQuestionSummary
+	Summary                    bundle.Summary
+	Answers                    []bundle.Answer
+	Answer                     bundle.Answer
+	Finding                    bundle.Finding
+	CurrentReflectionRequested bool
+	CurrentReflectionAvailable bool
+	CurrentReflectionSHA256    string
+	CurrentReflectionChecked   int
 }
 
 // Handler returns a read-only HTTP handler for one explicitly supplied archive root.
 func Handler(archiveRoot string) http.Handler {
 	return newHandler(handler{
-		root:      archiveRoot,
-		index:     bundle.Index,
-		verify:    bundle.Verify,
-		questions: bundle.Questions,
-		ask:       bundle.Ask,
-		find:      bundle.Find,
+		root:       archiveRoot,
+		index:      bundle.Index,
+		verify:     bundle.Verify,
+		questions:  bundle.Questions,
+		ask:        bundle.Ask,
+		askArchive: bundle.AskArchive,
+		find:       bundle.Find,
 	})
 }
 
@@ -101,12 +107,26 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	selectedQuestion, questionID := bundle.Question{}, r.URL.Query().Get("question_id")
 	var archiveAnswers []archiveQuestionResult
 	var archiveSummary archiveQuestionSummary
+	currentReflectionRequested := questionID != "" && h.askArchive != nil
+	currentReflectionAvailable := false
+	currentReflectionSHA256 := ""
+	currentReflectionChecked := 0
 	if questionID != "" {
 		var ok bool
 		selectedQuestion, ok = questionForID(questions, questionID)
 		if !ok {
 			http.Error(w, "question not found", http.StatusNotFound)
 			return
+		}
+		if h.askArchive != nil {
+			currentReport, reportErr := h.askArchive(h.root, questionID)
+			if reportErr == nil {
+				currentReflectionSHA256, reportErr = bundle.ArchiveQuestionReportReflectionSHA256(currentReport)
+				if reportErr == nil {
+					currentReflectionChecked = currentReport.Summary.Checked
+					currentReflectionAvailable = true
+				}
+			}
 		}
 		archiveAnswers = make([]archiveQuestionResult, 0, len(entries))
 		for _, entry := range entries {
@@ -129,13 +149,17 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		archiveSummary = summarizeArchiveAnswers(archiveAnswers)
 	}
 	render(w, pageData{
-		View:             "index",
-		Title:            "Ariadne — evidence review",
-		Entries:          entries,
-		Questions:        questions,
-		SelectedQuestion: selectedQuestion,
-		ArchiveAnswers:   archiveAnswers,
-		ArchiveSummary:   archiveSummary,
+		View:                       "index",
+		Title:                      "Ariadne — evidence review",
+		Entries:                    entries,
+		Questions:                  questions,
+		SelectedQuestion:           selectedQuestion,
+		ArchiveAnswers:             archiveAnswers,
+		ArchiveSummary:             archiveSummary,
+		CurrentReflectionRequested: currentReflectionRequested,
+		CurrentReflectionAvailable: currentReflectionAvailable,
+		CurrentReflectionSHA256:    currentReflectionSHA256,
+		CurrentReflectionChecked:   currentReflectionChecked,
 	})
 }
 
@@ -416,6 +440,20 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
         <span class="metric"><strong class="metric-value">{{.ArchiveSummary.Unavailable}}</strong><span class="metric-label">unavailable</span></span>
         <span class="metric"><strong class="metric-value">{{.ArchiveSummary.Total}}</strong><span class="metric-label">checked</span></span>
       </div>
+      {{if .CurrentReflectionRequested}}
+      <section class="panel">
+        <div class="section-head"><h2>Current reflection</h2><span class="context">derived in memory</span></div>
+        {{if .CurrentReflectionAvailable}}
+        <dl>
+          <dt>reflection SHA-256</dt><dd>{{.CurrentReflectionSHA256}}</dd>
+          <dt>bundles checked</dt><dd>{{.CurrentReflectionChecked}}</dd>
+        </dl>
+        <p class="context">This digest identifies the current raw-value-free answer report. It is not a truth claim, chronology, or trend.</p>
+        {{else}}
+        <p class="context">The current reflection could not be derived from this archive. Individual result cards remain bounded re-checks.</p>
+        {{end}}
+      </section>
+      {{end}}
       <div class="grid">
       {{range .ArchiveAnswers}}
         <article class="card">

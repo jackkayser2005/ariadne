@@ -33,6 +33,15 @@ func VerifyArchiveQuestionReport(reportPath string) (ArchiveQuestionVerification
 	return summary, err
 }
 
+// ArchiveQuestionReportReflectionSHA256 returns the canonical identity of a
+// structurally valid, raw-value-free archive question report.
+func ArchiveQuestionReportReflectionSHA256(report ArchiveQuestionReport) (string, error) {
+	if err := validateArchiveQuestionReport(report); err != nil {
+		return "", fmt.Errorf("archive question report: %w", err)
+	}
+	return archiveQuestionReflectionSHA256(report)
+}
+
 func readVerifiedArchiveQuestionReport(reportPath string) (ArchiveQuestionReport, ArchiveQuestionVerificationSummary, error) {
 	if strings.TrimSpace(reportPath) == "" {
 		return ArchiveQuestionReport{}, ArchiveQuestionVerificationSummary{}, errors.New("archive question report path is required")

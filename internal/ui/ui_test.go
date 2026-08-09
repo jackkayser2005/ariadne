@@ -99,6 +99,97 @@ func TestHandlerRendersReadOnlyReview(t *testing.T) {
 	}
 }
 
+func TestHandlerRendersCurrentReflectionIdentity(t *testing.T) {
+	report := bundle.ArchiveQuestionReport{
+		SchemaVersion: 2,
+		QuestionID:    "counterfactual-change",
+		Question:      "Did changing the declared variable influence an observed output?",
+		Summary: bundle.ArchiveQuestionSummary{
+			Observed: 1,
+			Checked:  1,
+		},
+		Results: []bundle.ArchiveQuestionResult{{
+			Directory:    "run-001",
+			ManifestName: "current",
+			RecordedAt:   "2026-07-25T12:00:00Z",
+			Provenance: &bundle.ArchiveQuestionProvenance{
+				ManifestContractSHA256: strings.Repeat("c", 64),
+				SourceEvidenceSHA256:   strings.Repeat("d", 64),
+				AriadneRevision:        strings.Repeat("a", 40),
+			},
+			Answer: &bundle.Answer{
+				QuestionID: "counterfactual-change",
+				Question:   "Did changing the declared variable influence an observed output?",
+				State:      "observed",
+				FindingIDs: []string{},
+			},
+			Available: true,
+		}},
+	}
+	digest, err := bundle.ArchiveQuestionReportReflectionSHA256(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := newHandler(handler{
+		root: "archive-root",
+		index: func(string) ([]bundle.ArchiveEntry, error) {
+			return []bundle.ArchiveEntry{{Directory: "run-001", ManifestName: "current"}}, nil
+		},
+		verify: func(string) (bundle.Summary, error) {
+			return bundle.Summary{RecordedAt: "2026-07-25T12:00:00Z"}, nil
+		},
+		questions: func() []bundle.Question {
+			return []bundle.Question{{ID: "counterfactual-change", Text: "Did changing the declared variable influence an observed output?"}}
+		},
+		ask: func(string, string) (bundle.Answer, error) {
+			return *report.Results[0].Answer, nil
+		},
+		askArchive: func(root, questionID string) (bundle.ArchiveQuestionReport, error) {
+			if root != "archive-root" || questionID != "counterfactual-change" {
+				t.Fatalf("AskArchive() args = %q, %q", root, questionID)
+			}
+			return report, nil
+		},
+	})
+
+	recorder := httptest.NewRecorder()
+	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/?question_id=counterfactual-change", nil))
+	body := recorder.Body.String()
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%q", recorder.Code, body)
+	}
+	for _, want := range []string{"Current reflection", "derived in memory", "reflection SHA-256", digest, "bundles checked", "raw-value-free"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body missing %q: %s", want, body)
+		}
+	}
+}
+
+func TestHandlerHidesCurrentReflectionErrors(t *testing.T) {
+	h := newHandler(handler{
+		root: "archive-root",
+		index: func(string) ([]bundle.ArchiveEntry, error) {
+			return nil, nil
+		},
+		questions: func() []bundle.Question {
+			return []bundle.Question{{ID: "counterfactual-change", Text: "Did it change?"}}
+		},
+		askArchive: func(string, string) (bundle.ArchiveQuestionReport, error) {
+			return bundle.ArchiveQuestionReport{}, errors.New("private archive reflection failure")
+		},
+	})
+
+	recorder := httptest.NewRecorder()
+	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/?question_id=counterfactual-change", nil))
+	body := recorder.Body.String()
+	if recorder.Code != http.StatusOK || !strings.Contains(body, "current reflection could not be derived") {
+		t.Fatalf("status = %d, body=%q", recorder.Code, body)
+	}
+	if strings.Contains(body, "private archive reflection failure") {
+		t.Fatal("body disclosed current reflection error")
+	}
+}
+
 func TestSummarizeArchiveAnswers(t *testing.T) {
 	summary := summarizeArchiveAnswers([]archiveQuestionResult{
 		{Available: true, Answer: bundle.Answer{State: "observed"}},

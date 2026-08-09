@@ -65,6 +65,12 @@ func TestVerifyArchiveQuestionReportUsesCanonicalIdentity(t *testing.T) {
 	}
 }
 
+func TestArchiveQuestionReportReflectionSHA256RejectsInvalidReport(t *testing.T) {
+	if _, err := ArchiveQuestionReportReflectionSHA256(ArchiveQuestionReport{}); err == nil || !strings.Contains(err.Error(), "schema_version") {
+		t.Fatalf("ArchiveQuestionReportReflectionSHA256() error = %v", err)
+	}
+}
+
 func TestVerifyArchiveQuestionReportAcceptsUnavailableEntry(t *testing.T) {
 	root := t.TempDir()
 	archiveRun(t, root, "current", runOptions{})

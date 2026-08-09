@@ -51,6 +51,11 @@ identities and aggregate change counts.
 The saved transition ledger can be structurally re-verified and given an
 expected content identity before another tool consumes it.
 
+The read-only review page exposes the same canonical SHA-256 identity for the
+currently derived archive question report. It is computed in memory, contains
+no captured values, and identifies the derived report only; it is not proof of
+the underlying evidence or a trend claim.
+
 ## Development
 
 Prerequisites:

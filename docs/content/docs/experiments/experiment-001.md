@@ -281,7 +281,12 @@ when `go run` built Ariadne.
   selected archive question also reports how many bundles are observed,
   unknown, unavailable, and checked before the individual result cards. Those
   cards are ordered oldest first by the verifier-provided recorded UTC time;
-  bundles without that timestamp follow deterministically.
+  bundles without that timestamp follow deterministically. The selected lens
+  also displays the canonical SHA-256 identity of the current raw-value-free
+  reflection and the number of bundles it checked; the identity is derived in
+  memory and is not a claim about the underlying evidence, chronology, or a
+  trend. If the current reflection cannot be derived, the page reports that
+  boundedly without exposing the internal error.
 - If `ariadne_modified` is unexpectedly `true`, inspect `git status --short`
   before treating the run as reproducible from the recorded revision alone.
 - Finding lookup re-verifies the bundle first and prints only the question,
