@@ -38,6 +38,11 @@ func TestWrite(t *testing.T) {
 		summary.ManifestContractSHA256 != strings.Repeat("c", 64) ||
 		summary.AriadneRevision != strings.Repeat("b", 40) ||
 		summary.RecordedAt != "2026-07-25T12:00:00Z" ||
+		summary.TargetPackage != "dev.ariadne.fixture" ||
+		summary.TargetAndroidAPI != 35 ||
+		summary.TargetArchitecture != "x86_64" ||
+		summary.TargetPackageVersionCode != 1 ||
+		summary.TargetPackageSHA256 != strings.Repeat("a", 64) ||
 		summary.AriadneModified {
 		t.Fatalf("Write() = %#v", summary)
 	}
