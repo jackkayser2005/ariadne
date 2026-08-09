@@ -266,6 +266,13 @@ jq -e --arg history_sha256 "${transition_history_sha256}" '
   (.transitions == 2) and
   (.repeated_entries == [])
 ' "${archive_question_transition_repeated_answer_json}"
+archive_question_transition_questions_json="${RUNNER_TEMP}/ariadne-archive-question-transition-questions.json"
+"${ariadne}" experiment ask-archive transitions questions --json >"${archive_question_transition_questions_json}"
+jq -e '
+  (length == 2) and
+  (.[0] == {id: "answer-state-transitions", question: "At which supplied boundaries did the bounded answer state change?"}) and
+  (.[1] == {id: "answer-state-repeated-changes", question: "Did any safe archive entry change at more than one supplied boundary?"})
+' "${archive_question_transition_questions_json}"
 
 finding_id="$(jq -r '.comparison.differences[0].id' "${run_dir}/evidence.json")"
 finding_stdout="${RUNNER_TEMP}/ariadne-finding.stdout"

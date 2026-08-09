@@ -121,6 +121,15 @@ type ArchiveQuestionTransitionHistoryRepeatedChange struct {
 	Changes   []ArchiveQuestionTransitionHistoryChange `json:"changes"`
 }
 
+// ArchiveQuestionTransitionHistoryQuestions returns the fixed questions
+// available for a verified transition history in stable order.
+func ArchiveQuestionTransitionHistoryQuestions() []Question {
+	return []Question{
+		{ID: archiveQuestionTransitionHistoryID, Text: archiveQuestionTransitionHistoryText},
+		{ID: archiveQuestionTransitionHistoryRepeatedQuestionID, Text: archiveQuestionTransitionHistoryRepeatedQuestionText},
+	}
+}
+
 // CompareArchiveQuestionReports compares only verified answer states from
 // two saved reflections. A changing archive membership is incomparable rather
 // than evidence of a change.

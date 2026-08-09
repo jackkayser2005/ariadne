@@ -180,6 +180,7 @@ go run ./cmd/ariadne experiment ask-archive verify --json --expect-sha256 <refle
 go run ./cmd/ariadne experiment ask-archive compare --json <older-report.json> <newer-report.json>
 go run ./cmd/ariadne experiment ask-archive compare-current --json <older-report.json> <archive-root>
 go run ./cmd/ariadne experiment ask-archive transitions --json <report-1.json> <report-2.json> ...
+go run ./cmd/ariadne experiment ask-archive transitions questions --json
 go run ./cmd/ariadne experiment ask-archive transitions ask --json <history.json>
 go run ./cmd/ariadne experiment ask-archive transitions ask repeated --json <history.json>
 go run ./cmd/ariadne experiment ask-archive transitions save --json <report-1.json> <report-2.json> ... <history.json>
@@ -281,6 +282,10 @@ when `go run` built Ariadne.
   identities, aggregate counts, and safe per-directory state changes when
   common entries changed. It never exposes observations or persona values, and
   never infers chronology or a trend.
+- `experiment ask-archive transitions questions [--json]` lists the fixed
+  raw-value-free questions available for a verified transition history in
+  stable order. It is a discovery surface for callers and does not accept
+  arbitrary natural-language queries.
 - `experiment ask-archive transitions ask [--json] <history.json>` verifies a
   saved transition ledger and asks its fixed history question. It returns the
   bounded result plus 1-based indexes for changed and membership-incomparable

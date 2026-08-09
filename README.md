@@ -55,6 +55,7 @@ go run ./cmd/ariadne experiment ask-archive save --json <archive-root> <question
 go run ./cmd/ariadne experiment ask-archive compare --json <older-reflection.json> <newer-reflection.json>
 go run ./cmd/ariadne experiment ask-archive compare-current --json <older-reflection.json> <archive-root>
 go run ./cmd/ariadne experiment ask-archive transitions --json <reflection-1.json> <reflection-2.json> ...
+go run ./cmd/ariadne experiment ask-archive transitions questions --json
 go run ./cmd/ariadne experiment ask-archive transitions ask --json <history.json>
 go run ./cmd/ariadne experiment ask-archive transitions ask repeated --json <history.json>
 go run ./cmd/ariadne experiment ask-archive transitions save --json <reflection-1.json> <reflection-2.json> ... <history.json>
@@ -72,6 +73,10 @@ transition ledger carries those same state changes without observations or
 persona values.
 The saved transition ledger can be structurally re-verified and given an
 expected content identity before another tool consumes it.
+
+`transitions questions` lists the fixed, raw-value-free questions available for
+a verified history in stable order. Use it to discover the question IDs before
+asking one; it does not create arbitrary natural-language queries.
 
 `transitions ask` answers the ledger's fixed history question from the verified
 history itself. It returns only the bounded result, 1-based transition indexes

@@ -75,6 +75,7 @@ func TestRunUsage(t *testing.T) {
 		{"experiment", "ask-archive", "compare"},
 		{"experiment", "ask-archive", "compare-current"},
 		{"experiment", "ask-archive", "transitions"},
+		{"experiment", "ask-archive", "transitions", "questions", "extra"},
 		{"experiment", "ask-archive", "transitions", "ask", "repeated"},
 		{"experiment", "ask-archive", "transitions", "save"},
 		{"experiment", "ask-archive", "transitions", "verify"},
@@ -98,6 +99,33 @@ func TestRunUsage(t *testing.T) {
 			}
 			if stderr.String() != usage {
 				t.Fatalf("run() stderr = %q, want %q", stderr.String(), usage)
+			}
+		})
+	}
+}
+
+func TestRunArchiveTransitionQuestions(t *testing.T) {
+	for _, args := range [][]string{nil, {"--json"}} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			exitCode := run(append([]string{"experiment", "ask-archive", "transitions", "questions"}, args...), &stdout, &stderr)
+			if exitCode != 0 || stderr.Len() != 0 {
+				t.Fatalf("run() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+			}
+			if args == nil {
+				want := "question catalog\n" +
+					"- id: answer-state-transitions\n" +
+					"  question: At which supplied boundaries did the bounded answer state change?\n" +
+					"- id: answer-state-repeated-changes\n" +
+					"  question: Did any safe archive entry change at more than one supplied boundary?\n"
+				if stdout.String() != want {
+					t.Fatalf("run() stdout = %q, want %q", stdout.String(), want)
+				}
+				return
+			}
+			want := `[{"id":"answer-state-transitions","question":"At which supplied boundaries did the bounded answer state change?"},{"id":"answer-state-repeated-changes","question":"Did any safe archive entry change at more than one supplied boundary?"}]` + "\n"
+			if stdout.String() != want {
+				t.Fatalf("run() stdout = %q, want %q", stdout.String(), want)
 			}
 		})
 	}

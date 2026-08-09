@@ -35,6 +35,7 @@ const usage = `usage:
   ariadne experiment ask-archive compare [--json] <older-report.json> <newer-report.json>
   ariadne experiment ask-archive compare-current [--json] <older-report.json> <archive-root>
   ariadne experiment ask-archive transitions [--json] <report-1.json> <report-2.json> ...
+  ariadne experiment ask-archive transitions questions [--json]
   ariadne experiment ask-archive transitions ask [--json] <history.json>
   ariadne experiment ask-archive transitions ask repeated [--json] <history.json>
   ariadne experiment ask-archive transitions save [--json] <report-1.json> <report-2.json> ... <history.json>
@@ -95,6 +96,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 		if len(args) >= 4 && args[2] == "transitions" && args[3] == "save" {
 			return runAskArchiveTransitionsSave(args[4:], stdout, stderr, bundle.SaveArchiveQuestionTransitionHistory)
+		}
+		if len(args) >= 4 && args[2] == "transitions" && args[3] == "questions" {
+			return runQuestions(args[4:], stdout, stderr, bundle.ArchiveQuestionTransitionHistoryQuestions)
 		}
 		if len(args) >= 4 && args[2] == "transitions" && args[3] == "ask" {
 			if len(args) >= 5 && args[4] == "repeated" {

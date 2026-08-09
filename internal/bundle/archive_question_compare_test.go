@@ -290,6 +290,16 @@ func TestAnswerArchiveQuestionTransitionHistoryRepeated(t *testing.T) {
 	}
 }
 
+func TestArchiveQuestionTransitionHistoryQuestions(t *testing.T) {
+	want := []Question{
+		{ID: "answer-state-transitions", Text: "At which supplied boundaries did the bounded answer state change?"},
+		{ID: "answer-state-repeated-changes", Text: "Did any safe archive entry change at more than one supplied boundary?"},
+	}
+	if got := ArchiveQuestionTransitionHistoryQuestions(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("ArchiveQuestionTransitionHistoryQuestions() = %#v, want %#v", got, want)
+	}
+}
+
 func TestAskArchiveQuestionTransitionHistory(t *testing.T) {
 	history := validArchiveQuestionTransitionHistory()
 	path := writeArchiveQuestionTransitionHistory(t, history)
