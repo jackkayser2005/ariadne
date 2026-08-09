@@ -174,6 +174,7 @@ go run ./cmd/ariadne experiment ask-archive --json .ariadne/runs counterfactual-
 go run ./cmd/ariadne experiment ask-archive verify --json .ariadne/archive-question.json
 go run ./cmd/ariadne experiment ask-archive verify --json --expect-sha256 <reflection-sha256> .ariadne/archive-question.json
 go run ./cmd/ariadne experiment ask-archive compare --json <older-report.json> <newer-report.json>
+go run ./cmd/ariadne experiment ask-archive compare-current --json <older-report.json> <archive-root>
 go run ./cmd/ariadne experiment ask-archive transitions --json <report-1.json> <report-2.json> ...
 go run ./cmd/ariadne experiment ask-archive transitions verify --json <transitions.json>
 go run ./cmd/ariadne experiment finding --json .ariadne/runs/experiment-001 <finding-id-from-evidence.json>
@@ -237,6 +238,11 @@ when `go run` built Ariadne.
   and `incomparable` when either snapshot contains a different set of directories.
   This is a bounded state comparison, not trend inference or proof of the source
   evidence.
+- `experiment ask-archive compare-current [--json] <older-report.json> <archive-root>`
+  re-verifies one saved reflection, re-asks its fixed question against the
+  explicitly supplied current archive, and compares the two bounded answer
+  states. The current reflection is derived in memory, not persisted, and the
+  command does not infer a trend or prove the underlying evidence.
 - `experiment ask-archive transitions [--json] <report-1.json> <report-2.json> ...`
   re-verifies at least two saved reflections and compares each adjacent pair in
   caller-supplied order. It reports the same bounded `same`, `changed`, or

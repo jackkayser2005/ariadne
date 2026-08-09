@@ -2,6 +2,7 @@ package bundle
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -68,6 +69,32 @@ func TestCompareArchiveQuestionReportsRejectsMismatchedQuestions(t *testing.T) {
 func TestCompareArchiveQuestionReportsRejectsInvalidOlderReport(t *testing.T) {
 	if _, err := CompareArchiveQuestionReports(" ", "newer.json"); err == nil || !strings.Contains(err.Error(), "older reflection") {
 		t.Fatalf("CompareArchiveQuestionReports() error = %v", err)
+	}
+}
+
+func TestCompareArchiveQuestionReportWithArchive(t *testing.T) {
+	olderPath, _ := savedArchiveQuestionReport(t, "a-run")
+	root := t.TempDir()
+	archiveRun(t, root, "a-run", runOptions{})
+
+	comparison, err := CompareArchiveQuestionReportWithArchive(olderPath, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if comparison.Result != "same" || comparison.Compared != 1 || comparison.Changed != 0 ||
+		comparison.OlderOnly != 0 || comparison.NewerOnly != 0 ||
+		!validDigest(comparison.OlderReflectionSHA256) || !validDigest(comparison.NewerReflectionSHA256) {
+		t.Fatalf("live comparison = %#v", comparison)
+	}
+}
+
+func TestCompareArchiveQuestionReportWithArchiveRejectsInvalidInput(t *testing.T) {
+	if _, err := CompareArchiveQuestionReportWithArchive(" ", t.TempDir()); err == nil || !strings.Contains(err.Error(), "older reflection") {
+		t.Fatalf("CompareArchiveQuestionReportWithArchive() older error = %v", err)
+	}
+	olderPath, _ := savedArchiveQuestionReport(t, "a-run")
+	if _, err := CompareArchiveQuestionReportWithArchive(olderPath, filepath.Join(t.TempDir(), "missing")); err == nil || !strings.Contains(err.Error(), "current archive") {
+		t.Fatalf("CompareArchiveQuestionReportWithArchive() current error = %v", err)
 	}
 }
 

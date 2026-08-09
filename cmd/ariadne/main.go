@@ -30,6 +30,7 @@ const usage = `usage:
   ariadne experiment ask [--json] <run-directory> <question-id>
   ariadne experiment ask-archive [--json] <archive-root> <question-id>
   ariadne experiment ask-archive compare [--json] <older-report.json> <newer-report.json>
+  ariadne experiment ask-archive compare-current [--json] <older-report.json> <archive-root>
   ariadne experiment ask-archive transitions [--json] <report-1.json> <report-2.json> ...
   ariadne experiment ask-archive transitions verify [--json] [--expect-sha256 <digest>] <history.json>
   ariadne experiment ask-archive verify [--json] [--expect-sha256 <digest>] <report.json>
@@ -79,6 +80,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) >= 2 && args[0] == "experiment" && args[1] == "ask-archive" {
 		if len(args) >= 4 && args[2] == "transitions" && args[3] == "verify" {
 			return runAskArchiveTransitionsVerify(args[4:], stdout, stderr, bundle.VerifyArchiveQuestionTransitionHistory)
+		}
+		if len(args) >= 3 && args[2] == "compare-current" {
+			return runAskArchiveCompareCurrent(args[3:], stdout, stderr, bundle.CompareArchiveQuestionReportWithArchive)
 		}
 		if len(args) >= 3 && args[2] == "compare" {
 			return runAskArchiveCompare(args[3:], stdout, stderr, bundle.CompareArchiveQuestionReports)
@@ -635,7 +639,24 @@ func runAskArchiveCompare(
 	stdout, stderr io.Writer,
 	compare bundleArchiveQuestionReportComparer,
 ) int {
-	flags := flag.NewFlagSet("experiment ask-archive compare", flag.ContinueOnError)
+	return runAskArchiveComparison(args, "compare", stdout, stderr, compare)
+}
+
+func runAskArchiveCompareCurrent(
+	args []string,
+	stdout, stderr io.Writer,
+	compare bundleArchiveQuestionReportComparer,
+) int {
+	return runAskArchiveComparison(args, "compare-current", stdout, stderr, compare)
+}
+
+func runAskArchiveComparison(
+	args []string,
+	command string,
+	stdout, stderr io.Writer,
+	compare bundleArchiveQuestionReportComparer,
+) int {
+	flags := flag.NewFlagSet("experiment ask-archive "+command, flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	jsonOutput := flags.Bool("json", false, "")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 2 {
@@ -645,12 +666,12 @@ func runAskArchiveCompare(
 
 	comparison, err := compare(flags.Arg(0), flags.Arg(1))
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive compare: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive %s: %v\n", command, err)
 		return 1
 	}
 	if *jsonOutput {
 		if err := json.NewEncoder(stdout).Encode(comparison); err != nil {
-			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive compare: write output: %v\n", err)
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive %s: write output: %v\n", command, err)
 			return 1
 		}
 		return 0
@@ -670,7 +691,7 @@ func runAskArchiveCompare(
 		comparison.OlderOnly,
 		comparison.NewerOnly,
 	); err != nil {
-		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive compare: write output: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive %s: write output: %v\n", command, err)
 		return 1
 	}
 	return 0

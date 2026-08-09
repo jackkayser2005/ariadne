@@ -75,6 +75,35 @@ func CompareArchiveQuestionReports(olderPath, newerPath string) (ArchiveQuestion
 	return compareVerifiedArchiveQuestionReports(older, olderSummary, newer, newerSummary), nil
 }
 
+// CompareArchiveQuestionReportWithArchive verifies one saved reflection,
+// re-asks its fixed question against the explicitly supplied current archive,
+// and compares only their bounded answer states. The current reflection is
+// derived in memory and is not persisted by this function.
+func CompareArchiveQuestionReportWithArchive(olderPath, archiveRoot string) (ArchiveQuestionComparison, error) {
+	older, olderSummary, err := readVerifiedArchiveQuestionReport(olderPath)
+	if err != nil {
+		return ArchiveQuestionComparison{}, fmt.Errorf("older reflection: %w", err)
+	}
+	current, err := AskArchive(archiveRoot, older.QuestionID)
+	if err != nil {
+		return ArchiveQuestionComparison{}, fmt.Errorf("current archive: %w", err)
+	}
+	if err := validateArchiveQuestionReport(current); err != nil {
+		return ArchiveQuestionComparison{}, fmt.Errorf("current archive reflection: %w", err)
+	}
+	currentSHA256, err := archiveQuestionReflectionSHA256(current)
+	if err != nil {
+		return ArchiveQuestionComparison{}, fmt.Errorf("current archive reflection: %w", err)
+	}
+	currentSummary := ArchiveQuestionVerificationSummary{
+		SchemaVersion:    current.SchemaVersion,
+		QuestionID:       current.QuestionID,
+		Checked:          current.Summary.Checked,
+		ReflectionSHA256: currentSHA256,
+	}
+	return compareVerifiedArchiveQuestionReports(older, olderSummary, current, currentSummary), nil
+}
+
 func compareVerifiedArchiveQuestionReports(
 	older ArchiveQuestionReport,
 	olderSummary ArchiveQuestionVerificationSummary,

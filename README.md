@@ -38,6 +38,7 @@ reflection snapshots without exposing captured values:
 ```console
 go run ./cmd/ariadne experiment ask-archive verify --json <reflection.json>
 go run ./cmd/ariadne experiment ask-archive compare --json <older-reflection.json> <newer-reflection.json>
+go run ./cmd/ariadne experiment ask-archive compare-current --json <older-reflection.json> <archive-root>
 go run ./cmd/ariadne experiment ask-archive transitions --json <reflection-1.json> <reflection-2.json> ...
 go run ./cmd/ariadne experiment ask-archive transitions verify --json <transitions.json>
 ```

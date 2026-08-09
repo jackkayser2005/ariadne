@@ -69,6 +69,7 @@ func TestRunUsage(t *testing.T) {
 		{"experiment", "ask"},
 		{"experiment", "ask-archive"},
 		{"experiment", "ask-archive", "compare"},
+		{"experiment", "ask-archive", "compare-current"},
 		{"experiment", "ask-archive", "transitions"},
 		{"experiment", "ask-archive", "transitions", "verify"},
 		{"experiment", "ask-archive", "verify"},
@@ -1171,6 +1172,34 @@ func TestRunAskArchiveCompare(t *testing.T) {
 			t.Fatalf("runAskArchiveCompare() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
 		}
 	})
+}
+
+func TestRunAskArchiveCompareCurrent(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	comparison := bundle.ArchiveQuestionComparison{
+		SchemaVersion:         1,
+		ComparisonID:          "answer-state-change",
+		ComparisonQuestion:    "Did the bounded answer state change between these saved reflection snapshots?",
+		QuestionID:            "counterfactual-change",
+		Question:              "Did it change?",
+		Result:                "same",
+		OlderReflectionSHA256: strings.Repeat("a", 64),
+		NewerReflectionSHA256: strings.Repeat("b", 64),
+	}
+	exitCode := runAskArchiveCompareCurrent(
+		[]string{"older.json", "archive-root"},
+		&stdout,
+		&stderr,
+		func(older, archiveRoot string) (bundle.ArchiveQuestionComparison, error) {
+			if older != "older.json" || archiveRoot != "archive-root" {
+				t.Fatalf("CompareArchiveQuestionReportWithArchive() paths = %q, %q", older, archiveRoot)
+			}
+			return comparison, nil
+		},
+	)
+	if exitCode != 0 || !strings.Contains(stdout.String(), "archive reflection comparison complete") || stderr.Len() != 0 {
+		t.Fatalf("runAskArchiveCompareCurrent() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
 }
 
 func TestRunAskArchiveCompareFailures(t *testing.T) {
