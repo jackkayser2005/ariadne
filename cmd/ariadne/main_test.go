@@ -62,6 +62,7 @@ func TestRunUsage(t *testing.T) {
 		{"android", "unknown"},
 		{"experiment"},
 		{"experiment", "unknown"},
+		{"experiment", "export"},
 		{"experiment", "verify"},
 		{"experiment", "finding"},
 		{"experiment", "ask"},
@@ -408,6 +409,86 @@ func TestRunReportFailures(t *testing.T) {
 		)
 		if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
 			t.Fatalf("runReport() = %d, stderr=%q", exitCode, stderr.String())
+		}
+	})
+}
+
+func TestRunExport(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	digest := strings.Repeat("a", 64)
+	exitCode := runExport(
+		[]string{"run-directory", "export.json"},
+		&stdout,
+		&stderr,
+		func(runDir, exportPath string) (bundle.ExportSummary, error) {
+			if runDir != "run-directory" || exportPath != "export.json" {
+				t.Fatalf("Export() arguments = %q, %q", runDir, exportPath)
+			}
+			return bundle.ExportSummary{SourceEvidenceSHA256: digest}, nil
+		},
+	)
+	want := "redacted export complete\nsource_evidence_sha256: " + digest + "\n"
+	if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+		t.Fatalf(
+			"runExport() = %d, stdout=%q, stderr=%q",
+			exitCode,
+			stdout.String(),
+			stderr.String(),
+		)
+	}
+}
+
+func TestRunExportFailures(t *testing.T) {
+	for _, args := range [][]string{nil, {"run"}, {"run", "export", "extra"}} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			exitCode := runExport(
+				args,
+				&stdout,
+				&stderr,
+				func(string, string) (bundle.ExportSummary, error) {
+					t.Fatal("export called for invalid usage")
+					return bundle.ExportSummary{}, nil
+				},
+			)
+			if exitCode != 2 || stdout.Len() != 0 || stderr.String() != usage {
+				t.Fatalf(
+					"runExport() = %d, stdout=%q, stderr=%q",
+					exitCode,
+					stdout.String(),
+					stderr.String(),
+				)
+			}
+		})
+	}
+
+	t.Run("export error", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runExport(
+			[]string{"run", "export.json"},
+			&stdout,
+			&stderr,
+			func(string, string) (bundle.ExportSummary, error) {
+				return bundle.ExportSummary{}, errors.New("invalid bundle")
+			},
+		)
+		if exitCode != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "invalid bundle") {
+			t.Fatalf("runExport() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("write output", func(t *testing.T) {
+		var stderr bytes.Buffer
+		exitCode := runExport(
+			[]string{"run", "export.json"},
+			failingWriter{},
+			&stderr,
+			func(string, string) (bundle.ExportSummary, error) {
+				return bundle.ExportSummary{SourceEvidenceSHA256: strings.Repeat("a", 64)}, nil
+			},
+		)
+		if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+			t.Fatalf("runExport() = %d, stderr=%q", exitCode, stderr.String())
 		}
 	})
 }

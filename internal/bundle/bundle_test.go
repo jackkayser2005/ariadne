@@ -114,6 +114,133 @@ func TestWrite(t *testing.T) {
 	}
 }
 
+func TestExportIsVerifiedAndRawValueFree(t *testing.T) {
+	runDir := makeRun(t, runOptions{})
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+	exportPath := filepath.Join(t.TempDir(), "redacted.json")
+
+	summary, err := Export(runDir, exportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence, err := os.ReadFile(filepath.Join(runDir, "evidence.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(evidence)
+	wantDigest := hex.EncodeToString(sum[:])
+	if summary.SourceEvidenceSHA256 != wantDigest {
+		t.Fatalf("Export() digest = %q, want %q", summary.SourceEvidenceSHA256, wantDigest)
+	}
+
+	exportData, err := os.ReadFile(exportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var exported redactedDocument
+	if err := json.Unmarshal(exportData, &exported); err != nil {
+		t.Fatal(err)
+	}
+	if !exported.Redacted ||
+		exported.SchemaVersion != 1 ||
+		exported.SourceEvidenceSchemaVersion != 7 ||
+		exported.SourceEvidenceSHA256 != wantDigest ||
+		exported.ManifestName != "experiment-001-email" ||
+		exported.Question != "Did changing email influence an observed output?" ||
+		exported.Target.Package != "dev.ariadne.fixture" ||
+		exported.Target.AndroidAPI != 35 ||
+		exported.Target.Architecture != "x86_64" ||
+		exported.Comparison.SchemaVersion != 5 ||
+		len(exported.Comparison.Differences) != 1 ||
+		exported.Comparison.Differences[0].Field != "variant" ||
+		exported.Comparison.Differences[0].Kind != "changed" ||
+		exported.Comparison.Differences[0].ID == "" ||
+		len(exported.Comparison.Differences[0].Evidence) != 4 ||
+		len(exported.Artifacts) != 6 {
+		t.Fatalf("export = %#v", exported)
+	}
+	if exported.Comparison.Differences[0].State != evidencestate.Observed {
+		t.Fatalf("export difference state = %q", exported.Comparison.Differences[0].State)
+	}
+	raw := string(exportData)
+	for _, secret := range []string{
+		"standard",
+		"personalized",
+		"emulator-5554",
+		"1.0.41",
+	} {
+		if strings.Contains(raw, secret) {
+			t.Fatalf("export exposed redacted value %q: %s", secret, raw)
+		}
+	}
+
+	if _, err := Export(runDir, exportPath); err == nil || !strings.Contains(err.Error(), "file exists") {
+		t.Fatalf("second Export() error = %v", err)
+	}
+}
+
+func TestExportSupportsLegacyBundles(t *testing.T) {
+	runDir := makeRun(t, runOptions{sessionSchemaVersion: 4})
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+	exportPath := filepath.Join(t.TempDir(), "legacy-redacted.json")
+	if _, err := Export(runDir, exportPath); err != nil {
+		t.Fatal(err)
+	}
+
+	exportData, err := os.ReadFile(exportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var exported redactedDocument
+	if err := json.Unmarshal(exportData, &exported); err != nil {
+		t.Fatal(err)
+	}
+	if !exported.Redacted || exported.SourceEvidenceSchemaVersion != 4 ||
+		exported.Comparison.Differences[0].ID != "" {
+		t.Fatalf("legacy export = %#v", exported)
+	}
+}
+
+func TestExportFailsClosedBeforeWriting(t *testing.T) {
+	runDir := makeRun(t, runOptions{})
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+	evidencePath := filepath.Join(runDir, "evidence.json")
+	evidence, err := os.ReadFile(evidencePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence = append(evidence, '\n')
+	if err := os.WriteFile(evidencePath, evidence, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	exportPath := filepath.Join(t.TempDir(), "should-not-exist.json")
+	if _, err := Export(runDir, exportPath); err == nil ||
+		!strings.Contains(err.Error(), "does not match verified artifacts") {
+		t.Fatalf("Export() error = %v", err)
+	}
+	if _, err := os.Stat(exportPath); !os.IsNotExist(err) {
+		t.Fatalf("export path stat error = %v", err)
+	}
+}
+
+func TestRedactedComparisonHidesUntrustedUnknownReasons(t *testing.T) {
+	comparison := redactedComparisonFor(analysis.Comparison{
+		Unknowns: []analysis.Unknown{{
+			Reason:   "untrusted reason",
+			Evidence: []string{"baseline/observations/network.json#/region"},
+		}},
+	})
+	if comparison.Unknowns[0].Reason != "" {
+		t.Fatalf("redacted reason = %q", comparison.Unknowns[0].Reason)
+	}
+}
+
 func TestFindingIDsAreDigestBacked(t *testing.T) {
 	artifacts := []artifact{
 		{Path: "baseline/observations/storage.json", SHA256: strings.Repeat("a", 64)},

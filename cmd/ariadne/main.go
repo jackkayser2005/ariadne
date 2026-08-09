@@ -23,6 +23,7 @@ const usage = `usage:
   ariadne android check [--adb <path>] --device <serial> --package <package>
   ariadne experiment run [--adb <path>] --device <serial> --package <package> --output <directory> <manifest.json>
   ariadne experiment report <run-directory>
+  ariadne experiment export <run-directory> <export.json>
   ariadne experiment verify [--json] <run-directory>
   ariadne experiment finding [--json] <run-directory> <finding-id>
   ariadne experiment ask [--json] <run-directory> <question-id>
@@ -50,6 +51,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(args) >= 2 && args[0] == "experiment" && args[1] == "report" {
 		return runReport(args[2:], stdout, stderr, bundle.Write)
+	}
+	if len(args) >= 2 && args[0] == "experiment" && args[1] == "export" {
+		return runExport(args[2:], stdout, stderr, bundle.Export)
 	}
 	if len(args) >= 2 && args[0] == "experiment" && args[1] == "verify" {
 		return runVerify(args[2:], stdout, stderr, bundle.Verify)
@@ -114,6 +118,7 @@ type pairRunner func(
 	string,
 ) error
 type bundleWriter func(string) (bundle.Summary, error)
+type bundleExporter func(string, string) (bundle.ExportSummary, error)
 type bundleFinder func(string, string) (bundle.Finding, error)
 type bundleAsker func(string, string) (bundle.Answer, error)
 type bundleQuestionLister func() []bundle.Question
@@ -298,6 +303,33 @@ func runReport(
 	)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment report: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func runExport(
+	args []string,
+	stdout, stderr io.Writer,
+	export bundleExporter,
+) int {
+	if len(args) != 2 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+
+	summary, err := export(args[0], args[1])
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment export: %v\n", err)
+		return 1
+	}
+	_, err = fmt.Fprintf(
+		stdout,
+		"redacted export complete\nsource_evidence_sha256: %s\n",
+		summary.SourceEvidenceSHA256,
+	)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment export: write output: %v\n", err)
 		return 1
 	}
 	return 0

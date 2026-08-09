@@ -16,7 +16,7 @@ The first milestone targets an authorized Android test application:
 3. Capture network and app-storage observations.
 4. Normalize expected noise.
 5. Report outputs influenced by the changed value.
-6. Produce a redacted, reproducible evidence bundle.
+6. Produce a redacted, reproducible export from a verified evidence bundle.
 
 The detailed design and experiment log live in [`docs/`](docs/).
 
