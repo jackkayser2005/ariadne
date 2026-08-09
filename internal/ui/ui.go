@@ -626,6 +626,12 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
         <dt>saved-only</dt><dd>{{.SavedReflectionComparison.OlderOnly}}</dd>
         <dt>current-only</dt><dd>{{.SavedReflectionComparison.NewerOnly}}</dd>
       </dl>
+      {{if .SavedReflectionComparison.StateChanges}}
+      <h3>Changed archive entries</h3>
+      <ul>
+      {{range .SavedReflectionComparison.StateChanges}}<li>{{.Directory}}: {{.OlderState}} &rarr; {{.NewerState}}</li>{{end}}
+      </ul>
+      {{end}}
       <p class="context">This compares bounded answer states only. It does not establish chronology, infer a trend, or prove the underlying evidence.</p>
       {{else}}
       <p class="context">Saved reflection comparison is unavailable. The internal verification error is not rendered.</p>

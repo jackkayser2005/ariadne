@@ -127,7 +127,7 @@ func validateArchiveQuestionTransitionHistoryJSON(data []byte) error {
 }
 
 func validateArchiveQuestionTransitionHistory(history ArchiveQuestionTransitionHistory) error {
-	if history.SchemaVersion != archiveQuestionComparisonSchemaVersion {
+	if history.SchemaVersion != archiveQuestionTransitionHistorySchemaVersion {
 		return errors.New("unsupported schema_version")
 	}
 	if history.HistoryID != archiveQuestionTransitionHistoryID {

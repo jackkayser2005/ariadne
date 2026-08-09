@@ -393,6 +393,11 @@ func TestHandlerRendersSavedReflectionComparison(t *testing.T) {
 		Changed:               1,
 		OlderOnly:             0,
 		NewerOnly:             0,
+		StateChanges: []bundle.ArchiveQuestionStateChange{{
+			Directory:  "run-001",
+			OlderState: "observed",
+			NewerState: "unknown",
+		}},
 	}
 	h := newHandler(handler{
 		root:  "archive-root",
@@ -418,7 +423,7 @@ func TestHandlerRendersSavedReflectionComparison(t *testing.T) {
 		comparison.NewerReflectionSHA256,
 		"compared",
 		"changed",
-		"does not establish chronology",
+		"does not establish chronology", "Changed archive entries", "run-001", "observed", "unknown",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("body missing %q: %s", want, body)

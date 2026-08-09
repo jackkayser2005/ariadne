@@ -1410,7 +1410,7 @@ func TestRunAskArchiveSaveFailures(t *testing.T) {
 
 func TestRunAskArchiveCompare(t *testing.T) {
 	comparison := bundle.ArchiveQuestionComparison{
-		SchemaVersion:         1,
+		SchemaVersion:         2,
 		ComparisonID:          "answer-state-change",
 		ComparisonQuestion:    "Did the bounded answer state change between these saved reflection snapshots?",
 		QuestionID:            "counterfactual-change",
@@ -1422,6 +1422,11 @@ func TestRunAskArchiveCompare(t *testing.T) {
 		Changed:               1,
 		OlderOnly:             0,
 		NewerOnly:             1,
+		StateChanges: []bundle.ArchiveQuestionStateChange{{
+			Directory:  "a-run",
+			OlderState: "observed",
+			NewerState: "unknown",
+		}},
 	}
 
 	t.Run("human", func(t *testing.T) {
@@ -1449,6 +1454,10 @@ func TestRunAskArchiveCompare(t *testing.T) {
 			"changed: 1\n" +
 			"older_only: 0\n" +
 			"newer_only: 1\n" +
+			"state_changes:\n" +
+			"- directory: a-run\n" +
+			"  older_state: observed\n" +
+			"  newer_state: unknown\n" +
 			"note: this compares only bounded answer states; it does not infer a trend or prove the underlying evidence\n"
 		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
 			t.Fatalf("runAskArchiveCompare() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
@@ -1463,17 +1472,48 @@ func TestRunAskArchiveCompare(t *testing.T) {
 			&stderr,
 			func(string, string) (bundle.ArchiveQuestionComparison, error) { return comparison, nil },
 		)
-		want := `{"schema_version":1,"comparison_id":"answer-state-change","comparison_question":"Did the bounded answer state change between these saved reflection snapshots?","question_id":"counterfactual-change","question":"Did it change?","result":"changed","older_reflection_sha256":"` + strings.Repeat("a", 64) + `","newer_reflection_sha256":"` + strings.Repeat("b", 64) + `","compared":2,"changed":1,"older_only":0,"newer_only":1}` + "\n"
+		want := `{"schema_version":2,"comparison_id":"answer-state-change","comparison_question":"Did the bounded answer state change between these saved reflection snapshots?","question_id":"counterfactual-change","question":"Did it change?","result":"changed","older_reflection_sha256":"` + strings.Repeat("a", 64) + `","newer_reflection_sha256":"` + strings.Repeat("b", 64) + `","compared":2,"changed":1,"older_only":0,"newer_only":1,"state_changes":[{"directory":"a-run","older_state":"observed","newer_state":"unknown"}]}` + "\n"
 		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
 			t.Fatalf("runAskArchiveCompare() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
 		}
 	})
 }
 
+func TestRunAskArchiveCompareWriteFailure(t *testing.T) {
+	comparison := bundle.ArchiveQuestionComparison{
+		StateChanges: []bundle.ArchiveQuestionStateChange{{
+			Directory:  "a-run",
+			OlderState: "observed",
+			NewerState: "unknown",
+		}},
+	}
+	for _, test := range []struct {
+		name   string
+		failAt int
+	}{
+		{name: "state changes header", failAt: 2},
+		{name: "state change entry", failAt: 3},
+		{name: "note", failAt: 4},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var stderr bytes.Buffer
+			exitCode := runAskArchiveCompare(
+				[]string{"older.json", "newer.json"},
+				&failAfterWriter{failAt: test.failAt},
+				&stderr,
+				func(string, string) (bundle.ArchiveQuestionComparison, error) { return comparison, nil },
+			)
+			if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+				t.Fatalf("runAskArchiveCompare() = %d, stderr=%q", exitCode, stderr.String())
+			}
+		})
+	}
+}
+
 func TestRunAskArchiveCompareCurrent(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	comparison := bundle.ArchiveQuestionComparison{
-		SchemaVersion:         1,
+		SchemaVersion:         2,
 		ComparisonID:          "answer-state-change",
 		ComparisonQuestion:    "Did the bounded answer state change between these saved reflection snapshots?",
 		QuestionID:            "counterfactual-change",
@@ -2743,4 +2783,17 @@ type failingWriter struct{}
 
 func (failingWriter) Write([]byte) (int, error) {
 	return 0, errors.New("write failed")
+}
+
+type failAfterWriter struct {
+	failAt int
+	writes int
+}
+
+func (w *failAfterWriter) Write(data []byte) (int, error) {
+	w.writes++
+	if w.writes >= w.failAt {
+		return 0, errors.New("write failed")
+	}
+	return len(data), nil
 }

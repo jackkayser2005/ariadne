@@ -263,8 +263,10 @@ when `go run` built Ariadne.
   re-verifies two saved reflections and compares only their per-directory answer
   states. It returns `same` or `changed` when the directory membership matches,
   and `incomparable` when either snapshot contains a different set of directories.
-  This is a bounded state comparison, not trend inference or proof of the source
-  evidence.
+  A changed result also lists each common directory whose bounded answer state
+  changed, with its older and newer states. This is a bounded state comparison,
+  not trend inference or proof of the source evidence; the listed states never
+  include observations or persona values.
 - `experiment ask-archive compare-current [--json] <older-report.json> <archive-root>`
   re-verifies one saved reflection, re-asks its fixed question against the
   explicitly supplied current archive, and compares the two bounded answer

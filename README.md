@@ -60,10 +60,11 @@ go run ./cmd/ariadne experiment ask-archive transitions verify --json <transitio
 ```
 
 The comparison reports `same`, `changed`, or `incomparable` for bounded
-per-directory answer states. It does not infer a trend or prove the underlying
-evidence. The transitions command applies those same bounded comparisons to
-each adjacent pair in caller-supplied order and reports only safe reflection
-identities and aggregate change counts.
+per-directory answer states. When common entries change, it also names those
+safe archive directories and their older/newer answer states. It does not
+infer a trend or prove the underlying evidence. The transitions command
+applies those same bounded comparisons to each adjacent pair in caller-supplied
+order and reports only safe reflection identities and aggregate change counts.
 The saved transition ledger can be structurally re-verified and given an
 expected content identity before another tool consumes it.
 

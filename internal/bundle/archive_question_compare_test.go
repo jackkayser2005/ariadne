@@ -16,7 +16,7 @@ func TestCompareArchiveQuestionReports(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if same.Result != "same" || same.Compared != 1 || same.Changed != 0 || same.OlderOnly != 0 || same.NewerOnly != 0 {
+	if same.SchemaVersion != 2 || same.Result != "same" || same.Compared != 1 || same.Changed != 0 || same.OlderOnly != 0 || same.NewerOnly != 0 || len(same.StateChanges) != 0 {
 		t.Fatalf("same comparison = %#v", same)
 	}
 	if same.OlderReflectionSHA256 != same.NewerReflectionSHA256 || !validDigest(same.OlderReflectionSHA256) {
@@ -31,7 +31,7 @@ func TestCompareArchiveQuestionReports(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if changed.Result != "changed" || changed.Compared != 1 || changed.Changed != 1 {
+	if changed.Result != "changed" || changed.Compared != 1 || changed.Changed != 1 || len(changed.StateChanges) != 1 || changed.StateChanges[0].Directory != "a-run" || changed.StateChanges[0].OlderState != "observed" || changed.StateChanges[0].NewerState != "unknown" {
 		t.Fatalf("changed comparison = %#v", changed)
 	}
 
@@ -50,6 +50,34 @@ func TestCompareArchiveQuestionReports(t *testing.T) {
 	}
 	if strings.Contains(string(data), "standard") || strings.Contains(string(data), "personalized") {
 		t.Fatalf("comparison exposed a raw value: %s", data)
+	}
+}
+
+func TestCompareArchiveQuestionStateChangesAreSorted(t *testing.T) {
+	older := ArchiveQuestionReport{
+		QuestionID: "counterfactual-change",
+		Question:   "Did changing the declared variable influence an observed output?",
+		Results: []ArchiveQuestionResult{
+			{Directory: "b-run", Available: true, Answer: &Answer{State: evidence.Observed}},
+			{Directory: "a-run", Available: true, Answer: &Answer{State: evidence.Unknown}},
+		},
+	}
+	newer := ArchiveQuestionReport{
+		QuestionID: older.QuestionID,
+		Question:   older.Question,
+		Results: []ArchiveQuestionResult{
+			{Directory: "b-run", Available: true, Answer: &Answer{State: evidence.Unknown}},
+			{Directory: "a-run", Available: true, Answer: &Answer{State: evidence.Observed}},
+		},
+	}
+	comparison := compareVerifiedArchiveQuestionReports(
+		older,
+		ArchiveQuestionVerificationSummary{ReflectionSHA256: strings.Repeat("a", 64)},
+		newer,
+		ArchiveQuestionVerificationSummary{ReflectionSHA256: strings.Repeat("b", 64)},
+	)
+	if len(comparison.StateChanges) != 2 || comparison.StateChanges[0].Directory != "a-run" || comparison.StateChanges[1].Directory != "b-run" {
+		t.Fatalf("state changes = %#v", comparison.StateChanges)
 	}
 }
 

@@ -4,33 +4,44 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 )
 
 const (
-	archiveQuestionComparisonSchemaVersion = 1
-	archiveQuestionComparisonID            = "answer-state-change"
-	archiveQuestionComparisonText          = "Did the bounded answer state change between these saved reflection snapshots?"
-	archiveQuestionTransitionHistoryID     = "answer-state-transitions"
-	archiveQuestionTransitionHistoryText   = "At which supplied boundaries did the bounded answer state change?"
+	archiveQuestionComparisonSchemaVersion        = 2
+	archiveQuestionTransitionHistorySchemaVersion = 1
+	archiveQuestionComparisonID                   = "answer-state-change"
+	archiveQuestionComparisonText                 = "Did the bounded answer state change between these saved reflection snapshots?"
+	archiveQuestionTransitionHistoryID            = "answer-state-transitions"
+	archiveQuestionTransitionHistoryText          = "At which supplied boundaries did the bounded answer state change?"
 )
 
 // ArchiveQuestionComparison is a raw-value-free comparison of two verified
 // archive-question reflections. It describes answer-state structure only; it
 // does not infer a trend or prove the underlying evidence.
 type ArchiveQuestionComparison struct {
-	SchemaVersion         int    `json:"schema_version"`
-	ComparisonID          string `json:"comparison_id"`
-	ComparisonQuestion    string `json:"comparison_question"`
-	QuestionID            string `json:"question_id"`
-	Question              string `json:"question"`
-	Result                string `json:"result"`
-	OlderReflectionSHA256 string `json:"older_reflection_sha256"`
-	NewerReflectionSHA256 string `json:"newer_reflection_sha256"`
-	Compared              int    `json:"compared"`
-	Changed               int    `json:"changed"`
-	OlderOnly             int    `json:"older_only"`
-	NewerOnly             int    `json:"newer_only"`
+	SchemaVersion         int                          `json:"schema_version"`
+	ComparisonID          string                       `json:"comparison_id"`
+	ComparisonQuestion    string                       `json:"comparison_question"`
+	QuestionID            string                       `json:"question_id"`
+	Question              string                       `json:"question"`
+	Result                string                       `json:"result"`
+	OlderReflectionSHA256 string                       `json:"older_reflection_sha256"`
+	NewerReflectionSHA256 string                       `json:"newer_reflection_sha256"`
+	Compared              int                          `json:"compared"`
+	Changed               int                          `json:"changed"`
+	OlderOnly             int                          `json:"older_only"`
+	NewerOnly             int                          `json:"newer_only"`
+	StateChanges          []ArchiveQuestionStateChange `json:"state_changes"`
+}
+
+// ArchiveQuestionStateChange identifies one common archive entry whose
+// bounded answer state changed between two verified reflections.
+type ArchiveQuestionStateChange struct {
+	Directory  string `json:"directory"`
+	OlderState string `json:"older_state"`
+	NewerState string `json:"newer_state"`
 }
 
 // ArchiveQuestionTransitionHistory is a raw-value-free ledger of adjacent
@@ -120,6 +131,7 @@ func compareVerifiedArchiveQuestionReports(
 		Question:              older.Question,
 		OlderReflectionSHA256: olderSummary.ReflectionSHA256,
 		NewerReflectionSHA256: newerSummary.ReflectionSHA256,
+		StateChanges:          make([]ArchiveQuestionStateChange, 0),
 	}
 	olderStates := archiveQuestionStates(older)
 	newerStates := archiveQuestionStates(newer)
@@ -132,6 +144,11 @@ func compareVerifiedArchiveQuestionReports(
 		comparison.Compared++
 		if olderState != newerState {
 			comparison.Changed++
+			comparison.StateChanges = append(comparison.StateChanges, ArchiveQuestionStateChange{
+				Directory:  directory,
+				OlderState: olderState,
+				NewerState: newerState,
+			})
 		}
 	}
 	for directory := range newerStates {
@@ -139,6 +156,9 @@ func compareVerifiedArchiveQuestionReports(
 			comparison.NewerOnly++
 		}
 	}
+	sort.Slice(comparison.StateChanges, func(i, j int) bool {
+		return comparison.StateChanges[i].Directory < comparison.StateChanges[j].Directory
+	})
 	if comparison.OlderOnly != 0 || comparison.NewerOnly != 0 {
 		comparison.Result = "incomparable"
 	} else if comparison.Changed != 0 {
@@ -160,7 +180,7 @@ func CompareArchiveQuestionHistory(reportPaths []string) (ArchiveQuestionTransit
 	reports := make([]ArchiveQuestionReport, len(reportPaths))
 	summaries := make([]ArchiveQuestionVerificationSummary, len(reportPaths))
 	history := ArchiveQuestionTransitionHistory{
-		SchemaVersion:   archiveQuestionComparisonSchemaVersion,
+		SchemaVersion:   archiveQuestionTransitionHistorySchemaVersion,
 		HistoryID:       archiveQuestionTransitionHistoryID,
 		HistoryQuestion: archiveQuestionTransitionHistoryText,
 		OrderBasis:      "caller",

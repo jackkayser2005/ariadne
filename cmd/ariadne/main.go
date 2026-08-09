@@ -786,7 +786,7 @@ func runAskArchiveComparison(
 	}
 	if _, err := fmt.Fprintf(
 		stdout,
-		"archive reflection comparison complete\ncomparison_id: %s\ncomparison_question: %s\nquestion_id: %s\nquestion: %s\nresult: %s\nolder_reflection_sha256: %s\nnewer_reflection_sha256: %s\ncompared: %d\nchanged: %d\nolder_only: %d\nnewer_only: %d\nnote: this compares only bounded answer states; it does not infer a trend or prove the underlying evidence\n",
+		"archive reflection comparison complete\ncomparison_id: %s\ncomparison_question: %s\nquestion_id: %s\nquestion: %s\nresult: %s\nolder_reflection_sha256: %s\nnewer_reflection_sha256: %s\ncompared: %d\nchanged: %d\nolder_only: %d\nnewer_only: %d\n",
 		comparison.ComparisonID,
 		comparison.ComparisonQuestion,
 		comparison.QuestionID,
@@ -799,6 +799,22 @@ func runAskArchiveComparison(
 		comparison.OlderOnly,
 		comparison.NewerOnly,
 	); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive %s: write output: %v\n", command, err)
+		return 1
+	}
+	if len(comparison.StateChanges) > 0 {
+		if _, err := io.WriteString(stdout, "state_changes:\n"); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive %s: write output: %v\n", command, err)
+			return 1
+		}
+		for _, change := range comparison.StateChanges {
+			if _, err := fmt.Fprintf(stdout, "- directory: %s\n  older_state: %s\n  newer_state: %s\n", change.Directory, change.OlderState, change.NewerState); err != nil {
+				_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive %s: write output: %v\n", command, err)
+				return 1
+			}
+		}
+	}
+	if _, err := io.WriteString(stdout, "note: this compares only bounded answer states; it does not infer a trend or prove the underlying evidence\n"); err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive %s: write output: %v\n", command, err)
 		return 1
 	}
