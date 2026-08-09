@@ -76,6 +76,8 @@ type Summary struct {
 	TargetPackageVersionCode uint64 `json:"-"`
 	// TargetPackageSHA256 is the verified package digest for the selected target.
 	TargetPackageSHA256 string `json:"-"`
+	// Normalizations lists the verified, deterministic normalization steps for the bundle.
+	Normalizations []string `json:"-"`
 }
 
 // Finding is the safe, raw-value-free view of one verified conclusion.
@@ -478,6 +480,7 @@ func buildDocument(runDir string, includeFindingIDs bool) (document, Summary, er
 		TargetArchitecture:       evidence.Target.Architecture,
 		TargetPackageVersionCode: evidence.Target.PackageVersionCode,
 		TargetPackageSHA256:      evidence.Target.PackageSHA256,
+		Normalizations:           slices.Clone(evidence.Normalizations),
 	}, nil
 }
 

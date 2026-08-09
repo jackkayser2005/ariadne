@@ -204,11 +204,12 @@ when `go run` built Ariadne.
   safe provenance context: its bounded question and answer state, manifest contract
   digest, verified baseline start time in UTC, recorded Ariadne revision, and
   modified-worktree flag, plus the verified target package, Android API,
-  architecture, package version, and package SHA-256, followed by a
+  architecture, package version, package SHA-256, and deterministic
+  normalization descriptions, followed by a
   re-verified board for the fixed question catalog. Question and finding detail
   pages retain that same context after following a link. Available archive-lens
   results show the same safe contract, UTC recorded time, revision, and
-  working-tree context and target identity.
+  working-tree context, target identity, and normalization context.
 - If `ariadne_modified` is unexpectedly `true`, inspect `git status --short`
   before treating the run as reproducible from the recorded revision alone.
 - Finding lookup re-verifies the bundle first and prints only the question,

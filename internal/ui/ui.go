@@ -331,6 +331,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       {{with .Summary.TargetArchitecture}}<dt>architecture</dt><dd>{{.}}</dd>{{end}}
       {{if .Summary.TargetPackageVersionCode}}<dt>package version</dt><dd>{{.Summary.TargetPackageVersionCode}}</dd>{{end}}
       {{with .Summary.TargetPackageSHA256}}<dt>package SHA-256</dt><dd>{{.}}</dd>{{end}}
+      {{if .Summary.Normalizations}}<dt>normalization</dt><dd><ul>{{range .Summary.Normalizations}}<li>{{.}}</li>{{end}}</ul></dd>{{end}}
       {{with .Summary.AriadneRevision}}<dt>Ariadne revision</dt><dd>{{.}}</dd><dt>working tree</dt><dd>{{if $.Summary.AriadneModified}}modified{{else}}clean{{end}}</dd>{{end}}
     </dl>
     <p class="context">This context is structural metadata only; observations and persona values are not rendered.</p>
