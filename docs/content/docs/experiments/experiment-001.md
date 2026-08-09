@@ -276,16 +276,21 @@ when `go run` built Ariadne.
   re-verifies at least two saved reflections and compares each adjacent pair in
   caller-supplied order. It reports the same bounded `same`, `changed`, or
   `incomparable` result as the two-snapshot command, with stable reflection
-  identities and aggregate counts. It never infers chronology or a trend.
+  identities, aggregate counts, and safe per-directory state changes when
+  common entries changed. It never exposes observations or persona values, and
+  never infers chronology or a trend.
 - `experiment ask-archive transitions save [--json] <report-1.json> <report-2.json> ... <history.json>`
   verifies the supplied reflections, writes one raw-value-free transition
-  ledger with exclusive file creation, and returns its canonical content
-  identity. It refuses to overwrite an existing history path.
+  ledger with exclusive file creation, including safe per-directory state
+  changes, and returns its canonical content identity. New ledgers use schema 2;
+  verification remains compatible with schema 1 ledgers. It refuses to
+  overwrite an existing history path.
 - `experiment ask-archive transitions verify [--json] [--expect-sha256 <digest>] <history.json>`
   verifies a saved transition ledger's fixed question, caller-order marker,
-  adjacent count contract, safe reflection identities, and deterministic
-  content identity without requiring the source reflections. This is structural
-  verification, not proof of the underlying evidence or chronology.
+  adjacent count contract, safe reflection identities, bounded state-change
+  entries, and deterministic content identity without requiring the source
+  reflections. This is structural verification, not proof of the underlying
+  evidence or chronology.
 - `experiment ask-archive verify [--json] <report.json>` checks a saved
   archive-reflection report offline for its schema, fixed question catalog,
   safe metadata, answer states, provenance digests, and deterministic ordering.
@@ -322,7 +327,8 @@ when `go run` built Ariadne.
   trend. If the current reflection cannot be derived, the page reports that
   boundedly without exposing the internal error.
   When `--history` is supplied, the page also reads one structurally verified
-  transition ledger and renders its caller-ordered, raw-value-free boundaries.
+  transition ledger and renders its caller-ordered, raw-value-free boundaries,
+  including safe directory/state changes when present.
   When `--reflection` is supplied, the page re-asks that saved reflection's
   fixed question against the current archive and renders a bounded comparison
   with safe result counts and reflection identities. Invalid history or saved

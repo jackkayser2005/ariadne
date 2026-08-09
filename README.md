@@ -64,7 +64,10 @@ per-directory answer states. When common entries change, it also names those
 safe archive directories and their older/newer answer states. It does not
 infer a trend or prove the underlying evidence. The transitions command
 applies those same bounded comparisons to each adjacent pair in caller-supplied
-order and reports only safe reflection identities and aggregate change counts.
+order and reports safe reflection identities, aggregate change counts, and any
+changed archive directories with their bounded older/newer states. The saved
+transition ledger carries those same state changes without observations or
+persona values.
 The saved transition ledger can be structurally re-verified and given an
 expected content identity before another tool consumes it.
 
@@ -80,8 +83,8 @@ The local review page can receive a verified transition ledger and a saved
 reflection with
 `experiment serve --history <history.json> --reflection <reflection.json> <archive-root>`.
 It renders caller-ordered bounded transitions and re-asks the saved reflection's
-fixed question against the current archive, showing only safe comparison counts
-and identities. An unavailable comparison remains a generic bounded state; the
+fixed question against the current archive, showing only safe comparison counts,
+identities, and per-directory bounded state changes. An unavailable comparison remains a generic bounded state; the
 page does not turn it into chronology, trend inference, or a claim about the
 underlying evidence.
 

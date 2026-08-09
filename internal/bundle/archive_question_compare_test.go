@@ -139,18 +139,18 @@ func TestCompareArchiveQuestionHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if history.SchemaVersion != 1 || history.HistoryID != "answer-state-transitions" ||
+	if history.SchemaVersion != 2 || history.HistoryID != "answer-state-transitions" ||
 		history.HistoryQuestion != "At which supplied boundaries did the bounded answer state change?" ||
 		history.QuestionID != "counterfactual-change" || history.OrderBasis != "caller" ||
 		history.Snapshots != 3 || len(history.Transitions) != 2 {
 		t.Fatalf("history metadata = %#v", history)
 	}
 	first := history.Transitions[0]
-	if first.Result != "changed" || first.Compared != 1 || first.Changed != 1 || first.FromOnly != 0 || first.ToOnly != 0 {
+	if first.Result != "changed" || first.Compared != 1 || first.Changed != 1 || first.FromOnly != 0 || first.ToOnly != 0 || len(first.StateChanges) != 1 || first.StateChanges[0].Directory != "a-run" || first.StateChanges[0].OlderState != "observed" || first.StateChanges[0].NewerState != "unknown" {
 		t.Fatalf("changed transition = %#v", first)
 	}
 	second := history.Transitions[1]
-	if second.Result != "incomparable" || second.Compared != 1 || second.Changed != 1 || second.FromOnly != 0 || second.ToOnly != 1 {
+	if second.Result != "incomparable" || second.Compared != 1 || second.Changed != 1 || second.FromOnly != 0 || second.ToOnly != 1 || len(second.StateChanges) != 1 || second.StateChanges[0].Directory != "a-run" || second.StateChanges[0].OlderState != "unknown" || second.StateChanges[0].NewerState != "observed" {
 		t.Fatalf("incomparable transition = %#v", second)
 	}
 	for _, transition := range history.Transitions {

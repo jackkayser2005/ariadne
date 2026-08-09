@@ -9,12 +9,13 @@ import (
 )
 
 const (
-	archiveQuestionComparisonSchemaVersion        = 2
-	archiveQuestionTransitionHistorySchemaVersion = 1
-	archiveQuestionComparisonID                   = "answer-state-change"
-	archiveQuestionComparisonText                 = "Did the bounded answer state change between these saved reflection snapshots?"
-	archiveQuestionTransitionHistoryID            = "answer-state-transitions"
-	archiveQuestionTransitionHistoryText          = "At which supplied boundaries did the bounded answer state change?"
+	archiveQuestionComparisonSchemaVersion              = 2
+	archiveQuestionTransitionHistoryLegacySchemaVersion = 1
+	archiveQuestionTransitionHistorySchemaVersion       = 2
+	archiveQuestionComparisonID                         = "answer-state-change"
+	archiveQuestionComparisonText                       = "Did the bounded answer state change between these saved reflection snapshots?"
+	archiveQuestionTransitionHistoryID                  = "answer-state-transitions"
+	archiveQuestionTransitionHistoryText                = "At which supplied boundaries did the bounded answer state change?"
 )
 
 // ArchiveQuestionComparison is a raw-value-free comparison of two verified
@@ -61,13 +62,14 @@ type ArchiveQuestionTransitionHistory struct {
 // ArchiveQuestionTransition describes one adjacent bounded answer-state
 // comparison without exposing raw values.
 type ArchiveQuestionTransition struct {
-	FromReflectionSHA256 string `json:"from_reflection_sha256"`
-	ToReflectionSHA256   string `json:"to_reflection_sha256"`
-	Result               string `json:"result"`
-	Compared             int    `json:"compared"`
-	Changed              int    `json:"changed"`
-	FromOnly             int    `json:"from_only"`
-	ToOnly               int    `json:"to_only"`
+	FromReflectionSHA256 string                       `json:"from_reflection_sha256"`
+	ToReflectionSHA256   string                       `json:"to_reflection_sha256"`
+	Result               string                       `json:"result"`
+	Compared             int                          `json:"compared"`
+	Changed              int                          `json:"changed"`
+	FromOnly             int                          `json:"from_only"`
+	ToOnly               int                          `json:"to_only"`
+	StateChanges         []ArchiveQuestionStateChange `json:"state_changes,omitempty"`
 }
 
 // CompareArchiveQuestionReports compares only verified answer states from
@@ -216,6 +218,7 @@ func CompareArchiveQuestionHistory(reportPaths []string) (ArchiveQuestionTransit
 			Changed:              comparison.Changed,
 			FromOnly:             comparison.OlderOnly,
 			ToOnly:               comparison.NewerOnly,
+			StateChanges:         append([]ArchiveQuestionStateChange(nil), comparison.StateChanges...),
 		})
 	}
 	return history, nil

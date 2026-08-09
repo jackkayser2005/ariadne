@@ -602,7 +602,8 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       </dl>
       <ul aria-label="Saved reflection transitions">
       {{range .ReflectionHistory.Transitions}}
-        <li><span class="status">{{.Result}}</span> compared {{.Compared}}, changed {{.Changed}}, from-only {{.FromOnly}}, to-only {{.ToOnly}}<br><span class="context">from {{.FromReflectionSHA256}} to {{.ToReflectionSHA256}}</span></li>
+        <li><span class="status">{{.Result}}</span> compared {{.Compared}}, changed {{.Changed}}, from-only {{.FromOnly}}, to-only {{.ToOnly}}<br><span class="context">from {{.FromReflectionSHA256}} to {{.ToReflectionSHA256}}</span>
+        {{if .StateChanges}}<br><span class="context">changed archive entries:</span><ul aria-label="Changed archive entries">{{range .StateChanges}}<li>{{.Directory}}: {{.OlderState}} &rarr; {{.NewerState}}</li>{{end}}</ul>{{end}}</li>
       {{end}}
       </ul>
       <p class="context">The ledger follows caller-supplied order. It records bounded state changes only; it does not establish chronology or infer a trend.</p>

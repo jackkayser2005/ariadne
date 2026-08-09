@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -1592,7 +1593,7 @@ func TestRunAskArchiveCompareFailures(t *testing.T) {
 
 func TestRunAskArchiveTransitions(t *testing.T) {
 	history := bundle.ArchiveQuestionTransitionHistory{
-		SchemaVersion:   1,
+		SchemaVersion:   2,
 		HistoryID:       "answer-state-transitions",
 		HistoryQuestion: "At which supplied boundaries did the bounded answer state change?",
 		QuestionID:      "counterfactual-change",
@@ -1606,6 +1607,11 @@ func TestRunAskArchiveTransitions(t *testing.T) {
 				Result:               "changed",
 				Compared:             2,
 				Changed:              1,
+				StateChanges: []bundle.ArchiveQuestionStateChange{{
+					Directory:  "run-001",
+					OlderState: "observed",
+					NewerState: "unknown",
+				}},
 			},
 			{
 				FromReflectionSHA256: strings.Repeat("b", 64),
@@ -1647,6 +1653,10 @@ func TestRunAskArchiveTransitions(t *testing.T) {
 			"  changed: 1\n" +
 			"  from_only: 0\n" +
 			"  to_only: 0\n" +
+			"  state_changes:\n" +
+			"  - directory: run-001\n" +
+			"    older_state: observed\n" +
+			"    newer_state: unknown\n" +
 			"- transition: 2\n" +
 			"  from_reflection_sha256: " + strings.Repeat("b", 64) + "\n" +
 			"  to_reflection_sha256: " + strings.Repeat("c", 64) + "\n" +
@@ -1669,7 +1679,7 @@ func TestRunAskArchiveTransitions(t *testing.T) {
 			&stderr,
 			func([]string) (bundle.ArchiveQuestionTransitionHistory, error) { return history, nil },
 		)
-		want := `{"schema_version":1,"history_id":"answer-state-transitions","history_question":"At which supplied boundaries did the bounded answer state change?","question_id":"counterfactual-change","question":"Did it change?","order_basis":"caller","snapshots":3,"transitions":[{"from_reflection_sha256":"` + strings.Repeat("a", 64) + `","to_reflection_sha256":"` + strings.Repeat("b", 64) + `","result":"changed","compared":2,"changed":1,"from_only":0,"to_only":0},{"from_reflection_sha256":"` + strings.Repeat("b", 64) + `","to_reflection_sha256":"` + strings.Repeat("c", 64) + `","result":"incomparable","compared":1,"changed":0,"from_only":1,"to_only":2}]}` + "\n"
+		want := `{"schema_version":2,"history_id":"answer-state-transitions","history_question":"At which supplied boundaries did the bounded answer state change?","question_id":"counterfactual-change","question":"Did it change?","order_basis":"caller","snapshots":3,"transitions":[{"from_reflection_sha256":"` + strings.Repeat("a", 64) + `","to_reflection_sha256":"` + strings.Repeat("b", 64) + `","result":"changed","compared":2,"changed":1,"from_only":0,"to_only":0,"state_changes":[{"directory":"run-001","older_state":"observed","newer_state":"unknown"}]},{"from_reflection_sha256":"` + strings.Repeat("b", 64) + `","to_reflection_sha256":"` + strings.Repeat("c", 64) + `","result":"incomparable","compared":1,"changed":0,"from_only":1,"to_only":2}]}` + "\n"
 		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
 			t.Fatalf("runAskArchiveTransitions() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
 		}
@@ -1678,7 +1688,7 @@ func TestRunAskArchiveTransitions(t *testing.T) {
 
 func TestRunAskArchiveTransitionsSave(t *testing.T) {
 	summary := bundle.ArchiveQuestionTransitionVerificationSummary{
-		SchemaVersion:           1,
+		SchemaVersion:           2,
 		HistoryID:               "answer-state-transitions",
 		HistoryQuestion:         "At which supplied boundaries did the bounded answer state change?",
 		QuestionID:              "counterfactual-change",
@@ -1702,7 +1712,7 @@ func TestRunAskArchiveTransitionsSave(t *testing.T) {
 			},
 		)
 		want := "archive reflection transitions saved\n" +
-			"schema_version: 1\n" +
+			"schema_version: 2\n" +
 			"history_id: answer-state-transitions\n" +
 			"history_question: At which supplied boundaries did the bounded answer state change?\n" +
 			"question_id: counterfactual-change\n" +
@@ -1725,7 +1735,7 @@ func TestRunAskArchiveTransitionsSave(t *testing.T) {
 				return summary, nil
 			},
 		)
-		want := `{"schema_version":1,"history_id":"answer-state-transitions","history_question":"At which supplied boundaries did the bounded answer state change?","question_id":"counterfactual-change","order_basis":"caller","snapshots":2,"transitions":1,"transition_history_sha256":"` + strings.Repeat("a", 64) + `"}` + "\n"
+		want := `{"schema_version":2,"history_id":"answer-state-transitions","history_question":"At which supplied boundaries did the bounded answer state change?","question_id":"counterfactual-change","order_basis":"caller","snapshots":2,"transitions":1,"transition_history_sha256":"` + strings.Repeat("a", 64) + `"}` + "\n"
 		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
 			t.Fatalf("runAskArchiveTransitionsSave() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
 		}
@@ -1821,6 +1831,44 @@ func TestRunAskArchiveTransitionsFailures(t *testing.T) {
 		}
 	})
 
+	for _, failAt := range []int{3, 4} {
+		t.Run(fmt.Sprintf("write state change output %d", failAt), func(t *testing.T) {
+			history := bundle.ArchiveQuestionTransitionHistory{
+				HistoryID:       "answer-state-transitions",
+				HistoryQuestion: "At which supplied boundaries did the bounded answer state change?",
+				QuestionID:      "counterfactual-change",
+				Question:        "Did it change?",
+				OrderBasis:      "caller",
+				Snapshots:       2,
+				Transitions: []bundle.ArchiveQuestionTransition{{
+					FromReflectionSHA256: strings.Repeat("a", 64),
+					ToReflectionSHA256:   strings.Repeat("b", 64),
+					Result:               "changed",
+					Compared:             1,
+					Changed:              1,
+					StateChanges: []bundle.ArchiveQuestionStateChange{{
+						Directory:  "run-001",
+						OlderState: "observed",
+						NewerState: "unknown",
+					}},
+				}},
+			}
+			var stderr bytes.Buffer
+			stdout := &failAfterWriter{failAt: failAt}
+			exitCode := runAskArchiveTransitions(
+				[]string{"one.json", "two.json"},
+				stdout,
+				&stderr,
+				func([]string) (bundle.ArchiveQuestionTransitionHistory, error) {
+					return history, nil
+				},
+			)
+			if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+				t.Fatalf("runAskArchiveTransitions() = %d, stderr=%q", exitCode, stderr.String())
+			}
+		})
+	}
+
 	for _, args := range [][]string{{"one.json", "two.json"}, {"--json", "one.json", "two.json"}} {
 		t.Run("write output "+strings.Join(args, "_"), func(t *testing.T) {
 			var stderr bytes.Buffer
@@ -1906,7 +1954,7 @@ func TestRunAskArchiveFailures(t *testing.T) {
 
 func TestRunAskArchiveTransitionsVerify(t *testing.T) {
 	summary := bundle.ArchiveQuestionTransitionVerificationSummary{
-		SchemaVersion:           1,
+		SchemaVersion:           2,
 		HistoryID:               "answer-state-transitions",
 		HistoryQuestion:         "At which supplied boundaries did the bounded answer state change?",
 		QuestionID:              "counterfactual-change",
@@ -1930,7 +1978,7 @@ func TestRunAskArchiveTransitionsVerify(t *testing.T) {
 			},
 		)
 		want := "archive reflection transitions structurally verified\n" +
-			"schema_version: 1\n" +
+			"schema_version: 2\n" +
 			"history_id: answer-state-transitions\n" +
 			"history_question: At which supplied boundaries did the bounded answer state change?\n" +
 			"question_id: counterfactual-change\n" +
@@ -1952,7 +2000,7 @@ func TestRunAskArchiveTransitionsVerify(t *testing.T) {
 			&stderr,
 			func(string) (bundle.ArchiveQuestionTransitionVerificationSummary, error) { return summary, nil },
 		)
-		want := `{"schema_version":1,"history_id":"answer-state-transitions","history_question":"At which supplied boundaries did the bounded answer state change?","question_id":"counterfactual-change","order_basis":"caller","snapshots":3,"transitions":2,"transition_history_sha256":"` + strings.Repeat("a", 64) + `"}` + "\n"
+		want := `{"schema_version":2,"history_id":"answer-state-transitions","history_question":"At which supplied boundaries did the bounded answer state change?","question_id":"counterfactual-change","order_basis":"caller","snapshots":3,"transitions":2,"transition_history_sha256":"` + strings.Repeat("a", 64) + `"}` + "\n"
 		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
 			t.Fatalf("runAskArchiveTransitionsVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
 		}
@@ -2062,7 +2110,7 @@ func TestRunAskArchiveTransitionsVerifyFailures(t *testing.T) {
 
 func summaryForTransitionVerifyTest() bundle.ArchiveQuestionTransitionVerificationSummary {
 	return bundle.ArchiveQuestionTransitionVerificationSummary{
-		SchemaVersion:           1,
+		SchemaVersion:           2,
 		HistoryID:               "answer-state-transitions",
 		HistoryQuestion:         "At which supplied boundaries did the bounded answer state change?",
 		QuestionID:              "counterfactual-change",

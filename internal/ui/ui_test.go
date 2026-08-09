@@ -309,7 +309,7 @@ func TestHandlerHidesCurrentReflectionErrors(t *testing.T) {
 
 func TestHandlerRendersReflectionHistory(t *testing.T) {
 	history := bundle.ArchiveQuestionTransitionHistory{
-		SchemaVersion:   1,
+		SchemaVersion:   2,
 		HistoryID:       "answer-state-transitions",
 		HistoryQuestion: "At which supplied boundaries did the bounded answer state change?",
 		QuestionID:      "counterfactual-change",
@@ -322,10 +322,15 @@ func TestHandlerRendersReflectionHistory(t *testing.T) {
 			Result:               "changed",
 			Compared:             2,
 			Changed:              1,
+			StateChanges: []bundle.ArchiveQuestionStateChange{{
+				Directory:  "run-001",
+				OlderState: "observed",
+				NewerState: "unknown",
+			}},
 		}},
 	}
 	summary := bundle.ArchiveQuestionTransitionVerificationSummary{
-		SchemaVersion:           1,
+		SchemaVersion:           2,
 		HistoryID:               history.HistoryID,
 		HistoryQuestion:         history.HistoryQuestion,
 		QuestionID:              history.QuestionID,
@@ -351,7 +356,7 @@ func TestHandlerRendersReflectionHistory(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, body=%q", recorder.Code, body)
 	}
-	for _, want := range []string{"Saved reflection history", "verified ledger", history.Question, "caller", "snapshots", "2", "transitions", "1", "history SHA-256", strings.Repeat("c", 64), "changed", strings.Repeat("a", 64), strings.Repeat("b", 64), "does not establish chronology"} {
+	for _, want := range []string{"Saved reflection history", "verified ledger", history.Question, "caller", "snapshots", "2", "transitions", "1", "history SHA-256", strings.Repeat("c", 64), "changed", strings.Repeat("a", 64), strings.Repeat("b", 64), "changed archive entries", "run-001", "observed", "unknown", "does not establish chronology"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("body missing %q: %s", want, body)
 		}

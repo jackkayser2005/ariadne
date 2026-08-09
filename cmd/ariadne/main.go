@@ -876,6 +876,18 @@ func runAskArchiveTransitions(
 			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions: write output: %v\n", err)
 			return 1
 		}
+		if len(transition.StateChanges) > 0 {
+			if _, err := io.WriteString(stdout, "  state_changes:\n"); err != nil {
+				_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions: write output: %v\n", err)
+				return 1
+			}
+			for _, change := range transition.StateChanges {
+				if _, err := fmt.Fprintf(stdout, "  - directory: %s\n    older_state: %s\n    newer_state: %s\n", change.Directory, change.OlderState, change.NewerState); err != nil {
+					_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions: write output: %v\n", err)
+					return 1
+				}
+			}
+		}
 	}
 	if _, err := io.WriteString(stdout, "note: transitions follow caller-supplied order; incomparable membership is not a change claim, and this does not infer a trend or prove the underlying evidence\n"); err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions: write output: %v\n", err)

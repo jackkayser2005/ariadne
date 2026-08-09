@@ -10,6 +10,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/jackkayser2005/ariadne/internal/evidence"
 	"github.com/jackkayser2005/ariadne/internal/jsoncheck"
 )
 
@@ -111,7 +112,7 @@ func validateArchiveQuestionTransitionHistoryJSON(data []byte) error {
 		return err
 	}
 	for _, rawTransition := range transitions {
-		if _, err := archiveQuestionObject(rawTransition, []string{
+		transitionObject, err := archiveQuestionObject(rawTransition, []string{
 			"from_reflection_sha256",
 			"to_reflection_sha256",
 			"result",
@@ -119,15 +120,27 @@ func validateArchiveQuestionTransitionHistoryJSON(data []byte) error {
 			"changed",
 			"from_only",
 			"to_only",
-		}, nil); err != nil {
+		}, []string{"state_changes"})
+		if err != nil {
 			return fmt.Errorf("transition: %w", err)
+		}
+		if stateChanges, ok := transitionObject["state_changes"]; ok {
+			items, err := archiveQuestionArray(stateChanges, "state_changes")
+			if err != nil {
+				return fmt.Errorf("transition: %w", err)
+			}
+			for _, rawStateChange := range items {
+				if _, err := archiveQuestionObject(rawStateChange, []string{"directory", "older_state", "newer_state"}, nil); err != nil {
+					return fmt.Errorf("transition state change: %w", err)
+				}
+			}
 		}
 	}
 	return nil
 }
 
 func validateArchiveQuestionTransitionHistory(history ArchiveQuestionTransitionHistory) error {
-	if history.SchemaVersion != archiveQuestionTransitionHistorySchemaVersion {
+	if history.SchemaVersion != archiveQuestionTransitionHistoryLegacySchemaVersion && history.SchemaVersion != archiveQuestionTransitionHistorySchemaVersion {
 		return errors.New("unsupported schema_version")
 	}
 	if history.HistoryID != archiveQuestionTransitionHistoryID {
@@ -175,8 +188,39 @@ func validateArchiveQuestionTransitionHistory(history ArchiveQuestionTransitionH
 		default:
 			return errors.New("transition result is invalid")
 		}
+		if history.SchemaVersion == archiveQuestionTransitionHistoryLegacySchemaVersion {
+			if len(transition.StateChanges) != 0 {
+				return errors.New("legacy transition state changes are unsupported")
+			}
+			continue
+		}
+		if len(transition.StateChanges) != transition.Changed {
+			return errors.New("transition state change count does not match changed count")
+		}
+		previousDirectory := ""
+		for _, stateChange := range transition.StateChanges {
+			if !validArchiveEntryName(stateChange.Directory) || stateChange.Directory <= previousDirectory {
+				return errors.New("transition state change directory ordering is invalid")
+			}
+			if !validArchiveQuestionState(stateChange.OlderState) || !validArchiveQuestionState(stateChange.NewerState) {
+				return errors.New("transition state change state is invalid")
+			}
+			if stateChange.OlderState == stateChange.NewerState {
+				return errors.New("transition state change does not change state")
+			}
+			previousDirectory = stateChange.Directory
+		}
 	}
 	return nil
+}
+
+func validArchiveQuestionState(state string) bool {
+	switch state {
+	case string(evidence.Observed), string(evidence.Unknown), "unavailable":
+		return true
+	default:
+		return false
+	}
 }
 
 func archiveQuestionTransitionHistorySHA256(history ArchiveQuestionTransitionHistory) (string, error) {
