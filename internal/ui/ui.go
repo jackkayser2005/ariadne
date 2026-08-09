@@ -70,6 +70,7 @@ type pageData struct {
 	ReflectionHistory                  bundle.ArchiveQuestionTransitionHistory
 	ReflectionHistorySummary           bundle.ArchiveQuestionTransitionVerificationSummary
 	ReflectionHistoryQuestions         []bundle.Question
+	ReflectionHistoryQuestionID        string
 	ReflectionHistoryAnswer            bundle.ArchiveQuestionTransitionHistoryAnswer
 	ReflectionHistoryRepeatedAnswer    bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer
 	SavedReflectionComparisonRequested bool
@@ -178,11 +179,18 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	var reflectionHistory bundle.ArchiveQuestionTransitionHistory
 	var reflectionHistorySummary bundle.ArchiveQuestionTransitionVerificationSummary
 	var reflectionHistoryQuestions []bundle.Question
+	reflectionHistoryQuestionID := r.URL.Query().Get("history_question_id")
 	var reflectionHistoryAnswer bundle.ArchiveQuestionTransitionHistoryAnswer
 	var reflectionHistoryRepeatedAnswer bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer
 	savedReflectionComparisonRequested := h.compareCurrent != nil
 	savedReflectionComparisonAvailable := false
 	var savedReflectionComparison bundle.ArchiveQuestionComparison
+	if reflectionHistoryQuestionID != "" {
+		if _, ok := questionForID(bundle.ArchiveQuestionTransitionHistoryQuestions(), reflectionHistoryQuestionID); !ok {
+			http.Error(w, "history question not found", http.StatusNotFound)
+			return
+		}
+	}
 	if h.history != nil {
 		reflectionHistoryQuestions = bundle.ArchiveQuestionTransitionHistoryQuestions()
 		var historyErr error
@@ -252,6 +260,7 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		ReflectionHistory:                  reflectionHistory,
 		ReflectionHistorySummary:           reflectionHistorySummary,
 		ReflectionHistoryQuestions:         reflectionHistoryQuestions,
+		ReflectionHistoryQuestionID:        reflectionHistoryQuestionID,
 		ReflectionHistoryAnswer:            reflectionHistoryAnswer,
 		ReflectionHistoryRepeatedAnswer:    reflectionHistoryRepeatedAnswer,
 		SavedReflectionComparisonRequested: savedReflectionComparisonRequested,
@@ -610,7 +619,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       <p class="context">{{.ReflectionHistory.Question}}</p>
       <div class="section-head"><h3>History questions</h3><span class="context">fixed, read only</span></div>
       <div class="question-list" aria-label="Saved reflection history questions">
-      {{range .ReflectionHistoryQuestions}}<a class="button" href="#history-question-{{.ID}}"><span><code>{{.ID}}</code><br>{{.Text}}</span><span aria-hidden="true">&darr;</span></a>{{end}}
+      {{range .ReflectionHistoryQuestions}}<a class="button" href="/?history_question_id={{query .ID}}"{{if eq $.ReflectionHistoryQuestionID .ID}} aria-current="page"{{end}}><span><code>{{.ID}}</code><br>{{.Text}}</span><span aria-hidden="true">&rarr;</span></a>{{end}}
       </div>
       <dl>
         <dt>order basis</dt><dd>{{.ReflectionHistory.OrderBasis}}</dd>
@@ -618,6 +627,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
         <dt>transitions</dt><dd>{{.ReflectionHistorySummary.Transitions}}</dd>
         <dt>history SHA-256</dt><dd>{{.ReflectionHistorySummary.TransitionHistorySHA256}}</dd>
       </dl>
+      {{if or (eq .ReflectionHistoryQuestionID "") (eq .ReflectionHistoryQuestionID .ReflectionHistoryAnswer.QuestionID)}}
       <section id="history-question-{{.ReflectionHistoryAnswer.QuestionID}}">
       <div class="section-head"><h3>History question</h3><span class="status">{{.ReflectionHistoryAnswer.Result}}</span></div>
       <p class="context">{{.ReflectionHistoryAnswer.Question}}</p>
@@ -634,6 +644,8 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       {{range .ReflectionHistoryAnswer.IncomparableTransitions}}<li>transition {{.}}</li>{{end}}
       </ul>
       </section>
+      {{end}}
+      {{if or (eq .ReflectionHistoryQuestionID "") (eq .ReflectionHistoryQuestionID .ReflectionHistoryRepeatedAnswer.QuestionID)}}
       <section id="history-question-{{.ReflectionHistoryRepeatedAnswer.QuestionID}}">
       <div class="section-head"><h3>Repeated-change question</h3><span class="status status-{{.ReflectionHistoryRepeatedAnswer.Result}}">{{.ReflectionHistoryRepeatedAnswer.Result}}</span></div>
       <p class="context">{{.ReflectionHistoryRepeatedAnswer.Question}}</p>
@@ -646,6 +658,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       </ul>
       {{end}}
       </section>
+      {{end}}
       <ul aria-label="Saved reflection transitions">
       {{range .ReflectionHistory.Transitions}}
         <li><span class="status">{{.Result}}</span> compared {{.Compared}}, changed {{.Changed}}, from-only {{.FromOnly}}, to-only {{.ToOnly}}<br><span class="context">from {{.FromReflectionSHA256}} to {{.ToReflectionSHA256}}</span>

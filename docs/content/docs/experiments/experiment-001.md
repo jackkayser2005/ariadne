@@ -350,7 +350,8 @@ when `go run` built Ariadne.
   including the verified history-question result, safe directory/state changes,
   and the repeated-change question when present. The history panel also lists
   the fixed question IDs with direct links to each answer, so a UI driver can
-  choose a bounded question without inventing natural language.
+  choose a bounded question without inventing natural language. Those links use
+  the validated `history_question_id` query and fail closed for unknown IDs.
   When `--reflection` is supplied, the page re-asks that saved reflection's
   fixed question against the current archive and renders a bounded comparison
   with safe result counts and reflection identities. Invalid history or saved

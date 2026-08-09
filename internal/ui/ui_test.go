@@ -370,13 +370,26 @@ func TestHandlerRendersReflectionHistory(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, body=%q", recorder.Code, body)
 	}
-	for _, want := range []string{"Saved reflection history", "verified ledger", history.Question, "History questions", "answer-state-transitions", "answer-state-repeated-changes", "#history-question-answer-state-transitions", "#history-question-answer-state-repeated-changes", "caller", "snapshots", "3", "transitions", "2", "history SHA-256", strings.Repeat("c", 64), "History question", "changed", "changed transitions", "transition 1", "changed entries", "transition 1: run-001", "incomparable transitions", "Repeated-change question", "repeated", "transition 2", strings.Repeat("a", 64), strings.Repeat("b", 64), strings.Repeat("c", 64), "changed archive entries", "run-001", "observed", "unknown", "does not establish chronology"} {
+	for _, want := range []string{"Saved reflection history", "verified ledger", history.Question, "History questions", "answer-state-transitions", "answer-state-repeated-changes", "history_question_id=answer-state-transitions", "history_question_id=answer-state-repeated-changes", "caller", "snapshots", "3", "transitions", "2", "history SHA-256", strings.Repeat("c", 64), "History question", "changed", "changed transitions", "transition 1", "changed entries", "transition 1: run-001", "incomparable transitions", "Repeated-change question", "repeated", "transition 2", strings.Repeat("a", 64), strings.Repeat("b", 64), strings.Repeat("c", 64), "changed archive entries", "run-001", "observed", "unknown", "does not establish chronology"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("body missing %q: %s", want, body)
 		}
 	}
 	if strings.Contains(body, "secret-value") {
 		t.Fatal("body disclosed a raw value")
+	}
+
+	selectedRecorder := httptest.NewRecorder()
+	h.ServeHTTP(selectedRecorder, httptest.NewRequest(http.MethodGet, "/?history_question_id=answer-state-repeated-changes", nil))
+	selectedBody := selectedRecorder.Body.String()
+	if selectedRecorder.Code != http.StatusOK || !strings.Contains(selectedBody, `aria-current="page"`) || !strings.Contains(selectedBody, `id="history-question-answer-state-repeated-changes"`) || strings.Contains(selectedBody, `id="history-question-answer-state-transitions"`) {
+		t.Fatalf("selected history question status = %d, body=%q", selectedRecorder.Code, selectedBody)
+	}
+
+	invalidRecorder := httptest.NewRecorder()
+	h.ServeHTTP(invalidRecorder, httptest.NewRequest(http.MethodGet, "/?history_question_id=not-a-question", nil))
+	if invalidRecorder.Code != http.StatusNotFound || !strings.Contains(invalidRecorder.Body.String(), "history question not found") {
+		t.Fatalf("invalid history question status = %d, body=%q", invalidRecorder.Code, invalidRecorder.Body.String())
 	}
 }
 
@@ -390,13 +403,23 @@ func TestHandlerHidesReflectionHistoryErrors(t *testing.T) {
 	})
 
 	recorder := httptest.NewRecorder()
-	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/?history_question_id=answer-state-transitions", nil))
 	body := recorder.Body.String()
 	if recorder.Code != http.StatusOK || !strings.Contains(body, "Saved reflection history is unavailable") {
 		t.Fatalf("status = %d, body=%q", recorder.Code, body)
 	}
 	if strings.Contains(body, "private history failure") {
 		t.Fatal("body disclosed reflection history error")
+	}
+
+	withoutHistory := newHandler(handler{
+		root:  "archive-root",
+		index: func(string) ([]bundle.ArchiveEntry, error) { return nil, nil },
+	})
+	withoutHistoryRecorder := httptest.NewRecorder()
+	withoutHistory.ServeHTTP(withoutHistoryRecorder, httptest.NewRequest(http.MethodGet, "/?history_question_id=answer-state-transitions", nil))
+	if withoutHistoryRecorder.Code != http.StatusOK || strings.Contains(withoutHistoryRecorder.Body.String(), "history question not found") {
+		t.Fatalf("known history question without source status = %d, body=%q", withoutHistoryRecorder.Code, withoutHistoryRecorder.Body.String())
 	}
 }
 
