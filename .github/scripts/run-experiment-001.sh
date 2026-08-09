@@ -63,13 +63,17 @@ jq -e '
 archive_question_json="${RUNNER_TEMP}/ariadne-archive-question.json"
 "${ariadne}" experiment ask-archive --json ".ariadne/ci" counterfactual-change >"${archive_question_json}"
 jq -e '
-  (keys_unsorted == ["question_id", "question", "summary", "results"]) and
+  (keys_unsorted == ["schema_version", "question_id", "question", "summary", "results"]) and
+  (.schema_version == 1) and
   (.question_id == "counterfactual-change") and
   (.summary | keys_unsorted == ["observed", "unknown", "unavailable", "checked"]) and
   (.summary == {observed: 1, unknown: 0, unavailable: 0, checked: 1}) and
   (.results | length == 1) and
-  (.results[0] | keys_unsorted == ["directory", "manifest_name", "recorded_at", "answer", "available"]) and
+  (.results[0] | keys_unsorted == ["directory", "manifest_name", "recorded_at", "provenance", "answer", "available"]) and
   (.results[0].directory == "experiment-001") and
+  (.results[0].provenance.manifest_contract_sha256 | length == 64) and
+  (.results[0].provenance.ariadne_revision | length > 0) and
+  (.results[0].provenance.ariadne_modified == false) and
   (.results[0].available == true) and
   (.results[0].answer.answer_state == "observed")
 ' "${archive_question_json}"
