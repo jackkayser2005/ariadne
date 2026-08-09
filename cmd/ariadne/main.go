@@ -29,6 +29,7 @@ const usage = `usage:
   ariadne experiment finding [--json] <run-directory> <finding-id>
   ariadne experiment ask [--json] <run-directory> <question-id>
   ariadne experiment ask-archive [--json] <archive-root> <question-id>
+  ariadne experiment ask-archive compare [--json] <older-report.json> <newer-report.json>
   ariadne experiment ask-archive verify [--json] [--expect-sha256 <digest>] <report.json>
   ariadne experiment questions [--json]
   ariadne experiment list [--json] <archive-root>
@@ -74,6 +75,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runAskArchiveVerify(args[3:], stdout, stderr, bundle.VerifyArchiveQuestionReport)
 	}
 	if len(args) >= 2 && args[0] == "experiment" && args[1] == "ask-archive" {
+		if len(args) >= 3 && args[2] == "compare" {
+			return runAskArchiveCompare(args[3:], stdout, stderr, bundle.CompareArchiveQuestionReports)
+		}
 		return runAskArchive(args[2:], stdout, stderr, bundle.AskArchive)
 	}
 	if len(args) >= 2 && args[0] == "experiment" && args[1] == "questions" {
@@ -136,6 +140,7 @@ type bundleFinder func(string, string) (bundle.Finding, error)
 type bundleAsker func(string, string) (bundle.Answer, error)
 type bundleArchiveQuestionAsker func(string, string) (bundle.ArchiveQuestionReport, error)
 type bundleArchiveQuestionReportVerifier func(string) (bundle.ArchiveQuestionVerificationSummary, error)
+type bundleArchiveQuestionReportComparer func(string, string) (bundle.ArchiveQuestionComparison, error)
 type bundleQuestionLister func() []bundle.Question
 type bundleArchiveIndexer func(string) ([]bundle.ArchiveEntry, error)
 type uiServer func(string, http.Handler) error
@@ -611,6 +616,52 @@ func runAskArchive(
 				return 1
 			}
 		}
+	}
+	return 0
+}
+
+func runAskArchiveCompare(
+	args []string,
+	stdout, stderr io.Writer,
+	compare bundleArchiveQuestionReportComparer,
+) int {
+	flags := flag.NewFlagSet("experiment ask-archive compare", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 2 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+
+	comparison, err := compare(flags.Arg(0), flags.Arg(1))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive compare: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(comparison); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive compare: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if _, err := fmt.Fprintf(
+		stdout,
+		"archive reflection comparison complete\ncomparison_id: %s\ncomparison_question: %s\nquestion_id: %s\nquestion: %s\nresult: %s\nolder_reflection_sha256: %s\nnewer_reflection_sha256: %s\ncompared: %d\nchanged: %d\nolder_only: %d\nnewer_only: %d\nnote: this compares only bounded answer states; it does not infer a trend or prove the underlying evidence\n",
+		comparison.ComparisonID,
+		comparison.ComparisonQuestion,
+		comparison.QuestionID,
+		comparison.Question,
+		comparison.Result,
+		comparison.OlderReflectionSHA256,
+		comparison.NewerReflectionSHA256,
+		comparison.Compared,
+		comparison.Changed,
+		comparison.OlderOnly,
+		comparison.NewerOnly,
+	); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive compare: write output: %v\n", err)
+		return 1
 	}
 	return 0
 }

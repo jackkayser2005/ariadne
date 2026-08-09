@@ -89,6 +89,25 @@ jq -e '
 ' "${archive_question_verified_json}"
 reflection_sha256="$(jq -r '.reflection_sha256' "${archive_question_verified_json}")"
 "${ariadne}" experiment ask-archive verify --json --expect-sha256 "${reflection_sha256}" "${archive_question_json}" > /dev/null
+archive_question_older_json="${RUNNER_TEMP}/ariadne-archive-question-older.json"
+archive_question_newer_json="${RUNNER_TEMP}/ariadne-archive-question-newer.json"
+cp "${archive_question_json}" "${archive_question_older_json}"
+cp "${archive_question_json}" "${archive_question_newer_json}"
+archive_question_comparison_json="${RUNNER_TEMP}/ariadne-archive-question-comparison.json"
+"${ariadne}" experiment ask-archive compare --json "${archive_question_older_json}" "${archive_question_newer_json}" >"${archive_question_comparison_json}"
+jq -e '
+     (keys_unsorted == ["schema_version", "comparison_id", "comparison_question", "question_id", "question", "result", "older_reflection_sha256", "newer_reflection_sha256", "compared", "changed", "older_only", "newer_only"]) and
+     (.schema_version == 1) and
+     (.comparison_id == "answer-state-change") and
+     (.comparison_question == "Did the bounded answer state change between these saved reflection snapshots?") and
+  (.question_id == "counterfactual-change") and
+  (.result == "same") and
+  (.older_reflection_sha256 == .newer_reflection_sha256) and
+  (.compared == 1) and
+  (.changed == 0) and
+  (.older_only == 0) and
+  (.newer_only == 0)
+' "${archive_question_comparison_json}"
 
 finding_id="$(jq -r '.comparison.differences[0].id' "${run_dir}/evidence.json")"
 finding_stdout="${RUNNER_TEMP}/ariadne-finding.stdout"

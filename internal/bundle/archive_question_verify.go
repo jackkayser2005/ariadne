@@ -29,30 +29,36 @@ type ArchiveQuestionVerificationSummary struct {
 // without requiring its source archive. It validates the report contract, not
 // the truth of its answers or the evidence referenced by its digests.
 func VerifyArchiveQuestionReport(reportPath string) (ArchiveQuestionVerificationSummary, error) {
+	_, summary, err := readVerifiedArchiveQuestionReport(reportPath)
+	return summary, err
+}
+
+func readVerifiedArchiveQuestionReport(reportPath string) (ArchiveQuestionReport, ArchiveQuestionVerificationSummary, error) {
 	if strings.TrimSpace(reportPath) == "" {
-		return ArchiveQuestionVerificationSummary{}, errors.New("archive question report path is required")
+		return ArchiveQuestionReport{}, ArchiveQuestionVerificationSummary{}, errors.New("archive question report path is required")
 	}
 	data, err := readFileBounded(reportPath, maxOutputBytes)
 	if err != nil {
-		return ArchiveQuestionVerificationSummary{}, fmt.Errorf("archive question report: %w", err)
+		return ArchiveQuestionReport{}, ArchiveQuestionVerificationSummary{}, fmt.Errorf("archive question report: %w", err)
 	}
 	report, err := decodeArchiveQuestionReport(data)
 	if err != nil {
-		return ArchiveQuestionVerificationSummary{}, fmt.Errorf("archive question report: %w", err)
+		return ArchiveQuestionReport{}, ArchiveQuestionVerificationSummary{}, fmt.Errorf("archive question report: %w", err)
 	}
 	if err := validateArchiveQuestionReport(report); err != nil {
-		return ArchiveQuestionVerificationSummary{}, fmt.Errorf("archive question report: %w", err)
+		return ArchiveQuestionReport{}, ArchiveQuestionVerificationSummary{}, fmt.Errorf("archive question report: %w", err)
 	}
 	reflectionSHA256, err := archiveQuestionReflectionSHA256(report)
 	if err != nil {
-		return ArchiveQuestionVerificationSummary{}, fmt.Errorf("archive question report: %w", err)
+		return ArchiveQuestionReport{}, ArchiveQuestionVerificationSummary{}, fmt.Errorf("archive question report: %w", err)
 	}
-	return ArchiveQuestionVerificationSummary{
+	summary := ArchiveQuestionVerificationSummary{
 		SchemaVersion:    report.SchemaVersion,
 		QuestionID:       report.QuestionID,
 		Checked:          report.Summary.Checked,
 		ReflectionSHA256: reflectionSHA256,
-	}, nil
+	}
+	return report, summary, nil
 }
 
 func archiveQuestionReflectionSHA256(report ArchiveQuestionReport) (string, error) {

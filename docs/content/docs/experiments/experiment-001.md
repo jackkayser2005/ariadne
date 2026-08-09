@@ -173,6 +173,7 @@ go run ./cmd/ariadne experiment ask --json .ariadne/runs/experiment-001 counterf
 go run ./cmd/ariadne experiment ask-archive --json .ariadne/runs counterfactual-change
 go run ./cmd/ariadne experiment ask-archive verify --json .ariadne/archive-question.json
 go run ./cmd/ariadne experiment ask-archive verify --json --expect-sha256 <reflection-sha256> .ariadne/archive-question.json
+go run ./cmd/ariadne experiment ask-archive compare --json <older-report.json> <newer-report.json>
 go run ./cmd/ariadne experiment finding --json .ariadne/runs/experiment-001 <finding-id-from-evidence.json>
 ```
 
@@ -228,6 +229,12 @@ when `go run` built Ariadne.
   digest points back to the authoritative bundle but does not make this
   derived reflection view authoritative. It never returns observed or persona
   values and does not infer a trend.
+- `experiment ask-archive compare [--json] <older-report.json> <newer-report.json>`
+  re-verifies two saved reflections and compares only their per-directory answer
+  states. It returns `same` or `changed` when the directory membership matches,
+  and `incomparable` when either snapshot contains a different set of directories.
+  This is a bounded state comparison, not trend inference or proof of the source
+  evidence.
 - `experiment ask-archive verify [--json] <report.json>` checks a saved
   archive-reflection report offline for its schema, fixed question catalog,
   safe metadata, answer states, provenance digests, and deterministic ordering.

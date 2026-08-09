@@ -32,6 +32,18 @@ The same procedure runs on a real API 35 emulator in GitHub Actions. It also
 proves that missing targets, modified observations, and mismatched package
 provenance prevent evidence publication.
 
+Once a report is saved, Ariadne can re-verify it offline and compare two saved
+reflection snapshots without exposing captured values:
+
+```console
+go run ./cmd/ariadne experiment ask-archive verify --json <reflection.json>
+go run ./cmd/ariadne experiment ask-archive compare --json <older-reflection.json> <newer-reflection.json>
+```
+
+The comparison reports `same`, `changed`, or `incomparable` for bounded
+per-directory answer states. It does not infer a trend or prove the underlying
+evidence.
+
 ## Development
 
 Prerequisites:
