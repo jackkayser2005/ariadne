@@ -178,6 +178,7 @@ go run ./cmd/ariadne experiment ask-archive compare --json <older-report.json> <
 go run ./cmd/ariadne experiment ask-archive compare-current --json <older-report.json> <archive-root>
 go run ./cmd/ariadne experiment ask-archive transitions --json <report-1.json> <report-2.json> ...
 go run ./cmd/ariadne experiment ask-archive transitions verify --json <transitions.json>
+go run ./cmd/ariadne experiment serve --history <transitions.json> .ariadne/runs
 go run ./cmd/ariadne experiment finding --json .ariadne/runs/experiment-001 <finding-id-from-evidence.json>
 ```
 
@@ -270,7 +271,8 @@ when `go run` built Ariadne.
   exactly the expected identity; a mismatch produces no verification output.
   A successful result proves only that the derived report satisfies Ariadne's
   structural contract; it does not re-verify or prove the underlying evidence.
-- `experiment serve <archive-root>` starts a localhost-only, read-only review
+- `experiment serve [--history <history.json>] <archive-root>` starts a
+  localhost-only, read-only review
   page at `http://127.0.0.1:8787/`; only loopback IP addresses are accepted, and
   it lists verified bundles and links to the same bounded questions and finding
   references without rendering observations. The archive page can re-check one
@@ -293,6 +295,10 @@ when `go run` built Ariadne.
   memory and is not a claim about the underlying evidence, chronology, or a
   trend. If the current reflection cannot be derived, the page reports that
   boundedly without exposing the internal error.
+  When `--history` is supplied, the page also reads one structurally verified
+  transition ledger and renders its caller-ordered, raw-value-free boundaries.
+  Invalid history remains a bounded unavailable state; internal verification
+  errors are not rendered.
 - If `ariadne_modified` is unexpectedly `true`, inspect `git status --short`
   before treating the run as reproducible from the recorded revision alone.
 - Finding lookup re-verifies the bundle first and prints only the question,

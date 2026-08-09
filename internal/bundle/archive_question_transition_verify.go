@@ -35,6 +35,12 @@ func VerifyArchiveQuestionTransitionHistory(historyPath string) (ArchiveQuestion
 	return summary, err
 }
 
+// ReadArchiveQuestionTransitionHistory returns a structurally verified,
+// raw-value-free transition ledger and its content summary.
+func ReadArchiveQuestionTransitionHistory(historyPath string) (ArchiveQuestionTransitionHistory, ArchiveQuestionTransitionVerificationSummary, error) {
+	return readVerifiedArchiveQuestionTransitionHistory(historyPath)
+}
+
 func readVerifiedArchiveQuestionTransitionHistory(historyPath string) (ArchiveQuestionTransitionHistory, ArchiveQuestionTransitionVerificationSummary, error) {
 	if strings.TrimSpace(historyPath) == "" {
 		return ArchiveQuestionTransitionHistory{}, ArchiveQuestionTransitionVerificationSummary{}, errors.New("archive question transition history path is required")

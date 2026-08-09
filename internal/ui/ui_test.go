@@ -190,6 +190,80 @@ func TestHandlerHidesCurrentReflectionErrors(t *testing.T) {
 	}
 }
 
+func TestHandlerRendersReflectionHistory(t *testing.T) {
+	history := bundle.ArchiveQuestionTransitionHistory{
+		SchemaVersion:   1,
+		HistoryID:       "answer-state-transitions",
+		HistoryQuestion: "At which supplied boundaries did the bounded answer state change?",
+		QuestionID:      "counterfactual-change",
+		Question:        "Did changing the declared variable influence an observed output?",
+		OrderBasis:      "caller",
+		Snapshots:       2,
+		Transitions: []bundle.ArchiveQuestionTransition{{
+			FromReflectionSHA256: strings.Repeat("a", 64),
+			ToReflectionSHA256:   strings.Repeat("b", 64),
+			Result:               "changed",
+			Compared:             2,
+			Changed:              1,
+		}},
+	}
+	summary := bundle.ArchiveQuestionTransitionVerificationSummary{
+		SchemaVersion:           1,
+		HistoryID:               history.HistoryID,
+		HistoryQuestion:         history.HistoryQuestion,
+		QuestionID:              history.QuestionID,
+		OrderBasis:              history.OrderBasis,
+		Snapshots:               history.Snapshots,
+		Transitions:             len(history.Transitions),
+		TransitionHistorySHA256: strings.Repeat("c", 64),
+	}
+	h := newHandler(handler{
+		root:  "archive-root",
+		index: func(string) ([]bundle.ArchiveEntry, error) { return nil, nil },
+		questions: func() []bundle.Question {
+			return []bundle.Question{{ID: history.QuestionID, Text: history.Question}}
+		},
+		history: func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error) {
+			return history, summary, nil
+		},
+	})
+
+	recorder := httptest.NewRecorder()
+	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	body := recorder.Body.String()
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%q", recorder.Code, body)
+	}
+	for _, want := range []string{"Saved reflection history", "verified ledger", history.Question, "caller", "snapshots", "2", "transitions", "1", "history SHA-256", strings.Repeat("c", 64), "changed", strings.Repeat("a", 64), strings.Repeat("b", 64), "does not establish chronology"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body missing %q: %s", want, body)
+		}
+	}
+	if strings.Contains(body, "secret-value") {
+		t.Fatal("body disclosed a raw value")
+	}
+}
+
+func TestHandlerHidesReflectionHistoryErrors(t *testing.T) {
+	h := newHandler(handler{
+		root:  "archive-root",
+		index: func(string) ([]bundle.ArchiveEntry, error) { return nil, nil },
+		history: func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error) {
+			return bundle.ArchiveQuestionTransitionHistory{}, bundle.ArchiveQuestionTransitionVerificationSummary{}, errors.New("private history failure")
+		},
+	})
+
+	recorder := httptest.NewRecorder()
+	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	body := recorder.Body.String()
+	if recorder.Code != http.StatusOK || !strings.Contains(body, "Saved reflection history is unavailable") {
+		t.Fatalf("status = %d, body=%q", recorder.Code, body)
+	}
+	if strings.Contains(body, "private history failure") {
+		t.Fatal("body disclosed reflection history error")
+	}
+}
+
 func TestSummarizeArchiveAnswers(t *testing.T) {
 	summary := summarizeArchiveAnswers([]archiveQuestionResult{
 		{Available: true, Answer: bundle.Answer{State: "observed"}},

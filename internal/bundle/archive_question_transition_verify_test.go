@@ -23,6 +23,13 @@ func TestVerifyArchiveQuestionTransitionHistory(t *testing.T) {
 		!validDigest(summary.TransitionHistorySHA256) {
 		t.Fatalf("verification summary = %#v", summary)
 	}
+	readHistory, readSummary, err := ReadArchiveQuestionTransitionHistory(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if readHistory.HistoryID != history.HistoryID || len(readHistory.Transitions) != len(history.Transitions) || readSummary != summary {
+		t.Fatalf("ReadArchiveQuestionTransitionHistory() = %#v, %#v; want %#v, %#v", readHistory, readSummary, history, summary)
+	}
 
 	data, err := os.ReadFile(path)
 	if err != nil {

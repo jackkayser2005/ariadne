@@ -37,7 +37,7 @@ const usage = `usage:
   ariadne experiment ask-archive verify [--json] [--expect-sha256 <digest>] <report.json>
   ariadne experiment questions [--json]
   ariadne experiment list [--json] <archive-root>
-  ariadne experiment serve [--addr <address>] <archive-root>
+  ariadne experiment serve [--addr <address>] [--history <history.json>] <archive-root>
 `
 
 const adbCheckTimeout = 10 * time.Second
@@ -1008,6 +1008,7 @@ func runServe(
 	flags := flag.NewFlagSet("experiment serve", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	address := flags.String("addr", "127.0.0.1:8787", "")
+	historyPath := flags.String("history", "", "")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
 		_, _ = io.WriteString(stderr, usage)
 		return 2
@@ -1020,7 +1021,11 @@ func runServe(
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment serve: write output: %v\n", err)
 		return 1
 	}
-	if err := serve(*address, ui.Handler(flags.Arg(0))); err != nil {
+	reviewHandler := ui.Handler(flags.Arg(0))
+	if *historyPath != "" {
+		reviewHandler = ui.HandlerWithHistory(flags.Arg(0), *historyPath)
+	}
+	if err := serve(*address, reviewHandler); err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment serve: %v\n", err)
 		return 1
 	}

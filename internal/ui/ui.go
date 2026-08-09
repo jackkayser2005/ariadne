@@ -20,6 +20,7 @@ type handler struct {
 	questions  func() []bundle.Question
 	ask        func(string, string) (bundle.Answer, error)
 	askArchive func(string, string) (bundle.ArchiveQuestionReport, error)
+	history    func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error)
 	find       func(string, string) (bundle.Finding, error)
 }
 
@@ -55,11 +56,29 @@ type pageData struct {
 	CurrentReflectionAvailable bool
 	CurrentReflectionSHA256    string
 	CurrentReflectionChecked   int
+	ReflectionHistoryRequested bool
+	ReflectionHistoryAvailable bool
+	ReflectionHistory          bundle.ArchiveQuestionTransitionHistory
+	ReflectionHistorySummary   bundle.ArchiveQuestionTransitionVerificationSummary
 }
 
 // Handler returns a read-only HTTP handler for one explicitly supplied archive root.
 func Handler(archiveRoot string) http.Handler {
-	return newHandler(handler{
+	return newHandler(archiveHandler(archiveRoot))
+}
+
+// HandlerWithHistory returns a read-only HTTP handler that also shows one
+// structurally verified saved reflection history.
+func HandlerWithHistory(archiveRoot, historyPath string) http.Handler {
+	h := archiveHandler(archiveRoot)
+	h.history = func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error) {
+		return bundle.ReadArchiveQuestionTransitionHistory(historyPath)
+	}
+	return newHandler(h)
+}
+
+func archiveHandler(archiveRoot string) handler {
+	return handler{
 		root:       archiveRoot,
 		index:      bundle.Index,
 		verify:     bundle.Verify,
@@ -67,7 +86,7 @@ func Handler(archiveRoot string) http.Handler {
 		ask:        bundle.Ask,
 		askArchive: bundle.AskArchive,
 		find:       bundle.Find,
-	})
+	}
 }
 
 func newHandler(h handler) http.Handler {
@@ -111,6 +130,15 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	currentReflectionAvailable := false
 	currentReflectionSHA256 := ""
 	currentReflectionChecked := 0
+	reflectionHistoryRequested := h.history != nil
+	reflectionHistoryAvailable := false
+	var reflectionHistory bundle.ArchiveQuestionTransitionHistory
+	var reflectionHistorySummary bundle.ArchiveQuestionTransitionVerificationSummary
+	if h.history != nil {
+		var historyErr error
+		reflectionHistory, reflectionHistorySummary, historyErr = h.history()
+		reflectionHistoryAvailable = historyErr == nil
+	}
 	if questionID != "" {
 		var ok bool
 		selectedQuestion, ok = questionForID(questions, questionID)
@@ -160,6 +188,10 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		CurrentReflectionAvailable: currentReflectionAvailable,
 		CurrentReflectionSHA256:    currentReflectionSHA256,
 		CurrentReflectionChecked:   currentReflectionChecked,
+		ReflectionHistoryRequested: reflectionHistoryRequested,
+		ReflectionHistoryAvailable: reflectionHistoryAvailable,
+		ReflectionHistory:          reflectionHistory,
+		ReflectionHistorySummary:   reflectionHistorySummary,
 	})
 }
 
@@ -429,6 +461,28 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       {{range .Questions}}<a class="button" href="/?question_id={{query .ID}}">{{.Text}}</a>{{end}}
       </div>
     </section>
+    {{if and .ReflectionHistoryRequested (or (not .SelectedQuestion.ID) (eq .SelectedQuestion.ID .ReflectionHistory.QuestionID))}}
+    <section class="panel">
+      <div class="section-head"><h2>Saved reflection history</h2><span class="context">verified ledger</span></div>
+      {{if .ReflectionHistoryAvailable}}
+      <p class="context">{{.ReflectionHistory.Question}}</p>
+      <dl>
+        <dt>order basis</dt><dd>{{.ReflectionHistory.OrderBasis}}</dd>
+        <dt>snapshots</dt><dd>{{.ReflectionHistorySummary.Snapshots}}</dd>
+        <dt>transitions</dt><dd>{{.ReflectionHistorySummary.Transitions}}</dd>
+        <dt>history SHA-256</dt><dd>{{.ReflectionHistorySummary.TransitionHistorySHA256}}</dd>
+      </dl>
+      <ul aria-label="Saved reflection transitions">
+      {{range .ReflectionHistory.Transitions}}
+        <li><span class="status">{{.Result}}</span> compared {{.Compared}}, changed {{.Changed}}, from-only {{.FromOnly}}, to-only {{.ToOnly}}<br><span class="context">from {{.FromReflectionSHA256}} to {{.ToReflectionSHA256}}</span></li>
+      {{end}}
+      </ul>
+      <p class="context">The ledger follows caller-supplied order. It records bounded state changes only; it does not establish chronology or infer a trend.</p>
+      {{else}}
+      <p class="context">Saved reflection history is unavailable. The internal verification error is not rendered.</p>
+      {{end}}
+    </section>
+    {{end}}
     {{if .SelectedQuestion.ID}}
     <section>
       <div class="section-head"><h2>Question lens</h2><span class="context">re-verified now, oldest first</span></div>

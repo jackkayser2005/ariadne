@@ -57,6 +57,11 @@ it never overwrites an existing reflection. The command returns the same
 canonical identity used by offline verification, so saved snapshots can feed
 the comparison and transition commands without exposing captured values.
 
+The local review page can also receive a verified transition ledger with
+`experiment serve --history <history.json> <archive-root>`. It renders the
+saved bounded transitions beside the current question lens, preserving caller
+order without turning it into chronology or trend inference.
+
 The read-only review page exposes the same canonical SHA-256 identity for the
 currently derived archive question report. It is computed in memory, contains
 no captured values, and identifies the derived report only; it is not proof of
