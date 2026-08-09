@@ -104,6 +104,12 @@ snapshot's identity and observed/unknown/unavailable/checked counts; schema 1
 and 2 histories answer `unavailable`. It does not infer chronology or prove
 the underlying evidence.
 
+`transitions ask <history.json> answer-state-summary-changes` asks whether
+those bounded snapshot summaries changed at any supplied boundary. Schema 3
+histories return `same` or `changed` plus 1-based boundary indexes; schema 1
+and 2 histories answer `unavailable`. This is a bounded comparison, not a
+chronology or trend claim.
+
 New transition ledgers use schema 3 and include those snapshot summaries;
 schema 2 ledgers remain readable, and schema 1 ledgers remain readable with
 their older state-change limits.
@@ -125,7 +131,8 @@ reflection with
 It renders caller-ordered bounded transitions and re-asks the saved reflection's
 fixed question against the current archive, showing only safe comparison counts,
 identities, per-directory bounded state changes, and the repeated-change
-question and snapshot-summary question when history is available. The history
+question, snapshot-summary question, and snapshot-change question when history
+is available. The history
 panel also lists those fixed question IDs and links directly to each answer, so
 a UI driver can choose a bounded question without inventing natural language.
 Those links use the validated `history_question_id` query and fail closed for

@@ -16,6 +16,7 @@ const (
 	archiveQuestionTransitionHistoryAnswerSchemaVersion         = 1
 	archiveQuestionTransitionHistoryRepeatedAnswerSchemaVersion = 1
 	archiveQuestionTransitionHistorySnapshotAnswerSchemaVersion = 1
+	archiveQuestionTransitionHistorySummaryAnswerSchemaVersion  = 1
 	archiveQuestionComparisonID                                 = "answer-state-change"
 	archiveQuestionComparisonText                               = "Did the bounded answer state change between these saved reflection snapshots?"
 	archiveQuestionTransitionHistoryID                          = "answer-state-transitions"
@@ -24,6 +25,8 @@ const (
 	archiveQuestionTransitionHistoryRepeatedQuestionText        = "Did any safe archive entry change at more than one supplied boundary?"
 	archiveQuestionTransitionHistorySnapshotQuestionID          = "answer-state-snapshot-summaries"
 	archiveQuestionTransitionHistorySnapshotQuestionText        = "What bounded answer-state summary did each supplied reflection snapshot record?"
+	archiveQuestionTransitionHistorySummaryQuestionID           = "answer-state-summary-changes"
+	archiveQuestionTransitionHistorySummaryQuestionText         = "Did the bounded answer-state summary change at any supplied boundary?"
 )
 
 // ArchiveQuestionComparison is a raw-value-free comparison of two verified
@@ -149,6 +152,18 @@ type ArchiveQuestionTransitionHistorySnapshotAnswer struct {
 	SnapshotSummaries       []ArchiveQuestionTransitionSnapshot `json:"snapshot_summaries"`
 }
 
+// ArchiveQuestionTransitionHistorySummaryAnswer is a raw-value-free answer
+// about whether safe snapshot summaries changed at supplied boundaries.
+type ArchiveQuestionTransitionHistorySummaryAnswer struct {
+	SchemaVersion           int    `json:"schema_version"`
+	QuestionID              string `json:"question_id"`
+	Question                string `json:"question"`
+	Result                  string `json:"result"`
+	TransitionHistorySHA256 string `json:"transition_history_sha256"`
+	Transitions             int    `json:"transitions"`
+	ChangedTransitions      []int  `json:"changed_transitions"`
+}
+
 // ArchiveQuestionTransitionHistoryQuestions returns the fixed questions
 // available for a verified transition history in stable order.
 func ArchiveQuestionTransitionHistoryQuestions() []Question {
@@ -156,6 +171,7 @@ func ArchiveQuestionTransitionHistoryQuestions() []Question {
 		{ID: archiveQuestionTransitionHistoryID, Text: archiveQuestionTransitionHistoryText},
 		{ID: archiveQuestionTransitionHistoryRepeatedQuestionID, Text: archiveQuestionTransitionHistoryRepeatedQuestionText},
 		{ID: archiveQuestionTransitionHistorySnapshotQuestionID, Text: archiveQuestionTransitionHistorySnapshotQuestionText},
+		{ID: archiveQuestionTransitionHistorySummaryQuestionID, Text: archiveQuestionTransitionHistorySummaryQuestionText},
 	}
 }
 
@@ -432,6 +448,37 @@ func AnswerArchiveQuestionTransitionHistorySnapshots(history ArchiveQuestionTran
 	return answer
 }
 
+// AnswerArchiveQuestionTransitionHistorySummary answers whether the safe
+// snapshot summaries changed at any supplied boundary. Legacy histories
+// without those summaries remain unavailable.
+func AnswerArchiveQuestionTransitionHistorySummary(history ArchiveQuestionTransitionHistory, historySHA256 string) ArchiveQuestionTransitionHistorySummaryAnswer {
+	answer := ArchiveQuestionTransitionHistorySummaryAnswer{
+		SchemaVersion:           archiveQuestionTransitionHistorySummaryAnswerSchemaVersion,
+		QuestionID:              archiveQuestionTransitionHistorySummaryQuestionID,
+		Question:                archiveQuestionTransitionHistorySummaryQuestionText,
+		TransitionHistorySHA256: historySHA256,
+		Transitions:             len(history.Transitions),
+		ChangedTransitions:      make([]int, 0),
+	}
+	if history.SchemaVersion < archiveQuestionTransitionHistorySchemaVersion || history.SnapshotSummaries == nil {
+		answer.Result = "unavailable"
+		return answer
+	}
+	for index := 1; index < len(history.SnapshotSummaries); index++ {
+		current := history.SnapshotSummaries[index]
+		previous := history.SnapshotSummaries[index-1]
+		if current.Observed != previous.Observed || current.Unknown != previous.Unknown || current.Unavailable != previous.Unavailable || current.Checked != previous.Checked {
+			answer.ChangedTransitions = append(answer.ChangedTransitions, index)
+		}
+	}
+	if len(answer.ChangedTransitions) > 0 {
+		answer.Result = "changed"
+	} else {
+		answer.Result = "same"
+	}
+	return answer
+}
+
 // AskArchiveQuestionTransitionHistory verifies a saved transition history
 // and answers its fixed raw-value-free question.
 func AskArchiveQuestionTransitionHistory(historyPath string) (ArchiveQuestionTransitionHistoryAnswer, error) {
@@ -460,6 +507,16 @@ func AskArchiveQuestionTransitionHistorySnapshots(historyPath string) (ArchiveQu
 		return ArchiveQuestionTransitionHistorySnapshotAnswer{}, err
 	}
 	return AnswerArchiveQuestionTransitionHistorySnapshots(history, summary.TransitionHistorySHA256), nil
+}
+
+// AskArchiveQuestionTransitionHistorySummary verifies a saved transition
+// history and answers its snapshot-summary-change question.
+func AskArchiveQuestionTransitionHistorySummary(historyPath string) (ArchiveQuestionTransitionHistorySummaryAnswer, error) {
+	history, summary, err := ReadArchiveQuestionTransitionHistory(historyPath)
+	if err != nil {
+		return ArchiveQuestionTransitionHistorySummaryAnswer{}, err
+	}
+	return AnswerArchiveQuestionTransitionHistorySummary(history, summary.TransitionHistorySHA256), nil
 }
 
 // SaveArchiveQuestionTransitionHistory writes one validated transition ledger

@@ -309,6 +309,11 @@ when `go run` built Ariadne.
   observed/unknown/unavailable/checked counts. Schema 1 and 2 histories answer
   `unavailable`; the result does not infer chronology or prove the underlying
   evidence.
+- `experiment ask-archive transitions ask [--json] <history.json> answer-state-summary-changes`
+  asks whether the bounded snapshot summaries changed at any supplied
+  boundary. Schema 3 histories return `same` or `changed` plus 1-based changed
+  boundary indexes. Schema 1 and 2 histories answer `unavailable`; this is a
+  bounded comparison rather than a chronology or trend claim.
 - `experiment ask-archive transitions save [--json] <report-1.json> <report-2.json> ... <history.json>`
   verifies the supplied reflections, writes one raw-value-free transition
   ledger with exclusive file creation, including safe per-directory state
@@ -359,8 +364,8 @@ when `go run` built Ariadne.
   When `--history` is supplied, the page also reads one structurally verified
   transition ledger and renders its caller-ordered, raw-value-free boundaries,
   including the verified history-question result, safe directory/state changes,
-  safe snapshot summaries, the repeated-change question, and the
-  snapshot-summary question when present. The history panel also lists the
+  safe snapshot summaries, the repeated-change question, the snapshot-summary
+  question, and the snapshot-change question when present. The history panel also lists the
   fixed question IDs with direct links to each answer, so a UI driver can
   choose a bounded question without inventing natural language. Those links use
   the validated `history_question_id` query and fail closed for unknown IDs.

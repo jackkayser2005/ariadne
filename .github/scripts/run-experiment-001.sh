@@ -297,13 +297,28 @@ jq -e --arg history_sha256 "${transition_history_sha256}" '
   (.snapshot_summaries | all(.reflection_sha256 | test("^[0-9a-f]{64}$"))) and
   (.snapshot_summaries | all((.observed + .unknown + .unavailable) == .checked))
 ' "${archive_question_transition_snapshot_answer_json}"
+archive_question_transition_summary_answer_json="${RUNNER_TEMP}/ariadne-archive-question-transition-summary-answer.json"
+"${ariadne}" experiment ask-archive transitions ask --json \
+  "${archive_question_transitions_json}" \
+  answer-state-summary-changes >"${archive_question_transition_summary_answer_json}"
+jq -e --arg history_sha256 "${transition_history_sha256}" '
+  (keys_unsorted == ["schema_version", "question_id", "question", "result", "transition_history_sha256", "transitions", "changed_transitions"]) and
+  (.schema_version == 1) and
+  (.question_id == "answer-state-summary-changes") and
+  (.question == "Did the bounded answer-state summary change at any supplied boundary?") and
+  (.result == "same") and
+  (.transition_history_sha256 == $history_sha256) and
+  (.transitions == 2) and
+  (.changed_transitions == [])
+' "${archive_question_transition_summary_answer_json}"
 archive_question_transition_questions_json="${RUNNER_TEMP}/ariadne-archive-question-transition-questions.json"
 "${ariadne}" experiment ask-archive transitions questions --json >"${archive_question_transition_questions_json}"
 jq -e '
-  (length == 3) and
+  (length == 4) and
   (.[0] == {id: "answer-state-transitions", question: "At which supplied boundaries did the bounded answer state change?"}) and
   (.[1] == {id: "answer-state-repeated-changes", question: "Did any safe archive entry change at more than one supplied boundary?"}) and
-  (.[2] == {id: "answer-state-snapshot-summaries", question: "What bounded answer-state summary did each supplied reflection snapshot record?"})
+  (.[2] == {id: "answer-state-snapshot-summaries", question: "What bounded answer-state summary did each supplied reflection snapshot record?"}) and
+  (.[3] == {id: "answer-state-summary-changes", question: "Did the bounded answer-state summary change at any supplied boundary?"})
 ' "${archive_question_transition_questions_json}"
 
 finding_id="$(jq -r '.comparison.differences[0].id' "${run_dir}/evidence.json")"

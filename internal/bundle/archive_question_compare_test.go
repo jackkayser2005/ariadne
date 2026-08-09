@@ -302,6 +302,7 @@ func TestArchiveQuestionTransitionHistoryQuestions(t *testing.T) {
 		{ID: "answer-state-transitions", Text: "At which supplied boundaries did the bounded answer state change?"},
 		{ID: "answer-state-repeated-changes", Text: "Did any safe archive entry change at more than one supplied boundary?"},
 		{ID: "answer-state-snapshot-summaries", Text: "What bounded answer-state summary did each supplied reflection snapshot record?"},
+		{ID: "answer-state-summary-changes", Text: "Did the bounded answer-state summary change at any supplied boundary?"},
 	}
 	if got := ArchiveQuestionTransitionHistoryQuestions(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("ArchiveQuestionTransitionHistoryQuestions() = %#v, want %#v", got, want)
@@ -348,6 +349,60 @@ func TestAskArchiveQuestionTransitionHistorySnapshots(t *testing.T) {
 	}
 	if _, err := AskArchiveQuestionTransitionHistorySnapshots(" "); err == nil || !strings.Contains(err.Error(), "path is required") {
 		t.Fatalf("AskArchiveQuestionTransitionHistorySnapshots() empty path error = %v", err)
+	}
+}
+
+func TestAnswerArchiveQuestionTransitionHistorySummary(t *testing.T) {
+	history := ArchiveQuestionTransitionHistory{
+		SchemaVersion: 3,
+		Transitions: []ArchiveQuestionTransition{
+			{FromReflectionSHA256: strings.Repeat("a", 64), ToReflectionSHA256: strings.Repeat("b", 64)},
+			{FromReflectionSHA256: strings.Repeat("b", 64), ToReflectionSHA256: strings.Repeat("c", 64)},
+		},
+		SnapshotSummaries: []ArchiveQuestionTransitionSnapshot{
+			{ReflectionSHA256: strings.Repeat("a", 64), Observed: 1, Checked: 1},
+			{ReflectionSHA256: strings.Repeat("b", 64), Unknown: 1, Checked: 1},
+			{ReflectionSHA256: strings.Repeat("c", 64), Unknown: 1, Checked: 1},
+		},
+	}
+	answer := AnswerArchiveQuestionTransitionHistorySummary(history, strings.Repeat("d", 64))
+	if answer.SchemaVersion != 1 || answer.QuestionID != "answer-state-summary-changes" || answer.Question != "Did the bounded answer-state summary change at any supplied boundary?" || answer.Result != "changed" || answer.TransitionHistorySHA256 != strings.Repeat("d", 64) || answer.Transitions != 2 || !reflect.DeepEqual(answer.ChangedTransitions, []int{1}) {
+		t.Fatalf("summary history answer = %#v", answer)
+	}
+
+	history.SnapshotSummaries[1] = history.SnapshotSummaries[0]
+	history.SnapshotSummaries[2] = history.SnapshotSummaries[0]
+	answer = AnswerArchiveQuestionTransitionHistorySummary(history, strings.Repeat("e", 64))
+	if answer.Result != "same" || len(answer.ChangedTransitions) != 0 {
+		t.Fatalf("same summary history answer = %#v", answer)
+	}
+
+	answer = AnswerArchiveQuestionTransitionHistorySummary(ArchiveQuestionTransitionHistory{
+		SchemaVersion: 2,
+		Transitions:   history.Transitions,
+	}, strings.Repeat("f", 64))
+	if answer.Result != "unavailable" || answer.Transitions != 2 || len(answer.ChangedTransitions) != 0 {
+		t.Fatalf("legacy summary history answer = %#v", answer)
+	}
+}
+
+func TestAskArchiveQuestionTransitionHistorySummary(t *testing.T) {
+	history := validArchiveQuestionTransitionHistory()
+	history.SchemaVersion = 3
+	history.SnapshotSummaries = []ArchiveQuestionTransitionSnapshot{
+		{ReflectionSHA256: strings.Repeat("a", 64), Observed: 1, Checked: 1},
+		{ReflectionSHA256: strings.Repeat("b", 64), Unknown: 1, Checked: 1},
+	}
+	path := writeArchiveQuestionTransitionHistory(t, history)
+	answer, err := AskArchiveQuestionTransitionHistorySummary(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if answer.Result != "changed" || !validDigest(answer.TransitionHistorySHA256) || !reflect.DeepEqual(answer.ChangedTransitions, []int{1}) {
+		t.Fatalf("AskArchiveQuestionTransitionHistorySummary() = %#v", answer)
+	}
+	if _, err := AskArchiveQuestionTransitionHistorySummary(" "); err == nil || !strings.Contains(err.Error(), "path is required") {
+		t.Fatalf("AskArchiveQuestionTransitionHistorySummary() empty path error = %v", err)
 	}
 }
 
