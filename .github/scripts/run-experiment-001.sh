@@ -55,6 +55,21 @@ jq -e '
   (.answer_state == "observed") and
   ((.finding_ids | length) == 1)
 ' "${redacted_export_answer_json}"
+finding_id="$(jq -r '.finding_ids[0]' "${redacted_export_answer_json}")"
+redacted_export_finding_json="${RUNNER_TEMP}/ariadne-redacted-export-finding.json"
+"${ariadne}" experiment export finding --json \
+  "${redacted_export_json}" "${finding_id}" >"${redacted_export_finding_json}"
+jq -e --arg finding_id "${finding_id}" '
+  (keys_unsorted == ["question", "answer_state", "kind", "classification", "id", "field", "state", "evidence"]) and
+  (.question == "Did changing the declared variable influence an observed output?") and
+  (.answer_state == "observed") and
+  (.kind == "difference") and
+  (.classification == "changed") and
+  (.id == $finding_id) and
+  (.field == "variant") and
+  (.state == "observed") and
+  ((.evidence | length) == 4)
+' "${redacted_export_finding_json}"
 if grep -F -q \
   -e "standard" \
   -e "personalized" \

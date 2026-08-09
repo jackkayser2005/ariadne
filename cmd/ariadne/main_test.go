@@ -65,6 +65,7 @@ func TestRunUsage(t *testing.T) {
 		{"experiment", "export"},
 		{"experiment", "export", "verify"},
 		{"experiment", "export", "ask"},
+		{"experiment", "export", "finding"},
 		{"experiment", "verify"},
 		{"experiment", "finding"},
 		{"experiment", "ask"},
@@ -741,6 +742,60 @@ func TestRunExportAskFailures(t *testing.T) {
 			t.Fatalf("runExportAsk() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
 		}
 	})
+}
+
+func TestRunExportFinding(t *testing.T) {
+	id := "sha256:" + strings.Repeat("a", 64)
+	var stdout, stderr bytes.Buffer
+	exitCode := runExportFinding(
+		[]string{"export.json", id},
+		&stdout,
+		&stderr,
+		func(path, findingID string) (bundle.Finding, error) {
+			if path != "export.json" || findingID != id {
+				t.Fatalf("FindExport() arguments = %q, %q", path, findingID)
+			}
+			return bundle.Finding{
+				Question:       "Did changing the declared variable influence an observed output?",
+				AnswerState:    "observed",
+				Kind:           "difference",
+				Classification: "changed",
+				ID:             id,
+				Field:          "variant",
+				State:          "observed",
+				Evidence:       []string{"baseline/observations/storage.json#/variant"},
+			}, nil
+		},
+	)
+	want := "finding verified\n" +
+		"question: Did changing the declared variable influence an observed output?\n" +
+		"answer_state: observed\n" +
+		"kind: difference\n" +
+		"classification: changed\n" +
+		"id: " + id + "\n" +
+		"field: variant\n" +
+		"state: observed\n" +
+		"evidence:\n" +
+		"- baseline/observations/storage.json#/variant\n"
+	if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+		t.Fatalf("runExportFinding() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+}
+
+func TestRunExportFindingFailures(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	exitCode := runExportFinding(
+		[]string{"export.json"},
+		&stdout,
+		&stderr,
+		func(string, string) (bundle.Finding, error) {
+			t.Fatal("find called for invalid usage")
+			return bundle.Finding{}, nil
+		},
+	)
+	if exitCode != 2 || stdout.Len() != 0 || stderr.String() != usage {
+		t.Fatalf("runExportFinding() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
 }
 
 func TestRunVerify(t *testing.T) {

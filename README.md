@@ -29,7 +29,9 @@ the underlying evidence.
 A verified export can answer its embedded counterfactual question offline with
 `experiment export ask --json <export.json> counterfactual-change`. Questions
 about capture completeness or source integrity remain unavailable without the
-authoritative evidence bundle.
+authoritative evidence bundle. Follow one returned safe finding reference with
+`experiment export finding --json <export.json> <finding-id>`; comparison values
+remain unavailable.
 
 ## Reproduce Experiment 001
 

@@ -270,6 +270,20 @@ func TestAskExportUsesOnlyEmbeddedCounterfactualAnswer(t *testing.T) {
 	if strings.Contains(answer.Question, "email") {
 		t.Fatalf("AskExport() exposed source-specific wording: %#v", answer)
 	}
+	finding, err := FindExport(exportPath, answer.FindingIDs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if finding.Question != answer.Question ||
+		finding.AnswerState != answer.State ||
+		finding.Kind != "difference" ||
+		finding.Classification != "changed" ||
+		finding.ID != answer.FindingIDs[0] ||
+		finding.Field != "variant" ||
+		finding.State != evidencestate.Observed ||
+		len(finding.Evidence) != 4 {
+		t.Fatalf("FindExport() = %#v", finding)
+	}
 
 	if _, err := AskExport(exportPath, "capture-complete"); err == nil ||
 		!strings.Contains(err.Error(), "cannot answer this question") {
@@ -298,6 +312,16 @@ func TestAskExportPreservesBoundedUnknownAndRejectsLegacyAnswer(t *testing.T) {
 		answer.Reason != treatmentStorageObservationUnknownReason ||
 		len(answer.FindingIDs) != 2 {
 		t.Fatalf("AskExport() unknown = %#v", answer)
+	}
+	unknownFinding, err := FindExport(unknownExport, answer.FindingIDs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unknownFinding.Kind != "unknown" ||
+		unknownFinding.AnswerState != evidencestate.Unknown ||
+		unknownFinding.State != evidencestate.Unknown ||
+		unknownFinding.Reason != treatmentStorageObservationUnknownReason {
+		t.Fatalf("FindExport() unknown = %#v", unknownFinding)
 	}
 
 	legacyRun := makeRun(t, runOptions{sessionSchemaVersion: 4})

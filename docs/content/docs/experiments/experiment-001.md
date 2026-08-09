@@ -163,6 +163,7 @@ go run ./cmd/ariadne experiment export .ariadne/runs/experiment-001 .ariadne/run
 go run ./cmd/ariadne experiment export verify --json .ariadne/runs/experiment-001.redacted.json
 go run ./cmd/ariadne experiment export verify --json --expect-sha256 <export-sha256> .ariadne/runs/experiment-001.redacted.json
 go run ./cmd/ariadne experiment export ask --json .ariadne/runs/experiment-001.redacted.json counterfactual-change
+go run ./cmd/ariadne experiment export finding --json .ariadne/runs/experiment-001.redacted.json <finding-id>
 go run ./cmd/ariadne experiment verify .ariadne/runs/experiment-001
 go run ./cmd/ariadne experiment verify --json .ariadne/runs/experiment-001
 go run ./cmd/ariadne experiment list --json .ariadne/runs
@@ -230,6 +231,10 @@ when `go run` built Ariadne.
   only the redacted answer state and finding IDs. `capture-complete` and
   `source-integrity` remain unavailable because they require the authoritative
   evidence bundle.
+- `experiment export finding [--json] <export.json> <finding-id>` verifies the
+  projection and returns one referenced finding's safe kind, field, state, and
+  evidence paths. It never returns comparison values; legacy exports without
+  current finding IDs cannot answer this lookup.
 - `experiment list --json <archive-root>` inspects only immediate child
   directories, rejects symbolic links, and returns only relative directory
   names plus verified summary fields.
@@ -448,6 +453,9 @@ The companion `export ask` command can answer only the fixed
 catalog question text rather than the export's source-specific wording and
 fails closed for unsupported questions or legacy exports without an answer
 state.
+The companion `export finding` command follows a current finding ID within the
+same redacted boundary, so a recipient can inspect the conclusion without
+receiving the authoritative artifacts.
 
 Observation schema 1 is a bounded JSON object containing `schema_version: 1`
 and 1 to 64 string fields. Field names are restricted so evidence references

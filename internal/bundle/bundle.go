@@ -331,8 +331,7 @@ func VerifyExport(exportPath string) (ExportVerificationSummary, error) {
 // AskExport answers the one counterfactual question carried by a verified export.
 // It never reconstructs a question from redacted metadata or raw observations.
 func AskExport(exportPath, questionID string) (Answer, error) {
-	catalogQuestion, ok := questionForID(questionID)
-	if !ok {
+	if _, ok := questionForID(questionID); !ok {
 		return Answer{}, errors.New("question ID is invalid")
 	}
 	if questionID != "counterfactual-change" {
@@ -342,23 +341,66 @@ func AskExport(exportPath, questionID string) (Answer, error) {
 	if err != nil {
 		return Answer{}, err
 	}
+	return redactedExportAnswer(export)
+}
+
+// FindExport returns one safe finding from a verified redacted export.
+// It never returns comparison values or requires the source bundle.
+func FindExport(exportPath, id string) (Finding, error) {
+	if !validFindingID(id) {
+		return Finding{}, errors.New("finding ID is invalid")
+	}
+	export, err := readVerifiedRedactedDocument(exportPath)
+	if err != nil {
+		return Finding{}, err
+	}
+	answer, err := redactedExportAnswer(export)
+	if err != nil {
+		return Finding{}, err
+	}
+	for _, difference := range export.Comparison.Differences {
+		if difference.ID == id {
+			return Finding{
+				Question:       answer.Question,
+				AnswerState:    answer.State,
+				Kind:           "difference",
+				Classification: difference.Kind,
+				ID:             difference.ID,
+				Field:          difference.Field,
+				State:          difference.State,
+				Evidence:       slices.Clone(difference.Evidence),
+			}, nil
+		}
+	}
+	for _, unknown := range export.Comparison.Unknowns {
+		if unknown.ID == id {
+			return Finding{
+				Question:    answer.Question,
+				AnswerState: answer.State,
+				Kind:        "unknown",
+				ID:          unknown.ID,
+				Field:       unknown.Field,
+				State:       unknown.State,
+				Reason:      safeUnknownReason(unknown.Reason),
+				Evidence:    slices.Clone(unknown.Evidence),
+			}, nil
+		}
+	}
+	return Finding{}, errors.New("finding not found")
+}
+
+func redactedExportAnswer(export redactedDocument) (Answer, error) {
+	catalogQuestion, ok := questionForID("counterfactual-change")
+	if !ok {
+		return Answer{}, errors.New("question catalog is invalid")
+	}
 	if export.AnswerState == "" {
 		return Answer{}, errors.New("redacted export has no counterfactual answer")
 	}
 	if export.AnswerState != evidence.Observed && export.AnswerState != evidence.Unknown {
 		return Answer{}, errors.New("redacted export counterfactual answer state is invalid")
 	}
-	findingIDs := make([]string, 0, len(export.Comparison.Differences)+len(export.Comparison.Unknowns))
-	for _, difference := range export.Comparison.Differences {
-		if difference.ID != "" {
-			findingIDs = append(findingIDs, difference.ID)
-		}
-	}
-	for _, unknown := range export.Comparison.Unknowns {
-		if unknown.ID != "" {
-			findingIDs = append(findingIDs, unknown.ID)
-		}
-	}
+	findingIDs := redactedFindingIDs(export.Comparison)
 	unknownReason := ""
 	if export.AnswerState == evidence.Unknown {
 		for _, unknown := range export.Comparison.Unknowns {
@@ -369,12 +411,27 @@ func AskExport(exportPath, questionID string) (Answer, error) {
 		}
 	}
 	return Answer{
-		QuestionID: questionID,
+		QuestionID: "counterfactual-change",
 		Question:   catalogQuestion.Text,
 		State:      export.AnswerState,
 		Reason:     unknownReason,
 		FindingIDs: findingIDs,
 	}, nil
+}
+
+func redactedFindingIDs(comparison redactedComparison) []string {
+	ids := make([]string, 0, len(comparison.Differences)+len(comparison.Unknowns))
+	for _, difference := range comparison.Differences {
+		if difference.ID != "" {
+			ids = append(ids, difference.ID)
+		}
+	}
+	for _, unknown := range comparison.Unknowns {
+		if unknown.ID != "" {
+			ids = append(ids, unknown.ID)
+		}
+	}
+	return ids
 }
 
 func readVerifiedRedactedDocument(exportPath string) (redactedDocument, error) {
