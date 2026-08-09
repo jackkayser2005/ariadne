@@ -66,6 +66,16 @@ type Summary struct {
 	AriadneModified        bool           `json:"-"`
 	// RecordedAt is the verified baseline session start in UTC for current bundles.
 	RecordedAt string `json:"-"`
+	// TargetPackage is the verified package identity for the selected target.
+	TargetPackage string `json:"-"`
+	// TargetAndroidAPI is the verified Android API for the selected target.
+	TargetAndroidAPI int `json:"-"`
+	// TargetArchitecture is the verified architecture for the selected target.
+	TargetArchitecture string `json:"-"`
+	// TargetPackageVersionCode is the verified package version for the selected target.
+	TargetPackageVersionCode uint64 `json:"-"`
+	// TargetPackageSHA256 is the verified package digest for the selected target.
+	TargetPackageSHA256 string `json:"-"`
 }
 
 // Finding is the safe, raw-value-free view of one verified conclusion.
@@ -454,15 +464,20 @@ func buildDocument(runDir string, includeFindingIDs bool) (document, Summary, er
 	}
 
 	return evidence, Summary{
-		ManifestName:           evidence.ManifestName,
-		Differences:            len(comparison.Differences),
-		Unknowns:               len(comparison.Unknowns),
-		Question:               evidence.Question,
-		AnswerState:            evidence.AnswerState,
-		ManifestContractSHA256: evidence.ManifestContractSHA256,
-		AriadneRevision:        evidence.Target.AriadneRevision,
-		AriadneModified:        evidence.Target.AriadneModified,
-		RecordedAt:             recordedAt,
+		ManifestName:             evidence.ManifestName,
+		Differences:              len(comparison.Differences),
+		Unknowns:                 len(comparison.Unknowns),
+		Question:                 evidence.Question,
+		AnswerState:              evidence.AnswerState,
+		ManifestContractSHA256:   evidence.ManifestContractSHA256,
+		AriadneRevision:          evidence.Target.AriadneRevision,
+		AriadneModified:          evidence.Target.AriadneModified,
+		RecordedAt:               recordedAt,
+		TargetPackage:            evidence.Target.Package,
+		TargetAndroidAPI:         evidence.Target.AndroidAPI,
+		TargetArchitecture:       evidence.Target.Architecture,
+		TargetPackageVersionCode: evidence.Target.PackageVersionCode,
+		TargetPackageSHA256:      evidence.Target.PackageSHA256,
 	}, nil
 }
 
