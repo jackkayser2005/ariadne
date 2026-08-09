@@ -281,12 +281,29 @@ jq -e --arg history_sha256 "${transition_history_sha256}" '
   (.transition_history_sha256 == $history_sha256) and
   (.result == "none")
 ' "${archive_question_transition_repeated_answer_by_id_json}"
+archive_question_transition_snapshot_answer_json="${RUNNER_TEMP}/ariadne-archive-question-transition-snapshot-answer.json"
+"${ariadne}" experiment ask-archive transitions ask --json \
+  "${archive_question_transitions_json}" \
+  answer-state-snapshot-summaries >"${archive_question_transition_snapshot_answer_json}"
+jq -e --arg history_sha256 "${transition_history_sha256}" '
+  (keys_unsorted == ["schema_version", "question_id", "question", "result", "transition_history_sha256", "snapshots", "snapshot_summaries"]) and
+  (.schema_version == 1) and
+  (.question_id == "answer-state-snapshot-summaries") and
+  (.question == "What bounded answer-state summary did each supplied reflection snapshot record?") and
+  (.result == "available") and
+  (.transition_history_sha256 == $history_sha256) and
+  (.snapshots == 3) and
+  (.snapshot_summaries | length == 3) and
+  (.snapshot_summaries | all(.reflection_sha256 | test("^[0-9a-f]{64}$"))) and
+  (.snapshot_summaries | all((.observed + .unknown + .unavailable) == .checked))
+' "${archive_question_transition_snapshot_answer_json}"
 archive_question_transition_questions_json="${RUNNER_TEMP}/ariadne-archive-question-transition-questions.json"
 "${ariadne}" experiment ask-archive transitions questions --json >"${archive_question_transition_questions_json}"
 jq -e '
-  (length == 2) and
+  (length == 3) and
   (.[0] == {id: "answer-state-transitions", question: "At which supplied boundaries did the bounded answer state change?"}) and
-  (.[1] == {id: "answer-state-repeated-changes", question: "Did any safe archive entry change at more than one supplied boundary?"})
+  (.[1] == {id: "answer-state-repeated-changes", question: "Did any safe archive entry change at more than one supplied boundary?"}) and
+  (.[2] == {id: "answer-state-snapshot-summaries", question: "What bounded answer-state summary did each supplied reflection snapshot record?"})
 ' "${archive_question_transition_questions_json}"
 
 finding_id="$(jq -r '.comparison.differences[0].id' "${run_dir}/evidence.json")"

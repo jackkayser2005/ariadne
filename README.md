@@ -98,6 +98,12 @@ boundary. It returns the repeated entry's safe state-change records and
 adjacent reflection identities. Schema 1 histories answer `unavailable`, and
 the result never establishes chronology or a trend.
 
+`transitions ask <history.json> answer-state-snapshot-summaries` asks which
+safe snapshot summaries a verified history recorded. Schema 3 histories return each
+snapshot's identity and observed/unknown/unavailable/checked counts; schema 1
+and 2 histories answer `unavailable`. It does not infer chronology or prove
+the underlying evidence.
+
 New transition ledgers use schema 3 and include those snapshot summaries;
 schema 2 ledgers remain readable, and schema 1 ledgers remain readable with
 their older state-change limits.
@@ -110,8 +116,8 @@ the comparison and transition commands without exposing captured values.
 Use `transitions save` to persist the verified adjacent-boundary ledger with
 the same no-overwrite behavior before opening it in the local history view.
 The page shows the same safe snapshot summaries alongside the fixed history
-questions, so a UI driver can choose a question and retain the identities it
-was asking about.
+questions, including a direct snapshot-summary question, so a UI driver can
+choose a question and retain the identities it was asking about.
 
 The local review page can receive a verified transition ledger and a saved
 reflection with
@@ -119,10 +125,11 @@ reflection with
 It renders caller-ordered bounded transitions and re-asks the saved reflection's
 fixed question against the current archive, showing only safe comparison counts,
 identities, per-directory bounded state changes, and the repeated-change
-question when history is available. The history panel also lists those fixed
-question IDs and links directly to each answer, so a UI driver can choose a
-bounded question without inventing natural language. Those links use the
-validated `history_question_id` query and fail closed for unknown IDs. An
+question and snapshot-summary question when history is available. The history
+panel also lists those fixed question IDs and links directly to each answer, so
+a UI driver can choose a bounded question without inventing natural language.
+Those links use the validated `history_question_id` query and fail closed for
+unknown IDs. An
 unavailable comparison remains a generic bounded state; the
 page does not turn it into chronology, trend inference, or a claim about the
 underlying evidence.

@@ -105,7 +105,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 				return runAskArchiveTransitionsAskRepeated(args[5:], stdout, stderr, bundle.AskArchiveQuestionTransitionHistoryRepeated)
 			}
 			if len(args) >= 6 {
-				return runAskArchiveTransitionsAskQuestion(args[4:], stdout, stderr, bundle.AskArchiveQuestionTransitionHistory, bundle.AskArchiveQuestionTransitionHistoryRepeated)
+				return runAskArchiveTransitionsAskQuestion(args[4:], stdout, stderr, bundle.AskArchiveQuestionTransitionHistory, bundle.AskArchiveQuestionTransitionHistoryRepeated, bundle.AskArchiveQuestionTransitionHistorySnapshots)
 			}
 			return runAskArchiveTransitionsAsk(args[4:], stdout, stderr, bundle.AskArchiveQuestionTransitionHistory)
 		}
@@ -190,6 +190,7 @@ type bundleArchiveQuestionHistorySaver func([]string, string) (bundle.ArchiveQue
 type bundleArchiveQuestionTransitionVerifier func(string) (bundle.ArchiveQuestionTransitionVerificationSummary, error)
 type bundleArchiveQuestionTransitionAsker func(string) (bundle.ArchiveQuestionTransitionHistoryAnswer, error)
 type bundleArchiveQuestionTransitionRepeatedAsker func(string) (bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer, error)
+type bundleArchiveQuestionTransitionSnapshotAsker func(string) (bundle.ArchiveQuestionTransitionHistorySnapshotAnswer, error)
 type bundleQuestionLister func() []bundle.Question
 type bundleArchiveIndexer func(string) ([]bundle.ArchiveEntry, error)
 type uiServer func(string, http.Handler) error
@@ -1009,6 +1010,7 @@ func runAskArchiveTransitionsAskQuestion(
 	stdout, stderr io.Writer,
 	askTransition bundleArchiveQuestionTransitionAsker,
 	askRepeated bundleArchiveQuestionTransitionRepeatedAsker,
+	askSnapshots bundleArchiveQuestionTransitionSnapshotAsker,
 ) int {
 	flags := flag.NewFlagSet("experiment ask-archive transitions ask", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -1032,10 +1034,71 @@ func runAskArchiveTransitionsAskQuestion(
 		return runAskArchiveTransitionsAsk(askArgs, stdout, stderr, askTransition)
 	case questions[1].ID:
 		return runAskArchiveTransitionsAskRepeated(askArgs, stdout, stderr, askRepeated)
+	case questions[2].ID:
+		return runAskArchiveTransitionsAskSnapshots(askArgs, stdout, stderr, askSnapshots)
 	default:
 		_, _ = io.WriteString(stderr, "ariadne: experiment ask-archive transitions ask: question ID is invalid\n")
 		return 2
 	}
+}
+
+func runAskArchiveTransitionsAskSnapshots(
+	args []string,
+	stdout, stderr io.Writer,
+	ask bundleArchiveQuestionTransitionSnapshotAsker,
+) int {
+	flags := flag.NewFlagSet("experiment ask-archive transitions ask", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+
+	answer, err := ask(flags.Arg(0))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(answer); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if _, err := fmt.Fprintf(
+		stdout,
+		"archive reflection snapshot-summary question answered\nquestion_id: %s\nquestion: %s\nresult: %s\ntransition_history_sha256: %s\nsnapshots: %d\nsnapshot_summaries:\n",
+		answer.QuestionID,
+		answer.Question,
+		answer.Result,
+		answer.TransitionHistorySHA256,
+		answer.Snapshots,
+	); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask: write output: %v\n", err)
+		return 1
+	}
+	for index, snapshot := range answer.SnapshotSummaries {
+		if _, err := fmt.Fprintf(
+			stdout,
+			"- snapshot: %d\n  reflection_sha256: %s\n  observed: %d\n  unknown: %d\n  unavailable: %d\n  checked: %d\n",
+			index+1,
+			snapshot.ReflectionSHA256,
+			snapshot.Observed,
+			snapshot.Unknown,
+			snapshot.Unavailable,
+			snapshot.Checked,
+		); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask: write output: %v\n", err)
+			return 1
+		}
+	}
+	if _, err := io.WriteString(stdout, "note: this answers only safe snapshot summaries; it does not infer chronology or prove the underlying evidence\n"); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask: write output: %v\n", err)
+		return 1
+	}
+	return 0
 }
 
 func runAskArchiveTransitionsAskRepeated(

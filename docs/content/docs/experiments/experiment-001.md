@@ -303,6 +303,12 @@ when `go run` built Ariadne.
   records with their adjacent reflection identities; the legacy spelling is
   retained for compatibility. Schema 1 histories answer `unavailable`. It does
   not establish chronology or a trend.
+- `experiment ask-archive transitions ask [--json] <history.json> answer-state-snapshot-summaries`
+  asks which safe snapshot summaries the verified history recorded. Schema 3
+  histories return each snapshot's reflection identity and bounded
+  observed/unknown/unavailable/checked counts. Schema 1 and 2 histories answer
+  `unavailable`; the result does not infer chronology or prove the underlying
+  evidence.
 - `experiment ask-archive transitions save [--json] <report-1.json> <report-2.json> ... <history.json>`
   verifies the supplied reflections, writes one raw-value-free transition
   ledger with exclusive file creation, including safe per-directory state
@@ -353,10 +359,10 @@ when `go run` built Ariadne.
   When `--history` is supplied, the page also reads one structurally verified
   transition ledger and renders its caller-ordered, raw-value-free boundaries,
   including the verified history-question result, safe directory/state changes,
-  safe snapshot summaries, and the repeated-change question when present. The
-  history panel also lists the fixed question IDs with direct links to each
-  answer, so a UI driver can choose a bounded question without inventing
-  natural language. Those links use
+  safe snapshot summaries, the repeated-change question, and the
+  snapshot-summary question when present. The history panel also lists the
+  fixed question IDs with direct links to each answer, so a UI driver can
+  choose a bounded question without inventing natural language. Those links use
   the validated `history_question_id` query and fail closed for unknown IDs.
   When `--reflection` is supplied, the page re-asks that saved reflection's
   fixed question against the current archive and renders a bounded comparison

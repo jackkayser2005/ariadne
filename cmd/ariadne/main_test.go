@@ -117,13 +117,15 @@ func TestRunArchiveTransitionQuestions(t *testing.T) {
 					"- id: answer-state-transitions\n" +
 					"  question: At which supplied boundaries did the bounded answer state change?\n" +
 					"- id: answer-state-repeated-changes\n" +
-					"  question: Did any safe archive entry change at more than one supplied boundary?\n"
+					"  question: Did any safe archive entry change at more than one supplied boundary?\n" +
+					"- id: answer-state-snapshot-summaries\n" +
+					"  question: What bounded answer-state summary did each supplied reflection snapshot record?\n"
 				if stdout.String() != want {
 					t.Fatalf("run() stdout = %q, want %q", stdout.String(), want)
 				}
 				return
 			}
-			want := `[{"id":"answer-state-transitions","question":"At which supplied boundaries did the bounded answer state change?"},{"id":"answer-state-repeated-changes","question":"Did any safe archive entry change at more than one supplied boundary?"}]` + "\n"
+			want := `[{"id":"answer-state-transitions","question":"At which supplied boundaries did the bounded answer state change?"},{"id":"answer-state-repeated-changes","question":"Did any safe archive entry change at more than one supplied boundary?"},{"id":"answer-state-snapshot-summaries","question":"What bounded answer-state summary did each supplied reflection snapshot record?"}]` + "\n"
 			if stdout.String() != want {
 				t.Fatalf("run() stdout = %q, want %q", stdout.String(), want)
 			}
@@ -1835,6 +1837,18 @@ func TestRunAskArchiveTransitionsAskQuestion(t *testing.T) {
 		Transitions:             2,
 		RepeatedEntries:         []bundle.ArchiveQuestionTransitionHistoryRepeatedChange{},
 	}
+	snapshotAnswer := bundle.ArchiveQuestionTransitionHistorySnapshotAnswer{
+		SchemaVersion:           1,
+		QuestionID:              "answer-state-snapshot-summaries",
+		Question:                "What bounded answer-state summary did each supplied reflection snapshot record?",
+		Result:                  "available",
+		TransitionHistorySHA256: strings.Repeat("a", 64),
+		Snapshots:               2,
+		SnapshotSummaries: []bundle.ArchiveQuestionTransitionSnapshot{
+			{ReflectionSHA256: strings.Repeat("a", 64), Observed: 1, Checked: 1},
+			{ReflectionSHA256: strings.Repeat("b", 64), Unknown: 1, Checked: 1},
+		},
+	}
 
 	t.Run("transition ID", func(t *testing.T) {
 		var stdout, stderr bytes.Buffer
@@ -1851,6 +1865,10 @@ func TestRunAskArchiveTransitionsAskQuestion(t *testing.T) {
 			func(string) (bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer, error) {
 				t.Fatal("repeated asker called for transition question")
 				return bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer{}, nil
+			},
+			func(string) (bundle.ArchiveQuestionTransitionHistorySnapshotAnswer, error) {
+				t.Fatal("snapshot asker called for transition question")
+				return bundle.ArchiveQuestionTransitionHistorySnapshotAnswer{}, nil
 			},
 		)
 		if exitCode != 0 || !strings.Contains(stdout.String(), "question_id: answer-state-transitions") || stderr.Len() != 0 {
@@ -1874,9 +1892,39 @@ func TestRunAskArchiveTransitionsAskQuestion(t *testing.T) {
 				}
 				return repeatedAnswer, nil
 			},
+			func(string) (bundle.ArchiveQuestionTransitionHistorySnapshotAnswer, error) {
+				t.Fatal("snapshot asker called for repeated question")
+				return bundle.ArchiveQuestionTransitionHistorySnapshotAnswer{}, nil
+			},
 		)
 		if exitCode != 0 || !strings.Contains(stdout.String(), `"question_id":"answer-state-repeated-changes"`) || !strings.Contains(stdout.String(), `"repeated_entries":[]`) || stderr.Len() != 0 {
 			t.Fatalf("repeated ID ask = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("snapshot ID JSON", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsAskQuestion(
+			[]string{"--json", "history.json", "answer-state-snapshot-summaries"},
+			&stdout,
+			&stderr,
+			func(string) (bundle.ArchiveQuestionTransitionHistoryAnswer, error) {
+				t.Fatal("transition asker called for snapshot question")
+				return bundle.ArchiveQuestionTransitionHistoryAnswer{}, nil
+			},
+			func(string) (bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer, error) {
+				t.Fatal("repeated asker called for snapshot question")
+				return bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer{}, nil
+			},
+			func(path string) (bundle.ArchiveQuestionTransitionHistorySnapshotAnswer, error) {
+				if path != "history.json" {
+					t.Fatalf("snapshot asker path = %q", path)
+				}
+				return snapshotAnswer, nil
+			},
+		)
+		if exitCode != 0 || !strings.Contains(stdout.String(), `"question_id":"answer-state-snapshot-summaries"`) || !strings.Contains(stdout.String(), `"snapshot_summaries":[`) || stderr.Len() != 0 {
+			t.Fatalf("snapshot ID ask = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
 		}
 	})
 
@@ -1894,6 +1942,10 @@ func TestRunAskArchiveTransitionsAskQuestion(t *testing.T) {
 				t.Fatal("repeated asker called for unknown question")
 				return bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer{}, nil
 			},
+			func(string) (bundle.ArchiveQuestionTransitionHistorySnapshotAnswer, error) {
+				t.Fatal("snapshot asker called for unknown question")
+				return bundle.ArchiveQuestionTransitionHistorySnapshotAnswer{}, nil
+			},
 		)
 		if exitCode != 2 || stdout.Len() != 0 || stderr.String() != "ariadne: experiment ask-archive transitions ask: question ID is invalid\n" {
 			t.Fatalf("unknown ID ask = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
@@ -1907,6 +1959,150 @@ func TestRunAskArchiveTransitionsAskQuestion(t *testing.T) {
 			t.Fatalf("run question ID route = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
 		}
 	})
+}
+
+func TestRunAskArchiveTransitionsAskSnapshots(t *testing.T) {
+	answer := bundle.ArchiveQuestionTransitionHistorySnapshotAnswer{
+		SchemaVersion:           1,
+		QuestionID:              "answer-state-snapshot-summaries",
+		Question:                "What bounded answer-state summary did each supplied reflection snapshot record?",
+		Result:                  "available",
+		TransitionHistorySHA256: strings.Repeat("a", 64),
+		Snapshots:               2,
+		SnapshotSummaries: []bundle.ArchiveQuestionTransitionSnapshot{
+			{ReflectionSHA256: strings.Repeat("b", 64), Observed: 1, Checked: 1},
+			{ReflectionSHA256: strings.Repeat("c", 64), Unknown: 1, Unavailable: 1, Checked: 2},
+		},
+	}
+
+	t.Run("human", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsAskSnapshots(
+			[]string{"history.json"},
+			&stdout,
+			&stderr,
+			func(path string) (bundle.ArchiveQuestionTransitionHistorySnapshotAnswer, error) {
+				if path != "history.json" {
+					t.Fatalf("AskArchiveQuestionTransitionHistorySnapshots() path = %q", path)
+				}
+				return answer, nil
+			},
+		)
+		want := "archive reflection snapshot-summary question answered\n" +
+			"question_id: answer-state-snapshot-summaries\n" +
+			"question: What bounded answer-state summary did each supplied reflection snapshot record?\n" +
+			"result: available\n" +
+			"transition_history_sha256: " + strings.Repeat("a", 64) + "\n" +
+			"snapshots: 2\n" +
+			"snapshot_summaries:\n" +
+			"- snapshot: 1\n" +
+			"  reflection_sha256: " + strings.Repeat("b", 64) + "\n" +
+			"  observed: 1\n" +
+			"  unknown: 0\n" +
+			"  unavailable: 0\n" +
+			"  checked: 1\n" +
+			"- snapshot: 2\n" +
+			"  reflection_sha256: " + strings.Repeat("c", 64) + "\n" +
+			"  observed: 0\n" +
+			"  unknown: 1\n" +
+			"  unavailable: 1\n" +
+			"  checked: 2\n" +
+			"note: this answers only safe snapshot summaries; it does not infer chronology or prove the underlying evidence\n"
+		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+			t.Fatalf("runAskArchiveTransitionsAskSnapshots() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("json", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsAskSnapshots(
+			[]string{"--json", "history.json"},
+			&stdout,
+			&stderr,
+			func(string) (bundle.ArchiveQuestionTransitionHistorySnapshotAnswer, error) { return answer, nil },
+		)
+		want := `{"schema_version":1,"question_id":"answer-state-snapshot-summaries","question":"What bounded answer-state summary did each supplied reflection snapshot record?","result":"available","transition_history_sha256":"` + strings.Repeat("a", 64) + `","snapshots":2,"snapshot_summaries":[{"reflection_sha256":"` + strings.Repeat("b", 64) + `","observed":1,"unknown":0,"unavailable":0,"checked":1},{"reflection_sha256":"` + strings.Repeat("c", 64) + `","observed":0,"unknown":1,"unavailable":1,"checked":2}]}` + "\n"
+		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+			t.Fatalf("runAskArchiveTransitionsAskSnapshots() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+}
+
+func TestRunAskArchiveTransitionsAskSnapshotsFailures(t *testing.T) {
+	for _, args := range [][]string{nil, {"history.json", "extra"}, {"--json=invalid", "history.json"}} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			exitCode := runAskArchiveTransitionsAskSnapshots(
+				args,
+				&stdout,
+				&stderr,
+				func(string) (bundle.ArchiveQuestionTransitionHistorySnapshotAnswer, error) {
+					t.Fatal("AskArchiveQuestionTransitionHistorySnapshots called for invalid usage")
+					return bundle.ArchiveQuestionTransitionHistorySnapshotAnswer{}, nil
+				},
+			)
+			if exitCode != 2 || stdout.Len() != 0 || stderr.String() != usage {
+				t.Fatalf("runAskArchiveTransitionsAskSnapshots() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+			}
+		})
+	}
+
+	t.Run("answer error", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsAskSnapshots(
+			[]string{"history.json"},
+			&stdout,
+			&stderr,
+			func(string) (bundle.ArchiveQuestionTransitionHistorySnapshotAnswer, error) {
+				return bundle.ArchiveQuestionTransitionHistorySnapshotAnswer{}, errors.New("history is invalid")
+			},
+		)
+		if exitCode != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "history is invalid") {
+			t.Fatalf("runAskArchiveTransitionsAskSnapshots() = %d, stderr=%q", exitCode, stderr.String())
+		}
+	})
+
+	for _, args := range [][]string{{"history.json"}, {"--json", "history.json"}} {
+		t.Run("write output "+strings.Join(args, "_"), func(t *testing.T) {
+			var stderr bytes.Buffer
+			exitCode := runAskArchiveTransitionsAskSnapshots(
+				args,
+				failingWriter{},
+				&stderr,
+				func(string) (bundle.ArchiveQuestionTransitionHistorySnapshotAnswer, error) {
+					return bundle.ArchiveQuestionTransitionHistorySnapshotAnswer{}, nil
+				},
+			)
+			if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+				t.Fatalf("runAskArchiveTransitionsAskSnapshots() = %d, stderr=%q", exitCode, stderr.String())
+			}
+		})
+	}
+
+	for _, failAt := range []int{2, 3, 4} {
+		t.Run(fmt.Sprintf("write detail output %d", failAt), func(t *testing.T) {
+			var stderr bytes.Buffer
+			exitCode := runAskArchiveTransitionsAskSnapshots(
+				[]string{"history.json"},
+				&failAfterWriter{failAt: failAt},
+				&stderr,
+				func(string) (bundle.ArchiveQuestionTransitionHistorySnapshotAnswer, error) {
+					return bundle.ArchiveQuestionTransitionHistorySnapshotAnswer{
+						QuestionID: "answer-state-snapshot-summaries",
+						Question:   "What bounded answer-state summary did each supplied reflection snapshot record?",
+						Result:     "available",
+						SnapshotSummaries: []bundle.ArchiveQuestionTransitionSnapshot{
+							{ReflectionSHA256: strings.Repeat("b", 64)},
+							{ReflectionSHA256: strings.Repeat("c", 64)},
+						},
+					}, nil
+				},
+			)
+			if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+				t.Fatalf("runAskArchiveTransitionsAskSnapshots() = %d, stderr=%q", exitCode, stderr.String())
+			}
+		})
+	}
 }
 
 func TestRunAskArchiveTransitionsAskRepeated(t *testing.T) {

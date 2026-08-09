@@ -73,6 +73,7 @@ type pageData struct {
 	ReflectionHistoryQuestionID        string
 	ReflectionHistoryAnswer            bundle.ArchiveQuestionTransitionHistoryAnswer
 	ReflectionHistoryRepeatedAnswer    bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer
+	ReflectionHistorySnapshotAnswer    bundle.ArchiveQuestionTransitionHistorySnapshotAnswer
 	SavedReflectionComparisonRequested bool
 	SavedReflectionComparisonAvailable bool
 	SavedReflectionComparison          bundle.ArchiveQuestionComparison
@@ -182,6 +183,7 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	reflectionHistoryQuestionID := r.URL.Query().Get("history_question_id")
 	var reflectionHistoryAnswer bundle.ArchiveQuestionTransitionHistoryAnswer
 	var reflectionHistoryRepeatedAnswer bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer
+	var reflectionHistorySnapshotAnswer bundle.ArchiveQuestionTransitionHistorySnapshotAnswer
 	savedReflectionComparisonRequested := h.compareCurrent != nil
 	savedReflectionComparisonAvailable := false
 	var savedReflectionComparison bundle.ArchiveQuestionComparison
@@ -199,6 +201,7 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		if reflectionHistoryAvailable {
 			reflectionHistoryAnswer = bundle.AnswerArchiveQuestionTransitionHistory(reflectionHistory, reflectionHistorySummary.TransitionHistorySHA256)
 			reflectionHistoryRepeatedAnswer = bundle.AnswerArchiveQuestionTransitionHistoryRepeated(reflectionHistory, reflectionHistorySummary.TransitionHistorySHA256)
+			reflectionHistorySnapshotAnswer = bundle.AnswerArchiveQuestionTransitionHistorySnapshots(reflectionHistory, reflectionHistorySummary.TransitionHistorySHA256)
 		}
 	}
 	if h.compareCurrent != nil {
@@ -263,6 +266,7 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		ReflectionHistoryQuestionID:        reflectionHistoryQuestionID,
 		ReflectionHistoryAnswer:            reflectionHistoryAnswer,
 		ReflectionHistoryRepeatedAnswer:    reflectionHistoryRepeatedAnswer,
+		ReflectionHistorySnapshotAnswer:    reflectionHistorySnapshotAnswer,
 		SavedReflectionComparisonRequested: savedReflectionComparisonRequested,
 		SavedReflectionComparisonAvailable: savedReflectionComparisonAvailable,
 		SavedReflectionComparison:          savedReflectionComparison,
@@ -627,12 +631,6 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
         <dt>transitions</dt><dd>{{.ReflectionHistorySummary.Transitions}}</dd>
         <dt>history SHA-256</dt><dd>{{.ReflectionHistorySummary.TransitionHistorySHA256}}</dd>
       </dl>
-      {{if .ReflectionHistory.SnapshotSummaries}}
-      <p class="context">safe snapshot summaries:</p>
-      <ul aria-label="Saved reflection snapshot summaries">
-      {{range .ReflectionHistory.SnapshotSummaries}}<li><span class="context">{{.ReflectionSHA256}}</span>: observed {{.Observed}}, unknown {{.Unknown}}, unavailable {{.Unavailable}}, checked {{.Checked}}</li>{{end}}
-      </ul>
-      {{end}}
       {{if or (eq .ReflectionHistoryQuestionID "") (eq .ReflectionHistoryQuestionID .ReflectionHistoryAnswer.QuestionID)}}
       <section id="history-question-{{.ReflectionHistoryAnswer.QuestionID}}">
       <div class="section-head"><h3>History question</h3><span class="status">{{.ReflectionHistoryAnswer.Result}}</span></div>
@@ -661,6 +659,20 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       <p class="context">repeated entries:</p>
       <ul aria-label="Repeated changed history entries">
       {{range .ReflectionHistoryRepeatedAnswer.RepeatedEntries}}<li>{{.Directory}}<ul>{{range .Changes}}<li>transition {{.Transition}}: {{.OlderState}} &rarr; {{.NewerState}}<br><span class="context">from {{.FromReflectionSHA256}} to {{.ToReflectionSHA256}}</span></li>{{end}}</ul></li>{{else}}<li>none</li>{{end}}
+      </ul>
+      {{end}}
+      </section>
+      {{end}}
+      {{if or (eq .ReflectionHistoryQuestionID "") (eq .ReflectionHistoryQuestionID .ReflectionHistorySnapshotAnswer.QuestionID)}}
+      <section id="history-question-{{.ReflectionHistorySnapshotAnswer.QuestionID}}">
+      <div class="section-head"><h3>Snapshot-summary question</h3><span class="status status-{{.ReflectionHistorySnapshotAnswer.Result}}">{{.ReflectionHistorySnapshotAnswer.Result}}</span></div>
+      <p class="context">{{.ReflectionHistorySnapshotAnswer.Question}}</p>
+      {{if eq .ReflectionHistorySnapshotAnswer.Result "unavailable"}}
+      <p class="context">Snapshot summaries are unavailable for legacy histories that predate schema 3.</p>
+      {{else}}
+      <p class="context">safe snapshot summaries:</p>
+      <ul aria-label="Saved reflection snapshot summaries">
+      {{range .ReflectionHistorySnapshotAnswer.SnapshotSummaries}}<li><span class="context">{{.ReflectionSHA256}}</span>: observed {{.Observed}}, unknown {{.Unknown}}, unavailable {{.Unavailable}}, checked {{.Checked}}</li>{{end}}
       </ul>
       {{end}}
       </section>

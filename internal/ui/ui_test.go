@@ -375,7 +375,7 @@ func TestHandlerRendersReflectionHistory(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, body=%q", recorder.Code, body)
 	}
-	for _, want := range []string{"Saved reflection history", "verified ledger", history.Question, "History questions", "answer-state-transitions", "answer-state-repeated-changes", "history_question_id=answer-state-transitions", "history_question_id=answer-state-repeated-changes", "caller", "snapshots", "3", "transitions", "2", "history SHA-256", strings.Repeat("c", 64), "safe snapshot summaries", "checked 1", "checked 2", "History question", "changed", "changed transitions", "transition 1", "changed entries", "transition 1: run-001", "incomparable transitions", "Repeated-change question", "repeated", "transition 2", strings.Repeat("a", 64), strings.Repeat("b", 64), strings.Repeat("c", 64), "changed archive entries", "run-001", "observed", "unknown", "does not establish chronology"} {
+	for _, want := range []string{"Saved reflection history", "verified ledger", history.Question, "History questions", "answer-state-transitions", "answer-state-repeated-changes", "answer-state-snapshot-summaries", "history_question_id=answer-state-transitions", "history_question_id=answer-state-repeated-changes", "history_question_id=answer-state-snapshot-summaries", "caller", "snapshots", "3", "transitions", "2", "history SHA-256", strings.Repeat("c", 64), "safe snapshot summaries", "checked 1", "checked 2", "History question", "changed", "changed transitions", "transition 1", "changed entries", "transition 1: run-001", "incomparable transitions", "Repeated-change question", "repeated", "Snapshot-summary question", "available", "transition 2", strings.Repeat("a", 64), strings.Repeat("b", 64), strings.Repeat("c", 64), "changed archive entries", "run-001", "observed", "unknown", "does not establish chronology"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("body missing %q: %s", want, body)
 		}
@@ -389,6 +389,13 @@ func TestHandlerRendersReflectionHistory(t *testing.T) {
 	selectedBody := selectedRecorder.Body.String()
 	if selectedRecorder.Code != http.StatusOK || !strings.Contains(selectedBody, `aria-current="page"`) || !strings.Contains(selectedBody, `id="history-question-answer-state-repeated-changes"`) || strings.Contains(selectedBody, `id="history-question-answer-state-transitions"`) {
 		t.Fatalf("selected history question status = %d, body=%q", selectedRecorder.Code, selectedBody)
+	}
+
+	snapshotRecorder := httptest.NewRecorder()
+	h.ServeHTTP(snapshotRecorder, httptest.NewRequest(http.MethodGet, "/?history_question_id=answer-state-snapshot-summaries", nil))
+	snapshotBody := snapshotRecorder.Body.String()
+	if snapshotRecorder.Code != http.StatusOK || !strings.Contains(snapshotBody, `aria-current="page"`) || !strings.Contains(snapshotBody, `id="history-question-answer-state-snapshot-summaries"`) || strings.Contains(snapshotBody, `id="history-question-answer-state-transitions"`) {
+		t.Fatalf("selected snapshot question status = %d, body=%q", snapshotRecorder.Code, snapshotBody)
 	}
 
 	invalidRecorder := httptest.NewRecorder()
