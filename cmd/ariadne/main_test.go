@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -2289,6 +2290,110 @@ func TestRunAskArchiveTransitionsAskAllFailures(t *testing.T) {
 			)
 			if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
 				t.Fatalf("runAskArchiveTransitionsAskAll() = %d, stderr=%q", exitCode, stderr.String())
+			}
+		})
+	}
+}
+
+func TestRunAskArchiveTransitionsAskReceipt(t *testing.T) {
+	receipt := bundle.ArchiveQuestionTransitionHistoryAnswerReceipt{
+		SchemaVersion:           1,
+		QuestionID:              "answer-state-summary-changes",
+		Question:                "Did the bounded answer-state summary change at any supplied boundary?",
+		Result:                  "changed",
+		TransitionHistorySHA256: strings.Repeat("a", 64),
+		Answer:                  json.RawMessage(`{"schema_version":1,"result":"changed","changed_transitions":[1]}`),
+	}
+
+	t.Run("human", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsAskReceipt(
+			[]string{"history.json", "answer-state-summary-changes"},
+			&stdout,
+			&stderr,
+			func(path, questionID string) (bundle.ArchiveQuestionTransitionHistoryAnswerReceipt, error) {
+				if path != "history.json" || questionID != "answer-state-summary-changes" {
+					t.Fatalf("AskArchiveQuestionTransitionHistoryReceipt() args = %q, %q", path, questionID)
+				}
+				return receipt, nil
+			},
+		)
+		want := "archive reflection answer receipt\n" +
+			"schema_version: 1\n" +
+			"question_id: answer-state-summary-changes\n" +
+			"question: Did the bounded answer-state summary change at any supplied boundary?\n" +
+			"result: changed\n" +
+			"transition_history_sha256: " + strings.Repeat("a", 64) + "\n" +
+			"note: use --json for the portable raw-value-free answer details; this does not infer chronology or prove the underlying evidence\n"
+		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+			t.Fatalf("runAskArchiveTransitionsAskReceipt() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("json", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsAskReceipt(
+			[]string{"--json", "history.json", "answer-state-summary-changes"},
+			&stdout,
+			&stderr,
+			func(string, string) (bundle.ArchiveQuestionTransitionHistoryAnswerReceipt, error) {
+				return receipt, nil
+			},
+		)
+		want := `{"schema_version":1,"question_id":"answer-state-summary-changes","question":"Did the bounded answer-state summary change at any supplied boundary?","result":"changed","transition_history_sha256":"` + strings.Repeat("a", 64) + `","answer":{"schema_version":1,"result":"changed","changed_transitions":[1]}}` + "\n"
+		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+			t.Fatalf("runAskArchiveTransitionsAskReceipt() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+}
+
+func TestRunAskArchiveTransitionsAskReceiptFailures(t *testing.T) {
+	for _, args := range [][]string{nil, {"history.json"}, {"history.json", "question", "extra"}, {"--json=invalid", "history.json", "question"}} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			exitCode := runAskArchiveTransitionsAskReceipt(
+				args,
+				&stdout,
+				&stderr,
+				func(string, string) (bundle.ArchiveQuestionTransitionHistoryAnswerReceipt, error) {
+					t.Fatal("AskArchiveQuestionTransitionHistoryReceipt called for invalid usage")
+					return bundle.ArchiveQuestionTransitionHistoryAnswerReceipt{}, nil
+				},
+			)
+			if exitCode != 2 || stdout.Len() != 0 || stderr.String() != usage {
+				t.Fatalf("runAskArchiveTransitionsAskReceipt() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+			}
+		})
+	}
+
+	t.Run("answer error", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsAskReceipt(
+			[]string{"history.json", "question"},
+			&stdout,
+			&stderr,
+			func(string, string) (bundle.ArchiveQuestionTransitionHistoryAnswerReceipt, error) {
+				return bundle.ArchiveQuestionTransitionHistoryAnswerReceipt{}, errors.New("history is invalid")
+			},
+		)
+		if exitCode != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "history is invalid") {
+			t.Fatalf("runAskArchiveTransitionsAskReceipt() = %d, stderr=%q", exitCode, stderr.String())
+		}
+	})
+
+	for _, args := range [][]string{{"history.json", "question"}, {"--json", "history.json", "question"}} {
+		t.Run("write output "+strings.Join(args, "_"), func(t *testing.T) {
+			var stderr bytes.Buffer
+			exitCode := runAskArchiveTransitionsAskReceipt(
+				args,
+				failingWriter{},
+				&stderr,
+				func(string, string) (bundle.ArchiveQuestionTransitionHistoryAnswerReceipt, error) {
+					return bundle.ArchiveQuestionTransitionHistoryAnswerReceipt{}, nil
+				},
+			)
+			if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+				t.Fatalf("runAskArchiveTransitionsAskReceipt() = %d, stderr=%q", exitCode, stderr.String())
 			}
 		})
 	}

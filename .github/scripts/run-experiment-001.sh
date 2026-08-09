@@ -324,6 +324,24 @@ jq -e --arg history_sha256 "${transition_history_sha256}" '
   (.["questions"][2] == {question_id: "answer-state-snapshot-summaries", question: "What bounded answer-state summary did each supplied reflection snapshot record?", result: "available"}) and
   (.["questions"][3] == {question_id: "answer-state-summary-changes", question: "Did the bounded answer-state summary change at any supplied boundary?", result: "same"})
 ' "${archive_question_transition_round_json}"
+archive_question_transition_receipt_json="${RUNNER_TEMP}/ariadne-archive-question-transition-receipt.json"
+"${ariadne}" experiment ask-archive transitions ask receipt --json \
+  "${archive_question_transitions_json}" \
+  answer-state-summary-changes >"${archive_question_transition_receipt_json}"
+jq -e --arg history_sha256 "${transition_history_sha256}" '
+  (keys_unsorted == ["schema_version", "question_id", "question", "result", "transition_history_sha256", "answer"]) and
+  (.schema_version == 1) and
+  (.question_id == "answer-state-summary-changes") and
+  (.question == "Did the bounded answer-state summary change at any supplied boundary?") and
+  (.result == "same") and
+  (.transition_history_sha256 == $history_sha256) and
+  (.answer | keys_unsorted == ["schema_version", "question_id", "question", "result", "transition_history_sha256", "transitions", "changed_transitions"]) and
+  (.answer.schema_version == 1) and
+  (.answer.result == "same") and
+  (.answer.transition_history_sha256 == $history_sha256) and
+  (.answer.transitions == 2) and
+  (.answer.changed_transitions == [])
+' "${archive_question_transition_receipt_json}"
 archive_question_transition_questions_json="${RUNNER_TEMP}/ariadne-archive-question-transition-questions.json"
 "${ariadne}" experiment ask-archive transitions questions --json >"${archive_question_transition_questions_json}"
 jq -e '

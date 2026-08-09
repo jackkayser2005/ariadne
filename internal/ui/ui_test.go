@@ -387,7 +387,7 @@ func TestHandlerRendersReflectionHistory(t *testing.T) {
 	selectedRecorder := httptest.NewRecorder()
 	h.ServeHTTP(selectedRecorder, httptest.NewRequest(http.MethodGet, "/?history_question_id=answer-state-repeated-changes", nil))
 	selectedBody := selectedRecorder.Body.String()
-	if selectedRecorder.Code != http.StatusOK || !strings.Contains(selectedBody, `aria-current="page"`) || !strings.Contains(selectedBody, `id="history-question-answer-state-repeated-changes"`) || strings.Contains(selectedBody, `id="history-question-answer-state-transitions"`) {
+	if selectedRecorder.Code != http.StatusOK || !strings.Contains(selectedBody, `aria-current="page"`) || !strings.Contains(selectedBody, `id="history-answer-receipt-answer-state-repeated-changes"`) || !strings.Contains(selectedBody, "Portable answer receipt") || !strings.Contains(selectedBody, "raw-value-free") || !strings.Contains(selectedBody, `id="history-question-answer-state-repeated-changes"`) || strings.Contains(selectedBody, `id="history-answer-receipt-answer-state-transitions"`) || strings.Contains(selectedBody, `id="history-question-answer-state-transitions"`) {
 		t.Fatalf("selected history question status = %d, body=%q", selectedRecorder.Code, selectedBody)
 	}
 

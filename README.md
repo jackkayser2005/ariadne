@@ -61,6 +61,7 @@ go run ./cmd/ariadne experiment ask-archive transitions questions --json
 go run ./cmd/ariadne experiment ask-archive transitions ask --json <history.json> [<question-id>]
 go run ./cmd/ariadne experiment ask-archive transitions ask repeated --json <history.json>
 go run ./cmd/ariadne experiment ask-archive transitions ask all --json <history.json>
+go run ./cmd/ariadne experiment ask-archive transitions ask receipt --json <history.json> <question-id>
 go run ./cmd/ariadne experiment ask-archive transitions save --json <reflection-1.json> <reflection-2.json> ... <history.json>
 go run ./cmd/ariadne experiment ask-archive transitions verify --json <transitions.json>
 ```
@@ -117,6 +118,12 @@ chronology or trend claim.
 bounded result of every fixed history question in stable catalog order. Its
 raw-value-free JSON is a portable question-round receipt; call an individual
 question ID for detailed entries or snapshot summaries.
+
+`transitions ask receipt <history.json> <question-id>` verifies the history once
+and wraps one selected fixed answer in a portable raw-value-free receipt. The
+receipt binds the bounded result and detailed answer to the verified history
+SHA-256; use a question ID from `transitions questions` and do not infer
+chronology or the underlying evidence from it.
 
 New transition ledgers use schema 3 and include those snapshot summaries;
 schema 2 ledgers remain readable, and schema 1 ledgers remain readable with

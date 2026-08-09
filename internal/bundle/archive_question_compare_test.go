@@ -454,6 +454,50 @@ func TestAskArchiveQuestionTransitionHistoryQuestionRound(t *testing.T) {
 	}
 }
 
+func TestAnswerArchiveQuestionTransitionHistoryReceipt(t *testing.T) {
+	history := validArchiveQuestionTransitionHistory()
+	history.SchemaVersion = 3
+	history.SnapshotSummaries = []ArchiveQuestionTransitionSnapshot{
+		{ReflectionSHA256: strings.Repeat("a", 64), Observed: 1, Checked: 1},
+		{ReflectionSHA256: strings.Repeat("b", 64), Unknown: 1, Checked: 1},
+	}
+	receipt, err := AnswerArchiveQuestionTransitionHistoryReceipt(history, strings.Repeat("c", 64), "answer-state-summary-changes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt.SchemaVersion != 1 || receipt.QuestionID != "answer-state-summary-changes" || receipt.Question != "Did the bounded answer-state summary change at any supplied boundary?" || receipt.Result != "changed" || receipt.TransitionHistorySHA256 != strings.Repeat("c", 64) {
+		t.Fatalf("receipt metadata = %#v", receipt)
+	}
+	var detail ArchiveQuestionTransitionHistorySummaryAnswer
+	if err := json.Unmarshal(receipt.Answer, &detail); err != nil {
+		t.Fatalf("receipt answer JSON: %v", err)
+	}
+	if detail.Result != "changed" || !reflect.DeepEqual(detail.ChangedTransitions, []int{1}) {
+		t.Fatalf("receipt answer = %#v", detail)
+	}
+	if strings.Contains(string(receipt.Answer), "standard") || strings.Contains(string(receipt.Answer), "personalized") {
+		t.Fatalf("receipt exposed a captured value: %s", receipt.Answer)
+	}
+	if _, err := AnswerArchiveQuestionTransitionHistoryReceipt(history, "digest", "not-a-question"); err == nil || !strings.Contains(err.Error(), "question ID is invalid") {
+		t.Fatalf("invalid receipt question error = %v", err)
+	}
+}
+
+func TestAskArchiveQuestionTransitionHistoryReceipt(t *testing.T) {
+	history := validArchiveQuestionTransitionHistory()
+	path := writeArchiveQuestionTransitionHistory(t, history)
+	receipt, err := AskArchiveQuestionTransitionHistoryReceipt(path, "answer-state-transitions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt.Result != "changed" || !validDigest(receipt.TransitionHistorySHA256) || len(receipt.Answer) == 0 {
+		t.Fatalf("AskArchiveQuestionTransitionHistoryReceipt() = %#v", receipt)
+	}
+	if _, err := AskArchiveQuestionTransitionHistoryReceipt(" ", "answer-state-transitions"); err == nil || !strings.Contains(err.Error(), "path is required") {
+		t.Fatalf("empty receipt path error = %v", err)
+	}
+}
+
 func TestAskArchiveQuestionTransitionHistory(t *testing.T) {
 	history := validArchiveQuestionTransitionHistory()
 	path := writeArchiveQuestionTransitionHistory(t, history)

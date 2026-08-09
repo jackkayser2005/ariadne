@@ -39,6 +39,7 @@ const usage = `usage:
   ariadne experiment ask-archive transitions ask [--json] <history.json> [<question-id>]
   ariadne experiment ask-archive transitions ask repeated [--json] <history.json>
   ariadne experiment ask-archive transitions ask all [--json] <history.json>
+  ariadne experiment ask-archive transitions ask receipt [--json] <history.json> <question-id>
   ariadne experiment ask-archive transitions save [--json] <report-1.json> <report-2.json> ... <history.json>
   ariadne experiment ask-archive transitions verify [--json] [--expect-sha256 <digest>] <history.json>
   ariadne experiment ask-archive verify [--json] [--expect-sha256 <digest>] <report.json>
@@ -107,6 +108,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 			}
 			if len(args) >= 5 && args[4] == "all" {
 				return runAskArchiveTransitionsAskAll(args[5:], stdout, stderr, bundle.AskArchiveQuestionTransitionHistoryQuestionRound)
+			}
+			if len(args) >= 5 && args[4] == "receipt" {
+				return runAskArchiveTransitionsAskReceipt(args[5:], stdout, stderr, bundle.AskArchiveQuestionTransitionHistoryReceipt)
 			}
 			if len(args) >= 6 {
 				return runAskArchiveTransitionsAskQuestion(args[4:], stdout, stderr, bundle.AskArchiveQuestionTransitionHistory, bundle.AskArchiveQuestionTransitionHistoryRepeated, bundle.AskArchiveQuestionTransitionHistorySnapshots, bundle.AskArchiveQuestionTransitionHistorySummary)
@@ -197,6 +201,7 @@ type bundleArchiveQuestionTransitionRepeatedAsker func(string) (bundle.ArchiveQu
 type bundleArchiveQuestionTransitionSnapshotAsker func(string) (bundle.ArchiveQuestionTransitionHistorySnapshotAnswer, error)
 type bundleArchiveQuestionTransitionSummaryAsker func(string) (bundle.ArchiveQuestionTransitionHistorySummaryAnswer, error)
 type bundleArchiveQuestionTransitionRoundAsker func(string) (bundle.ArchiveQuestionTransitionHistoryQuestionRoundAnswer, error)
+type bundleArchiveQuestionTransitionReceiptAsker func(string, string) (bundle.ArchiveQuestionTransitionHistoryAnswerReceipt, error)
 type bundleQuestionLister func() []bundle.Question
 type bundleArchiveIndexer func(string) ([]bundle.ArchiveEntry, error)
 type uiServer func(string, http.Handler) error
@@ -1052,6 +1057,46 @@ func runAskArchiveTransitionsAskAll(
 	}
 	if _, err := io.WriteString(stdout, "note: this records fixed bounded question results only; inspect an individual question for details, and do not infer chronology or prove the underlying evidence\n"); err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask all: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func runAskArchiveTransitionsAskReceipt(
+	args []string,
+	stdout, stderr io.Writer,
+	ask bundleArchiveQuestionTransitionReceiptAsker,
+) int {
+	flags := flag.NewFlagSet("experiment ask-archive transitions ask receipt", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 2 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+
+	receipt, err := ask(flags.Arg(0), flags.Arg(1))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask receipt: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(receipt); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask receipt: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if _, err := fmt.Fprintf(
+		stdout,
+		"archive reflection answer receipt\nschema_version: %d\nquestion_id: %s\nquestion: %s\nresult: %s\ntransition_history_sha256: %s\nnote: use --json for the portable raw-value-free answer details; this does not infer chronology or prove the underlying evidence\n",
+		receipt.SchemaVersion,
+		receipt.QuestionID,
+		receipt.Question,
+		receipt.Result,
+		receipt.TransitionHistorySHA256,
+	); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask receipt: write output: %v\n", err)
 		return 1
 	}
 	return 0

@@ -18,6 +18,7 @@ const (
 	archiveQuestionTransitionHistorySnapshotAnswerSchemaVersion = 1
 	archiveQuestionTransitionHistorySummaryAnswerSchemaVersion  = 1
 	archiveQuestionTransitionHistoryQuestionRoundSchemaVersion  = 1
+	archiveQuestionTransitionHistoryAnswerReceiptSchemaVersion  = 1
 	archiveQuestionComparisonID                                 = "answer-state-change"
 	archiveQuestionComparisonText                               = "Did the bounded answer state change between these saved reflection snapshots?"
 	archiveQuestionTransitionHistoryID                          = "answer-state-transitions"
@@ -181,6 +182,18 @@ type ArchiveQuestionTransitionHistoryQuestionRoundItem struct {
 	Result     string `json:"result"`
 }
 
+// ArchiveQuestionTransitionHistoryAnswerReceipt is a portable raw-value-free
+// receipt for one fixed question asked of a verified transition history. The
+// nested answer is one of the typed history answers encoded as JSON.
+type ArchiveQuestionTransitionHistoryAnswerReceipt struct {
+	SchemaVersion           int             `json:"schema_version"`
+	QuestionID              string          `json:"question_id"`
+	Question                string          `json:"question"`
+	Result                  string          `json:"result"`
+	TransitionHistorySHA256 string          `json:"transition_history_sha256"`
+	Answer                  json.RawMessage `json:"answer"`
+}
+
 // ArchiveQuestionTransitionHistoryQuestions returns the fixed questions
 // available for a verified transition history in stable order.
 func ArchiveQuestionTransitionHistoryQuestions() []Question {
@@ -190,6 +203,15 @@ func ArchiveQuestionTransitionHistoryQuestions() []Question {
 		{ID: archiveQuestionTransitionHistorySnapshotQuestionID, Text: archiveQuestionTransitionHistorySnapshotQuestionText},
 		{ID: archiveQuestionTransitionHistorySummaryQuestionID, Text: archiveQuestionTransitionHistorySummaryQuestionText},
 	}
+}
+
+func archiveQuestionTransitionHistoryQuestionForID(id string) (Question, bool) {
+	for _, question := range ArchiveQuestionTransitionHistoryQuestions() {
+		if question.ID == id {
+			return question, true
+		}
+	}
+	return Question{}, false
 }
 
 // CompareArchiveQuestionReports compares only verified answer states from
@@ -521,6 +543,45 @@ func AnswerArchiveQuestionTransitionHistoryQuestionRound(history ArchiveQuestion
 	}
 }
 
+// AnswerArchiveQuestionTransitionHistoryReceipt wraps one fixed typed answer
+// in a common portable envelope without exposing captured values.
+func AnswerArchiveQuestionTransitionHistoryReceipt(history ArchiveQuestionTransitionHistory, historySHA256, questionID string) (ArchiveQuestionTransitionHistoryAnswerReceipt, error) {
+	question, ok := archiveQuestionTransitionHistoryQuestionForID(questionID)
+	if !ok {
+		return ArchiveQuestionTransitionHistoryAnswerReceipt{}, errors.New("question ID is invalid")
+	}
+	var answer any
+	var result string
+	switch questionID {
+	case archiveQuestionTransitionHistoryID:
+		detail := AnswerArchiveQuestionTransitionHistory(history, historySHA256)
+		answer, result = detail, detail.Result
+	case archiveQuestionTransitionHistoryRepeatedQuestionID:
+		detail := AnswerArchiveQuestionTransitionHistoryRepeated(history, historySHA256)
+		answer, result = detail, detail.Result
+	case archiveQuestionTransitionHistorySnapshotQuestionID:
+		detail := AnswerArchiveQuestionTransitionHistorySnapshots(history, historySHA256)
+		answer, result = detail, detail.Result
+	case archiveQuestionTransitionHistorySummaryQuestionID:
+		detail := AnswerArchiveQuestionTransitionHistorySummary(history, historySHA256)
+		answer, result = detail, detail.Result
+	default:
+		return ArchiveQuestionTransitionHistoryAnswerReceipt{}, errors.New("question ID is invalid")
+	}
+	encoded, err := json.Marshal(answer)
+	if err != nil {
+		return ArchiveQuestionTransitionHistoryAnswerReceipt{}, fmt.Errorf("encode answer receipt: %w", err)
+	}
+	return ArchiveQuestionTransitionHistoryAnswerReceipt{
+		SchemaVersion:           archiveQuestionTransitionHistoryAnswerReceiptSchemaVersion,
+		QuestionID:              question.ID,
+		Question:                question.Text,
+		Result:                  result,
+		TransitionHistorySHA256: historySHA256,
+		Answer:                  encoded,
+	}, nil
+}
+
 // AskArchiveQuestionTransitionHistory verifies a saved transition history
 // and answers its fixed raw-value-free question.
 func AskArchiveQuestionTransitionHistory(historyPath string) (ArchiveQuestionTransitionHistoryAnswer, error) {
@@ -569,6 +630,16 @@ func AskArchiveQuestionTransitionHistoryQuestionRound(historyPath string) (Archi
 		return ArchiveQuestionTransitionHistoryQuestionRoundAnswer{}, err
 	}
 	return AnswerArchiveQuestionTransitionHistoryQuestionRound(history, summary.TransitionHistorySHA256), nil
+}
+
+// AskArchiveQuestionTransitionHistoryReceipt verifies a saved transition
+// history and returns one selected fixed answer as a portable receipt.
+func AskArchiveQuestionTransitionHistoryReceipt(historyPath, questionID string) (ArchiveQuestionTransitionHistoryAnswerReceipt, error) {
+	history, summary, err := ReadArchiveQuestionTransitionHistory(historyPath)
+	if err != nil {
+		return ArchiveQuestionTransitionHistoryAnswerReceipt{}, err
+	}
+	return AnswerArchiveQuestionTransitionHistoryReceipt(history, summary.TransitionHistorySHA256, questionID)
 }
 
 // SaveArchiveQuestionTransitionHistory writes one validated transition ledger

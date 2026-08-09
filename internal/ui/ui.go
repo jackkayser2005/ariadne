@@ -2,6 +2,7 @@
 package ui
 
 import (
+	"encoding/json"
 	"html/template"
 	"net/http"
 	"net/url"
@@ -75,6 +76,9 @@ type pageData struct {
 	ReflectionHistoryRepeatedAnswer    bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer
 	ReflectionHistorySnapshotAnswer    bundle.ArchiveQuestionTransitionHistorySnapshotAnswer
 	ReflectionHistorySummaryAnswer     bundle.ArchiveQuestionTransitionHistorySummaryAnswer
+	ReflectionHistoryReceiptAvailable  bool
+	ReflectionHistoryReceipt           bundle.ArchiveQuestionTransitionHistoryAnswerReceipt
+	ReflectionHistoryReceiptJSON       string
 	SavedReflectionComparisonRequested bool
 	SavedReflectionComparisonAvailable bool
 	SavedReflectionComparison          bundle.ArchiveQuestionComparison
@@ -186,6 +190,9 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	var reflectionHistoryRepeatedAnswer bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer
 	var reflectionHistorySnapshotAnswer bundle.ArchiveQuestionTransitionHistorySnapshotAnswer
 	var reflectionHistorySummaryAnswer bundle.ArchiveQuestionTransitionHistorySummaryAnswer
+	var reflectionHistoryReceipt bundle.ArchiveQuestionTransitionHistoryAnswerReceipt
+	reflectionHistoryReceiptAvailable := false
+	reflectionHistoryReceiptJSON := ""
 	savedReflectionComparisonRequested := h.compareCurrent != nil
 	savedReflectionComparisonAvailable := false
 	var savedReflectionComparison bundle.ArchiveQuestionComparison
@@ -205,6 +212,17 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 			reflectionHistoryRepeatedAnswer = bundle.AnswerArchiveQuestionTransitionHistoryRepeated(reflectionHistory, reflectionHistorySummary.TransitionHistorySHA256)
 			reflectionHistorySnapshotAnswer = bundle.AnswerArchiveQuestionTransitionHistorySnapshots(reflectionHistory, reflectionHistorySummary.TransitionHistorySHA256)
 			reflectionHistorySummaryAnswer = bundle.AnswerArchiveQuestionTransitionHistorySummary(reflectionHistory, reflectionHistorySummary.TransitionHistorySHA256)
+			if reflectionHistoryQuestionID != "" {
+				var receiptErr error
+				reflectionHistoryReceipt, receiptErr = bundle.AnswerArchiveQuestionTransitionHistoryReceipt(reflectionHistory, reflectionHistorySummary.TransitionHistorySHA256, reflectionHistoryQuestionID)
+				if receiptErr == nil {
+					reflectionHistoryReceiptJSONBytes, marshalErr := json.MarshalIndent(reflectionHistoryReceipt, "", "  ")
+					if marshalErr == nil {
+						reflectionHistoryReceiptJSON = string(reflectionHistoryReceiptJSONBytes)
+						reflectionHistoryReceiptAvailable = true
+					}
+				}
+			}
 		}
 	}
 	if h.compareCurrent != nil {
@@ -271,6 +289,9 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		ReflectionHistoryRepeatedAnswer:    reflectionHistoryRepeatedAnswer,
 		ReflectionHistorySnapshotAnswer:    reflectionHistorySnapshotAnswer,
 		ReflectionHistorySummaryAnswer:     reflectionHistorySummaryAnswer,
+		ReflectionHistoryReceiptAvailable:  reflectionHistoryReceiptAvailable,
+		ReflectionHistoryReceipt:           reflectionHistoryReceipt,
+		ReflectionHistoryReceiptJSON:       reflectionHistoryReceiptJSON,
 		SavedReflectionComparisonRequested: savedReflectionComparisonRequested,
 		SavedReflectionComparisonAvailable: savedReflectionComparisonAvailable,
 		SavedReflectionComparison:          savedReflectionComparison,
@@ -552,6 +573,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
     dd { margin: 0; overflow-wrap: anywhere; }
     ul { margin: 12px 0 26px; padding-left: 22px; }
     li { margin: 6px 0; overflow-wrap: anywhere; }
+    pre { max-height: 420px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); padding: 14px; font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
     a.finding { color: var(--accent); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13px; }
     .empty { color: var(--muted); border: 1px dashed var(--line); border-radius: 14px; padding: 24px; }
     footer { border-top: 1px solid var(--line); margin-top: 52px; padding-top: 16px; }
@@ -635,6 +657,19 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
         <dt>transitions</dt><dd>{{.ReflectionHistorySummary.Transitions}}</dd>
         <dt>history SHA-256</dt><dd>{{.ReflectionHistorySummary.TransitionHistorySHA256}}</dd>
       </dl>
+      {{if .ReflectionHistoryReceiptAvailable}}
+      <section class="panel" id="history-answer-receipt-{{.ReflectionHistoryReceipt.QuestionID}}" aria-label="Portable history answer receipt">
+        <div class="section-head"><h3>Portable answer receipt</h3><span class="status">raw-value-free</span></div>
+        <dl>
+          <dt>receipt schema</dt><dd>{{.ReflectionHistoryReceipt.SchemaVersion}}</dd>
+          <dt>question ID</dt><dd><code>{{.ReflectionHistoryReceipt.QuestionID}}</code></dd>
+          <dt>result</dt><dd><span class="status status-{{.ReflectionHistoryReceipt.Result}}">{{.ReflectionHistoryReceipt.Result}}</span></dd>
+          <dt>history SHA-256</dt><dd>{{.ReflectionHistoryReceipt.TransitionHistorySHA256}}</dd>
+        </dl>
+        <pre aria-label="Portable history answer receipt JSON">{{.ReflectionHistoryReceiptJSON}}</pre>
+        <p class="context">This receipt binds the selected bounded answer to the verified history identity. It does not infer chronology or prove the underlying evidence.</p>
+      </section>
+      {{end}}
       {{if or (eq .ReflectionHistoryQuestionID "") (eq .ReflectionHistoryQuestionID .ReflectionHistoryAnswer.QuestionID)}}
       <section id="history-question-{{.ReflectionHistoryAnswer.QuestionID}}">
       <div class="section-head"><h3>History question</h3><span class="status">{{.ReflectionHistoryAnswer.Result}}</span></div>

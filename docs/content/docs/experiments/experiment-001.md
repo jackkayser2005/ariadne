@@ -318,6 +318,12 @@ when `go run` built Ariadne.
   the ledger once and records every fixed history question's bounded result in
   stable catalog order. The JSON result is a raw-value-free portable question
   round; use an individual question ID for detailed output.
+- `experiment ask-archive transitions ask receipt [--json] <history.json> <question-id>`
+  verifies the ledger once and wraps one selected fixed answer in a common
+  raw-value-free receipt. The receipt binds its bounded result and nested
+  detailed answer to the verified transition-history SHA-256; it does not
+  infer chronology or prove the underlying evidence. The local review page
+  renders the same receipt envelope for a selected history question.
 - `experiment ask-archive transitions save [--json] <report-1.json> <report-2.json> ... <history.json>`
   verifies the supplied reflections, writes one raw-value-free transition
   ledger with exclusive file creation, including safe per-directory state
