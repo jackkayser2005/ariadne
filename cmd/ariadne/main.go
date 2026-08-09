@@ -29,6 +29,7 @@ const usage = `usage:
   ariadne experiment finding [--json] <run-directory> <finding-id>
   ariadne experiment ask [--json] <run-directory> <question-id>
   ariadne experiment ask-archive [--json] <archive-root> <question-id>
+  ariadne experiment ask-archive verify [--json] <report.json>
   ariadne experiment questions [--json]
   ariadne experiment list [--json] <archive-root>
   ariadne experiment serve [--addr <address>] <archive-root>
@@ -68,6 +69,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(args) >= 2 && args[0] == "experiment" && args[1] == "ask" {
 		return runAsk(args[2:], stdout, stderr, bundle.Ask)
+	}
+	if len(args) >= 3 && args[0] == "experiment" && args[1] == "ask-archive" && args[2] == "verify" {
+		return runAskArchiveVerify(args[3:], stdout, stderr, bundle.VerifyArchiveQuestionReport)
 	}
 	if len(args) >= 2 && args[0] == "experiment" && args[1] == "ask-archive" {
 		return runAskArchive(args[2:], stdout, stderr, bundle.AskArchive)
@@ -131,6 +135,7 @@ type bundleExportVerifier func(string) (bundle.ExportVerificationSummary, error)
 type bundleFinder func(string, string) (bundle.Finding, error)
 type bundleAsker func(string, string) (bundle.Answer, error)
 type bundleArchiveQuestionAsker func(string, string) (bundle.ArchiveQuestionReport, error)
+type bundleArchiveQuestionReportVerifier func(string) (bundle.ArchiveQuestionVerificationSummary, error)
 type bundleQuestionLister func() []bundle.Question
 type bundleArchiveIndexer func(string) ([]bundle.ArchiveEntry, error)
 type uiServer func(string, http.Handler) error
@@ -602,6 +607,44 @@ func runAskArchive(
 				return 1
 			}
 		}
+	}
+	return 0
+}
+
+func runAskArchiveVerify(
+	args []string,
+	stdout, stderr io.Writer,
+	verify bundleArchiveQuestionReportVerifier,
+) int {
+	flags := flag.NewFlagSet("experiment ask-archive verify", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+
+	summary, err := verify(flags.Arg(0))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive verify: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(summary); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive verify: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if _, err := fmt.Fprintf(
+		stdout,
+		"archive question report structurally verified\nschema_version: %d\nquestion_id: %s\nchecked: %d\nnote: this does not prove the underlying evidence\n",
+		summary.SchemaVersion,
+		summary.QuestionID,
+		summary.Checked,
+	); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive verify: write output: %v\n", err)
+		return 1
 	}
 	return 0
 }

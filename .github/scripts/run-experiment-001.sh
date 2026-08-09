@@ -78,6 +78,14 @@ jq -e '
   (.results[0].available == true) and
   (.results[0].answer.answer_state == "observed")
 ' "${archive_question_json}"
+archive_question_verified_json="${RUNNER_TEMP}/ariadne-archive-question-verified.json"
+"${ariadne}" experiment ask-archive verify --json "${archive_question_json}" >"${archive_question_verified_json}"
+jq -e '
+  (keys_unsorted == ["schema_version", "question_id", "checked"]) and
+  (.schema_version == 2) and
+  (.question_id == "counterfactual-change") and
+  (.checked == 1)
+' "${archive_question_verified_json}"
 
 finding_id="$(jq -r '.comparison.differences[0].id' "${run_dir}/evidence.json")"
 finding_stdout="${RUNNER_TEMP}/ariadne-finding.stdout"
