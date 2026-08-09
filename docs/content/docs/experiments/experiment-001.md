@@ -314,6 +314,10 @@ when `go run` built Ariadne.
   boundary. Schema 3 histories return `same` or `changed` plus 1-based changed
   boundary indexes. Schema 1 and 2 histories answer `unavailable`; this is a
   bounded comparison rather than a chronology or trend claim.
+- `experiment ask-archive transitions ask all [--json] <history.json>` verifies
+  the ledger once and records every fixed history question's bounded result in
+  stable catalog order. The JSON result is a raw-value-free portable question
+  round; use an individual question ID for detailed output.
 - `experiment ask-archive transitions save [--json] <report-1.json> <report-2.json> ... <history.json>`
   verifies the supplied reflections, writes one raw-value-free transition
   ledger with exclusive file creation, including safe per-directory state

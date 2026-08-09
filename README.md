@@ -60,6 +60,7 @@ go run ./cmd/ariadne experiment ask-archive transitions --json <reflection-1.jso
 go run ./cmd/ariadne experiment ask-archive transitions questions --json
 go run ./cmd/ariadne experiment ask-archive transitions ask --json <history.json> [<question-id>]
 go run ./cmd/ariadne experiment ask-archive transitions ask repeated --json <history.json>
+go run ./cmd/ariadne experiment ask-archive transitions ask all --json <history.json>
 go run ./cmd/ariadne experiment ask-archive transitions save --json <reflection-1.json> <reflection-2.json> ... <history.json>
 go run ./cmd/ariadne experiment ask-archive transitions verify --json <transitions.json>
 ```
@@ -111,6 +112,11 @@ those bounded snapshot summaries changed at any supplied boundary. Schema 3
 histories return `same` or `changed` plus 1-based boundary indexes; schema 1
 and 2 histories answer `unavailable`. This is a bounded comparison, not a
 chronology or trend claim.
+
+`transitions ask all <history.json>` verifies the history once and records the
+bounded result of every fixed history question in stable catalog order. Its
+raw-value-free JSON is a portable question-round receipt; call an individual
+question ID for detailed entries or snapshot summaries.
 
 New transition ledgers use schema 3 and include those snapshot summaries;
 schema 2 ledgers remain readable, and schema 1 ledgers remain readable with

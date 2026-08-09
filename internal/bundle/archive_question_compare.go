@@ -17,6 +17,7 @@ const (
 	archiveQuestionTransitionHistoryRepeatedAnswerSchemaVersion = 1
 	archiveQuestionTransitionHistorySnapshotAnswerSchemaVersion = 1
 	archiveQuestionTransitionHistorySummaryAnswerSchemaVersion  = 1
+	archiveQuestionTransitionHistoryQuestionRoundSchemaVersion  = 1
 	archiveQuestionComparisonID                                 = "answer-state-change"
 	archiveQuestionComparisonText                               = "Did the bounded answer state change between these saved reflection snapshots?"
 	archiveQuestionTransitionHistoryID                          = "answer-state-transitions"
@@ -162,6 +163,22 @@ type ArchiveQuestionTransitionHistorySummaryAnswer struct {
 	TransitionHistorySHA256 string `json:"transition_history_sha256"`
 	Transitions             int    `json:"transitions"`
 	ChangedTransitions      []int  `json:"changed_transitions"`
+}
+
+// ArchiveQuestionTransitionHistoryQuestionRoundAnswer is a raw-value-free
+// receipt of the fixed questions asked of one verified transition history.
+type ArchiveQuestionTransitionHistoryQuestionRoundAnswer struct {
+	SchemaVersion           int                                                 `json:"schema_version"`
+	TransitionHistorySHA256 string                                              `json:"transition_history_sha256"`
+	Questions               []ArchiveQuestionTransitionHistoryQuestionRoundItem `json:"questions"`
+}
+
+// ArchiveQuestionTransitionHistoryQuestionRoundItem records one fixed
+// question and its bounded result without duplicating the detailed answer.
+type ArchiveQuestionTransitionHistoryQuestionRoundItem struct {
+	QuestionID string `json:"question_id"`
+	Question   string `json:"question"`
+	Result     string `json:"result"`
 }
 
 // ArchiveQuestionTransitionHistoryQuestions returns the fixed questions
@@ -479,6 +496,31 @@ func AnswerArchiveQuestionTransitionHistorySummary(history ArchiveQuestionTransi
 	return answer
 }
 
+// AnswerArchiveQuestionTransitionHistoryQuestionRound records the bounded
+// result of every fixed question available for a verified transition history.
+func AnswerArchiveQuestionTransitionHistoryQuestionRound(history ArchiveQuestionTransitionHistory, historySHA256 string) ArchiveQuestionTransitionHistoryQuestionRoundAnswer {
+	questions := ArchiveQuestionTransitionHistoryQuestions()
+	answers := []string{
+		AnswerArchiveQuestionTransitionHistory(history, historySHA256).Result,
+		AnswerArchiveQuestionTransitionHistoryRepeated(history, historySHA256).Result,
+		AnswerArchiveQuestionTransitionHistorySnapshots(history, historySHA256).Result,
+		AnswerArchiveQuestionTransitionHistorySummary(history, historySHA256).Result,
+	}
+	items := make([]ArchiveQuestionTransitionHistoryQuestionRoundItem, 0, len(questions))
+	for index, question := range questions {
+		items = append(items, ArchiveQuestionTransitionHistoryQuestionRoundItem{
+			QuestionID: question.ID,
+			Question:   question.Text,
+			Result:     answers[index],
+		})
+	}
+	return ArchiveQuestionTransitionHistoryQuestionRoundAnswer{
+		SchemaVersion:           archiveQuestionTransitionHistoryQuestionRoundSchemaVersion,
+		TransitionHistorySHA256: historySHA256,
+		Questions:               items,
+	}
+}
+
 // AskArchiveQuestionTransitionHistory verifies a saved transition history
 // and answers its fixed raw-value-free question.
 func AskArchiveQuestionTransitionHistory(historyPath string) (ArchiveQuestionTransitionHistoryAnswer, error) {
@@ -517,6 +559,16 @@ func AskArchiveQuestionTransitionHistorySummary(historyPath string) (ArchiveQues
 		return ArchiveQuestionTransitionHistorySummaryAnswer{}, err
 	}
 	return AnswerArchiveQuestionTransitionHistorySummary(history, summary.TransitionHistorySHA256), nil
+}
+
+// AskArchiveQuestionTransitionHistoryQuestionRound verifies a saved
+// transition history and records the bounded result of every fixed question.
+func AskArchiveQuestionTransitionHistoryQuestionRound(historyPath string) (ArchiveQuestionTransitionHistoryQuestionRoundAnswer, error) {
+	history, summary, err := ReadArchiveQuestionTransitionHistory(historyPath)
+	if err != nil {
+		return ArchiveQuestionTransitionHistoryQuestionRoundAnswer{}, err
+	}
+	return AnswerArchiveQuestionTransitionHistoryQuestionRound(history, summary.TransitionHistorySHA256), nil
 }
 
 // SaveArchiveQuestionTransitionHistory writes one validated transition ledger

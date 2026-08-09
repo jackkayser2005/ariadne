@@ -38,6 +38,7 @@ const usage = `usage:
   ariadne experiment ask-archive transitions questions [--json]
   ariadne experiment ask-archive transitions ask [--json] <history.json> [<question-id>]
   ariadne experiment ask-archive transitions ask repeated [--json] <history.json>
+  ariadne experiment ask-archive transitions ask all [--json] <history.json>
   ariadne experiment ask-archive transitions save [--json] <report-1.json> <report-2.json> ... <history.json>
   ariadne experiment ask-archive transitions verify [--json] [--expect-sha256 <digest>] <history.json>
   ariadne experiment ask-archive verify [--json] [--expect-sha256 <digest>] <report.json>
@@ -103,6 +104,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 		if len(args) >= 4 && args[2] == "transitions" && args[3] == "ask" {
 			if len(args) >= 5 && args[4] == "repeated" {
 				return runAskArchiveTransitionsAskRepeated(args[5:], stdout, stderr, bundle.AskArchiveQuestionTransitionHistoryRepeated)
+			}
+			if len(args) >= 5 && args[4] == "all" {
+				return runAskArchiveTransitionsAskAll(args[5:], stdout, stderr, bundle.AskArchiveQuestionTransitionHistoryQuestionRound)
 			}
 			if len(args) >= 6 {
 				return runAskArchiveTransitionsAskQuestion(args[4:], stdout, stderr, bundle.AskArchiveQuestionTransitionHistory, bundle.AskArchiveQuestionTransitionHistoryRepeated, bundle.AskArchiveQuestionTransitionHistorySnapshots, bundle.AskArchiveQuestionTransitionHistorySummary)
@@ -192,6 +196,7 @@ type bundleArchiveQuestionTransitionAsker func(string) (bundle.ArchiveQuestionTr
 type bundleArchiveQuestionTransitionRepeatedAsker func(string) (bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer, error)
 type bundleArchiveQuestionTransitionSnapshotAsker func(string) (bundle.ArchiveQuestionTransitionHistorySnapshotAnswer, error)
 type bundleArchiveQuestionTransitionSummaryAsker func(string) (bundle.ArchiveQuestionTransitionHistorySummaryAnswer, error)
+type bundleArchiveQuestionTransitionRoundAsker func(string) (bundle.ArchiveQuestionTransitionHistoryQuestionRoundAnswer, error)
 type bundleQuestionLister func() []bundle.Question
 type bundleArchiveIndexer func(string) ([]bundle.ArchiveEntry, error)
 type uiServer func(string, http.Handler) error
@@ -1001,6 +1006,52 @@ func runAskArchiveTransitionsAsk(
 	}
 	if _, err := io.WriteString(stdout, "note: this answers only the verified history structure; it does not infer chronology or prove the underlying evidence\n"); err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func runAskArchiveTransitionsAskAll(
+	args []string,
+	stdout, stderr io.Writer,
+	ask bundleArchiveQuestionTransitionRoundAsker,
+) int {
+	flags := flag.NewFlagSet("experiment ask-archive transitions ask all", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+
+	round, err := ask(flags.Arg(0))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask all: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(round); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask all: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if _, err := fmt.Fprintf(
+		stdout,
+		"archive reflection question round answered\ntransition_history_sha256: %s\nquestions:\n",
+		round.TransitionHistorySHA256,
+	); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask all: write output: %v\n", err)
+		return 1
+	}
+	for _, question := range round.Questions {
+		if _, err := fmt.Fprintf(stdout, "- question_id: %s\n  question: %s\n  result: %s\n", question.QuestionID, question.Question, question.Result); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask all: write output: %v\n", err)
+			return 1
+		}
+	}
+	if _, err := io.WriteString(stdout, "note: this records fixed bounded question results only; inspect an individual question for details, and do not infer chronology or prove the underlying evidence\n"); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask all: write output: %v\n", err)
 		return 1
 	}
 	return 0

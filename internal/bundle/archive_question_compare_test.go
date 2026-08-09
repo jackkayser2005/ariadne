@@ -406,6 +406,54 @@ func TestAskArchiveQuestionTransitionHistorySummary(t *testing.T) {
 	}
 }
 
+func TestAnswerArchiveQuestionTransitionHistoryQuestionRound(t *testing.T) {
+	history := validArchiveQuestionTransitionHistory()
+	history.SchemaVersion = 3
+	history.SnapshotSummaries = []ArchiveQuestionTransitionSnapshot{
+		{ReflectionSHA256: strings.Repeat("a", 64), Observed: 1, Checked: 1},
+		{ReflectionSHA256: strings.Repeat("b", 64), Unknown: 1, Checked: 1},
+	}
+	round := AnswerArchiveQuestionTransitionHistoryQuestionRound(history, strings.Repeat("c", 64))
+	if round.SchemaVersion != 1 || round.TransitionHistorySHA256 != strings.Repeat("c", 64) || len(round.Questions) != 4 {
+		t.Fatalf("question round = %#v", round)
+	}
+	want := []ArchiveQuestionTransitionHistoryQuestionRoundItem{
+		{QuestionID: "answer-state-transitions", Question: "At which supplied boundaries did the bounded answer state change?", Result: "changed"},
+		{QuestionID: "answer-state-repeated-changes", Question: "Did any safe archive entry change at more than one supplied boundary?", Result: "none"},
+		{QuestionID: "answer-state-snapshot-summaries", Question: "What bounded answer-state summary did each supplied reflection snapshot record?", Result: "available"},
+		{QuestionID: "answer-state-summary-changes", Question: "Did the bounded answer-state summary change at any supplied boundary?", Result: "changed"},
+	}
+	if !reflect.DeepEqual(round.Questions, want) {
+		t.Fatalf("question round questions = %#v, want %#v", round.Questions, want)
+	}
+
+	legacy := validArchiveQuestionTransitionHistory()
+	round = AnswerArchiveQuestionTransitionHistoryQuestionRound(legacy, strings.Repeat("d", 64))
+	if round.Questions[2].Result != "unavailable" || round.Questions[3].Result != "unavailable" {
+		t.Fatalf("legacy question round = %#v", round)
+	}
+}
+
+func TestAskArchiveQuestionTransitionHistoryQuestionRound(t *testing.T) {
+	history := validArchiveQuestionTransitionHistory()
+	history.SchemaVersion = 3
+	history.SnapshotSummaries = []ArchiveQuestionTransitionSnapshot{
+		{ReflectionSHA256: strings.Repeat("a", 64), Observed: 1, Checked: 1},
+		{ReflectionSHA256: strings.Repeat("b", 64), Unknown: 1, Checked: 1},
+	}
+	path := writeArchiveQuestionTransitionHistory(t, history)
+	round, err := AskArchiveQuestionTransitionHistoryQuestionRound(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !validDigest(round.TransitionHistorySHA256) || len(round.Questions) != 4 {
+		t.Fatalf("AskArchiveQuestionTransitionHistoryQuestionRound() = %#v", round)
+	}
+	if _, err := AskArchiveQuestionTransitionHistoryQuestionRound(" "); err == nil || !strings.Contains(err.Error(), "path is required") {
+		t.Fatalf("AskArchiveQuestionTransitionHistoryQuestionRound() empty path error = %v", err)
+	}
+}
+
 func TestAskArchiveQuestionTransitionHistory(t *testing.T) {
 	history := validArchiveQuestionTransitionHistory()
 	path := writeArchiveQuestionTransitionHistory(t, history)

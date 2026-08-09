@@ -25,7 +25,8 @@ The repository currently has three evidence-backed layers:
    order, persisted as a contiguous transition ledger, and reviewed through
    fixed questions. The current catalog exposes transition changes, repeated
    safe entry changes, per-snapshot safe summaries, and summary changes across
-   supplied boundaries.
+   supplied boundaries. A verified history can also emit a portable question
+   round containing the bounded result of every fixed question.
 
 The local review page is intentionally read-only. Its question links are a
 bounded UI-control surface for a computer-use driver; deterministic UI tests
@@ -49,10 +50,10 @@ plane; local bundles remain authoritative.
 ### Months 7–9: make reflection repeatable
 
 Turn the historical reflection spine into a durable question workflow. The
-next focused slices are portable answer receipts or question rounds, followed
-by a computer-use acceptance path for choosing fixed questions and retaining
-their identities. Any new answer must remain bound to a verified history and
-must say `unavailable` when the history lacks the required schema.
+next focused slice after the question round is a portable answer receipt,
+followed by a computer-use acceptance path for choosing fixed questions and
+retaining their identities. Any new answer must remain bound to a verified
+history and must say `unavailable` when the history lacks the required schema.
 
 ### Months 10–12: expand only after the contract holds
 
