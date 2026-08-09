@@ -283,7 +283,9 @@ when `go run` built Ariadne.
 - `experiment ask-archive transitions ask [--json] <history.json>` verifies a
   saved transition ledger and asks its fixed history question. It returns the
   bounded result plus 1-based indexes for changed and membership-incomparable
-  transitions. It does not infer chronology or prove the underlying evidence.
+  transitions, along with safe directory/state triples for changed entries.
+  Legacy schema 1 histories retain the indexes and have no per-entry details.
+  It does not infer chronology or prove the underlying evidence.
 - `experiment ask-archive transitions save [--json] <report-1.json> <report-2.json> ... <history.json>`
   verifies the supplied reflections, writes one raw-value-free transition
   ledger with exclusive file creation, including safe per-directory state

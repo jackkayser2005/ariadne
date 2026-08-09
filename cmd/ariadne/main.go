@@ -943,6 +943,16 @@ func runAskArchiveTransitionsAsk(
 			return 1
 		}
 	}
+	if _, err := io.WriteString(stdout, "changed_entries:\n"); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask: write output: %v\n", err)
+		return 1
+	}
+	for _, entry := range answer.ChangedEntries {
+		if _, err := fmt.Fprintf(stdout, "- transition: %d\n  directory: %s\n  older_state: %s\n  newer_state: %s\n", entry.Transition, entry.Directory, entry.OlderState, entry.NewerState); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask: write output: %v\n", err)
+			return 1
+		}
+	}
 	if _, err := io.WriteString(stdout, "incomparable_transitions:\n"); err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask: write output: %v\n", err)
 		return 1

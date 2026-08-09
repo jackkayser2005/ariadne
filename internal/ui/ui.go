@@ -612,6 +612,10 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       <ul aria-label="Changed history transitions">
       {{range .ReflectionHistoryAnswer.ChangedTransitions}}<li>transition {{.}}</li>{{end}}
       </ul>
+      <p class="context">changed entries:</p>
+      <ul aria-label="Changed history entries">
+      {{range .ReflectionHistoryAnswer.ChangedEntries}}<li>transition {{.Transition}}: {{.Directory}}: {{.OlderState}} &rarr; {{.NewerState}}</li>{{end}}
+      </ul>
       <p class="context">incomparable transitions:</p>
       <ul aria-label="Incomparable history transitions">
       {{range .ReflectionHistoryAnswer.IncomparableTransitions}}<li>transition {{.}}</li>{{end}}

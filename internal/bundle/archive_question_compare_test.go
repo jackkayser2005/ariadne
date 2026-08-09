@@ -174,9 +174,9 @@ func TestAnswerArchiveQuestionTransitionHistory(t *testing.T) {
 		HistoryQuestion: "At which supplied boundaries did the bounded answer state change?",
 		Transitions: []ArchiveQuestionTransition{
 			{Result: "same"},
-			{Result: "changed", Changed: 1},
+			{Result: "changed", Changed: 1, StateChanges: []ArchiveQuestionStateChange{{Directory: "b-run", OlderState: "observed", NewerState: "unknown"}}},
 			{Result: "incomparable"},
-			{Result: "incomparable", Changed: 1},
+			{Result: "incomparable", Changed: 1, StateChanges: []ArchiveQuestionStateChange{{Directory: "a-run", OlderState: "unknown", NewerState: "unavailable"}}},
 		},
 	}
 	answer := AnswerArchiveQuestionTransitionHistory(history, strings.Repeat("a", 64))
@@ -186,13 +186,20 @@ func TestAnswerArchiveQuestionTransitionHistory(t *testing.T) {
 	if !reflect.DeepEqual(answer.ChangedTransitions, []int{2, 4}) || !reflect.DeepEqual(answer.IncomparableTransitions, []int{3, 4}) {
 		t.Fatalf("history answer indexes = %#v", answer)
 	}
+	wantEntries := []ArchiveQuestionTransitionHistoryChange{
+		{Transition: 2, Directory: "b-run", OlderState: "observed", NewerState: "unknown"},
+		{Transition: 4, Directory: "a-run", OlderState: "unknown", NewerState: "unavailable"},
+	}
+	if !reflect.DeepEqual(answer.ChangedEntries, wantEntries) {
+		t.Fatalf("history answer entries = %#v", answer.ChangedEntries)
+	}
 
 	answer = AnswerArchiveQuestionTransitionHistory(ArchiveQuestionTransitionHistory{
 		HistoryID:       history.HistoryID,
 		HistoryQuestion: history.HistoryQuestion,
 		Transitions:     []ArchiveQuestionTransition{{Result: "incomparable"}},
 	}, strings.Repeat("b", 64))
-	if answer.Result != "incomparable" || len(answer.ChangedTransitions) != 0 || !reflect.DeepEqual(answer.IncomparableTransitions, []int{1}) {
+	if answer.Result != "incomparable" || len(answer.ChangedTransitions) != 0 || !reflect.DeepEqual(answer.IncomparableTransitions, []int{1}) || len(answer.ChangedEntries) != 0 {
 		t.Fatalf("incomparable history answer = %#v", answer)
 	}
 
@@ -201,7 +208,7 @@ func TestAnswerArchiveQuestionTransitionHistory(t *testing.T) {
 		HistoryQuestion: history.HistoryQuestion,
 		Transitions:     []ArchiveQuestionTransition{{Result: "same"}},
 	}, strings.Repeat("c", 64))
-	if answer.Result != "same" || len(answer.ChangedTransitions) != 0 || len(answer.IncomparableTransitions) != 0 {
+	if answer.Result != "same" || len(answer.ChangedTransitions) != 0 || len(answer.IncomparableTransitions) != 0 || len(answer.ChangedEntries) != 0 {
 		t.Fatalf("same history answer = %#v", answer)
 	}
 }
@@ -213,7 +220,7 @@ func TestAskArchiveQuestionTransitionHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if answer.Result != "changed" || !validDigest(answer.TransitionHistorySHA256) || !reflect.DeepEqual(answer.ChangedTransitions, []int{1}) {
+	if answer.Result != "changed" || !validDigest(answer.TransitionHistorySHA256) || !reflect.DeepEqual(answer.ChangedTransitions, []int{1}) || !reflect.DeepEqual(answer.ChangedEntries, []ArchiveQuestionTransitionHistoryChange{{Transition: 1, Directory: "run-001", OlderState: "observed", NewerState: "unknown"}}) {
 		t.Fatalf("AskArchiveQuestionTransitionHistory() = %#v", answer)
 	}
 	if _, err := AskArchiveQuestionTransitionHistory(" "); err == nil || !strings.Contains(err.Error(), "path is required") {

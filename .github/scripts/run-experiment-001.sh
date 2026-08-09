@@ -242,7 +242,7 @@ archive_question_transition_answer_json="${RUNNER_TEMP}/ariadne-archive-question
 "${ariadne}" experiment ask-archive transitions ask --json \
   "${archive_question_transitions_json}" >"${archive_question_transition_answer_json}"
 jq -e --arg history_sha256 "${transition_history_sha256}" '
-  (keys_unsorted == ["schema_version", "question_id", "question", "result", "transition_history_sha256", "transitions", "changed_transitions", "incomparable_transitions"]) and
+  (keys_unsorted == ["schema_version", "question_id", "question", "result", "transition_history_sha256", "transitions", "changed_transitions", "incomparable_transitions", "changed_entries"]) and
   (.schema_version == 1) and
   (.question_id == "answer-state-transitions") and
   (.question == "At which supplied boundaries did the bounded answer state change?") and
@@ -250,7 +250,8 @@ jq -e --arg history_sha256 "${transition_history_sha256}" '
   (.transition_history_sha256 == $history_sha256) and
   (.transitions == 2) and
   (.changed_transitions == []) and
-  (.incomparable_transitions == [])
+  (.incomparable_transitions == []) and
+  (.changed_entries == [])
 ' "${archive_question_transition_answer_json}"
 
 finding_id="$(jq -r '.comparison.differences[0].id' "${run_dir}/evidence.json")"

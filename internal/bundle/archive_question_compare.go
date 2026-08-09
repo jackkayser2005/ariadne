@@ -77,14 +77,24 @@ type ArchiveQuestionTransition struct {
 // from one verified transition history. It describes the ledger structure,
 // not the underlying evidence or chronology.
 type ArchiveQuestionTransitionHistoryAnswer struct {
-	SchemaVersion           int    `json:"schema_version"`
-	QuestionID              string `json:"question_id"`
-	Question                string `json:"question"`
-	Result                  string `json:"result"`
-	TransitionHistorySHA256 string `json:"transition_history_sha256"`
-	Transitions             int    `json:"transitions"`
-	ChangedTransitions      []int  `json:"changed_transitions"`
-	IncomparableTransitions []int  `json:"incomparable_transitions"`
+	SchemaVersion           int                                      `json:"schema_version"`
+	QuestionID              string                                   `json:"question_id"`
+	Question                string                                   `json:"question"`
+	Result                  string                                   `json:"result"`
+	TransitionHistorySHA256 string                                   `json:"transition_history_sha256"`
+	Transitions             int                                      `json:"transitions"`
+	ChangedTransitions      []int                                    `json:"changed_transitions"`
+	IncomparableTransitions []int                                    `json:"incomparable_transitions"`
+	ChangedEntries          []ArchiveQuestionTransitionHistoryChange `json:"changed_entries"`
+}
+
+// ArchiveQuestionTransitionHistoryChange identifies one safe changed entry
+// and the adjacent transition where it changed.
+type ArchiveQuestionTransitionHistoryChange struct {
+	Transition int    `json:"transition"`
+	Directory  string `json:"directory"`
+	OlderState string `json:"older_state"`
+	NewerState string `json:"newer_state"`
 }
 
 // CompareArchiveQuestionReports compares only verified answer states from
@@ -245,12 +255,21 @@ func CompareArchiveQuestionHistory(reportPaths []string) (ArchiveQuestionTransit
 func AnswerArchiveQuestionTransitionHistory(history ArchiveQuestionTransitionHistory, historySHA256 string) ArchiveQuestionTransitionHistoryAnswer {
 	changedTransitions := make([]int, 0)
 	incomparableTransitions := make([]int, 0)
+	changedEntries := make([]ArchiveQuestionTransitionHistoryChange, 0)
 	for index, transition := range history.Transitions {
 		if transition.Changed > 0 {
 			changedTransitions = append(changedTransitions, index+1)
 		}
 		if transition.Result == "incomparable" {
 			incomparableTransitions = append(incomparableTransitions, index+1)
+		}
+		for _, stateChange := range transition.StateChanges {
+			changedEntries = append(changedEntries, ArchiveQuestionTransitionHistoryChange{
+				Transition: index + 1,
+				Directory:  stateChange.Directory,
+				OlderState: stateChange.OlderState,
+				NewerState: stateChange.NewerState,
+			})
 		}
 	}
 	result := "same"
@@ -268,6 +287,7 @@ func AnswerArchiveQuestionTransitionHistory(history ArchiveQuestionTransitionHis
 		Transitions:             len(history.Transitions),
 		ChangedTransitions:      changedTransitions,
 		IncomparableTransitions: incomparableTransitions,
+		ChangedEntries:          changedEntries,
 	}
 }
 

@@ -1696,6 +1696,10 @@ func TestRunAskArchiveTransitionsAsk(t *testing.T) {
 		Transitions:             3,
 		ChangedTransitions:      []int{1, 3},
 		IncomparableTransitions: []int{2, 3},
+		ChangedEntries: []bundle.ArchiveQuestionTransitionHistoryChange{
+			{Transition: 1, Directory: "run-001", OlderState: "observed", NewerState: "unknown"},
+			{Transition: 3, Directory: "run-002", OlderState: "unknown", NewerState: "unavailable"},
+		},
 	}
 
 	t.Run("human", func(t *testing.T) {
@@ -1720,6 +1724,15 @@ func TestRunAskArchiveTransitionsAsk(t *testing.T) {
 			"changed_transitions:\n" +
 			"- 1\n" +
 			"- 3\n" +
+			"changed_entries:\n" +
+			"- transition: 1\n" +
+			"  directory: run-001\n" +
+			"  older_state: observed\n" +
+			"  newer_state: unknown\n" +
+			"- transition: 3\n" +
+			"  directory: run-002\n" +
+			"  older_state: unknown\n" +
+			"  newer_state: unavailable\n" +
 			"incomparable_transitions:\n" +
 			"- 2\n" +
 			"- 3\n" +
@@ -1737,7 +1750,7 @@ func TestRunAskArchiveTransitionsAsk(t *testing.T) {
 			&stderr,
 			func(string) (bundle.ArchiveQuestionTransitionHistoryAnswer, error) { return answer, nil },
 		)
-		want := `{"schema_version":1,"question_id":"answer-state-transitions","question":"At which supplied boundaries did the bounded answer state change?","result":"changed","transition_history_sha256":"` + strings.Repeat("a", 64) + `","transitions":3,"changed_transitions":[1,3],"incomparable_transitions":[2,3]}` + "\n"
+		want := `{"schema_version":1,"question_id":"answer-state-transitions","question":"At which supplied boundaries did the bounded answer state change?","result":"changed","transition_history_sha256":"` + strings.Repeat("a", 64) + `","transitions":3,"changed_transitions":[1,3],"incomparable_transitions":[2,3],"changed_entries":[{"transition":1,"directory":"run-001","older_state":"observed","newer_state":"unknown"},{"transition":3,"directory":"run-002","older_state":"unknown","newer_state":"unavailable"}]}` + "\n"
 		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
 			t.Fatalf("runAskArchiveTransitionsAsk() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
 		}
@@ -1795,7 +1808,7 @@ func TestRunAskArchiveTransitionsAskFailures(t *testing.T) {
 		})
 	}
 
-	for _, failAt := range []int{2, 3, 4, 5} {
+	for _, failAt := range []int{2, 3, 4, 5, 6} {
 		t.Run(fmt.Sprintf("write detail output %d", failAt), func(t *testing.T) {
 			var stderr bytes.Buffer
 			exitCode := runAskArchiveTransitionsAsk(
