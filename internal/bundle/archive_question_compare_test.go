@@ -213,6 +213,83 @@ func TestAnswerArchiveQuestionTransitionHistory(t *testing.T) {
 	}
 }
 
+func TestAnswerArchiveQuestionTransitionHistoryRepeated(t *testing.T) {
+	history := ArchiveQuestionTransitionHistory{
+		SchemaVersion: 2,
+		Transitions: []ArchiveQuestionTransition{
+			{
+				FromReflectionSHA256: strings.Repeat("a", 64),
+				ToReflectionSHA256:   strings.Repeat("b", 64),
+				Result:               "changed",
+				Compared:             2,
+				Changed:              2,
+				StateChanges: []ArchiveQuestionStateChange{
+					{Directory: "b-run", OlderState: "observed", NewerState: "unknown"},
+					{Directory: "z-run", OlderState: "observed", NewerState: "unknown"},
+				},
+			},
+			{
+				FromReflectionSHA256: strings.Repeat("b", 64),
+				ToReflectionSHA256:   strings.Repeat("c", 64),
+				Result:               "changed",
+				Compared:             2,
+				Changed:              2,
+				StateChanges: []ArchiveQuestionStateChange{
+					{Directory: "a-run", OlderState: "unknown", NewerState: "observed"},
+					{Directory: "b-run", OlderState: "unknown", NewerState: "unavailable"},
+				},
+			},
+			{
+				FromReflectionSHA256: strings.Repeat("c", 64),
+				ToReflectionSHA256:   strings.Repeat("d", 64),
+				Result:               "changed",
+				Compared:             1,
+				Changed:              1,
+				StateChanges:         []ArchiveQuestionStateChange{{Directory: "a-run", OlderState: "observed", NewerState: "unknown"}},
+			},
+		},
+	}
+	answer := AnswerArchiveQuestionTransitionHistoryRepeated(history, strings.Repeat("e", 64))
+	if answer.SchemaVersion != 1 || answer.QuestionID != "answer-state-repeated-changes" || answer.Question != "Did any safe archive entry change at more than one supplied boundary?" || answer.Result != "repeated" || answer.TransitionHistorySHA256 != strings.Repeat("e", 64) || answer.Transitions != 3 {
+		t.Fatalf("repeated history answer metadata = %#v", answer)
+	}
+	want := []ArchiveQuestionTransitionHistoryRepeatedChange{
+		{
+			Directory: "a-run",
+			Changes: []ArchiveQuestionTransitionHistoryChange{
+				{Transition: 2, FromReflectionSHA256: strings.Repeat("b", 64), ToReflectionSHA256: strings.Repeat("c", 64), Directory: "a-run", OlderState: "unknown", NewerState: "observed"},
+				{Transition: 3, FromReflectionSHA256: strings.Repeat("c", 64), ToReflectionSHA256: strings.Repeat("d", 64), Directory: "a-run", OlderState: "observed", NewerState: "unknown"},
+			},
+		},
+		{
+			Directory: "b-run",
+			Changes: []ArchiveQuestionTransitionHistoryChange{
+				{Transition: 1, FromReflectionSHA256: strings.Repeat("a", 64), ToReflectionSHA256: strings.Repeat("b", 64), Directory: "b-run", OlderState: "observed", NewerState: "unknown"},
+				{Transition: 2, FromReflectionSHA256: strings.Repeat("b", 64), ToReflectionSHA256: strings.Repeat("c", 64), Directory: "b-run", OlderState: "unknown", NewerState: "unavailable"},
+			},
+		},
+	}
+	if !reflect.DeepEqual(answer.RepeatedEntries, want) {
+		t.Fatalf("repeated history answer entries = %#v", answer.RepeatedEntries)
+	}
+
+	answer = AnswerArchiveQuestionTransitionHistoryRepeated(ArchiveQuestionTransitionHistory{
+		SchemaVersion: 2,
+		Transitions:   []ArchiveQuestionTransition{{Result: "changed", Changed: 1, StateChanges: []ArchiveQuestionStateChange{{Directory: "run-001", OlderState: "observed", NewerState: "unknown"}}}},
+	}, strings.Repeat("f", 64))
+	if answer.Result != "none" || len(answer.RepeatedEntries) != 0 {
+		t.Fatalf("non-repeated history answer = %#v", answer)
+	}
+
+	answer = AnswerArchiveQuestionTransitionHistoryRepeated(ArchiveQuestionTransitionHistory{
+		SchemaVersion: 1,
+		Transitions:   []ArchiveQuestionTransition{{Result: "changed", Changed: 1}},
+	}, strings.Repeat("g", 64))
+	if answer.Result != "unavailable" || len(answer.RepeatedEntries) != 0 {
+		t.Fatalf("legacy repeated history answer = %#v", answer)
+	}
+}
+
 func TestAskArchiveQuestionTransitionHistory(t *testing.T) {
 	history := validArchiveQuestionTransitionHistory()
 	path := writeArchiveQuestionTransitionHistory(t, history)
@@ -225,6 +302,32 @@ func TestAskArchiveQuestionTransitionHistory(t *testing.T) {
 	}
 	if _, err := AskArchiveQuestionTransitionHistory(" "); err == nil || !strings.Contains(err.Error(), "path is required") {
 		t.Fatalf("AskArchiveQuestionTransitionHistory() empty path error = %v", err)
+	}
+}
+
+func TestAskArchiveQuestionTransitionHistoryRepeated(t *testing.T) {
+	history := validArchiveQuestionTransitionHistory()
+	path := writeArchiveQuestionTransitionHistory(t, history)
+	answer, err := AskArchiveQuestionTransitionHistoryRepeated(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if answer.Result != "none" || !validDigest(answer.TransitionHistorySHA256) || answer.Transitions != 1 {
+		t.Fatalf("AskArchiveQuestionTransitionHistoryRepeated() = %#v", answer)
+	}
+
+	history.SchemaVersion = 1
+	history.Transitions[0].StateChanges = nil
+	legacyPath := writeArchiveQuestionTransitionHistory(t, history)
+	answer, err = AskArchiveQuestionTransitionHistoryRepeated(legacyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if answer.Result != "unavailable" || !validDigest(answer.TransitionHistorySHA256) {
+		t.Fatalf("legacy AskArchiveQuestionTransitionHistoryRepeated() = %#v", answer)
+	}
+	if _, err := AskArchiveQuestionTransitionHistoryRepeated(" "); err == nil || !strings.Contains(err.Error(), "path is required") {
+		t.Fatalf("AskArchiveQuestionTransitionHistoryRepeated() empty path error = %v", err)
 	}
 }
 

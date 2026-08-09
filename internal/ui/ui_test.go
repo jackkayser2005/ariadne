@@ -315,19 +315,33 @@ func TestHandlerRendersReflectionHistory(t *testing.T) {
 		QuestionID:      "counterfactual-change",
 		Question:        "Did changing the declared variable influence an observed output?",
 		OrderBasis:      "caller",
-		Snapshots:       2,
-		Transitions: []bundle.ArchiveQuestionTransition{{
-			FromReflectionSHA256: strings.Repeat("a", 64),
-			ToReflectionSHA256:   strings.Repeat("b", 64),
-			Result:               "changed",
-			Compared:             2,
-			Changed:              1,
-			StateChanges: []bundle.ArchiveQuestionStateChange{{
-				Directory:  "run-001",
-				OlderState: "observed",
-				NewerState: "unknown",
-			}},
-		}},
+		Snapshots:       3,
+		Transitions: []bundle.ArchiveQuestionTransition{
+			{
+				FromReflectionSHA256: strings.Repeat("a", 64),
+				ToReflectionSHA256:   strings.Repeat("b", 64),
+				Result:               "changed",
+				Compared:             2,
+				Changed:              1,
+				StateChanges: []bundle.ArchiveQuestionStateChange{{
+					Directory:  "run-001",
+					OlderState: "observed",
+					NewerState: "unknown",
+				}},
+			},
+			{
+				FromReflectionSHA256: strings.Repeat("b", 64),
+				ToReflectionSHA256:   strings.Repeat("c", 64),
+				Result:               "changed",
+				Compared:             2,
+				Changed:              1,
+				StateChanges: []bundle.ArchiveQuestionStateChange{{
+					Directory:  "run-001",
+					OlderState: "unknown",
+					NewerState: "unavailable",
+				}},
+			},
+		},
 	}
 	summary := bundle.ArchiveQuestionTransitionVerificationSummary{
 		SchemaVersion:           2,
@@ -356,7 +370,7 @@ func TestHandlerRendersReflectionHistory(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, body=%q", recorder.Code, body)
 	}
-	for _, want := range []string{"Saved reflection history", "verified ledger", history.Question, "caller", "snapshots", "2", "transitions", "1", "history SHA-256", strings.Repeat("c", 64), "History question", "changed", "changed transitions", "transition 1", "changed entries", "transition 1: run-001", "incomparable transitions", strings.Repeat("a", 64), strings.Repeat("b", 64), "changed archive entries", "run-001", "observed", "unknown", "does not establish chronology"} {
+	for _, want := range []string{"Saved reflection history", "verified ledger", history.Question, "caller", "snapshots", "3", "transitions", "2", "history SHA-256", strings.Repeat("c", 64), "History question", "changed", "changed transitions", "transition 1", "changed entries", "transition 1: run-001", "incomparable transitions", "Repeated-change question", "repeated", "transition 2", strings.Repeat("a", 64), strings.Repeat("b", 64), strings.Repeat("c", 64), "changed archive entries", "run-001", "observed", "unknown", "does not establish chronology"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("body missing %q: %s", want, body)
 		}

@@ -36,6 +36,7 @@ const usage = `usage:
   ariadne experiment ask-archive compare-current [--json] <older-report.json> <archive-root>
   ariadne experiment ask-archive transitions [--json] <report-1.json> <report-2.json> ...
   ariadne experiment ask-archive transitions ask [--json] <history.json>
+  ariadne experiment ask-archive transitions ask repeated [--json] <history.json>
   ariadne experiment ask-archive transitions save [--json] <report-1.json> <report-2.json> ... <history.json>
   ariadne experiment ask-archive transitions verify [--json] [--expect-sha256 <digest>] <history.json>
   ariadne experiment ask-archive verify [--json] [--expect-sha256 <digest>] <report.json>
@@ -96,6 +97,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return runAskArchiveTransitionsSave(args[4:], stdout, stderr, bundle.SaveArchiveQuestionTransitionHistory)
 		}
 		if len(args) >= 4 && args[2] == "transitions" && args[3] == "ask" {
+			if len(args) >= 5 && args[4] == "repeated" {
+				return runAskArchiveTransitionsAskRepeated(args[5:], stdout, stderr, bundle.AskArchiveQuestionTransitionHistoryRepeated)
+			}
 			return runAskArchiveTransitionsAsk(args[4:], stdout, stderr, bundle.AskArchiveQuestionTransitionHistory)
 		}
 		if len(args) >= 4 && args[2] == "transitions" && args[3] == "verify" {
@@ -177,6 +181,7 @@ type bundleArchiveQuestionReportComparer func(string, string) (bundle.ArchiveQue
 type bundleArchiveQuestionTransitionComparer func([]string) (bundle.ArchiveQuestionTransitionHistory, error)
 type bundleArchiveQuestionHistorySaver func([]string, string) (bundle.ArchiveQuestionTransitionVerificationSummary, error)
 type bundleArchiveQuestionTransitionVerifier func(string) (bundle.ArchiveQuestionTransitionVerificationSummary, error)
+type bundleArchiveQuestionTransitionRepeatedAsker func(string) (bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer, error)
 type bundleQuestionLister func() []bundle.Question
 type bundleArchiveIndexer func(string) ([]bundle.ArchiveEntry, error)
 type uiServer func(string, http.Handler) error
@@ -965,6 +970,62 @@ func runAskArchiveTransitionsAsk(
 	}
 	if _, err := io.WriteString(stdout, "note: this answers only the verified history structure; it does not infer chronology or prove the underlying evidence\n"); err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func runAskArchiveTransitionsAskRepeated(
+	args []string,
+	stdout, stderr io.Writer,
+	ask bundleArchiveQuestionTransitionRepeatedAsker,
+) int {
+	flags := flag.NewFlagSet("experiment ask-archive transitions ask repeated", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+
+	answer, err := ask(flags.Arg(0))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask repeated: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(answer); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask repeated: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if _, err := fmt.Fprintf(
+		stdout,
+		"archive reflection repeated-change question answered\nquestion_id: %s\nquestion: %s\nresult: %s\ntransition_history_sha256: %s\ntransitions: %d\nrepeated_entries:\n",
+		answer.QuestionID,
+		answer.Question,
+		answer.Result,
+		answer.TransitionHistorySHA256,
+		answer.Transitions,
+	); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask repeated: write output: %v\n", err)
+		return 1
+	}
+	for _, entry := range answer.RepeatedEntries {
+		if _, err := fmt.Fprintf(stdout, "- directory: %s\n  changes:\n", entry.Directory); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask repeated: write output: %v\n", err)
+			return 1
+		}
+		for _, change := range entry.Changes {
+			if _, err := fmt.Fprintf(stdout, "  - transition: %d\n    from_reflection_sha256: %s\n    to_reflection_sha256: %s\n    older_state: %s\n    newer_state: %s\n", change.Transition, change.FromReflectionSHA256, change.ToReflectionSHA256, change.OlderState, change.NewerState); err != nil {
+				_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask repeated: write output: %v\n", err)
+				return 1
+			}
+		}
+	}
+	if _, err := io.WriteString(stdout, "note: this reports repeated verified state-change records only; it does not infer chronology or a trend\n"); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask repeated: write output: %v\n", err)
 		return 1
 	}
 	return 0

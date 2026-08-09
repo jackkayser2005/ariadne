@@ -70,6 +70,7 @@ type pageData struct {
 	ReflectionHistory                  bundle.ArchiveQuestionTransitionHistory
 	ReflectionHistorySummary           bundle.ArchiveQuestionTransitionVerificationSummary
 	ReflectionHistoryAnswer            bundle.ArchiveQuestionTransitionHistoryAnswer
+	ReflectionHistoryRepeatedAnswer    bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer
 	SavedReflectionComparisonRequested bool
 	SavedReflectionComparisonAvailable bool
 	SavedReflectionComparison          bundle.ArchiveQuestionComparison
@@ -176,6 +177,7 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	var reflectionHistory bundle.ArchiveQuestionTransitionHistory
 	var reflectionHistorySummary bundle.ArchiveQuestionTransitionVerificationSummary
 	var reflectionHistoryAnswer bundle.ArchiveQuestionTransitionHistoryAnswer
+	var reflectionHistoryRepeatedAnswer bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer
 	savedReflectionComparisonRequested := h.compareCurrent != nil
 	savedReflectionComparisonAvailable := false
 	var savedReflectionComparison bundle.ArchiveQuestionComparison
@@ -185,6 +187,7 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		reflectionHistoryAvailable = historyErr == nil
 		if reflectionHistoryAvailable {
 			reflectionHistoryAnswer = bundle.AnswerArchiveQuestionTransitionHistory(reflectionHistory, reflectionHistorySummary.TransitionHistorySHA256)
+			reflectionHistoryRepeatedAnswer = bundle.AnswerArchiveQuestionTransitionHistoryRepeated(reflectionHistory, reflectionHistorySummary.TransitionHistorySHA256)
 		}
 	}
 	if h.compareCurrent != nil {
@@ -246,6 +249,7 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		ReflectionHistory:                  reflectionHistory,
 		ReflectionHistorySummary:           reflectionHistorySummary,
 		ReflectionHistoryAnswer:            reflectionHistoryAnswer,
+		ReflectionHistoryRepeatedAnswer:    reflectionHistoryRepeatedAnswer,
 		SavedReflectionComparisonRequested: savedReflectionComparisonRequested,
 		SavedReflectionComparisonAvailable: savedReflectionComparisonAvailable,
 		SavedReflectionComparison:          savedReflectionComparison,
@@ -620,6 +624,16 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       <ul aria-label="Incomparable history transitions">
       {{range .ReflectionHistoryAnswer.IncomparableTransitions}}<li>transition {{.}}</li>{{end}}
       </ul>
+      <div class="section-head"><h3>Repeated-change question</h3><span class="status status-{{.ReflectionHistoryRepeatedAnswer.Result}}">{{.ReflectionHistoryRepeatedAnswer.Result}}</span></div>
+      <p class="context">{{.ReflectionHistoryRepeatedAnswer.Question}}</p>
+      {{if eq .ReflectionHistoryRepeatedAnswer.Result "unavailable"}}
+      <p class="context">Repeated state changes are unavailable for legacy histories without verified state-change details.</p>
+      {{else}}
+      <p class="context">repeated entries:</p>
+      <ul aria-label="Repeated changed history entries">
+      {{range .ReflectionHistoryRepeatedAnswer.RepeatedEntries}}<li>{{.Directory}}<ul>{{range .Changes}}<li>transition {{.Transition}}: {{.OlderState}} &rarr; {{.NewerState}}<br><span class="context">from {{.FromReflectionSHA256}} to {{.ToReflectionSHA256}}</span></li>{{end}}</ul></li>{{else}}<li>none</li>{{end}}
+      </ul>
+      {{end}}
       <ul aria-label="Saved reflection transitions">
       {{range .ReflectionHistory.Transitions}}
         <li><span class="status">{{.Result}}</span> compared {{.Compared}}, changed {{.Changed}}, from-only {{.FromOnly}}, to-only {{.ToOnly}}<br><span class="context">from {{.FromReflectionSHA256}} to {{.ToReflectionSHA256}}</span>

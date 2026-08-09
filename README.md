@@ -56,6 +56,7 @@ go run ./cmd/ariadne experiment ask-archive compare --json <older-reflection.jso
 go run ./cmd/ariadne experiment ask-archive compare-current --json <older-reflection.json> <archive-root>
 go run ./cmd/ariadne experiment ask-archive transitions --json <reflection-1.json> <reflection-2.json> ...
 go run ./cmd/ariadne experiment ask-archive transitions ask --json <history.json>
+go run ./cmd/ariadne experiment ask-archive transitions ask repeated --json <history.json>
 go run ./cmd/ariadne experiment ask-archive transitions save --json <reflection-1.json> <reflection-2.json> ... <history.json>
 go run ./cmd/ariadne experiment ask-archive transitions verify --json <transitions.json>
 ```
@@ -79,6 +80,12 @@ triples for changed entries, each bound to its adjacent reflection identities;
 it does not infer chronology or prove the underlying evidence. Legacy schema 1
 histories retain the indexes and have no per-entry details.
 
+`transitions ask repeated` asks a second fixed question of the verified
+history: whether any safe archive entry changed at more than one supplied
+boundary. It returns the repeated entry's safe state-change records and
+adjacent reflection identities. Schema 1 histories answer `unavailable`, and
+the result never establishes chronology or a trend.
+
 Use `ask-archive save` to create a new snapshot with exclusive file creation;
 it never overwrites an existing reflection. The command returns the same
 canonical identity used by offline verification, so saved snapshots can feed
@@ -92,7 +99,8 @@ reflection with
 `experiment serve --history <history.json> --reflection <reflection.json> <archive-root>`.
 It renders caller-ordered bounded transitions and re-asks the saved reflection's
 fixed question against the current archive, showing only safe comparison counts,
-identities, and per-directory bounded state changes. An unavailable comparison remains a generic bounded state; the
+identities, per-directory bounded state changes, and the repeated-change
+question when history is available. An unavailable comparison remains a generic bounded state; the
 page does not turn it into chronology, trend inference, or a claim about the
 underlying evidence.
 

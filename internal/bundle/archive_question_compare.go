@@ -9,14 +9,17 @@ import (
 )
 
 const (
-	archiveQuestionComparisonSchemaVersion              = 2
-	archiveQuestionTransitionHistoryLegacySchemaVersion = 1
-	archiveQuestionTransitionHistorySchemaVersion       = 2
-	archiveQuestionTransitionHistoryAnswerSchemaVersion = 1
-	archiveQuestionComparisonID                         = "answer-state-change"
-	archiveQuestionComparisonText                       = "Did the bounded answer state change between these saved reflection snapshots?"
-	archiveQuestionTransitionHistoryID                  = "answer-state-transitions"
-	archiveQuestionTransitionHistoryText                = "At which supplied boundaries did the bounded answer state change?"
+	archiveQuestionComparisonSchemaVersion                      = 2
+	archiveQuestionTransitionHistoryLegacySchemaVersion         = 1
+	archiveQuestionTransitionHistorySchemaVersion               = 2
+	archiveQuestionTransitionHistoryAnswerSchemaVersion         = 1
+	archiveQuestionTransitionHistoryRepeatedAnswerSchemaVersion = 1
+	archiveQuestionComparisonID                                 = "answer-state-change"
+	archiveQuestionComparisonText                               = "Did the bounded answer state change between these saved reflection snapshots?"
+	archiveQuestionTransitionHistoryID                          = "answer-state-transitions"
+	archiveQuestionTransitionHistoryText                        = "At which supplied boundaries did the bounded answer state change?"
+	archiveQuestionTransitionHistoryRepeatedQuestionID          = "answer-state-repeated-changes"
+	archiveQuestionTransitionHistoryRepeatedQuestionText        = "Did any safe archive entry change at more than one supplied boundary?"
 )
 
 // ArchiveQuestionComparison is a raw-value-free comparison of two verified
@@ -97,6 +100,25 @@ type ArchiveQuestionTransitionHistoryChange struct {
 	Directory            string `json:"directory"`
 	OlderState           string `json:"older_state"`
 	NewerState           string `json:"newer_state"`
+}
+
+// ArchiveQuestionTransitionHistoryRepeatedAnswer is a raw-value-free answer
+// about repeated state-change records in one verified transition history.
+type ArchiveQuestionTransitionHistoryRepeatedAnswer struct {
+	SchemaVersion           int                                              `json:"schema_version"`
+	QuestionID              string                                           `json:"question_id"`
+	Question                string                                           `json:"question"`
+	Result                  string                                           `json:"result"`
+	TransitionHistorySHA256 string                                           `json:"transition_history_sha256"`
+	Transitions             int                                              `json:"transitions"`
+	RepeatedEntries         []ArchiveQuestionTransitionHistoryRepeatedChange `json:"repeated_entries"`
+}
+
+// ArchiveQuestionTransitionHistoryRepeatedChange groups the safe state-change
+// records for one archive entry when it changed at multiple boundaries.
+type ArchiveQuestionTransitionHistoryRepeatedChange struct {
+	Directory string                                   `json:"directory"`
+	Changes   []ArchiveQuestionTransitionHistoryChange `json:"changes"`
 }
 
 // CompareArchiveQuestionReports compares only verified answer states from
@@ -257,23 +279,12 @@ func CompareArchiveQuestionHistory(reportPaths []string) (ArchiveQuestionTransit
 func AnswerArchiveQuestionTransitionHistory(history ArchiveQuestionTransitionHistory, historySHA256 string) ArchiveQuestionTransitionHistoryAnswer {
 	changedTransitions := make([]int, 0)
 	incomparableTransitions := make([]int, 0)
-	changedEntries := make([]ArchiveQuestionTransitionHistoryChange, 0)
 	for index, transition := range history.Transitions {
 		if transition.Changed > 0 {
 			changedTransitions = append(changedTransitions, index+1)
 		}
 		if transition.Result == "incomparable" {
 			incomparableTransitions = append(incomparableTransitions, index+1)
-		}
-		for _, stateChange := range transition.StateChanges {
-			changedEntries = append(changedEntries, ArchiveQuestionTransitionHistoryChange{
-				Transition:           index + 1,
-				FromReflectionSHA256: transition.FromReflectionSHA256,
-				ToReflectionSHA256:   transition.ToReflectionSHA256,
-				Directory:            stateChange.Directory,
-				OlderState:           stateChange.OlderState,
-				NewerState:           stateChange.NewerState,
-			})
 		}
 	}
 	result := "same"
@@ -291,8 +302,67 @@ func AnswerArchiveQuestionTransitionHistory(history ArchiveQuestionTransitionHis
 		Transitions:             len(history.Transitions),
 		ChangedTransitions:      changedTransitions,
 		IncomparableTransitions: incomparableTransitions,
-		ChangedEntries:          changedEntries,
+		ChangedEntries:          archiveQuestionTransitionHistoryChangedEntries(history),
 	}
+}
+
+func archiveQuestionTransitionHistoryChangedEntries(history ArchiveQuestionTransitionHistory) []ArchiveQuestionTransitionHistoryChange {
+	changedEntries := make([]ArchiveQuestionTransitionHistoryChange, 0)
+	for index, transition := range history.Transitions {
+		for _, stateChange := range transition.StateChanges {
+			changedEntries = append(changedEntries, ArchiveQuestionTransitionHistoryChange{
+				Transition:           index + 1,
+				FromReflectionSHA256: transition.FromReflectionSHA256,
+				ToReflectionSHA256:   transition.ToReflectionSHA256,
+				Directory:            stateChange.Directory,
+				OlderState:           stateChange.OlderState,
+				NewerState:           stateChange.NewerState,
+			})
+		}
+	}
+	return changedEntries
+}
+
+// AnswerArchiveQuestionTransitionHistoryRepeated answers whether any safe
+// archive entry changed at multiple supplied boundaries. Legacy histories do
+// not contain the state-change records needed for this question.
+func AnswerArchiveQuestionTransitionHistoryRepeated(history ArchiveQuestionTransitionHistory, historySHA256 string) ArchiveQuestionTransitionHistoryRepeatedAnswer {
+	answer := ArchiveQuestionTransitionHistoryRepeatedAnswer{
+		SchemaVersion:           archiveQuestionTransitionHistoryRepeatedAnswerSchemaVersion,
+		QuestionID:              archiveQuestionTransitionHistoryRepeatedQuestionID,
+		Question:                archiveQuestionTransitionHistoryRepeatedQuestionText,
+		TransitionHistorySHA256: historySHA256,
+		Transitions:             len(history.Transitions),
+		RepeatedEntries:         make([]ArchiveQuestionTransitionHistoryRepeatedChange, 0),
+	}
+	if history.SchemaVersion != archiveQuestionTransitionHistorySchemaVersion {
+		answer.Result = "unavailable"
+		return answer
+	}
+	changesByDirectory := make(map[string][]ArchiveQuestionTransitionHistoryChange)
+	for _, change := range archiveQuestionTransitionHistoryChangedEntries(history) {
+		changesByDirectory[change.Directory] = append(changesByDirectory[change.Directory], change)
+	}
+	directories := make([]string, 0, len(changesByDirectory))
+	for directory := range changesByDirectory {
+		directories = append(directories, directory)
+	}
+	sort.Strings(directories)
+	for _, directory := range directories {
+		changes := changesByDirectory[directory]
+		if len(changes) > 1 {
+			answer.RepeatedEntries = append(answer.RepeatedEntries, ArchiveQuestionTransitionHistoryRepeatedChange{
+				Directory: directory,
+				Changes:   changes,
+			})
+		}
+	}
+	if len(answer.RepeatedEntries) > 0 {
+		answer.Result = "repeated"
+	} else {
+		answer.Result = "none"
+	}
+	return answer
 }
 
 // AskArchiveQuestionTransitionHistory verifies a saved transition history
@@ -303,6 +373,16 @@ func AskArchiveQuestionTransitionHistory(historyPath string) (ArchiveQuestionTra
 		return ArchiveQuestionTransitionHistoryAnswer{}, err
 	}
 	return AnswerArchiveQuestionTransitionHistory(history, summary.TransitionHistorySHA256), nil
+}
+
+// AskArchiveQuestionTransitionHistoryRepeated verifies a saved transition
+// history and answers its repeated-change question.
+func AskArchiveQuestionTransitionHistoryRepeated(historyPath string) (ArchiveQuestionTransitionHistoryRepeatedAnswer, error) {
+	history, summary, err := ReadArchiveQuestionTransitionHistory(historyPath)
+	if err != nil {
+		return ArchiveQuestionTransitionHistoryRepeatedAnswer{}, err
+	}
+	return AnswerArchiveQuestionTransitionHistoryRepeated(history, summary.TransitionHistorySHA256), nil
 }
 
 // SaveArchiveQuestionTransitionHistory writes one validated transition ledger

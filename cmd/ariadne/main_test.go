@@ -75,6 +75,7 @@ func TestRunUsage(t *testing.T) {
 		{"experiment", "ask-archive", "compare"},
 		{"experiment", "ask-archive", "compare-current"},
 		{"experiment", "ask-archive", "transitions"},
+		{"experiment", "ask-archive", "transitions", "ask", "repeated"},
 		{"experiment", "ask-archive", "transitions", "save"},
 		{"experiment", "ask-archive", "transitions", "verify"},
 		{"experiment", "ask-archive", "verify"},
@@ -1759,6 +1760,156 @@ func TestRunAskArchiveTransitionsAsk(t *testing.T) {
 			t.Fatalf("runAskArchiveTransitionsAsk() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
 		}
 	})
+}
+
+func TestRunAskArchiveTransitionsAskRepeated(t *testing.T) {
+	answer := bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer{
+		SchemaVersion:           1,
+		QuestionID:              "answer-state-repeated-changes",
+		Question:                "Did any safe archive entry change at more than one supplied boundary?",
+		Result:                  "repeated",
+		TransitionHistorySHA256: strings.Repeat("a", 64),
+		Transitions:             3,
+		RepeatedEntries: []bundle.ArchiveQuestionTransitionHistoryRepeatedChange{{
+			Directory: "run-001",
+			Changes: []bundle.ArchiveQuestionTransitionHistoryChange{
+				{Transition: 1, FromReflectionSHA256: strings.Repeat("b", 64), ToReflectionSHA256: strings.Repeat("c", 64), Directory: "run-001", OlderState: "observed", NewerState: "unknown"},
+				{Transition: 3, FromReflectionSHA256: strings.Repeat("d", 64), ToReflectionSHA256: strings.Repeat("e", 64), Directory: "run-001", OlderState: "unknown", NewerState: "unavailable"},
+			},
+		}},
+	}
+
+	t.Run("human", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsAskRepeated(
+			[]string{"history.json"},
+			&stdout,
+			&stderr,
+			func(path string) (bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer, error) {
+				if path != "history.json" {
+					t.Fatalf("AskArchiveQuestionTransitionHistoryRepeated() path = %q", path)
+				}
+				return answer, nil
+			},
+		)
+		want := "archive reflection repeated-change question answered\n" +
+			"question_id: answer-state-repeated-changes\n" +
+			"question: Did any safe archive entry change at more than one supplied boundary?\n" +
+			"result: repeated\n" +
+			"transition_history_sha256: " + strings.Repeat("a", 64) + "\n" +
+			"transitions: 3\n" +
+			"repeated_entries:\n" +
+			"- directory: run-001\n" +
+			"  changes:\n" +
+			"  - transition: 1\n" +
+			"    from_reflection_sha256: " + strings.Repeat("b", 64) + "\n" +
+			"    to_reflection_sha256: " + strings.Repeat("c", 64) + "\n" +
+			"    older_state: observed\n" +
+			"    newer_state: unknown\n" +
+			"  - transition: 3\n" +
+			"    from_reflection_sha256: " + strings.Repeat("d", 64) + "\n" +
+			"    to_reflection_sha256: " + strings.Repeat("e", 64) + "\n" +
+			"    older_state: unknown\n" +
+			"    newer_state: unavailable\n" +
+			"note: this reports repeated verified state-change records only; it does not infer chronology or a trend\n"
+		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+			t.Fatalf("runAskArchiveTransitionsAskRepeated() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("json", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsAskRepeated(
+			[]string{"--json", "history.json"},
+			&stdout,
+			&stderr,
+			func(string) (bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer, error) { return answer, nil },
+		)
+		want := `{"schema_version":1,"question_id":"answer-state-repeated-changes","question":"Did any safe archive entry change at more than one supplied boundary?","result":"repeated","transition_history_sha256":"` + strings.Repeat("a", 64) + `","transitions":3,"repeated_entries":[{"directory":"run-001","changes":[{"transition":1,"from_reflection_sha256":"` + strings.Repeat("b", 64) + `","to_reflection_sha256":"` + strings.Repeat("c", 64) + `","directory":"run-001","older_state":"observed","newer_state":"unknown"},{"transition":3,"from_reflection_sha256":"` + strings.Repeat("d", 64) + `","to_reflection_sha256":"` + strings.Repeat("e", 64) + `","directory":"run-001","older_state":"unknown","newer_state":"unavailable"}]}]}` + "\n"
+		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+			t.Fatalf("runAskArchiveTransitionsAskRepeated() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+}
+
+func TestRunAskArchiveTransitionsAskRepeatedFailures(t *testing.T) {
+	for _, args := range [][]string{nil, {"history.json", "extra"}, {"--json=invalid", "history.json"}} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			exitCode := runAskArchiveTransitionsAskRepeated(
+				args,
+				&stdout,
+				&stderr,
+				func(string) (bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer, error) {
+					t.Fatal("AskArchiveQuestionTransitionHistoryRepeated called for invalid usage")
+					return bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer{}, nil
+				},
+			)
+			if exitCode != 2 || stdout.Len() != 0 || stderr.String() != usage {
+				t.Fatalf("runAskArchiveTransitionsAskRepeated() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+			}
+		})
+	}
+
+	t.Run("answer error", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsAskRepeated(
+			[]string{"history.json"},
+			&stdout,
+			&stderr,
+			func(string) (bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer, error) {
+				return bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer{}, errors.New("history is invalid")
+			},
+		)
+		if exitCode != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "history is invalid") {
+			t.Fatalf("runAskArchiveTransitionsAskRepeated() = %d, stderr=%q", exitCode, stderr.String())
+		}
+	})
+
+	for _, args := range [][]string{{"history.json"}, {"--json", "history.json"}} {
+		t.Run("write output "+strings.Join(args, "_"), func(t *testing.T) {
+			var stderr bytes.Buffer
+			exitCode := runAskArchiveTransitionsAskRepeated(
+				args,
+				failingWriter{},
+				&stderr,
+				func(string) (bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer, error) {
+					return bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer{}, nil
+				},
+			)
+			if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+				t.Fatalf("runAskArchiveTransitionsAskRepeated() = %d, stderr=%q", exitCode, stderr.String())
+			}
+		})
+	}
+
+	for _, failAt := range []int{2, 3, 4, 5} {
+		t.Run(fmt.Sprintf("write detail output %d", failAt), func(t *testing.T) {
+			var stderr bytes.Buffer
+			exitCode := runAskArchiveTransitionsAskRepeated(
+				[]string{"history.json"},
+				&failAfterWriter{failAt: failAt},
+				&stderr,
+				func(string) (bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer, error) {
+					return bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer{
+						QuestionID: "answer-state-repeated-changes",
+						Question:   "Did any safe archive entry change at more than one supplied boundary?",
+						Result:     "repeated",
+						RepeatedEntries: []bundle.ArchiveQuestionTransitionHistoryRepeatedChange{{
+							Directory: "run-001",
+							Changes: []bundle.ArchiveQuestionTransitionHistoryChange{
+								{Transition: 1},
+								{Transition: 2},
+							},
+						}},
+					}, nil
+				},
+			)
+			if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+				t.Fatalf("runAskArchiveTransitionsAskRepeated() = %d, stderr=%q", exitCode, stderr.String())
+			}
+		})
+	}
 }
 
 func TestRunAskArchiveTransitionsAskFailures(t *testing.T) {
