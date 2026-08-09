@@ -19,6 +19,8 @@ The first milestone targets an authorized Android test application:
 6. Produce a redacted, reproducible export from a verified evidence bundle.
 
 The detailed design and experiment log live in [`docs/`](docs/).
+The evidence-backed first-year path is tracked in
+[`docs/content/docs/roadmap.md`](docs/content/docs/roadmap.md).
 
 The shareable export has its own canonical SHA-256 identity. Verify a received
 export structurally, and optionally require the expected identity, with
