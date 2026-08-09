@@ -266,6 +266,15 @@ jq -e --arg history_sha256 "${transition_history_sha256}" '
   (.transitions == 2) and
   (.repeated_entries == [])
 ' "${archive_question_transition_repeated_answer_json}"
+archive_question_transition_repeated_answer_by_id_json="${RUNNER_TEMP}/ariadne-archive-question-transition-repeated-answer-by-id.json"
+"${ariadne}" experiment ask-archive transitions ask --json \
+  "${archive_question_transitions_json}" \
+  answer-state-repeated-changes >"${archive_question_transition_repeated_answer_by_id_json}"
+jq -e --arg history_sha256 "${transition_history_sha256}" '
+  (.question_id == "answer-state-repeated-changes") and
+  (.transition_history_sha256 == $history_sha256) and
+  (.result == "none")
+' "${archive_question_transition_repeated_answer_by_id_json}"
 archive_question_transition_questions_json="${RUNNER_TEMP}/ariadne-archive-question-transition-questions.json"
 "${ariadne}" experiment ask-archive transitions questions --json >"${archive_question_transition_questions_json}"
 jq -e '

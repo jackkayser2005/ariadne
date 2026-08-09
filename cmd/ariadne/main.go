@@ -36,7 +36,7 @@ const usage = `usage:
   ariadne experiment ask-archive compare-current [--json] <older-report.json> <archive-root>
   ariadne experiment ask-archive transitions [--json] <report-1.json> <report-2.json> ...
   ariadne experiment ask-archive transitions questions [--json]
-  ariadne experiment ask-archive transitions ask [--json] <history.json>
+  ariadne experiment ask-archive transitions ask [--json] <history.json> [<question-id>]
   ariadne experiment ask-archive transitions ask repeated [--json] <history.json>
   ariadne experiment ask-archive transitions save [--json] <report-1.json> <report-2.json> ... <history.json>
   ariadne experiment ask-archive transitions verify [--json] [--expect-sha256 <digest>] <history.json>
@@ -103,6 +103,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 		if len(args) >= 4 && args[2] == "transitions" && args[3] == "ask" {
 			if len(args) >= 5 && args[4] == "repeated" {
 				return runAskArchiveTransitionsAskRepeated(args[5:], stdout, stderr, bundle.AskArchiveQuestionTransitionHistoryRepeated)
+			}
+			if len(args) >= 6 {
+				return runAskArchiveTransitionsAskQuestion(args[4:], stdout, stderr, bundle.AskArchiveQuestionTransitionHistory, bundle.AskArchiveQuestionTransitionHistoryRepeated)
 			}
 			return runAskArchiveTransitionsAsk(args[4:], stdout, stderr, bundle.AskArchiveQuestionTransitionHistory)
 		}
@@ -185,6 +188,7 @@ type bundleArchiveQuestionReportComparer func(string, string) (bundle.ArchiveQue
 type bundleArchiveQuestionTransitionComparer func([]string) (bundle.ArchiveQuestionTransitionHistory, error)
 type bundleArchiveQuestionHistorySaver func([]string, string) (bundle.ArchiveQuestionTransitionVerificationSummary, error)
 type bundleArchiveQuestionTransitionVerifier func(string) (bundle.ArchiveQuestionTransitionVerificationSummary, error)
+type bundleArchiveQuestionTransitionAsker func(string) (bundle.ArchiveQuestionTransitionHistoryAnswer, error)
 type bundleArchiveQuestionTransitionRepeatedAsker func(string) (bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer, error)
 type bundleQuestionLister func() []bundle.Question
 type bundleArchiveIndexer func(string) ([]bundle.ArchiveEntry, error)
@@ -977,6 +981,40 @@ func runAskArchiveTransitionsAsk(
 		return 1
 	}
 	return 0
+}
+
+func runAskArchiveTransitionsAskQuestion(
+	args []string,
+	stdout, stderr io.Writer,
+	askTransition bundleArchiveQuestionTransitionAsker,
+	askRepeated bundleArchiveQuestionTransitionRepeatedAsker,
+) int {
+	flags := flag.NewFlagSet("experiment ask-archive transitions ask", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || (flags.NArg() != 1 && flags.NArg() != 2) {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+
+	questions := bundle.ArchiveQuestionTransitionHistoryQuestions()
+	questionID := questions[0].ID
+	if flags.NArg() == 2 {
+		questionID = flags.Arg(1)
+	}
+	askArgs := []string{flags.Arg(0)}
+	if *jsonOutput {
+		askArgs = append([]string{"--json"}, askArgs...)
+	}
+	switch questionID {
+	case questions[0].ID:
+		return runAskArchiveTransitionsAsk(askArgs, stdout, stderr, askTransition)
+	case questions[1].ID:
+		return runAskArchiveTransitionsAskRepeated(askArgs, stdout, stderr, askRepeated)
+	default:
+		_, _ = io.WriteString(stderr, "ariadne: experiment ask-archive transitions ask: question ID is invalid\n")
+		return 2
+	}
 }
 
 func runAskArchiveTransitionsAskRepeated(

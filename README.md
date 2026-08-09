@@ -56,7 +56,7 @@ go run ./cmd/ariadne experiment ask-archive compare --json <older-reflection.jso
 go run ./cmd/ariadne experiment ask-archive compare-current --json <older-reflection.json> <archive-root>
 go run ./cmd/ariadne experiment ask-archive transitions --json <reflection-1.json> <reflection-2.json> ...
 go run ./cmd/ariadne experiment ask-archive transitions questions --json
-go run ./cmd/ariadne experiment ask-archive transitions ask --json <history.json>
+go run ./cmd/ariadne experiment ask-archive transitions ask --json <history.json> [<question-id>]
 go run ./cmd/ariadne experiment ask-archive transitions ask repeated --json <history.json>
 go run ./cmd/ariadne experiment ask-archive transitions save --json <reflection-1.json> <reflection-2.json> ... <history.json>
 go run ./cmd/ariadne experiment ask-archive transitions verify --json <transitions.json>
@@ -78,11 +78,13 @@ expected content identity before another tool consumes it.
 a verified history in stable order. Use it to discover the question IDs before
 asking one; it does not create arbitrary natural-language queries.
 
-`transitions ask` answers the ledger's fixed history question from the verified
-history itself. It returns only the bounded result, 1-based transition indexes
+`transitions ask` answers a catalog question from the verified history itself.
+With no question ID it preserves the original history question; pass any ID
+from `transitions questions` to select a fixed question. It returns only the bounded result, 1-based transition indexes
 for changed or membership-incomparable boundaries, and safe directory/state
 triples for changed entries, each bound to its adjacent reflection identities;
-it does not infer chronology or prove the underlying evidence. Legacy schema 1
+it does not infer chronology or prove the underlying evidence. The legacy
+`ask repeated` spelling remains supported. Legacy schema 1
 histories retain the indexes and have no per-entry details.
 
 `transitions ask repeated` asks a second fixed question of the verified

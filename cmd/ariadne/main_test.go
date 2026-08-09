@@ -1790,6 +1790,101 @@ func TestRunAskArchiveTransitionsAsk(t *testing.T) {
 	})
 }
 
+func TestRunAskArchiveTransitionsAskQuestion(t *testing.T) {
+	transitionAnswer := bundle.ArchiveQuestionTransitionHistoryAnswer{
+		SchemaVersion:           1,
+		QuestionID:              "answer-state-transitions",
+		Question:                "At which supplied boundaries did the bounded answer state change?",
+		Result:                  "same",
+		TransitionHistorySHA256: strings.Repeat("a", 64),
+		Transitions:             2,
+		ChangedTransitions:      []int{},
+		IncomparableTransitions: []int{},
+		ChangedEntries:          []bundle.ArchiveQuestionTransitionHistoryChange{},
+	}
+	repeatedAnswer := bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer{
+		SchemaVersion:           1,
+		QuestionID:              "answer-state-repeated-changes",
+		Question:                "Did any safe archive entry change at more than one supplied boundary?",
+		Result:                  "none",
+		TransitionHistorySHA256: strings.Repeat("a", 64),
+		Transitions:             2,
+		RepeatedEntries:         []bundle.ArchiveQuestionTransitionHistoryRepeatedChange{},
+	}
+
+	t.Run("transition ID", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsAskQuestion(
+			[]string{"history.json", "answer-state-transitions"},
+			&stdout,
+			&stderr,
+			func(path string) (bundle.ArchiveQuestionTransitionHistoryAnswer, error) {
+				if path != "history.json" {
+					t.Fatalf("transition asker path = %q", path)
+				}
+				return transitionAnswer, nil
+			},
+			func(string) (bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer, error) {
+				t.Fatal("repeated asker called for transition question")
+				return bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer{}, nil
+			},
+		)
+		if exitCode != 0 || !strings.Contains(stdout.String(), "question_id: answer-state-transitions") || stderr.Len() != 0 {
+			t.Fatalf("transition ID ask = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("repeated ID JSON", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsAskQuestion(
+			[]string{"--json", "history.json", "answer-state-repeated-changes"},
+			&stdout,
+			&stderr,
+			func(string) (bundle.ArchiveQuestionTransitionHistoryAnswer, error) {
+				t.Fatal("transition asker called for repeated question")
+				return bundle.ArchiveQuestionTransitionHistoryAnswer{}, nil
+			},
+			func(path string) (bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer, error) {
+				if path != "history.json" {
+					t.Fatalf("repeated asker path = %q", path)
+				}
+				return repeatedAnswer, nil
+			},
+		)
+		if exitCode != 0 || !strings.Contains(stdout.String(), `"question_id":"answer-state-repeated-changes"`) || !strings.Contains(stdout.String(), `"repeated_entries":[]`) || stderr.Len() != 0 {
+			t.Fatalf("repeated ID ask = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("unknown ID", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsAskQuestion(
+			[]string{"history.json", "not-a-question"},
+			&stdout,
+			&stderr,
+			func(string) (bundle.ArchiveQuestionTransitionHistoryAnswer, error) {
+				t.Fatal("transition asker called for unknown question")
+				return bundle.ArchiveQuestionTransitionHistoryAnswer{}, nil
+			},
+			func(string) (bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer, error) {
+				t.Fatal("repeated asker called for unknown question")
+				return bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer{}, nil
+			},
+		)
+		if exitCode != 2 || stdout.Len() != 0 || stderr.String() != "ariadne: experiment ask-archive transitions ask: question ID is invalid\n" {
+			t.Fatalf("unknown ID ask = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("run routes ID", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := run([]string{"experiment", "ask-archive", "transitions", "ask", "history.json", "not-a-question"}, &stdout, &stderr)
+		if exitCode != 2 || stdout.Len() != 0 || stderr.String() != "ariadne: experiment ask-archive transitions ask: question ID is invalid\n" {
+			t.Fatalf("run question ID route = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+}
+
 func TestRunAskArchiveTransitionsAskRepeated(t *testing.T) {
 	answer := bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer{
 		SchemaVersion:           1,

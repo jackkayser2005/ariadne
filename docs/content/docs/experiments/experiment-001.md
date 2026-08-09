@@ -181,7 +181,7 @@ go run ./cmd/ariadne experiment ask-archive compare --json <older-report.json> <
 go run ./cmd/ariadne experiment ask-archive compare-current --json <older-report.json> <archive-root>
 go run ./cmd/ariadne experiment ask-archive transitions --json <report-1.json> <report-2.json> ...
 go run ./cmd/ariadne experiment ask-archive transitions questions --json
-go run ./cmd/ariadne experiment ask-archive transitions ask --json <history.json>
+go run ./cmd/ariadne experiment ask-archive transitions ask --json <history.json> [<question-id>]
 go run ./cmd/ariadne experiment ask-archive transitions ask repeated --json <history.json>
 go run ./cmd/ariadne experiment ask-archive transitions save --json <report-1.json> <report-2.json> ... <history.json>
 go run ./cmd/ariadne experiment ask-archive transitions verify --json <transitions.json>
@@ -286,8 +286,10 @@ when `go run` built Ariadne.
   raw-value-free questions available for a verified transition history in
   stable order. It is a discovery surface for callers and does not accept
   arbitrary natural-language queries.
-- `experiment ask-archive transitions ask [--json] <history.json>` verifies a
-  saved transition ledger and asks its fixed history question. It returns the
+- `experiment ask-archive transitions ask [--json] <history.json> [<question-id>]`
+  verifies a saved transition ledger and asks one catalog question. With no
+  question ID it preserves the original history question; pass an ID from
+  `transitions questions` to select another fixed question. It returns the
   bounded result plus 1-based indexes for changed and membership-incomparable
   transitions, along with safe directory/state triples for changed entries and
   their adjacent reflection identities. Legacy schema 1 histories retain the
@@ -296,8 +298,9 @@ when `go run` built Ariadne.
 - `experiment ask-archive transitions ask repeated [--json] <history.json>`
   verifies the same ledger and asks whether any safe archive entry changed at
   more than one supplied boundary. It returns grouped safe state-change
-  records with their adjacent reflection identities; schema 1 histories answer
-  `unavailable`. It does not establish chronology or a trend.
+  records with their adjacent reflection identities; the legacy spelling is
+  retained for compatibility. Schema 1 histories answer `unavailable`. It does
+  not establish chronology or a trend.
 - `experiment ask-archive transitions save [--json] <report-1.json> <report-2.json> ... <history.json>`
   verifies the supplied reflections, writes one raw-value-free transition
   ledger with exclusive file creation, including safe per-directory state
