@@ -72,7 +72,7 @@ func TestHandlerRendersReadOnlyReview(t *testing.T) {
 		want []string
 	}{
 		{name: "index", path: "/", want: []string{"Archived bundles", "Ask across this archive", "Did it change?", "run-001", "&lt;manifest&gt;"}},
-		{name: "archive question lens", path: "/?question_id=counterfactual-change", want: []string{"Question lens", "Archive question summary", "Did it change?", "observed", "unknown", "unavailable", "checked", "Verified provenance", "recorded (UTC)", "2026-07-25T12:00:00Z", "target package", "&lt;package&gt;", "Android API", "35", "architecture", "&lt;architecture&gt;", "package version", "7", "package SHA-256", strings.Repeat("d", 64), "normalization", "&lt;normalization&gt;", "second normalization", strings.Repeat("c", 64), "&lt;revision&gt;", "clean", "Open answer details", "run-001", "&lt;manifest&gt;"}},
+		{name: "archive question lens", path: "/?question_id=counterfactual-change", want: []string{"Question lens", "oldest first", "Dated results are ordered", "Archive question summary", "Did it change?", "observed", "unknown", "unavailable", "checked", "Verified provenance", "recorded (UTC)", "2026-07-25T12:00:00Z", "target package", "&lt;package&gt;", "Android API", "35", "architecture", "&lt;architecture&gt;", "package version", "7", "package SHA-256", strings.Repeat("d", 64), "normalization", "&lt;normalization&gt;", "second normalization", strings.Repeat("c", 64), "&lt;revision&gt;", "clean", "Open answer details", "run-001", "&lt;manifest&gt;"}},
 		{name: "run", path: "/run?directory=run-001", want: []string{"Verified provenance", "recorded (UTC)", "2026-07-25T12:00:00Z", "target package", "&lt;package&gt;", "Bounded question board", "Did it change?", "Open answer details", findingID, strings.Repeat("c", 64), "&lt;revision&gt;", "clean"}},
 		{name: "ask", path: "/ask?directory=run-001&question_id=counterfactual-change", want: []string{"Question result", "observed", findingID, "Verified provenance", "recorded (UTC)", "2026-07-25T12:00:00Z", "target package", "&lt;package&gt;", strings.Repeat("d", 64), strings.Repeat("c", 64), "&lt;revision&gt;", "clean"}},
 		{name: "finding", path: "/finding?directory=run-001&finding_id=" + findingID, want: []string{"Finding detail", "network.body", "baseline/network.json", "&lt;safe-source&gt;", "Verified provenance", "target package", "&lt;package&gt;", "Android API", "35", strings.Repeat("d", 64), "recorded (UTC)", "2026-07-25T12:00:00Z", strings.Repeat("c", 64), "&lt;revision&gt;", "clean"}},
@@ -108,6 +108,22 @@ func TestSummarizeArchiveAnswers(t *testing.T) {
 	want := archiveQuestionSummary{Total: 3, Observed: 1, Unknown: 1, Unavailable: 1}
 	if summary != want {
 		t.Fatalf("summarizeArchiveAnswers() = %#v, want %#v", summary, want)
+	}
+}
+
+func TestSortArchiveQuestionResults(t *testing.T) {
+	results := []archiveQuestionResult{
+		{Directory: "run-z", Summary: bundle.Summary{RecordedAt: "2026-07-25T12:00:00Z"}},
+		{Directory: "legacy", Summary: bundle.Summary{}},
+		{Directory: "run-old", Summary: bundle.Summary{RecordedAt: "2026-07-24T12:00:00Z"}},
+		{Directory: "run-a", Summary: bundle.Summary{RecordedAt: "2026-07-25T12:00:00Z"}},
+	}
+	sortArchiveQuestionResults(results)
+	want := []string{"run-old", "run-a", "run-z", "legacy"}
+	for index, result := range results {
+		if result.Directory != want[index] {
+			t.Fatalf("sortArchiveQuestionResults() = %#v, want directories %#v", results, want)
+		}
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"sort"
 
 	"github.com/jackkayser2005/ariadne/internal/bundle"
 	"github.com/jackkayser2005/ariadne/internal/evidence"
@@ -123,6 +124,7 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 				Available:    askErr == nil,
 			})
 		}
+		sortArchiveQuestionResults(archiveAnswers)
 		archiveSummary = summarizeArchiveAnswers(archiveAnswers)
 	}
 	render(w, pageData{
@@ -133,6 +135,22 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		SelectedQuestion: selectedQuestion,
 		ArchiveAnswers:   archiveAnswers,
 		ArchiveSummary:   archiveSummary,
+	})
+}
+
+func sortArchiveQuestionResults(results []archiveQuestionResult) {
+	sort.SliceStable(results, func(i, j int) bool {
+		left, right := results[i], results[j]
+		if left.Summary.RecordedAt == right.Summary.RecordedAt {
+			return left.Directory < right.Directory
+		}
+		if left.Summary.RecordedAt == "" {
+			return false
+		}
+		if right.Summary.RecordedAt == "" {
+			return true
+		}
+		return left.Summary.RecordedAt < right.Summary.RecordedAt
 	})
 }
 
@@ -383,8 +401,9 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
     </section>
     {{if .SelectedQuestion.ID}}
     <section>
-      <div class="section-head"><h2>Question lens</h2><span class="context">re-verified now</span></div>
+      <div class="section-head"><h2>Question lens</h2><span class="context">re-verified now, oldest first</span></div>
       <p class="question">{{.SelectedQuestion.Text}}</p>
+      <p class="context">Dated results are ordered by verified recording time; undated bundles follow.</p>
       <div class="metrics panel" aria-label="Archive question summary">
         <span class="metric"><strong class="metric-value">{{.ArchiveSummary.Observed}}</strong><span class="metric-label">observed</span></span>
         <span class="metric"><strong class="metric-value">{{.ArchiveSummary.Unknown}}</strong><span class="metric-label">unknown</span></span>
