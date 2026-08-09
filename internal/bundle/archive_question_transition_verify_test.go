@@ -104,6 +104,21 @@ func TestVerifyArchiveQuestionTransitionHistoryAcceptsLegacyLedger(t *testing.T)
 	}
 }
 
+func TestVerifyArchiveQuestionTransitionHistoryAcceptsConnectedLegacyTransitions(t *testing.T) {
+	history := validArchiveQuestionTransitionHistory()
+	history.SchemaVersion = 1
+	history.Snapshots = 3
+	history.Transitions[0].StateChanges = nil
+	history.Transitions = append(history.Transitions, ArchiveQuestionTransition{
+		FromReflectionSHA256: strings.Repeat("b", 64),
+		ToReflectionSHA256:   strings.Repeat("c", 64),
+		Result:               "same",
+	})
+	if _, err := VerifyArchiveQuestionTransitionHistory(writeArchiveQuestionTransitionHistory(t, history)); err != nil {
+		t.Fatalf("VerifyArchiveQuestionTransitionHistory() connected legacy error = %v", err)
+	}
+}
+
 func TestVerifyArchiveQuestionTransitionHistoryRejectsUnorderedStateChanges(t *testing.T) {
 	history := validArchiveQuestionTransitionHistory()
 	history.Transitions[0].StateChanges = []ArchiveQuestionStateChange{
@@ -114,6 +129,20 @@ func TestVerifyArchiveQuestionTransitionHistoryRejectsUnorderedStateChanges(t *t
 	history.Transitions[0].Changed = 2
 	if _, err := VerifyArchiveQuestionTransitionHistory(writeArchiveQuestionTransitionHistory(t, history)); err == nil || !strings.Contains(err.Error(), "transition state change directory ordering is invalid") {
 		t.Fatalf("unordered state changes error = %v", err)
+	}
+}
+
+func TestVerifyArchiveQuestionTransitionHistoryRejectsDisconnectedTransitions(t *testing.T) {
+	history := validArchiveQuestionTransitionHistory()
+	history.Snapshots = 3
+	history.Transitions = append(history.Transitions, ArchiveQuestionTransition{
+		FromReflectionSHA256: strings.Repeat("c", 64),
+		ToReflectionSHA256:   strings.Repeat("d", 64),
+		Result:               "same",
+	})
+	path := writeArchiveQuestionTransitionHistory(t, history)
+	if _, err := VerifyArchiveQuestionTransitionHistory(path); err == nil || !strings.Contains(err.Error(), "not contiguous") {
+		t.Fatalf("VerifyArchiveQuestionTransitionHistory() error = %v, want disconnected identity error", err)
 	}
 }
 

@@ -165,9 +165,13 @@ func validateArchiveQuestionTransitionHistory(history ArchiveQuestionTransitionH
 	if len(history.Transitions) != history.Snapshots-1 {
 		return errors.New("transition count does not match snapshots")
 	}
-	for _, transition := range history.Transitions {
+	previousToReflectionSHA256 := ""
+	for index, transition := range history.Transitions {
 		if !validDigest(transition.FromReflectionSHA256) || !validDigest(transition.ToReflectionSHA256) {
 			return errors.New("transition reflection identity is invalid")
+		}
+		if index > 0 && transition.FromReflectionSHA256 != previousToReflectionSHA256 {
+			return errors.New("transition reflection identities are not contiguous")
 		}
 		if transition.Compared < 0 || transition.Changed < 0 || transition.FromOnly < 0 || transition.ToOnly < 0 || transition.Changed > transition.Compared {
 			return errors.New("transition counts are invalid")
@@ -188,6 +192,7 @@ func validateArchiveQuestionTransitionHistory(history ArchiveQuestionTransitionH
 		default:
 			return errors.New("transition result is invalid")
 		}
+		previousToReflectionSHA256 = transition.ToReflectionSHA256
 		if history.SchemaVersion == archiveQuestionTransitionHistoryLegacySchemaVersion {
 			if len(transition.StateChanges) != 0 {
 				return errors.New("legacy transition state changes are unsupported")

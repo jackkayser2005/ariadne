@@ -309,10 +309,10 @@ when `go run` built Ariadne.
   overwrite an existing history path.
 - `experiment ask-archive transitions verify [--json] [--expect-sha256 <digest>] <history.json>`
   verifies a saved transition ledger's fixed question, caller-order marker,
-  adjacent count contract, safe reflection identities, bounded state-change
-  entries, and deterministic content identity without requiring the source
-  reflections. This is structural verification, not proof of the underlying
-  evidence or chronology.
+  adjacent count contract, contiguous safe reflection identities, bounded
+  state-change entries, and deterministic content identity without requiring
+  the source reflections. This is structural verification, not proof of the
+  underlying evidence or chronology.
 - `experiment ask-archive verify [--json] <report.json>` checks a saved
   archive-reflection report offline for its schema, fixed question catalog,
   safe metadata, answer states, provenance digests, and deterministic ordering.

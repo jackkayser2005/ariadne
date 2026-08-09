@@ -72,7 +72,9 @@ changed archive directories with their bounded older/newer states. The saved
 transition ledger carries those same state changes without observations or
 persona values.
 The saved transition ledger can be structurally re-verified and given an
-expected content identity before another tool consumes it.
+expected content identity before another tool consumes it. Verification also
+requires adjacent transitions to share their boundary reflection identity, so
+a history cannot silently join unrelated snapshots.
 
 `transitions questions` lists the fixed, raw-value-free questions available for
 a verified history in stable order. Use it to discover the question IDs before
