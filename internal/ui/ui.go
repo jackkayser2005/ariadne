@@ -22,6 +22,7 @@ type handler struct {
 type archiveQuestionResult struct {
 	Directory    string
 	ManifestName string
+	Summary      bundle.Summary
 	Answer       bundle.Answer
 	Available    bool
 }
@@ -97,12 +98,19 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		}
 		archiveAnswers = make([]archiveQuestionResult, 0, len(entries))
 		for _, entry := range entries {
-			answer, err := h.ask(filepath.Join(h.root, entry.Directory), questionID)
+			runDir := filepath.Join(h.root, entry.Directory)
+			summary, verifyErr := h.verify(runDir)
+			answer := bundle.Answer{}
+			askErr := verifyErr
+			if verifyErr == nil {
+				answer, askErr = h.ask(runDir, questionID)
+			}
 			archiveAnswers = append(archiveAnswers, archiveQuestionResult{
 				Directory:    entry.Directory,
 				ManifestName: entry.ManifestName,
+				Summary:      summary,
 				Answer:       answer,
-				Available:    err == nil,
+				Available:    askErr == nil,
 			})
 		}
 	}
@@ -350,6 +358,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
           {{if .Available}}
             <span class="status status-{{.Answer.State}}">{{.Answer.State}}</span>
             {{with .Answer.Reason}}<p class="context">Why unknown: {{.}}</p>{{end}}
+            {{template "provenance" .}}
             <a class="button" href="/ask?directory={{query .Directory}}&amp;question_id={{query $.SelectedQuestion.ID}}">Open answer details <span aria-hidden="true">→</span></a>
           {{else}}
             <span class="status status-unavailable">unavailable</span>
