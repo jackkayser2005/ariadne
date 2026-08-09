@@ -218,9 +218,12 @@ when `go run` built Ariadne.
   results oldest first by verifier-provided UTC recording time, places undated
   results last, and reports observed, unknown, unavailable, and checked counts.
   Unavailable entries do not expose their internal verification errors.
-  JSON contains only safe directory and manifest names, timestamps, bounded
-  answer states, verifier-owned reasons, and finding IDs; it never returns
-  observed or persona values and does not infer a trend.
+  Versioned JSON also carries the verified manifest contract digest, recorded
+  Ariadne revision, and modified-worktree flag when current provenance exists.
+  It contains only safe directory and manifest names, timestamps, bounded
+  answer states, verifier-owned reasons, finding IDs, and that provenance; it
+  never returns observed or persona values and does not infer a trend. This is
+  a derived reflection view, not authoritative evidence.
 - `experiment serve <archive-root>` starts a localhost-only, read-only review
   page at `http://127.0.0.1:8787/`; only loopback IP addresses are accepted, and
   it lists verified bundles and links to the same bounded questions and finding

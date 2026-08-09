@@ -17,7 +17,7 @@ func TestAskArchiveReturnsOrderedSafeResults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.QuestionID != "counterfactual-change" || report.Question == "" {
+	if report.SchemaVersion != 1 || report.QuestionID != "counterfactual-change" || report.Question == "" {
 		t.Fatalf("AskArchive() question = %#v", report)
 	}
 	if report.Summary.Checked != 2 || report.Summary.Observed != 2 || report.Summary.Unknown != 0 || report.Summary.Unavailable != 0 {
@@ -27,7 +27,7 @@ func TestAskArchiveReturnsOrderedSafeResults(t *testing.T) {
 		t.Fatalf("AskArchive() results = %#v", report.Results)
 	}
 	for _, result := range report.Results {
-		if !result.Available || result.Answer == nil || result.Answer.State != "observed" || result.RecordedAt == "" {
+		if !result.Available || result.Answer == nil || result.Answer.State != "observed" || result.RecordedAt == "" || result.Provenance == nil || result.Provenance.ManifestContractSHA256 != strings.Repeat("c", 64) || result.Provenance.AriadneRevision != strings.Repeat("b", 40) || result.Provenance.AriadneModified {
 			t.Fatalf("AskArchive() result = %#v", result)
 		}
 	}
@@ -84,6 +84,9 @@ func TestAskArchiveCountsUnknownAndUnavailable(t *testing.T) {
 		}
 		if result.Directory == "legacy" && result.Available {
 			t.Fatalf("legacy result = %#v", result)
+		}
+		if result.Directory == "legacy" && result.Provenance != nil {
+			t.Fatalf("legacy provenance = %#v", result.Provenance)
 		}
 	}
 }
