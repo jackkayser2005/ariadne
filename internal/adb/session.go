@@ -24,6 +24,10 @@ import (
 const sessionSchemaVersion = 6
 const networkObservationTimeout = 5 * time.Second
 const networkCleanupTimeout = 5 * time.Second
+const uiHierarchySettleTimeout = 2 * time.Second
+const uiHierarchyRetryInterval = 100 * time.Millisecond
+
+var errFixtureControlNotUnique = errors.New("fixture control was not found uniquely")
 
 const (
 	sessionStatusComplete   = "complete"
@@ -514,36 +518,52 @@ func runInteractionStep(
 		return err
 	}
 
-	if _, err := run(
-		ctx,
-		binary,
-		"-s", device,
-		"shell", "uiautomator", "dump", "--compressed", uiDumpPath,
-	); err != nil {
-		step.ExitCode = commandExitCode(err)
-		return finish(errors.New("dump UI hierarchy"))
-	}
+	var coordinates [2]int
+	settleDeadline := time.Now().Add(uiHierarchySettleTimeout)
+	for {
+		if _, err := run(
+			ctx,
+			binary,
+			"-s", device,
+			"shell", "uiautomator", "dump", "--compressed", uiDumpPath,
+		); err != nil {
+			step.ExitCode = commandExitCode(err)
+			return finish(errors.New("dump UI hierarchy"))
+		}
 
-	dump, err := run(
-		ctx,
-		binary,
-		"-s", device,
-		"shell", "cat", uiDumpPath,
-	)
-	if err != nil {
-		_ = cleanup()
-		step.ExitCode = commandExitCode(err)
-		return finish(errors.New("read UI hierarchy"))
-	}
+		dump, err := run(
+			ctx,
+			binary,
+			"-s", device,
+			"shell", "cat", uiDumpPath,
+		)
+		if err != nil {
+			_ = cleanup()
+			step.ExitCode = commandExitCode(err)
+			return finish(errors.New("read UI hierarchy"))
+		}
 
-	coordinates, err := tapCoordinates(dump, resourceID)
-	cleanupErr := cleanup()
-	if err != nil {
-		return finish(err)
-	}
-	if cleanupErr != nil {
-		step.ExitCode = commandExitCode(cleanupErr)
-		return finish(errors.New("remove UI hierarchy"))
+		coordinates, err = tapCoordinates(dump, resourceID)
+		cleanupErr := cleanup()
+		if err == nil {
+			if cleanupErr != nil {
+				step.ExitCode = commandExitCode(cleanupErr)
+				return finish(errors.New("remove UI hierarchy"))
+			}
+			break
+		}
+		if !errors.Is(err, errFixtureControlNotUnique) || time.Now().After(settleDeadline) {
+			return finish(err)
+		}
+		if cleanupErr != nil {
+			step.ExitCode = commandExitCode(cleanupErr)
+			return finish(errors.New("remove UI hierarchy"))
+		}
+		select {
+		case <-ctx.Done():
+			return finish(ctx.Err())
+		case <-time.After(uiHierarchyRetryInterval):
+		}
 	}
 
 	if _, err := run(
@@ -590,7 +610,7 @@ func tapCoordinates(data []byte, resourceID string) ([2]int, error) {
 	}
 	visit(hierarchy.Nodes)
 	if count != 1 {
-		return [2]int{}, errors.New("fixture control was not found uniquely")
+		return [2]int{}, errFixtureControlNotUnique
 	}
 	return parseBounds(match.Bounds)
 }
