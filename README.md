@@ -105,7 +105,9 @@ reflection with
 It renders caller-ordered bounded transitions and re-asks the saved reflection's
 fixed question against the current archive, showing only safe comparison counts,
 identities, per-directory bounded state changes, and the repeated-change
-question when history is available. An unavailable comparison remains a generic bounded state; the
+question when history is available. The history panel also lists those fixed
+question IDs and links directly to each answer, so a UI driver can choose a
+bounded question without inventing natural language. An unavailable comparison remains a generic bounded state; the
 page does not turn it into chronology, trend inference, or a claim about the
 underlying evidence.
 

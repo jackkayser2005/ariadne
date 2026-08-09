@@ -348,7 +348,9 @@ when `go run` built Ariadne.
   When `--history` is supplied, the page also reads one structurally verified
   transition ledger and renders its caller-ordered, raw-value-free boundaries,
   including the verified history-question result, safe directory/state changes,
-  and the repeated-change question when present.
+  and the repeated-change question when present. The history panel also lists
+  the fixed question IDs with direct links to each answer, so a UI driver can
+  choose a bounded question without inventing natural language.
   When `--reflection` is supplied, the page re-asks that saved reflection's
   fixed question against the current archive and renders a bounded comparison
   with safe result counts and reflection identities. Invalid history or saved

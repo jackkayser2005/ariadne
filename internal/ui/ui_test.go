@@ -370,7 +370,7 @@ func TestHandlerRendersReflectionHistory(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, body=%q", recorder.Code, body)
 	}
-	for _, want := range []string{"Saved reflection history", "verified ledger", history.Question, "caller", "snapshots", "3", "transitions", "2", "history SHA-256", strings.Repeat("c", 64), "History question", "changed", "changed transitions", "transition 1", "changed entries", "transition 1: run-001", "incomparable transitions", "Repeated-change question", "repeated", "transition 2", strings.Repeat("a", 64), strings.Repeat("b", 64), strings.Repeat("c", 64), "changed archive entries", "run-001", "observed", "unknown", "does not establish chronology"} {
+	for _, want := range []string{"Saved reflection history", "verified ledger", history.Question, "History questions", "answer-state-transitions", "answer-state-repeated-changes", "#history-question-answer-state-transitions", "#history-question-answer-state-repeated-changes", "caller", "snapshots", "3", "transitions", "2", "history SHA-256", strings.Repeat("c", 64), "History question", "changed", "changed transitions", "transition 1", "changed entries", "transition 1: run-001", "incomparable transitions", "Repeated-change question", "repeated", "transition 2", strings.Repeat("a", 64), strings.Repeat("b", 64), strings.Repeat("c", 64), "changed archive entries", "run-001", "observed", "unknown", "does not establish chronology"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("body missing %q: %s", want, body)
 		}
