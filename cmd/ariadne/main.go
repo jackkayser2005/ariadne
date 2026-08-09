@@ -638,10 +638,11 @@ func runAskArchiveVerify(
 	}
 	if _, err := fmt.Fprintf(
 		stdout,
-		"archive question report structurally verified\nschema_version: %d\nquestion_id: %s\nchecked: %d\nnote: this does not prove the underlying evidence\n",
+		"archive question report structurally verified\nschema_version: %d\nquestion_id: %s\nchecked: %d\nreflection_sha256: %s\nnote: this identifies the canonical safe reflection content; it does not prove the underlying evidence\n",
 		summary.SchemaVersion,
 		summary.QuestionID,
 		summary.Checked,
+		summary.ReflectionSHA256,
 	); err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive verify: write output: %v\n", err)
 		return 1

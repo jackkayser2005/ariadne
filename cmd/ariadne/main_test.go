@@ -1175,9 +1175,10 @@ func TestRunAskArchiveFailures(t *testing.T) {
 
 func TestRunAskArchiveVerify(t *testing.T) {
 	summary := bundle.ArchiveQuestionVerificationSummary{
-		SchemaVersion: 2,
-		QuestionID:    "counterfactual-change",
-		Checked:       3,
+		SchemaVersion:    2,
+		QuestionID:       "counterfactual-change",
+		Checked:          3,
+		ReflectionSHA256: strings.Repeat("a", 64),
 	}
 
 	t.Run("human", func(t *testing.T) {
@@ -1197,7 +1198,8 @@ func TestRunAskArchiveVerify(t *testing.T) {
 			"schema_version: 2\n" +
 			"question_id: counterfactual-change\n" +
 			"checked: 3\n" +
-			"note: this does not prove the underlying evidence\n"
+			"reflection_sha256: " + strings.Repeat("a", 64) + "\n" +
+			"note: this identifies the canonical safe reflection content; it does not prove the underlying evidence\n"
 		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
 			t.Fatalf("runAskArchiveVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
 		}
@@ -1211,7 +1213,7 @@ func TestRunAskArchiveVerify(t *testing.T) {
 			&stderr,
 			func(string) (bundle.ArchiveQuestionVerificationSummary, error) { return summary, nil },
 		)
-		want := `{"schema_version":2,"question_id":"counterfactual-change","checked":3}` + "\n"
+		want := `{"schema_version":2,"question_id":"counterfactual-change","checked":3,"reflection_sha256":"` + strings.Repeat("a", 64) + `"}` + "\n"
 		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
 			t.Fatalf("runAskArchiveVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
 		}

@@ -2,6 +2,8 @@ package bundle
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,9 +19,10 @@ import (
 // ArchiveQuestionVerificationSummary describes a structurally valid derived
 // reflection report. It does not prove the underlying evidence.
 type ArchiveQuestionVerificationSummary struct {
-	SchemaVersion int    `json:"schema_version"`
-	QuestionID    string `json:"question_id"`
-	Checked       int    `json:"checked"`
+	SchemaVersion    int    `json:"schema_version"`
+	QuestionID       string `json:"question_id"`
+	Checked          int    `json:"checked"`
+	ReflectionSHA256 string `json:"reflection_sha256"`
 }
 
 // VerifyArchiveQuestionReport checks a saved archive reflection report
@@ -40,11 +43,25 @@ func VerifyArchiveQuestionReport(reportPath string) (ArchiveQuestionVerification
 	if err := validateArchiveQuestionReport(report); err != nil {
 		return ArchiveQuestionVerificationSummary{}, fmt.Errorf("archive question report: %w", err)
 	}
+	reflectionSHA256, err := archiveQuestionReflectionSHA256(report)
+	if err != nil {
+		return ArchiveQuestionVerificationSummary{}, fmt.Errorf("archive question report: %w", err)
+	}
 	return ArchiveQuestionVerificationSummary{
-		SchemaVersion: report.SchemaVersion,
-		QuestionID:    report.QuestionID,
-		Checked:       report.Summary.Checked,
+		SchemaVersion:    report.SchemaVersion,
+		QuestionID:       report.QuestionID,
+		Checked:          report.Summary.Checked,
+		ReflectionSHA256: reflectionSHA256,
 	}, nil
+}
+
+func archiveQuestionReflectionSHA256(report ArchiveQuestionReport) (string, error) {
+	data, err := json.Marshal(report)
+	if err != nil {
+		return "", fmt.Errorf("canonicalize: %w", err)
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
 }
 
 func decodeArchiveQuestionReport(data []byte) (ArchiveQuestionReport, error) {

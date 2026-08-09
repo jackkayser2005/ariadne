@@ -21,11 +21,47 @@ func TestVerifyArchiveQuestionReport(t *testing.T) {
 		QuestionID:    "counterfactual-change",
 		Checked:       1,
 	}
-	if summary != want {
+	if summary.SchemaVersion != want.SchemaVersion || summary.QuestionID != want.QuestionID || summary.Checked != want.Checked {
 		t.Fatalf("VerifyArchiveQuestionReport() = %#v, want %#v", summary, want)
+	}
+	if !validDigest(summary.ReflectionSHA256) {
+		t.Fatalf("VerifyArchiveQuestionReport() reflection SHA-256 = %q", summary.ReflectionSHA256)
 	}
 	if report.Results[0].Answer == nil || strings.Contains(report.Results[0].Answer.Question, "standard") {
 		t.Fatalf("saved report was not bounded: %#v", report.Results[0].Answer)
+	}
+}
+
+func TestVerifyArchiveQuestionReportUsesCanonicalIdentity(t *testing.T) {
+	path, _ := savedArchiveQuestionReport(t, "a-run")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var formatted bytes.Buffer
+	if err := json.Indent(&formatted, data, "", "  "); err != nil {
+		t.Fatal(err)
+	}
+	formattedPath := writeArchiveQuestionReportBytes(t, formatted.Bytes())
+	original, err := VerifyArchiveQuestionReport(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	formattedSummary, err := VerifyArchiveQuestionReport(formattedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if original.ReflectionSHA256 != formattedSummary.ReflectionSHA256 {
+		t.Fatalf("formatted reflection SHA-256 = %q, want %q", formattedSummary.ReflectionSHA256, original.ReflectionSHA256)
+	}
+
+	otherPath, _ := savedArchiveQuestionReport(t, "b-run")
+	other, err := VerifyArchiveQuestionReport(otherPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if original.ReflectionSHA256 == other.ReflectionSHA256 {
+		t.Fatalf("distinct reflection content shared SHA-256 %q", original.ReflectionSHA256)
 	}
 }
 
