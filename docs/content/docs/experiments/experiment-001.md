@@ -204,7 +204,8 @@ when `go run` built Ariadne.
   safe provenance context: its bounded question and answer state, manifest contract
   digest, recorded Ariadne revision, and modified-worktree flag, followed by a
   re-verified board for the fixed question catalog. Question and finding detail
-  pages retain that same context after following a link.
+  pages retain that same context after following a link. Available archive-lens
+  results show the same safe contract, revision, and working-tree context.
 - If `ariadne_modified` is unexpectedly `true`, inspect `git status --short`
   before treating the run as reproducible from the recorded revision alone.
 - Finding lookup re-verifies the bundle first and prints only the question,
