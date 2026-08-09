@@ -1697,8 +1697,8 @@ func TestRunAskArchiveTransitionsAsk(t *testing.T) {
 		ChangedTransitions:      []int{1, 3},
 		IncomparableTransitions: []int{2, 3},
 		ChangedEntries: []bundle.ArchiveQuestionTransitionHistoryChange{
-			{Transition: 1, Directory: "run-001", OlderState: "observed", NewerState: "unknown"},
-			{Transition: 3, Directory: "run-002", OlderState: "unknown", NewerState: "unavailable"},
+			{Transition: 1, FromReflectionSHA256: strings.Repeat("b", 64), ToReflectionSHA256: strings.Repeat("c", 64), Directory: "run-001", OlderState: "observed", NewerState: "unknown"},
+			{Transition: 3, FromReflectionSHA256: strings.Repeat("d", 64), ToReflectionSHA256: strings.Repeat("e", 64), Directory: "run-002", OlderState: "unknown", NewerState: "unavailable"},
 		},
 	}
 
@@ -1726,10 +1726,14 @@ func TestRunAskArchiveTransitionsAsk(t *testing.T) {
 			"- 3\n" +
 			"changed_entries:\n" +
 			"- transition: 1\n" +
+			"  from_reflection_sha256: " + strings.Repeat("b", 64) + "\n" +
+			"  to_reflection_sha256: " + strings.Repeat("c", 64) + "\n" +
 			"  directory: run-001\n" +
 			"  older_state: observed\n" +
 			"  newer_state: unknown\n" +
 			"- transition: 3\n" +
+			"  from_reflection_sha256: " + strings.Repeat("d", 64) + "\n" +
+			"  to_reflection_sha256: " + strings.Repeat("e", 64) + "\n" +
 			"  directory: run-002\n" +
 			"  older_state: unknown\n" +
 			"  newer_state: unavailable\n" +
@@ -1750,7 +1754,7 @@ func TestRunAskArchiveTransitionsAsk(t *testing.T) {
 			&stderr,
 			func(string) (bundle.ArchiveQuestionTransitionHistoryAnswer, error) { return answer, nil },
 		)
-		want := `{"schema_version":1,"question_id":"answer-state-transitions","question":"At which supplied boundaries did the bounded answer state change?","result":"changed","transition_history_sha256":"` + strings.Repeat("a", 64) + `","transitions":3,"changed_transitions":[1,3],"incomparable_transitions":[2,3],"changed_entries":[{"transition":1,"directory":"run-001","older_state":"observed","newer_state":"unknown"},{"transition":3,"directory":"run-002","older_state":"unknown","newer_state":"unavailable"}]}` + "\n"
+		want := `{"schema_version":1,"question_id":"answer-state-transitions","question":"At which supplied boundaries did the bounded answer state change?","result":"changed","transition_history_sha256":"` + strings.Repeat("a", 64) + `","transitions":3,"changed_transitions":[1,3],"incomparable_transitions":[2,3],"changed_entries":[{"transition":1,"from_reflection_sha256":"` + strings.Repeat("b", 64) + `","to_reflection_sha256":"` + strings.Repeat("c", 64) + `","directory":"run-001","older_state":"observed","newer_state":"unknown"},{"transition":3,"from_reflection_sha256":"` + strings.Repeat("d", 64) + `","to_reflection_sha256":"` + strings.Repeat("e", 64) + `","directory":"run-002","older_state":"unknown","newer_state":"unavailable"}]}` + "\n"
 		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
 			t.Fatalf("runAskArchiveTransitionsAsk() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
 		}

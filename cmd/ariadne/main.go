@@ -948,7 +948,7 @@ func runAskArchiveTransitionsAsk(
 		return 1
 	}
 	for _, entry := range answer.ChangedEntries {
-		if _, err := fmt.Fprintf(stdout, "- transition: %d\n  directory: %s\n  older_state: %s\n  newer_state: %s\n", entry.Transition, entry.Directory, entry.OlderState, entry.NewerState); err != nil {
+		if _, err := fmt.Fprintf(stdout, "- transition: %d\n  from_reflection_sha256: %s\n  to_reflection_sha256: %s\n  directory: %s\n  older_state: %s\n  newer_state: %s\n", entry.Transition, entry.FromReflectionSHA256, entry.ToReflectionSHA256, entry.Directory, entry.OlderState, entry.NewerState); err != nil {
 			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask: write output: %v\n", err)
 			return 1
 		}

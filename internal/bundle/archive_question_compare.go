@@ -91,10 +91,12 @@ type ArchiveQuestionTransitionHistoryAnswer struct {
 // ArchiveQuestionTransitionHistoryChange identifies one safe changed entry
 // and the adjacent transition where it changed.
 type ArchiveQuestionTransitionHistoryChange struct {
-	Transition int    `json:"transition"`
-	Directory  string `json:"directory"`
-	OlderState string `json:"older_state"`
-	NewerState string `json:"newer_state"`
+	Transition           int    `json:"transition"`
+	FromReflectionSHA256 string `json:"from_reflection_sha256"`
+	ToReflectionSHA256   string `json:"to_reflection_sha256"`
+	Directory            string `json:"directory"`
+	OlderState           string `json:"older_state"`
+	NewerState           string `json:"newer_state"`
 }
 
 // CompareArchiveQuestionReports compares only verified answer states from
@@ -265,10 +267,12 @@ func AnswerArchiveQuestionTransitionHistory(history ArchiveQuestionTransitionHis
 		}
 		for _, stateChange := range transition.StateChanges {
 			changedEntries = append(changedEntries, ArchiveQuestionTransitionHistoryChange{
-				Transition: index + 1,
-				Directory:  stateChange.Directory,
-				OlderState: stateChange.OlderState,
-				NewerState: stateChange.NewerState,
+				Transition:           index + 1,
+				FromReflectionSHA256: transition.FromReflectionSHA256,
+				ToReflectionSHA256:   transition.ToReflectionSHA256,
+				Directory:            stateChange.Directory,
+				OlderState:           stateChange.OlderState,
+				NewerState:           stateChange.NewerState,
 			})
 		}
 	}

@@ -75,9 +75,9 @@ expected content identity before another tool consumes it.
 `transitions ask` answers the ledger's fixed history question from the verified
 history itself. It returns only the bounded result, 1-based transition indexes
 for changed or membership-incomparable boundaries, and safe directory/state
-triples for changed entries; it does not infer chronology or prove the
-underlying evidence. Legacy schema 1 histories retain the indexes and have no
-per-entry details.
+triples for changed entries, each bound to its adjacent reflection identities;
+it does not infer chronology or prove the underlying evidence. Legacy schema 1
+histories retain the indexes and have no per-entry details.
 
 Use `ask-archive save` to create a new snapshot with exclusive file creation;
 it never overwrites an existing reflection. The command returns the same
