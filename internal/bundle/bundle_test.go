@@ -251,7 +251,8 @@ func TestAskExportUsesOnlyEmbeddedCounterfactualAnswer(t *testing.T) {
 		t.Fatal(err)
 	}
 	exportPath := filepath.Join(t.TempDir(), "redacted.json")
-	if _, err := Export(runDir, exportPath); err != nil {
+	exportSummary, err := Export(runDir, exportPath)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -264,7 +265,9 @@ func TestAskExportUsesOnlyEmbeddedCounterfactualAnswer(t *testing.T) {
 		answer.State != evidencestate.Observed ||
 		answer.Reason != "" ||
 		len(answer.FindingIDs) != 1 ||
-		!validFindingID(answer.FindingIDs[0]) {
+		!validFindingID(answer.FindingIDs[0]) ||
+		answer.SourceEvidenceSHA256 != exportSummary.SourceEvidenceSHA256 ||
+		answer.ExportSHA256 != exportSummary.ExportSHA256 {
 		t.Fatalf("AskExport() = %#v", answer)
 	}
 	if strings.Contains(answer.Question, "email") {
@@ -281,7 +284,9 @@ func TestAskExportUsesOnlyEmbeddedCounterfactualAnswer(t *testing.T) {
 		finding.ID != answer.FindingIDs[0] ||
 		finding.Field != "variant" ||
 		finding.State != evidencestate.Observed ||
-		len(finding.Evidence) != 4 {
+		len(finding.Evidence) != 4 ||
+		finding.SourceEvidenceSHA256 != exportSummary.SourceEvidenceSHA256 ||
+		finding.ExportSHA256 != exportSummary.ExportSHA256 {
 		t.Fatalf("FindExport() = %#v", finding)
 	}
 

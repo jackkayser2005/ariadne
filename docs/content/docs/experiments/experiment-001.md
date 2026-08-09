@@ -230,11 +230,13 @@ when `go run` built Ariadne.
   the projection and answers its one embedded counterfactual question using
   only the redacted answer state and finding IDs. `capture-complete` and
   `source-integrity` remain unavailable because they require the authoritative
-  evidence bundle.
+  evidence bundle. The JSON answer also carries the source-evidence and export
+  SHA-256 identities that were verified before answering.
 - `experiment export finding [--json] <export.json> <finding-id>` verifies the
   projection and returns one referenced finding's safe kind, field, state, and
   evidence paths. It never returns comparison values; legacy exports without
-  current finding IDs cannot answer this lookup.
+  current finding IDs cannot answer this lookup. The JSON finding carries the
+  same source-evidence and export identities.
 - `experiment list --json <archive-root>` inspects only immediate child
   directories, rejects symbolic links, and returns only relative directory
   names plus verified summary fields.

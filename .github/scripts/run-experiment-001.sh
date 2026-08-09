@@ -48,19 +48,21 @@ jq -e --arg source_sha256 "${source_evidence_sha256}" --arg export_sha256 "${exp
 redacted_export_answer_json="${RUNNER_TEMP}/ariadne-redacted-export-answer.json"
 "${ariadne}" experiment export ask --json \
   "${redacted_export_json}" counterfactual-change >"${redacted_export_answer_json}"
-jq -e '
-  (keys_unsorted == ["question_id", "question", "answer_state", "finding_ids"]) and
+jq -e --arg source_sha256 "${source_evidence_sha256}" --arg export_sha256 "${export_sha256}" '
+  (keys_unsorted == ["question_id", "question", "answer_state", "finding_ids", "source_evidence_sha256", "export_sha256"]) and
   (.question_id == "counterfactual-change") and
   (.question == "Did changing the declared variable influence an observed output?") and
   (.answer_state == "observed") and
+  (.source_evidence_sha256 == $source_sha256) and
+  (.export_sha256 == $export_sha256) and
   ((.finding_ids | length) == 1)
 ' "${redacted_export_answer_json}"
 finding_id="$(jq -r '.finding_ids[0]' "${redacted_export_answer_json}")"
 redacted_export_finding_json="${RUNNER_TEMP}/ariadne-redacted-export-finding.json"
 "${ariadne}" experiment export finding --json \
   "${redacted_export_json}" "${finding_id}" >"${redacted_export_finding_json}"
-jq -e --arg finding_id "${finding_id}" '
-  (keys_unsorted == ["question", "answer_state", "kind", "classification", "id", "field", "state", "evidence"]) and
+jq -e --arg finding_id "${finding_id}" --arg source_sha256 "${source_evidence_sha256}" --arg export_sha256 "${export_sha256}" '
+  (keys_unsorted == ["question", "answer_state", "kind", "classification", "id", "field", "state", "evidence", "source_evidence_sha256", "export_sha256"]) and
   (.question == "Did changing the declared variable influence an observed output?") and
   (.answer_state == "observed") and
   (.kind == "difference") and
@@ -68,6 +70,8 @@ jq -e --arg finding_id "${finding_id}" '
   (.id == $finding_id) and
   (.field == "variant") and
   (.state == "observed") and
+  (.source_evidence_sha256 == $source_sha256) and
+  (.export_sha256 == $export_sha256) and
   ((.evidence | length) == 4)
 ' "${redacted_export_finding_json}"
 if grep -F -q \

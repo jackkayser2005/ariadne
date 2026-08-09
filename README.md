@@ -31,7 +31,8 @@ A verified export can answer its embedded counterfactual question offline with
 about capture completeness or source integrity remain unavailable without the
 authoritative evidence bundle. Follow one returned safe finding reference with
 `experiment export finding --json <export.json> <finding-id>`; comparison values
-remain unavailable.
+remain unavailable, and both JSON responses carry the verified source-evidence
+and export identities they came from.
 
 ## Reproduce Experiment 001
 

@@ -98,24 +98,28 @@ type ExportVerificationSummary struct {
 
 // Finding is the safe, raw-value-free view of one verified conclusion.
 type Finding struct {
-	Question       string         `json:"question"`
-	AnswerState    evidence.State `json:"answer_state"`
-	Kind           string         `json:"kind"`
-	Classification string         `json:"classification,omitempty"`
-	ID             string         `json:"id"`
-	Field          string         `json:"field"`
-	State          evidence.State `json:"state"`
-	Reason         string         `json:"reason,omitempty"`
-	Evidence       []string       `json:"evidence"`
+	Question             string         `json:"question"`
+	AnswerState          evidence.State `json:"answer_state"`
+	Kind                 string         `json:"kind"`
+	Classification       string         `json:"classification,omitempty"`
+	ID                   string         `json:"id"`
+	Field                string         `json:"field"`
+	State                evidence.State `json:"state"`
+	Reason               string         `json:"reason,omitempty"`
+	Evidence             []string       `json:"evidence"`
+	SourceEvidenceSHA256 string         `json:"source_evidence_sha256,omitempty"`
+	ExportSHA256         string         `json:"export_sha256,omitempty"`
 }
 
 // Answer is the deterministic result of one bounded bundle question.
 type Answer struct {
-	QuestionID string         `json:"question_id"`
-	Question   string         `json:"question"`
-	State      evidence.State `json:"answer_state"`
-	Reason     string         `json:"reason,omitempty"`
-	FindingIDs []string       `json:"finding_ids"`
+	QuestionID           string         `json:"question_id"`
+	Question             string         `json:"question"`
+	State                evidence.State `json:"answer_state"`
+	Reason               string         `json:"reason,omitempty"`
+	FindingIDs           []string       `json:"finding_ids"`
+	SourceEvidenceSHA256 string         `json:"source_evidence_sha256,omitempty"`
+	ExportSHA256         string         `json:"export_sha256,omitempty"`
 }
 
 // Question describes one bounded question available for a verified bundle.
@@ -361,28 +365,32 @@ func FindExport(exportPath, id string) (Finding, error) {
 	for _, difference := range export.Comparison.Differences {
 		if difference.ID == id {
 			return Finding{
-				Question:       answer.Question,
-				AnswerState:    answer.State,
-				Kind:           "difference",
-				Classification: difference.Kind,
-				ID:             difference.ID,
-				Field:          difference.Field,
-				State:          difference.State,
-				Evidence:       slices.Clone(difference.Evidence),
+				Question:             answer.Question,
+				AnswerState:          answer.State,
+				Kind:                 "difference",
+				Classification:       difference.Kind,
+				ID:                   difference.ID,
+				Field:                difference.Field,
+				State:                difference.State,
+				Evidence:             slices.Clone(difference.Evidence),
+				SourceEvidenceSHA256: answer.SourceEvidenceSHA256,
+				ExportSHA256:         answer.ExportSHA256,
 			}, nil
 		}
 	}
 	for _, unknown := range export.Comparison.Unknowns {
 		if unknown.ID == id {
 			return Finding{
-				Question:    answer.Question,
-				AnswerState: answer.State,
-				Kind:        "unknown",
-				ID:          unknown.ID,
-				Field:       unknown.Field,
-				State:       unknown.State,
-				Reason:      safeUnknownReason(unknown.Reason),
-				Evidence:    slices.Clone(unknown.Evidence),
+				Question:             answer.Question,
+				AnswerState:          answer.State,
+				Kind:                 "unknown",
+				ID:                   unknown.ID,
+				Field:                unknown.Field,
+				State:                unknown.State,
+				Reason:               safeUnknownReason(unknown.Reason),
+				Evidence:             slices.Clone(unknown.Evidence),
+				SourceEvidenceSHA256: answer.SourceEvidenceSHA256,
+				ExportSHA256:         answer.ExportSHA256,
 			}, nil
 		}
 	}
@@ -400,6 +408,10 @@ func redactedExportAnswer(export redactedDocument) (Answer, error) {
 	if export.AnswerState != evidence.Observed && export.AnswerState != evidence.Unknown {
 		return Answer{}, errors.New("redacted export counterfactual answer state is invalid")
 	}
+	exportSHA256, err := redactedExportSHA256(export)
+	if err != nil {
+		return Answer{}, fmt.Errorf("redacted export: %w", err)
+	}
 	findingIDs := redactedFindingIDs(export.Comparison)
 	unknownReason := ""
 	if export.AnswerState == evidence.Unknown {
@@ -411,11 +423,13 @@ func redactedExportAnswer(export redactedDocument) (Answer, error) {
 		}
 	}
 	return Answer{
-		QuestionID: "counterfactual-change",
-		Question:   catalogQuestion.Text,
-		State:      export.AnswerState,
-		Reason:     unknownReason,
-		FindingIDs: findingIDs,
+		QuestionID:           "counterfactual-change",
+		Question:             catalogQuestion.Text,
+		State:                export.AnswerState,
+		Reason:               unknownReason,
+		FindingIDs:           findingIDs,
+		SourceEvidenceSHA256: export.SourceEvidenceSHA256,
+		ExportSHA256:         exportSHA256,
 	}, nil
 }
 
