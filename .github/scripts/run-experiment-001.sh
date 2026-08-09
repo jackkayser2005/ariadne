@@ -108,6 +108,24 @@ jq -e '
   (.older_only == 0) and
   (.newer_only == 0)
 ' "${archive_question_comparison_json}"
+archive_question_transitions_json="${RUNNER_TEMP}/ariadne-archive-question-transitions.json"
+"${ariadne}" experiment ask-archive transitions --json \
+  "${archive_question_json}" \
+  "${archive_question_older_json}" \
+  "${archive_question_newer_json}" >"${archive_question_transitions_json}"
+jq -e '
+  (keys_unsorted == ["schema_version", "history_id", "history_question", "question_id", "question", "order_basis", "snapshots", "transitions"]) and
+  (.schema_version == 1) and
+  (.history_id == "answer-state-transitions") and
+  (.history_question == "At which supplied boundaries did the bounded answer state change?") and
+  (.question_id == "counterfactual-change") and
+  (.order_basis == "caller") and
+  (.snapshots == 3) and
+  (.transitions | length == 2) and
+  (.transitions | all(.from_reflection_sha256 | test("^[0-9a-f]{64}$"))) and
+  (.transitions | all(.to_reflection_sha256 | test("^[0-9a-f]{64}$"))) and
+  (.transitions | all(.result == "same" and .compared == 1 and .changed == 0 and .from_only == 0 and .to_only == 0))
+' "${archive_question_transitions_json}"
 
 finding_id="$(jq -r '.comparison.differences[0].id' "${run_dir}/evidence.json")"
 finding_stdout="${RUNNER_TEMP}/ariadne-finding.stdout"

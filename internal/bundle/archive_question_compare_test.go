@@ -70,3 +70,67 @@ func TestCompareArchiveQuestionReportsRejectsInvalidOlderReport(t *testing.T) {
 		t.Fatalf("CompareArchiveQuestionReports() error = %v", err)
 	}
 }
+
+func TestCompareArchiveQuestionHistory(t *testing.T) {
+	olderPath, olderReport := savedArchiveQuestionReport(t, "a-run")
+	olderReport.Results[0].Answer.State = evidence.Unknown
+	olderReport.Summary.Observed = 0
+	olderReport.Summary.Unknown = 1
+	changedPath := writeArchiveQuestionReport(t, olderReport)
+	newerPath, _ := savedArchiveQuestionReport(t, "a-run", "b-run")
+
+	history, err := CompareArchiveQuestionHistory([]string{olderPath, changedPath, newerPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if history.SchemaVersion != 1 || history.HistoryID != "answer-state-transitions" ||
+		history.HistoryQuestion != "At which supplied boundaries did the bounded answer state change?" ||
+		history.QuestionID != "counterfactual-change" || history.OrderBasis != "caller" ||
+		history.Snapshots != 3 || len(history.Transitions) != 2 {
+		t.Fatalf("history metadata = %#v", history)
+	}
+	first := history.Transitions[0]
+	if first.Result != "changed" || first.Compared != 1 || first.Changed != 1 || first.FromOnly != 0 || first.ToOnly != 0 {
+		t.Fatalf("changed transition = %#v", first)
+	}
+	second := history.Transitions[1]
+	if second.Result != "incomparable" || second.Compared != 1 || second.Changed != 1 || second.FromOnly != 0 || second.ToOnly != 1 {
+		t.Fatalf("incomparable transition = %#v", second)
+	}
+	for _, transition := range history.Transitions {
+		if !validDigest(transition.FromReflectionSHA256) || !validDigest(transition.ToReflectionSHA256) {
+			t.Fatalf("transition identities = %#v", transition)
+		}
+	}
+	data, err := json.Marshal(history)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "standard") || strings.Contains(string(data), "personalized") {
+		t.Fatalf("history exposed a raw value: %s", data)
+	}
+}
+
+func TestCompareArchiveQuestionHistoryRejectsInvalidInput(t *testing.T) {
+	if _, err := CompareArchiveQuestionHistory(nil); err == nil || !strings.Contains(err.Error(), "at least two") {
+		t.Fatalf("CompareArchiveQuestionHistory() short input error = %v", err)
+	}
+	olderPath, _ := savedArchiveQuestionReport(t, "a-run")
+	if _, err := CompareArchiveQuestionHistory([]string{olderPath, "missing.json"}); err == nil || !strings.Contains(err.Error(), "reflection 2") {
+		t.Fatalf("CompareArchiveQuestionHistory() invalid second report error = %v", err)
+	}
+}
+
+func TestCompareArchiveQuestionHistoryRejectsMismatchedQuestions(t *testing.T) {
+	olderPath, _ := savedArchiveQuestionReport(t, "a-run")
+	root := t.TempDir()
+	archiveRun(t, root, "a-run", runOptions{})
+	newerReport, err := AskArchive(root, "capture-complete")
+	if err != nil {
+		t.Fatal(err)
+	}
+	newerPath := writeArchiveQuestionReport(t, newerReport)
+	if _, err := CompareArchiveQuestionHistory([]string{olderPath, newerPath}); err == nil || !strings.Contains(err.Error(), "questions do not match") {
+		t.Fatalf("CompareArchiveQuestionHistory() mismatch error = %v", err)
+	}
+}

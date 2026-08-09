@@ -30,6 +30,7 @@ const usage = `usage:
   ariadne experiment ask [--json] <run-directory> <question-id>
   ariadne experiment ask-archive [--json] <archive-root> <question-id>
   ariadne experiment ask-archive compare [--json] <older-report.json> <newer-report.json>
+  ariadne experiment ask-archive transitions [--json] <report-1.json> <report-2.json> ...
   ariadne experiment ask-archive verify [--json] [--expect-sha256 <digest>] <report.json>
   ariadne experiment questions [--json]
   ariadne experiment list [--json] <archive-root>
@@ -77,6 +78,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) >= 2 && args[0] == "experiment" && args[1] == "ask-archive" {
 		if len(args) >= 3 && args[2] == "compare" {
 			return runAskArchiveCompare(args[3:], stdout, stderr, bundle.CompareArchiveQuestionReports)
+		}
+		if len(args) >= 3 && args[2] == "transitions" {
+			return runAskArchiveTransitions(args[3:], stdout, stderr, bundle.CompareArchiveQuestionHistory)
 		}
 		return runAskArchive(args[2:], stdout, stderr, bundle.AskArchive)
 	}
@@ -141,6 +145,7 @@ type bundleAsker func(string, string) (bundle.Answer, error)
 type bundleArchiveQuestionAsker func(string, string) (bundle.ArchiveQuestionReport, error)
 type bundleArchiveQuestionReportVerifier func(string) (bundle.ArchiveQuestionVerificationSummary, error)
 type bundleArchiveQuestionReportComparer func(string, string) (bundle.ArchiveQuestionComparison, error)
+type bundleArchiveQuestionTransitionComparer func([]string) (bundle.ArchiveQuestionTransitionHistory, error)
 type bundleQuestionLister func() []bundle.Question
 type bundleArchiveIndexer func(string) ([]bundle.ArchiveEntry, error)
 type uiServer func(string, http.Handler) error
@@ -661,6 +666,69 @@ func runAskArchiveCompare(
 		comparison.NewerOnly,
 	); err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive compare: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func runAskArchiveTransitions(
+	args []string,
+	stdout, stderr io.Writer,
+	compareHistory bundleArchiveQuestionTransitionComparer,
+) int {
+	flags := flag.NewFlagSet("experiment ask-archive transitions", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() < 2 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+
+	history, err := compareHistory(flags.Args())
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(history); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if _, err := fmt.Fprintf(
+		stdout,
+		"archive reflection transitions complete\nhistory_id: %s\nhistory_question: %s\nquestion_id: %s\nquestion: %s\norder_basis: %s\nsnapshots: %d\ntransitions: %d\n",
+		history.HistoryID,
+		history.HistoryQuestion,
+		history.QuestionID,
+		history.Question,
+		history.OrderBasis,
+		history.Snapshots,
+		len(history.Transitions),
+	); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions: write output: %v\n", err)
+		return 1
+	}
+	for index, transition := range history.Transitions {
+		if _, err := fmt.Fprintf(
+			stdout,
+			"- transition: %d\n  from_reflection_sha256: %s\n  to_reflection_sha256: %s\n  result: %s\n  compared: %d\n  changed: %d\n  from_only: %d\n  to_only: %d\n",
+			index+1,
+			transition.FromReflectionSHA256,
+			transition.ToReflectionSHA256,
+			transition.Result,
+			transition.Compared,
+			transition.Changed,
+			transition.FromOnly,
+			transition.ToOnly,
+		); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions: write output: %v\n", err)
+			return 1
+		}
+	}
+	if _, err := io.WriteString(stdout, "note: transitions follow caller-supplied order; incomparable membership is not a change claim, and this does not infer a trend or prove the underlying evidence\n"); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions: write output: %v\n", err)
 		return 1
 	}
 	return 0

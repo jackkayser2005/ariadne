@@ -9,6 +9,8 @@ const (
 	archiveQuestionComparisonSchemaVersion = 1
 	archiveQuestionComparisonID            = "answer-state-change"
 	archiveQuestionComparisonText          = "Did the bounded answer state change between these saved reflection snapshots?"
+	archiveQuestionTransitionHistoryID     = "answer-state-transitions"
+	archiveQuestionTransitionHistoryText   = "At which supplied boundaries did the bounded answer state change?"
 )
 
 // ArchiveQuestionComparison is a raw-value-free comparison of two verified
@@ -29,6 +31,32 @@ type ArchiveQuestionComparison struct {
 	NewerOnly             int    `json:"newer_only"`
 }
 
+// ArchiveQuestionTransitionHistory is a raw-value-free ledger of adjacent
+// comparisons across caller-supplied verified reflections. It does not infer
+// chronology, a trend, or the underlying evidence.
+type ArchiveQuestionTransitionHistory struct {
+	SchemaVersion   int                         `json:"schema_version"`
+	HistoryID       string                      `json:"history_id"`
+	HistoryQuestion string                      `json:"history_question"`
+	QuestionID      string                      `json:"question_id"`
+	Question        string                      `json:"question"`
+	OrderBasis      string                      `json:"order_basis"`
+	Snapshots       int                         `json:"snapshots"`
+	Transitions     []ArchiveQuestionTransition `json:"transitions"`
+}
+
+// ArchiveQuestionTransition describes one adjacent bounded answer-state
+// comparison without exposing raw values.
+type ArchiveQuestionTransition struct {
+	FromReflectionSHA256 string `json:"from_reflection_sha256"`
+	ToReflectionSHA256   string `json:"to_reflection_sha256"`
+	Result               string `json:"result"`
+	Compared             int    `json:"compared"`
+	Changed              int    `json:"changed"`
+	FromOnly             int    `json:"from_only"`
+	ToOnly               int    `json:"to_only"`
+}
+
 // CompareArchiveQuestionReports compares only verified answer states from
 // two saved reflections. A changing archive membership is incomparable rather
 // than evidence of a change.
@@ -44,9 +72,15 @@ func CompareArchiveQuestionReports(olderPath, newerPath string) (ArchiveQuestion
 	if older.QuestionID != newer.QuestionID || older.Question != newer.Question {
 		return ArchiveQuestionComparison{}, errors.New("archive reflection questions do not match")
 	}
+	return compareVerifiedArchiveQuestionReports(older, olderSummary, newer, newerSummary), nil
+}
 
-	olderStates := archiveQuestionStates(older)
-	newerStates := archiveQuestionStates(newer)
+func compareVerifiedArchiveQuestionReports(
+	older ArchiveQuestionReport,
+	olderSummary ArchiveQuestionVerificationSummary,
+	newer ArchiveQuestionReport,
+	newerSummary ArchiveQuestionVerificationSummary,
+) ArchiveQuestionComparison {
 	comparison := ArchiveQuestionComparison{
 		SchemaVersion:         archiveQuestionComparisonSchemaVersion,
 		ComparisonID:          archiveQuestionComparisonID,
@@ -56,6 +90,8 @@ func CompareArchiveQuestionReports(olderPath, newerPath string) (ArchiveQuestion
 		OlderReflectionSHA256: olderSummary.ReflectionSHA256,
 		NewerReflectionSHA256: newerSummary.ReflectionSHA256,
 	}
+	olderStates := archiveQuestionStates(older)
+	newerStates := archiveQuestionStates(newer)
 	for directory, olderState := range olderStates {
 		newerState, ok := newerStates[directory]
 		if !ok {
@@ -79,7 +115,59 @@ func CompareArchiveQuestionReports(olderPath, newerPath string) (ArchiveQuestion
 	} else {
 		comparison.Result = "same"
 	}
-	return comparison, nil
+	return comparison
+}
+
+// CompareArchiveQuestionHistory verifies at least two saved reflections and
+// compares each adjacent pair in caller-supplied order. Every report is
+// verified once, and a question mismatch fails the whole operation.
+func CompareArchiveQuestionHistory(reportPaths []string) (ArchiveQuestionTransitionHistory, error) {
+	if len(reportPaths) < 2 {
+		return ArchiveQuestionTransitionHistory{}, errors.New("at least two archive reflection reports are required")
+	}
+
+	reports := make([]ArchiveQuestionReport, len(reportPaths))
+	summaries := make([]ArchiveQuestionVerificationSummary, len(reportPaths))
+	history := ArchiveQuestionTransitionHistory{
+		SchemaVersion:   archiveQuestionComparisonSchemaVersion,
+		HistoryID:       archiveQuestionTransitionHistoryID,
+		HistoryQuestion: archiveQuestionTransitionHistoryText,
+		OrderBasis:      "caller",
+		Snapshots:       len(reportPaths),
+		Transitions:     make([]ArchiveQuestionTransition, 0, len(reportPaths)-1),
+	}
+	for index, reportPath := range reportPaths {
+		report, summary, err := readVerifiedArchiveQuestionReport(reportPath)
+		if err != nil {
+			return ArchiveQuestionTransitionHistory{}, fmt.Errorf("reflection %d: %w", index+1, err)
+		}
+		reports[index] = report
+		summaries[index] = summary
+		if index == 0 {
+			history.QuestionID = report.QuestionID
+			history.Question = report.Question
+		} else if report.QuestionID != history.QuestionID || report.Question != history.Question {
+			return ArchiveQuestionTransitionHistory{}, fmt.Errorf("reflection %d: archive reflection questions do not match", index+1)
+		}
+	}
+	for index := 1; index < len(reports); index++ {
+		comparison := compareVerifiedArchiveQuestionReports(
+			reports[index-1],
+			summaries[index-1],
+			reports[index],
+			summaries[index],
+		)
+		history.Transitions = append(history.Transitions, ArchiveQuestionTransition{
+			FromReflectionSHA256: comparison.OlderReflectionSHA256,
+			ToReflectionSHA256:   comparison.NewerReflectionSHA256,
+			Result:               comparison.Result,
+			Compared:             comparison.Compared,
+			Changed:              comparison.Changed,
+			FromOnly:             comparison.OlderOnly,
+			ToOnly:               comparison.NewerOnly,
+		})
+	}
+	return history, nil
 }
 
 func archiveQuestionStates(report ArchiveQuestionReport) map[string]string {
