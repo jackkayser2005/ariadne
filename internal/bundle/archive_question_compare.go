@@ -11,7 +11,8 @@ import (
 const (
 	archiveQuestionComparisonSchemaVersion                      = 2
 	archiveQuestionTransitionHistoryLegacySchemaVersion         = 1
-	archiveQuestionTransitionHistorySchemaVersion               = 2
+	archiveQuestionTransitionHistoryStateChangeSchemaVersion    = 2
+	archiveQuestionTransitionHistorySchemaVersion               = 3
 	archiveQuestionTransitionHistoryAnswerSchemaVersion         = 1
 	archiveQuestionTransitionHistoryRepeatedAnswerSchemaVersion = 1
 	archiveQuestionComparisonID                                 = "answer-state-change"
@@ -53,14 +54,26 @@ type ArchiveQuestionStateChange struct {
 // comparisons across caller-supplied verified reflections. It does not infer
 // chronology, a trend, or the underlying evidence.
 type ArchiveQuestionTransitionHistory struct {
-	SchemaVersion   int                         `json:"schema_version"`
-	HistoryID       string                      `json:"history_id"`
-	HistoryQuestion string                      `json:"history_question"`
-	QuestionID      string                      `json:"question_id"`
-	Question        string                      `json:"question"`
-	OrderBasis      string                      `json:"order_basis"`
-	Snapshots       int                         `json:"snapshots"`
-	Transitions     []ArchiveQuestionTransition `json:"transitions"`
+	SchemaVersion     int                                 `json:"schema_version"`
+	HistoryID         string                              `json:"history_id"`
+	HistoryQuestion   string                              `json:"history_question"`
+	QuestionID        string                              `json:"question_id"`
+	Question          string                              `json:"question"`
+	OrderBasis        string                              `json:"order_basis"`
+	Snapshots         int                                 `json:"snapshots"`
+	Transitions       []ArchiveQuestionTransition         `json:"transitions"`
+	SnapshotSummaries []ArchiveQuestionTransitionSnapshot `json:"snapshot_summaries,omitempty"`
+}
+
+// ArchiveQuestionTransitionSnapshot is a safe summary of one verified
+// reflection in a transition history. It contains only its canonical
+// identity and bounded answer-state counts.
+type ArchiveQuestionTransitionSnapshot struct {
+	ReflectionSHA256 string `json:"reflection_sha256"`
+	Observed         int    `json:"observed"`
+	Unknown          int    `json:"unknown"`
+	Unavailable      int    `json:"unavailable"`
+	Checked          int    `json:"checked"`
 }
 
 // ArchiveQuestionTransition describes one adjacent bounded answer-state
@@ -240,12 +253,13 @@ func CompareArchiveQuestionHistory(reportPaths []string) (ArchiveQuestionTransit
 	reports := make([]ArchiveQuestionReport, len(reportPaths))
 	summaries := make([]ArchiveQuestionVerificationSummary, len(reportPaths))
 	history := ArchiveQuestionTransitionHistory{
-		SchemaVersion:   archiveQuestionTransitionHistorySchemaVersion,
-		HistoryID:       archiveQuestionTransitionHistoryID,
-		HistoryQuestion: archiveQuestionTransitionHistoryText,
-		OrderBasis:      "caller",
-		Snapshots:       len(reportPaths),
-		Transitions:     make([]ArchiveQuestionTransition, 0, len(reportPaths)-1),
+		SchemaVersion:     archiveQuestionTransitionHistorySchemaVersion,
+		HistoryID:         archiveQuestionTransitionHistoryID,
+		HistoryQuestion:   archiveQuestionTransitionHistoryText,
+		OrderBasis:        "caller",
+		Snapshots:         len(reportPaths),
+		Transitions:       make([]ArchiveQuestionTransition, 0, len(reportPaths)-1),
+		SnapshotSummaries: make([]ArchiveQuestionTransitionSnapshot, 0, len(reportPaths)),
 	}
 	for index, reportPath := range reportPaths {
 		report, summary, err := readVerifiedArchiveQuestionReport(reportPath)
@@ -254,6 +268,13 @@ func CompareArchiveQuestionHistory(reportPaths []string) (ArchiveQuestionTransit
 		}
 		reports[index] = report
 		summaries[index] = summary
+		history.SnapshotSummaries = append(history.SnapshotSummaries, ArchiveQuestionTransitionSnapshot{
+			ReflectionSHA256: summary.ReflectionSHA256,
+			Observed:         report.Summary.Observed,
+			Unknown:          report.Summary.Unknown,
+			Unavailable:      report.Summary.Unavailable,
+			Checked:          report.Summary.Checked,
+		})
 		if index == 0 {
 			history.QuestionID = report.QuestionID
 			history.Question = report.Question
@@ -344,7 +365,7 @@ func AnswerArchiveQuestionTransitionHistoryRepeated(history ArchiveQuestionTrans
 		Transitions:             len(history.Transitions),
 		RepeatedEntries:         make([]ArchiveQuestionTransitionHistoryRepeatedChange, 0),
 	}
-	if history.SchemaVersion != archiveQuestionTransitionHistorySchemaVersion {
+	if history.SchemaVersion < archiveQuestionTransitionHistoryStateChangeSchemaVersion {
 		answer.Result = "unavailable"
 		return answer
 	}

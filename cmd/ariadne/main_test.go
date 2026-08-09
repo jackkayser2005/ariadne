@@ -1622,13 +1622,18 @@ func TestRunAskArchiveCompareFailures(t *testing.T) {
 
 func TestRunAskArchiveTransitions(t *testing.T) {
 	history := bundle.ArchiveQuestionTransitionHistory{
-		SchemaVersion:   2,
+		SchemaVersion:   3,
 		HistoryID:       "answer-state-transitions",
 		HistoryQuestion: "At which supplied boundaries did the bounded answer state change?",
 		QuestionID:      "counterfactual-change",
 		Question:        "Did it change?",
 		OrderBasis:      "caller",
 		Snapshots:       3,
+		SnapshotSummaries: []bundle.ArchiveQuestionTransitionSnapshot{
+			{ReflectionSHA256: strings.Repeat("a", 64), Observed: 1, Checked: 1},
+			{ReflectionSHA256: strings.Repeat("b", 64), Unknown: 1, Checked: 1},
+			{ReflectionSHA256: strings.Repeat("c", 64), Observed: 1, Unavailable: 1, Checked: 2},
+		},
 		Transitions: []bundle.ArchiveQuestionTransition{
 			{
 				FromReflectionSHA256: strings.Repeat("a", 64),
@@ -1674,6 +1679,25 @@ func TestRunAskArchiveTransitions(t *testing.T) {
 			"order_basis: caller\n" +
 			"snapshots: 3\n" +
 			"transitions: 2\n" +
+			"snapshot_summaries:\n" +
+			"- snapshot: 1\n" +
+			"  reflection_sha256: " + strings.Repeat("a", 64) + "\n" +
+			"  observed: 1\n" +
+			"  unknown: 0\n" +
+			"  unavailable: 0\n" +
+			"  checked: 1\n" +
+			"- snapshot: 2\n" +
+			"  reflection_sha256: " + strings.Repeat("b", 64) + "\n" +
+			"  observed: 0\n" +
+			"  unknown: 1\n" +
+			"  unavailable: 0\n" +
+			"  checked: 1\n" +
+			"- snapshot: 3\n" +
+			"  reflection_sha256: " + strings.Repeat("c", 64) + "\n" +
+			"  observed: 1\n" +
+			"  unknown: 0\n" +
+			"  unavailable: 1\n" +
+			"  checked: 2\n" +
 			"- transition: 1\n" +
 			"  from_reflection_sha256: " + strings.Repeat("a", 64) + "\n" +
 			"  to_reflection_sha256: " + strings.Repeat("b", 64) + "\n" +
@@ -1708,7 +1732,7 @@ func TestRunAskArchiveTransitions(t *testing.T) {
 			&stderr,
 			func([]string) (bundle.ArchiveQuestionTransitionHistory, error) { return history, nil },
 		)
-		want := `{"schema_version":2,"history_id":"answer-state-transitions","history_question":"At which supplied boundaries did the bounded answer state change?","question_id":"counterfactual-change","question":"Did it change?","order_basis":"caller","snapshots":3,"transitions":[{"from_reflection_sha256":"` + strings.Repeat("a", 64) + `","to_reflection_sha256":"` + strings.Repeat("b", 64) + `","result":"changed","compared":2,"changed":1,"from_only":0,"to_only":0,"state_changes":[{"directory":"run-001","older_state":"observed","newer_state":"unknown"}]},{"from_reflection_sha256":"` + strings.Repeat("b", 64) + `","to_reflection_sha256":"` + strings.Repeat("c", 64) + `","result":"incomparable","compared":1,"changed":0,"from_only":1,"to_only":2}]}` + "\n"
+		want := `{"schema_version":3,"history_id":"answer-state-transitions","history_question":"At which supplied boundaries did the bounded answer state change?","question_id":"counterfactual-change","question":"Did it change?","order_basis":"caller","snapshots":3,"transitions":[{"from_reflection_sha256":"` + strings.Repeat("a", 64) + `","to_reflection_sha256":"` + strings.Repeat("b", 64) + `","result":"changed","compared":2,"changed":1,"from_only":0,"to_only":0,"state_changes":[{"directory":"run-001","older_state":"observed","newer_state":"unknown"}]},{"from_reflection_sha256":"` + strings.Repeat("b", 64) + `","to_reflection_sha256":"` + strings.Repeat("c", 64) + `","result":"incomparable","compared":1,"changed":0,"from_only":1,"to_only":2}],"snapshot_summaries":[{"reflection_sha256":"` + strings.Repeat("a", 64) + `","observed":1,"unknown":0,"unavailable":0,"checked":1},{"reflection_sha256":"` + strings.Repeat("b", 64) + `","observed":0,"unknown":1,"unavailable":0,"checked":1},{"reflection_sha256":"` + strings.Repeat("c", 64) + `","observed":1,"unknown":0,"unavailable":1,"checked":2}]}` + "\n"
 		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
 			t.Fatalf("runAskArchiveTransitions() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
 		}

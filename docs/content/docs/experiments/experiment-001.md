@@ -280,8 +280,10 @@ when `go run` built Ariadne.
   caller-supplied order. It reports the same bounded `same`, `changed`, or
   `incomparable` result as the two-snapshot command, with stable reflection
   identities, aggregate counts, and safe per-directory state changes when
-  common entries changed. It never exposes observations or persona values, and
-  never infers chronology or a trend.
+  common entries changed. New schema 3 ledgers also carry each supplied
+  snapshot's reflection identity and safe observed/unknown/unavailable/checked
+  counts. It never exposes observations or persona values, and never infers
+  chronology or a trend.
 - `experiment ask-archive transitions questions [--json]` lists the fixed
   raw-value-free questions available for a verified transition history in
   stable order. It is a discovery surface for callers and does not accept
@@ -304,15 +306,15 @@ when `go run` built Ariadne.
 - `experiment ask-archive transitions save [--json] <report-1.json> <report-2.json> ... <history.json>`
   verifies the supplied reflections, writes one raw-value-free transition
   ledger with exclusive file creation, including safe per-directory state
-  changes, and returns its canonical content identity. New ledgers use schema 2;
-  verification remains compatible with schema 1 ledgers. It refuses to
-  overwrite an existing history path.
+  changes and per-snapshot safe summaries, and returns its canonical content
+  identity. New ledgers use schema 3; verification remains compatible with
+  schema 1 and 2 ledgers. It refuses to overwrite an existing history path.
 - `experiment ask-archive transitions verify [--json] [--expect-sha256 <digest>] <history.json>`
   verifies a saved transition ledger's fixed question, caller-order marker,
-  adjacent count contract, contiguous safe reflection identities, bounded
-  state-change entries, and deterministic content identity without requiring
-  the source reflections. This is structural verification, not proof of the
-  underlying evidence or chronology.
+  adjacent count contract, contiguous safe reflection identities, safe
+  snapshot summaries, bounded state-change entries, and deterministic content
+  identity without requiring the source reflections. This is structural
+  verification, not proof of the underlying evidence or chronology.
 - `experiment ask-archive verify [--json] <report.json>` checks a saved
   archive-reflection report offline for its schema, fixed question catalog,
   safe metadata, answer states, provenance digests, and deterministic ordering.
@@ -351,9 +353,10 @@ when `go run` built Ariadne.
   When `--history` is supplied, the page also reads one structurally verified
   transition ledger and renders its caller-ordered, raw-value-free boundaries,
   including the verified history-question result, safe directory/state changes,
-  and the repeated-change question when present. The history panel also lists
-  the fixed question IDs with direct links to each answer, so a UI driver can
-  choose a bounded question without inventing natural language. Those links use
+  safe snapshot summaries, and the repeated-change question when present. The
+  history panel also lists the fixed question IDs with direct links to each
+  answer, so a UI driver can choose a bounded question without inventing
+  natural language. Those links use
   the validated `history_question_id` query and fail closed for unknown IDs.
   When `--reflection` is supplied, the page re-asks that saved reflection's
   fixed question against the current archive and renders a bounded comparison

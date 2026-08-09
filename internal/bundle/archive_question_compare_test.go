@@ -140,11 +140,18 @@ func TestCompareArchiveQuestionHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if history.SchemaVersion != 2 || history.HistoryID != "answer-state-transitions" ||
+	if history.SchemaVersion != 3 || history.HistoryID != "answer-state-transitions" ||
 		history.HistoryQuestion != "At which supplied boundaries did the bounded answer state change?" ||
 		history.QuestionID != "counterfactual-change" || history.OrderBasis != "caller" ||
-		history.Snapshots != 3 || len(history.Transitions) != 2 {
+		history.Snapshots != 3 || len(history.Transitions) != 2 || len(history.SnapshotSummaries) != 3 {
 		t.Fatalf("history metadata = %#v", history)
+	}
+	if history.SnapshotSummaries[0].ReflectionSHA256 != history.Transitions[0].FromReflectionSHA256 ||
+		history.SnapshotSummaries[1].ReflectionSHA256 != history.Transitions[0].ToReflectionSHA256 ||
+		history.SnapshotSummaries[2].ReflectionSHA256 != history.Transitions[1].ToReflectionSHA256 ||
+		history.SnapshotSummaries[0].Observed != 1 || history.SnapshotSummaries[1].Unknown != 1 ||
+		history.SnapshotSummaries[2].Checked != 2 {
+		t.Fatalf("snapshot summaries = %#v", history.SnapshotSummaries)
 	}
 	first := history.Transitions[0]
 	if first.Result != "changed" || first.Compared != 1 || first.Changed != 1 || first.FromOnly != 0 || first.ToOnly != 0 || len(first.StateChanges) != 1 || first.StateChanges[0].Directory != "a-run" || first.StateChanges[0].OlderState != "observed" || first.StateChanges[0].NewerState != "unknown" {

@@ -877,6 +877,27 @@ func runAskArchiveTransitions(
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions: write output: %v\n", err)
 		return 1
 	}
+	if len(history.SnapshotSummaries) > 0 {
+		if _, err := io.WriteString(stdout, "snapshot_summaries:\n"); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions: write output: %v\n", err)
+			return 1
+		}
+		for index, snapshot := range history.SnapshotSummaries {
+			if _, err := fmt.Fprintf(
+				stdout,
+				"- snapshot: %d\n  reflection_sha256: %s\n  observed: %d\n  unknown: %d\n  unavailable: %d\n  checked: %d\n",
+				index+1,
+				snapshot.ReflectionSHA256,
+				snapshot.Observed,
+				snapshot.Unknown,
+				snapshot.Unavailable,
+				snapshot.Checked,
+			); err != nil {
+				_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions: write output: %v\n", err)
+				return 1
+			}
+		}
+	}
 	for index, transition := range history.Transitions {
 		if _, err := fmt.Fprintf(
 			stdout,

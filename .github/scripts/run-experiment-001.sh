@@ -199,7 +199,7 @@ archive_question_transitions_save_summary_json="${RUNNER_TEMP}/ariadne-archive-q
   "${archive_question_transitions_json}" >"${archive_question_transitions_save_summary_json}"
 jq -e '
   (keys_unsorted == ["schema_version", "history_id", "history_question", "question_id", "order_basis", "snapshots", "transitions", "transition_history_sha256"]) and
-  (.schema_version == 2) and
+  (.schema_version == 3) and
   (.history_id == "answer-state-transitions") and
   (.question_id == "counterfactual-change") and
   (.order_basis == "caller") and
@@ -208,14 +208,20 @@ jq -e '
   (.transition_history_sha256 | test("^[0-9a-f]{64}$"))
 ' "${archive_question_transitions_save_summary_json}"
 jq -e '
-  (keys_unsorted == ["schema_version", "history_id", "history_question", "question_id", "question", "order_basis", "snapshots", "transitions"]) and
-  (.schema_version == 2) and
+  (keys_unsorted == ["schema_version", "history_id", "history_question", "question_id", "question", "order_basis", "snapshots", "transitions", "snapshot_summaries"]) and
+  (.schema_version == 3) and
   (.history_id == "answer-state-transitions") and
   (.history_question == "At which supplied boundaries did the bounded answer state change?") and
   (.question_id == "counterfactual-change") and
   (.order_basis == "caller") and
   (.snapshots == 3) and
   (.transitions | length == 2) and
+  (.snapshot_summaries | length == 3) and
+  (.snapshot_summaries | all(.reflection_sha256 | test("^[0-9a-f]{64}$"))) and
+  (.snapshot_summaries | all((.observed + .unknown + .unavailable) == .checked)) and
+  (.snapshot_summaries[0].reflection_sha256 == .transitions[0].from_reflection_sha256) and
+  (.snapshot_summaries[1].reflection_sha256 == .transitions[0].to_reflection_sha256) and
+  (.snapshot_summaries[2].reflection_sha256 == .transitions[1].to_reflection_sha256) and
   (.transitions | all(.from_reflection_sha256 | test("^[0-9a-f]{64}$"))) and
   (.transitions | all(.to_reflection_sha256 | test("^[0-9a-f]{64}$"))) and
   (.transitions | all(.result == "same" and .compared == 1 and .changed == 0 and .from_only == 0 and .to_only == 0))
@@ -225,7 +231,7 @@ archive_question_transitions_verified_json="${RUNNER_TEMP}/ariadne-archive-quest
   "${archive_question_transitions_json}" >"${archive_question_transitions_verified_json}"
 jq -e '
   (keys_unsorted == ["schema_version", "history_id", "history_question", "question_id", "order_basis", "snapshots", "transitions", "transition_history_sha256"]) and
-  (.schema_version == 2) and
+  (.schema_version == 3) and
   (.history_id == "answer-state-transitions") and
   (.history_question == "At which supplied boundaries did the bounded answer state change?") and
   (.question_id == "counterfactual-change") and

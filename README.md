@@ -70,7 +70,10 @@ applies those same bounded comparisons to each adjacent pair in caller-supplied
 order and reports safe reflection identities, aggregate change counts, and any
 changed archive directories with their bounded older/newer states. The saved
 transition ledger carries those same state changes without observations or
-persona values.
+persona values. Current ledgers also carry a safe summary for each supplied
+snapshot: its reflection identity and observed, unknown, unavailable, and
+checked counts. These summaries make the historical spine inspectable without
+reopening raw evidence.
 The saved transition ledger can be structurally re-verified and given an
 expected content identity before another tool consumes it. Verification also
 requires adjacent transitions to share their boundary reflection identity, so
@@ -95,6 +98,10 @@ boundary. It returns the repeated entry's safe state-change records and
 adjacent reflection identities. Schema 1 histories answer `unavailable`, and
 the result never establishes chronology or a trend.
 
+New transition ledgers use schema 3 and include those snapshot summaries;
+schema 2 ledgers remain readable, and schema 1 ledgers remain readable with
+their older state-change limits.
+
 Use `ask-archive save` to create a new snapshot with exclusive file creation;
 it never overwrites an existing reflection. The command returns the same
 canonical identity used by offline verification, so saved snapshots can feed
@@ -102,6 +109,9 @@ the comparison and transition commands without exposing captured values.
 
 Use `transitions save` to persist the verified adjacent-boundary ledger with
 the same no-overwrite behavior before opening it in the local history view.
+The page shows the same safe snapshot summaries alongside the fixed history
+questions, so a UI driver can choose a question and retain the identities it
+was asking about.
 
 The local review page can receive a verified transition ledger and a saved
 reflection with

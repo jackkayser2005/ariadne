@@ -103,7 +103,7 @@ func validateArchiveQuestionTransitionHistoryJSON(data []byte) error {
 		"order_basis",
 		"snapshots",
 		"transitions",
-	}, nil)
+	}, []string{"snapshot_summaries"})
 	if err != nil {
 		return err
 	}
@@ -136,11 +136,28 @@ func validateArchiveQuestionTransitionHistoryJSON(data []byte) error {
 			}
 		}
 	}
+	if rawSnapshots, ok := root["snapshot_summaries"]; ok {
+		snapshots, err := archiveQuestionArray(rawSnapshots, "snapshot_summaries")
+		if err != nil {
+			return err
+		}
+		for _, rawSnapshot := range snapshots {
+			if _, err := archiveQuestionObject(rawSnapshot, []string{
+				"reflection_sha256",
+				"observed",
+				"unknown",
+				"unavailable",
+				"checked",
+			}, nil); err != nil {
+				return fmt.Errorf("snapshot summary: %w", err)
+			}
+		}
+	}
 	return nil
 }
 
 func validateArchiveQuestionTransitionHistory(history ArchiveQuestionTransitionHistory) error {
-	if history.SchemaVersion != archiveQuestionTransitionHistoryLegacySchemaVersion && history.SchemaVersion != archiveQuestionTransitionHistorySchemaVersion {
+	if history.SchemaVersion != archiveQuestionTransitionHistoryLegacySchemaVersion && history.SchemaVersion != archiveQuestionTransitionHistoryStateChangeSchemaVersion && history.SchemaVersion != archiveQuestionTransitionHistorySchemaVersion {
 		return errors.New("unsupported schema_version")
 	}
 	if history.HistoryID != archiveQuestionTransitionHistoryID {
@@ -164,6 +181,16 @@ func validateArchiveQuestionTransitionHistory(history ArchiveQuestionTransitionH
 	}
 	if len(history.Transitions) != history.Snapshots-1 {
 		return errors.New("transition count does not match snapshots")
+	}
+	if history.SchemaVersion == archiveQuestionTransitionHistorySchemaVersion {
+		if history.SnapshotSummaries == nil {
+			return errors.New("snapshot summaries are required")
+		}
+		if len(history.SnapshotSummaries) != history.Snapshots {
+			return errors.New("snapshot summary count does not match snapshots")
+		}
+	} else if history.SnapshotSummaries != nil {
+		return errors.New("snapshot summaries require schema_version 3")
 	}
 	previousToReflectionSHA256 := ""
 	for index, transition := range history.Transitions {
@@ -215,6 +242,32 @@ func validateArchiveQuestionTransitionHistory(history ArchiveQuestionTransitionH
 			}
 			previousDirectory = stateChange.Directory
 		}
+	}
+	if history.SchemaVersion == archiveQuestionTransitionHistorySchemaVersion {
+		for index, snapshot := range history.SnapshotSummaries {
+			if err := validateArchiveQuestionTransitionSnapshot(snapshot); err != nil {
+				return fmt.Errorf("snapshot %d: %w", index+1, err)
+			}
+			if index < len(history.Transitions) && snapshot.ReflectionSHA256 != history.Transitions[index].FromReflectionSHA256 {
+				return errors.New("snapshot summary identity does not match transition boundary")
+			}
+			if index > 0 && snapshot.ReflectionSHA256 != history.Transitions[index-1].ToReflectionSHA256 {
+				return errors.New("snapshot summary identity does not match transition boundary")
+			}
+		}
+	}
+	return nil
+}
+
+func validateArchiveQuestionTransitionSnapshot(snapshot ArchiveQuestionTransitionSnapshot) error {
+	if !validDigest(snapshot.ReflectionSHA256) {
+		return errors.New("snapshot reflection identity is invalid")
+	}
+	if snapshot.Observed < 0 || snapshot.Unknown < 0 || snapshot.Unavailable < 0 || snapshot.Checked < 0 {
+		return errors.New("snapshot summary counts are invalid")
+	}
+	if snapshot.Observed+snapshot.Unknown+snapshot.Unavailable != snapshot.Checked {
+		return errors.New("snapshot summary counts do not match checked")
 	}
 	return nil
 }

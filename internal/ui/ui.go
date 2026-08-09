@@ -627,6 +627,12 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
         <dt>transitions</dt><dd>{{.ReflectionHistorySummary.Transitions}}</dd>
         <dt>history SHA-256</dt><dd>{{.ReflectionHistorySummary.TransitionHistorySHA256}}</dd>
       </dl>
+      {{if .ReflectionHistory.SnapshotSummaries}}
+      <p class="context">safe snapshot summaries:</p>
+      <ul aria-label="Saved reflection snapshot summaries">
+      {{range .ReflectionHistory.SnapshotSummaries}}<li><span class="context">{{.ReflectionSHA256}}</span>: observed {{.Observed}}, unknown {{.Unknown}}, unavailable {{.Unavailable}}, checked {{.Checked}}</li>{{end}}
+      </ul>
+      {{end}}
       {{if or (eq .ReflectionHistoryQuestionID "") (eq .ReflectionHistoryQuestionID .ReflectionHistoryAnswer.QuestionID)}}
       <section id="history-question-{{.ReflectionHistoryAnswer.QuestionID}}">
       <div class="section-head"><h3>History question</h3><span class="status">{{.ReflectionHistoryAnswer.Result}}</span></div>

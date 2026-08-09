@@ -59,7 +59,7 @@ func TestVerifyArchiveQuestionTransitionHistoryRejectsInvalidLedgers(t *testing.
 		{name: "duplicate", data: bytes.Replace(valid, []byte(`"schema_version":2`), []byte(`"schema_version":2,"schema_version":2`), 1), want: "duplicate key"},
 		{name: "unknown", data: bytes.Replace(valid, []byte("{"), []byte(`{"extra":true,`), 1), want: "unknown field"},
 		{name: "trailing", data: append(append([]byte(nil), valid...), []byte("{}")...), want: "trailing data"},
-		{name: "schema", data: bytes.Replace(valid, []byte(`"schema_version":2`), []byte(`"schema_version":3`), 1), want: "unsupported schema_version"},
+		{name: "schema", data: bytes.Replace(valid, []byte(`"schema_version":2`), []byte(`"schema_version":4`), 1), want: "unsupported schema_version"},
 		{name: "history ID", data: bytes.Replace(valid, []byte(`"history_id":"answer-state-transitions"`), []byte(`"history_id":"other"`), 1), want: "history ID is invalid"},
 		{name: "missing order", data: bytes.Replace(valid, []byte(`,"order_basis":"caller"`), nil, 1), want: "missing required field \"order_basis\""},
 		{name: "identity", data: bytes.Replace(valid, []byte(strings.Repeat("a", 64)), []byte("bad"), 1), want: "transition reflection identity is invalid"},
@@ -84,6 +84,85 @@ func TestVerifyArchiveQuestionTransitionHistoryRejectsInvalidLedgers(t *testing.
 				t.Fatalf("VerifyArchiveQuestionTransitionHistory() error = %v, want %q", err, test.want)
 			}
 		})
+	}
+}
+
+func TestVerifyArchiveQuestionTransitionHistoryAcceptsSnapshotSummaries(t *testing.T) {
+	olderPath, _ := savedArchiveQuestionReport(t, "a-run")
+	newerPath, _ := savedArchiveQuestionReport(t, "a-run")
+	history, err := CompareArchiveQuestionHistory([]string{olderPath, newerPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := writeArchiveQuestionTransitionHistory(t, history)
+	summary, err := VerifyArchiveQuestionTransitionHistory(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.SchemaVersion != 3 || len(history.SnapshotSummaries) != history.Snapshots ||
+		history.SnapshotSummaries[0].ReflectionSHA256 != history.Transitions[0].FromReflectionSHA256 ||
+		history.SnapshotSummaries[1].ReflectionSHA256 != history.Transitions[0].ToReflectionSHA256 {
+		t.Fatalf("verified snapshot summaries = %#v, summary = %#v", history.SnapshotSummaries, summary)
+	}
+}
+
+func TestVerifyArchiveQuestionTransitionHistoryRejectsInvalidSnapshotSummaries(t *testing.T) {
+	olderPath, _ := savedArchiveQuestionReport(t, "a-run")
+	newerPath, _ := savedArchiveQuestionReport(t, "a-run")
+	valid, err := CompareArchiveQuestionHistory([]string{olderPath, newerPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name   string
+		mutate func(*ArchiveQuestionTransitionHistory)
+		want   string
+	}{
+		{name: "missing", mutate: func(history *ArchiveQuestionTransitionHistory) { history.SnapshotSummaries = nil }, want: "snapshot summaries are required"},
+		{name: "count", mutate: func(history *ArchiveQuestionTransitionHistory) {
+			history.SnapshotSummaries = history.SnapshotSummaries[:1]
+		}, want: "snapshot summary count does not match snapshots"},
+		{name: "identity", mutate: func(history *ArchiveQuestionTransitionHistory) {
+			history.SnapshotSummaries[0].ReflectionSHA256 = strings.Repeat("f", 64)
+		}, want: "snapshot summary identity does not match transition boundary"},
+		{name: "digest", mutate: func(history *ArchiveQuestionTransitionHistory) { history.SnapshotSummaries[0].ReflectionSHA256 = "bad" }, want: "snapshot reflection identity is invalid"},
+		{name: "counts", mutate: func(history *ArchiveQuestionTransitionHistory) { history.SnapshotSummaries[0].Checked++ }, want: "snapshot summary counts do not match checked"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			history := valid
+			history.SnapshotSummaries = append([]ArchiveQuestionTransitionSnapshot(nil), valid.SnapshotSummaries...)
+			test.mutate(&history)
+			if _, err := VerifyArchiveQuestionTransitionHistory(writeArchiveQuestionTransitionHistory(t, history)); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("VerifyArchiveQuestionTransitionHistory() error = %v, want %q", err, test.want)
+			}
+		})
+	}
+
+	data := archiveQuestionTransitionHistoryBytes(t, valid)
+	data = bytes.Replace(data, []byte(`{"reflection_sha256":`), []byte(`{"extra":true,"reflection_sha256":`), 1)
+	if _, err := VerifyArchiveQuestionTransitionHistory(writeArchiveQuestionTransitionHistoryBytes(t, data)); err == nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("VerifyArchiveQuestionTransitionHistory() unknown snapshot field error = %v", err)
+	}
+
+	data = archiveQuestionTransitionHistoryBytes(t, valid)
+	start := bytes.Index(data, []byte(`"snapshot_summaries":[`))
+	end := bytes.LastIndex(data, []byte(`]}`))
+	if start < 0 || end < start {
+		t.Fatalf("snapshot summary JSON boundaries not found: %s", data)
+	}
+	invalid := append([]byte(nil), data[:start]...)
+	invalid = append(invalid, []byte(`"snapshot_summaries":{}`)...)
+	invalid = append(invalid, data[end+1:]...)
+	data = invalid
+	if _, err := VerifyArchiveQuestionTransitionHistory(writeArchiveQuestionTransitionHistoryBytes(t, data)); err == nil || !strings.Contains(err.Error(), "cannot unmarshal object") {
+		t.Fatalf("VerifyArchiveQuestionTransitionHistory() snapshot type error = %v", err)
+	}
+
+	legacy := validArchiveQuestionTransitionHistory()
+	legacy.SnapshotSummaries = append([]ArchiveQuestionTransitionSnapshot(nil), valid.SnapshotSummaries...)
+	if _, err := VerifyArchiveQuestionTransitionHistory(writeArchiveQuestionTransitionHistory(t, legacy)); err == nil || !strings.Contains(err.Error(), "snapshot summaries require schema_version 3") {
+		t.Fatalf("VerifyArchiveQuestionTransitionHistory() legacy snapshot summary error = %v", err)
 	}
 }
 
