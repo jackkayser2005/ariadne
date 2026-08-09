@@ -89,6 +89,11 @@ currently derived archive question report. It is computed in memory, contains
 no captured values, and identifies the derived report only; it is not proof of
 the underlying evidence or a trend claim.
 
+It can also review one portable export with
+`experiment serve --export <export.json> <archive-root>`. The export question
+and its safe finding references remain read-only and display their verified
+export identities.
+
 ## Development
 
 Prerequisites:

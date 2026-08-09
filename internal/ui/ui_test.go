@@ -99,6 +99,123 @@ func TestHandlerRendersReadOnlyReview(t *testing.T) {
 	}
 }
 
+func TestHandlerRendersPortableExport(t *testing.T) {
+	findingID := "sha256:" + strings.Repeat("a", 64)
+	sourceDigest := strings.Repeat("b", 64)
+	exportDigest := strings.Repeat("c", 64)
+	question := "Did changing the declared variable influence an observed output?"
+	h := newHandler(handler{
+		root:  "archive-root",
+		index: func(string) ([]bundle.ArchiveEntry, error) { return nil, nil },
+		questions: func() []bundle.Question {
+			return []bundle.Question{{ID: "counterfactual-change", Text: question}}
+		},
+		exportPath: "portable-export.json",
+		exportAsk: func(path, questionID string) (bundle.Answer, error) {
+			if path != "portable-export.json" || questionID != "counterfactual-change" {
+				t.Fatalf("AskExport() args = %q, %q", path, questionID)
+			}
+			return bundle.Answer{
+				QuestionID:           questionID,
+				Question:             question,
+				State:                "observed",
+				FindingIDs:           []string{findingID},
+				SourceEvidenceSHA256: sourceDigest,
+				ExportSHA256:         exportDigest,
+			}, nil
+		},
+		exportFind: func(path, id string) (bundle.Finding, error) {
+			if path != "portable-export.json" || id != findingID {
+				t.Fatalf("FindExport() args = %q, %q", path, id)
+			}
+			return bundle.Finding{
+				Question:             question,
+				AnswerState:          "observed",
+				Kind:                 "difference",
+				Classification:       "changed",
+				ID:                   id,
+				Field:                "variant",
+				State:                "observed",
+				Evidence:             []string{"baseline/observations/storage.json#/variant"},
+				SourceEvidenceSHA256: sourceDigest,
+				ExportSHA256:         exportDigest,
+			}, nil
+		},
+	})
+
+	tests := []struct {
+		name string
+		path string
+		want []string
+	}{
+		{name: "index", path: "/", want: []string{"Portable redacted export", "Ask the portable export"}},
+		{name: "question", path: "/export-ask?question_id=counterfactual-change", want: []string{"Question result", question, "Portable export identity", sourceDigest, exportDigest, findingID, "/export-finding"}},
+		{name: "finding", path: "/export-finding?finding_id=" + findingID, want: []string{"Finding detail", "portable export", "variant", "baseline/observations/storage.json#/variant", "Portable export identity", sourceDigest, exportDigest}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, test.path, nil))
+			body := recorder.Body.String()
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status = %d, body=%q", recorder.Code, body)
+			}
+			for _, want := range test.want {
+				if !strings.Contains(body, want) {
+					t.Fatalf("body missing %q: %s", want, body)
+				}
+			}
+			for _, secret := range []string{"secret-value", "portable-export.json"} {
+				if strings.Contains(body, secret) {
+					t.Fatalf("body disclosed %q", secret)
+				}
+			}
+		})
+	}
+}
+
+func TestHandlerHidesPortableExportErrors(t *testing.T) {
+	h := newHandler(handler{
+		questions: func() []bundle.Question {
+			return []bundle.Question{{ID: "counterfactual-change", Text: "private question"}}
+		},
+		exportAsk: func(string, string) (bundle.Answer, error) {
+			return bundle.Answer{}, errors.New("private export question failure")
+		},
+		exportFind: func(string, string) (bundle.Finding, error) {
+			return bundle.Finding{}, errors.New("private export finding failure")
+		},
+	})
+	for _, test := range []struct {
+		path string
+		want string
+	}{
+		{path: "/export-ask?question_id=counterfactual-change", want: "export question unavailable"},
+		{path: "/export-finding?finding_id=sha256:" + strings.Repeat("a", 64), want: "export finding unavailable"},
+	} {
+		t.Run(test.path, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, test.path, nil))
+			body := recorder.Body.String()
+			if recorder.Code != http.StatusUnprocessableEntity || body != test.want+"\n" {
+				t.Fatalf("status = %d, body=%q", recorder.Code, body)
+			}
+			if strings.Contains(body, "private") {
+				t.Fatal("body disclosed internal error")
+			}
+		})
+	}
+}
+
+func TestHandlerWithReviewAndExportConfiguresExport(t *testing.T) {
+	h := HandlerWithReviewAndExport(t.TempDir(), "", "", "portable-export.json")
+	recorder := httptest.NewRecorder()
+	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "Portable redacted export") {
+		t.Fatalf("status = %d, body=%q", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestHandlerRendersCurrentReflectionIdentity(t *testing.T) {
 	report := bundle.ArchiveQuestionReport{
 		SchemaVersion: 2,

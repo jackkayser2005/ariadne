@@ -23,6 +23,9 @@ type handler struct {
 	history        func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error)
 	compareCurrent func() (bundle.ArchiveQuestionComparison, error)
 	find           func(string, string) (bundle.Finding, error)
+	exportPath     string
+	exportAsk      func(string, string) (bundle.Answer, error)
+	exportFind     func(string, string) (bundle.Finding, error)
 }
 
 type archiveQuestionResult struct {
@@ -53,6 +56,11 @@ type pageData struct {
 	Answers                            []bundle.Answer
 	Answer                             bundle.Answer
 	Finding                            bundle.Finding
+	ExportConfigured                   bool
+	ExportAnswer                       bundle.Answer
+	ExportFinding                      bundle.Finding
+	ExportSourceEvidenceSHA256         string
+	ExportSHA256                       string
 	CurrentReflectionRequested         bool
 	CurrentReflectionAvailable         bool
 	CurrentReflectionSHA256            string
@@ -81,6 +89,13 @@ func HandlerWithHistory(archiveRoot, historyPath string) http.Handler {
 // structurally verified saved reflection history and one bounded comparison
 // between a saved reflection and the current archive.
 func HandlerWithReview(archiveRoot, historyPath, reflectionPath string) http.Handler {
+	return HandlerWithReviewAndExport(archiveRoot, historyPath, reflectionPath, "")
+}
+
+// HandlerWithReviewAndExport returns a read-only review handler with optional
+// verified history, current-reflection comparison, and one portable redacted
+// export.
+func HandlerWithReviewAndExport(archiveRoot, historyPath, reflectionPath, exportPath string) http.Handler {
 	h := archiveHandler(archiveRoot)
 	if historyPath != "" {
 		h.history = func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error) {
@@ -91,6 +106,11 @@ func HandlerWithReview(archiveRoot, historyPath, reflectionPath string) http.Han
 		h.compareCurrent = func() (bundle.ArchiveQuestionComparison, error) {
 			return bundle.CompareArchiveQuestionReportWithArchive(reflectionPath, archiveRoot)
 		}
+	}
+	if exportPath != "" {
+		h.exportPath = exportPath
+		h.exportAsk = bundle.AskExport
+		h.exportFind = bundle.FindExport
 	}
 	return newHandler(h)
 }
@@ -113,6 +133,8 @@ func newHandler(h handler) http.Handler {
 	mux.HandleFunc("/run", h.handleRun)
 	mux.HandleFunc("/ask", h.handleAsk)
 	mux.HandleFunc("/finding", h.handleFinding)
+	mux.HandleFunc("/export-ask", h.handleExportAsk)
+	mux.HandleFunc("/export-finding", h.handleExportFinding)
 	mux.HandleFunc("/favicon.ico", handleFavicon)
 	return mux
 }
@@ -221,6 +243,7 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		SavedReflectionComparisonRequested: savedReflectionComparisonRequested,
 		SavedReflectionComparisonAvailable: savedReflectionComparisonAvailable,
 		SavedReflectionComparison:          savedReflectionComparison,
+		ExportConfigured:                   h.exportAsk != nil && h.exportFind != nil,
 	})
 }
 
@@ -356,6 +379,62 @@ func (h handler) handleFinding(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (h handler) handleExportAsk(w http.ResponseWriter, r *http.Request) {
+	if !getOnly(w, r) {
+		return
+	}
+	questionID := r.URL.Query().Get("question_id")
+	if h.exportAsk == nil || questionID == "" {
+		http.Error(w, "question not found", http.StatusNotFound)
+		return
+	}
+	questions := []bundle.Question{}
+	if h.questions != nil {
+		questions = h.questions()
+	}
+	if _, ok := questionForID(questions, questionID); !ok {
+		http.Error(w, "question not found", http.StatusNotFound)
+		return
+	}
+	answer, err := h.exportAsk(h.exportPath, questionID)
+	if err != nil {
+		http.Error(w, "export question unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	render(w, pageData{
+		View:                       "export-ask",
+		Title:                      "Portable export question — Ariadne",
+		ExportConfigured:           true,
+		ExportAnswer:               answer,
+		ExportSourceEvidenceSHA256: answer.SourceEvidenceSHA256,
+		ExportSHA256:               answer.ExportSHA256,
+	})
+}
+
+func (h handler) handleExportFinding(w http.ResponseWriter, r *http.Request) {
+	if !getOnly(w, r) {
+		return
+	}
+	findingID := r.URL.Query().Get("finding_id")
+	if h.exportFind == nil || findingID == "" {
+		http.Error(w, "finding not found", http.StatusNotFound)
+		return
+	}
+	finding, err := h.exportFind(h.exportPath, findingID)
+	if err != nil {
+		http.Error(w, "export finding unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	render(w, pageData{
+		View:                       "export-finding",
+		Title:                      "Portable export finding — Ariadne",
+		ExportConfigured:           true,
+		ExportFinding:              finding,
+		ExportSourceEvidenceSHA256: finding.SourceEvidenceSHA256,
+		ExportSHA256:               finding.ExportSHA256,
+	})
+}
+
 func (h handler) bundlePath(directory string) (string, bool) {
 	if directory == "" {
 		return "", false
@@ -477,6 +556,19 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
   {{end}}
   {{end}}
 
+  {{define "export-identity"}}
+  {{if or .ExportSourceEvidenceSHA256 .ExportSHA256}}
+  <section class="panel">
+    <h2>Portable export identity</h2>
+    <dl>
+      {{with .ExportSourceEvidenceSHA256}}<dt>source evidence SHA-256</dt><dd>{{.}}</dd>{{end}}
+      {{with .ExportSHA256}}<dt>export SHA-256</dt><dd>{{.}}</dd>{{end}}
+    </dl>
+    <p class="context">These identities bind this answer or finding to the verified raw-value-free export. They do not prove the underlying evidence.</p>
+  </section>
+  {{end}}
+  {{end}}
+
   {{if eq .View "index"}}
     <section class="hero">
       <p class="eyebrow">verified archive</p>
@@ -490,6 +582,13 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       {{range .Questions}}<a class="button" href="/?question_id={{query .ID}}">{{.Text}}</a>{{end}}
       </div>
     </section>
+    {{if .ExportConfigured}}
+    <section class="panel">
+      <div class="section-head"><h2>Portable redacted export</h2><span class="context">verified, offline</span></div>
+      <p class="context">Ask the export's fixed counterfactual question and follow safe finding references without opening captured artifacts.</p>
+      <a class="button" href="/export-ask?question_id=counterfactual-change">Ask the portable export <span aria-hidden="true">&rarr;</span></a>
+    </section>
+    {{end}}
     {{if and .ReflectionHistoryRequested (or (not .SelectedQuestion.ID) (eq .SelectedQuestion.ID .ReflectionHistory.QuestionID))}}
     <section class="panel">
       <div class="section-head"><h2>Saved reflection history</h2><span class="context">verified ledger</span></div>
@@ -673,6 +772,49 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       <h2>Evidence sources</h2>
       <ul>
       {{range .Finding.Evidence}}<li>{{.}}</li>{{end}}
+      </ul>
+      <p class="context">Observed values and captured payloads are intentionally not rendered.</p>
+    </section>
+
+  {{else if eq .View "export-ask"}}
+    <a class="back" href="/">&larr; Review archive</a>
+    <p class="eyebrow">portable redacted export &middot; verified</p>
+    <h1>Question result</h1>
+    <p class="question">{{.ExportAnswer.Question}}</p>
+    <span class="status status-{{.ExportAnswer.State}}">{{.ExportAnswer.State}}</span>
+    {{with .ExportAnswer.Reason}}<p class="context">Why unknown: {{.}}</p>{{end}}
+    {{template "export-identity" .}}
+    <section class="panel" style="margin-top: 28px">
+      <h2>Referenced findings</h2>
+      {{if .ExportAnswer.FindingIDs}}
+        <ul>
+        {{range .ExportAnswer.FindingIDs}}
+          <li><a class="finding" href="/export-finding?finding_id={{query .}}">{{.}}</a></li>
+        {{end}}
+        </ul>
+      {{else}}
+        <p class="context">No finding references were produced for this question.</p>
+      {{end}}
+    </section>
+
+  {{else if eq .View "export-finding"}}
+    <a class="back" href="/export-ask?question_id=counterfactual-change">&larr; Export question</a>
+    <p class="eyebrow">{{.ExportFinding.Kind}} &middot; {{.ExportFinding.State}} &middot; portable export</p>
+    <h1>Finding detail</h1>
+    <p class="lede">This is a verified, raw-value-free finding reference from a portable export.</p>
+    {{template "export-identity" .}}
+    <section class="panel">
+      <dl>
+        <dt>id</dt><dd>{{.ExportFinding.ID}}</dd>
+        <dt>field</dt><dd>{{.ExportFinding.Field}}</dd>
+        {{with .ExportFinding.Classification}}<dt>classification</dt><dd>{{.}}</dd>{{end}}
+        <dt>answer state</dt><dd>{{.ExportFinding.AnswerState}}</dd>
+        <dt>finding state</dt><dd>{{.ExportFinding.State}}</dd>
+        {{with .ExportFinding.Reason}}<dt>reason</dt><dd>{{.}}</dd>{{end}}
+      </dl>
+      <h2>Evidence sources</h2>
+      <ul>
+      {{range .ExportFinding.Evidence}}<li>{{.}}</li>{{end}}
       </ul>
       <p class="context">Observed values and captured payloads are intentionally not rendered.</p>
     </section>

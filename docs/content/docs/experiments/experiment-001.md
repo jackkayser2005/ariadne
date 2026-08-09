@@ -183,6 +183,7 @@ go run ./cmd/ariadne experiment ask-archive transitions --json <report-1.json> <
 go run ./cmd/ariadne experiment ask-archive transitions save --json <report-1.json> <report-2.json> ... <history.json>
 go run ./cmd/ariadne experiment ask-archive transitions verify --json <transitions.json>
 go run ./cmd/ariadne experiment serve --history <transitions.json> --reflection <reflection.json> .ariadne/runs
+go run ./cmd/ariadne experiment serve --export .ariadne/runs/experiment-001.redacted.json .ariadne/runs
 go run ./cmd/ariadne experiment finding --json .ariadne/runs/experiment-001 <finding-id-from-evidence.json>
 ```
 
@@ -294,7 +295,7 @@ when `go run` built Ariadne.
   exactly the expected identity; a mismatch produces no verification output.
   A successful result proves only that the derived report satisfies Ariadne's
   structural contract; it does not re-verify or prove the underlying evidence.
-- `experiment serve [--history <history.json>] [--reflection <report.json>] <archive-root>` starts a
+- `experiment serve [--history <history.json>] [--reflection <report.json>] [--export <export.json>] <archive-root>` starts a
   localhost-only, read-only review
   page at `http://127.0.0.1:8787/`; only loopback IP addresses are accepted, and
   it lists verified bundles and links to the same bounded questions and finding
@@ -326,6 +327,10 @@ when `go run` built Ariadne.
   reflections remain bounded unavailable states; internal verification errors
   are not rendered. Neither view establishes chronology, infers a trend, or
   proves the underlying evidence.
+  When `--export` is supplied, the archive page also links to the portable
+  export's fixed question and safe finding references. Those pages show the
+  verified source-evidence and export identities, never comparison values or
+  captured payloads. Invalid export answers remain generic unavailable states.
 - If `ariadne_modified` is unexpectedly `true`, inspect `git status --short`
   before treating the run as reproducible from the recorded revision alone.
 - Finding lookup re-verifies the bundle first and prints only the question,
