@@ -628,7 +628,13 @@ func runAskArchiveVerify(
 		_, _ = io.WriteString(stderr, usage)
 		return 2
 	}
-	if *expectedSHA256 != "" && !validReflectionSHA256(*expectedSHA256) {
+	expectedSHA256Provided := false
+	flags.Visit(func(visited *flag.Flag) {
+		if visited.Name == "expect-sha256" {
+			expectedSHA256Provided = true
+		}
+	})
+	if expectedSHA256Provided && !validReflectionSHA256(*expectedSHA256) {
 		_, _ = io.WriteString(stderr, "ariadne: experiment ask-archive verify: expect-sha256 must be a lowercase 64-character SHA-256 digest\n")
 		return 2
 	}
@@ -638,7 +644,7 @@ func runAskArchiveVerify(
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive verify: %v\n", err)
 		return 1
 	}
-	if *expectedSHA256 != "" && summary.ReflectionSHA256 != *expectedSHA256 {
+	if expectedSHA256Provided && summary.ReflectionSHA256 != *expectedSHA256 {
 		_, _ = io.WriteString(stderr, "ariadne: experiment ask-archive verify: reflection SHA-256 mismatch\n")
 		return 1
 	}

@@ -1289,6 +1289,22 @@ func TestRunAskArchiveVerifyFailures(t *testing.T) {
 		}
 	})
 
+	t.Run("empty expected identity", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveVerify(
+			[]string{"--expect-sha256=", "report.json"},
+			&stdout,
+			&stderr,
+			func(string) (bundle.ArchiveQuestionVerificationSummary, error) {
+				t.Fatal("VerifyArchiveQuestionReport called for empty expected identity")
+				return bundle.ArchiveQuestionVerificationSummary{}, nil
+			},
+		)
+		if exitCode != 2 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "expect-sha256 must be") {
+			t.Fatalf("runAskArchiveVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
 	t.Run("mismatched expected identity", func(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		exitCode := runAskArchiveVerify(
