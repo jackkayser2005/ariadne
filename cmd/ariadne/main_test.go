@@ -70,6 +70,7 @@ func TestRunUsage(t *testing.T) {
 		{"experiment", "ask-archive"},
 		{"experiment", "ask-archive", "compare"},
 		{"experiment", "ask-archive", "transitions"},
+		{"experiment", "ask-archive", "transitions", "verify"},
 		{"experiment", "ask-archive", "verify"},
 		{"experiment", "questions", "extra"},
 		{"experiment", "list"},
@@ -1425,6 +1426,175 @@ func TestRunAskArchiveFailures(t *testing.T) {
 			t.Fatalf("runAskArchive() = %d, stderr=%q", exitCode, stderr.String())
 		}
 	})
+}
+
+func TestRunAskArchiveTransitionsVerify(t *testing.T) {
+	summary := bundle.ArchiveQuestionTransitionVerificationSummary{
+		SchemaVersion:           1,
+		HistoryID:               "answer-state-transitions",
+		HistoryQuestion:         "At which supplied boundaries did the bounded answer state change?",
+		QuestionID:              "counterfactual-change",
+		OrderBasis:              "caller",
+		Snapshots:               3,
+		Transitions:             2,
+		TransitionHistorySHA256: strings.Repeat("a", 64),
+	}
+
+	t.Run("human", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsVerify(
+			[]string{"history.json"},
+			&stdout,
+			&stderr,
+			func(path string) (bundle.ArchiveQuestionTransitionVerificationSummary, error) {
+				if path != "history.json" {
+					t.Fatalf("VerifyArchiveQuestionTransitionHistory() path = %q", path)
+				}
+				return summary, nil
+			},
+		)
+		want := "archive reflection transitions structurally verified\n" +
+			"schema_version: 1\n" +
+			"history_id: answer-state-transitions\n" +
+			"history_question: At which supplied boundaries did the bounded answer state change?\n" +
+			"question_id: counterfactual-change\n" +
+			"order_basis: caller\n" +
+			"snapshots: 3\n" +
+			"transitions: 2\n" +
+			"transition_history_sha256: " + strings.Repeat("a", 64) + "\n" +
+			"note: this verifies the derived transition contract; it does not prove the underlying evidence or chronology\n"
+		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+			t.Fatalf("runAskArchiveTransitionsVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("json", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsVerify(
+			[]string{"--json", "history.json"},
+			&stdout,
+			&stderr,
+			func(string) (bundle.ArchiveQuestionTransitionVerificationSummary, error) { return summary, nil },
+		)
+		want := `{"schema_version":1,"history_id":"answer-state-transitions","history_question":"At which supplied boundaries did the bounded answer state change?","question_id":"counterfactual-change","order_basis":"caller","snapshots":3,"transitions":2,"transition_history_sha256":"` + strings.Repeat("a", 64) + `"}` + "\n"
+		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+			t.Fatalf("runAskArchiveTransitionsVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("expected identity", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsVerify(
+			[]string{"--expect-sha256", strings.Repeat("a", 64), "history.json"},
+			&stdout,
+			&stderr,
+			func(string) (bundle.ArchiveQuestionTransitionVerificationSummary, error) { return summary, nil },
+		)
+		if exitCode != 0 || stdout.Len() == 0 || stderr.Len() != 0 {
+			t.Fatalf("runAskArchiveTransitionsVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+}
+
+func TestRunAskArchiveTransitionsVerifyFailures(t *testing.T) {
+	for _, args := range [][]string{nil, {"history.json", "extra"}, {"--json=invalid", "history.json"}} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			exitCode := runAskArchiveTransitionsVerify(
+				args,
+				&stdout,
+				&stderr,
+				func(string) (bundle.ArchiveQuestionTransitionVerificationSummary, error) {
+					t.Fatal("VerifyArchiveQuestionTransitionHistory called for invalid usage")
+					return bundle.ArchiveQuestionTransitionVerificationSummary{}, nil
+				},
+			)
+			if exitCode != 2 || stdout.Len() != 0 || stderr.String() != usage {
+				t.Fatalf("runAskArchiveTransitionsVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+			}
+		})
+	}
+
+	t.Run("verification error", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsVerify(
+			[]string{"history.json"},
+			&stdout,
+			&stderr,
+			func(string) (bundle.ArchiveQuestionTransitionVerificationSummary, error) {
+				return bundle.ArchiveQuestionTransitionVerificationSummary{}, errors.New("history is invalid")
+			},
+		)
+		if exitCode != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "history is invalid") {
+			t.Fatalf("runAskArchiveTransitionsVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	for _, args := range [][]string{
+		{"--expect-sha256", "bad", "history.json"},
+		{"--expect-sha256=", "history.json"},
+	} {
+		t.Run("invalid expected identity "+strings.Join(args, "_"), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			exitCode := runAskArchiveTransitionsVerify(
+				args,
+				&stdout,
+				&stderr,
+				func(string) (bundle.ArchiveQuestionTransitionVerificationSummary, error) {
+					t.Fatal("VerifyArchiveQuestionTransitionHistory called for invalid expected identity")
+					return bundle.ArchiveQuestionTransitionVerificationSummary{}, nil
+				},
+			)
+			if exitCode != 2 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "expect-sha256 must be") {
+				t.Fatalf("runAskArchiveTransitionsVerify() = %d, stderr=%q", exitCode, stderr.String())
+			}
+		})
+	}
+
+	t.Run("mismatched expected identity", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsVerify(
+			[]string{"--expect-sha256", strings.Repeat("b", 64), "history.json"},
+			&stdout,
+			&stderr,
+			func(string) (bundle.ArchiveQuestionTransitionVerificationSummary, error) {
+				return summaryForTransitionVerifyTest(), nil
+			},
+		)
+		if exitCode != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "transition history SHA-256 mismatch") {
+			t.Fatalf("runAskArchiveTransitionsVerify() = %d, stderr=%q", exitCode, stderr.String())
+		}
+	})
+
+	for _, args := range [][]string{{"history.json"}, {"--json", "history.json"}} {
+		t.Run("write output "+strings.Join(args, "_"), func(t *testing.T) {
+			var stderr bytes.Buffer
+			exitCode := runAskArchiveTransitionsVerify(
+				args,
+				failingWriter{},
+				&stderr,
+				func(string) (bundle.ArchiveQuestionTransitionVerificationSummary, error) {
+					return summaryForTransitionVerifyTest(), nil
+				},
+			)
+			if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+				t.Fatalf("runAskArchiveTransitionsVerify() = %d, stderr=%q", exitCode, stderr.String())
+			}
+		})
+	}
+}
+
+func summaryForTransitionVerifyTest() bundle.ArchiveQuestionTransitionVerificationSummary {
+	return bundle.ArchiveQuestionTransitionVerificationSummary{
+		SchemaVersion:           1,
+		HistoryID:               "answer-state-transitions",
+		HistoryQuestion:         "At which supplied boundaries did the bounded answer state change?",
+		QuestionID:              "counterfactual-change",
+		OrderBasis:              "caller",
+		Snapshots:               2,
+		Transitions:             1,
+		TransitionHistorySHA256: strings.Repeat("a", 64),
+	}
 }
 
 func TestRunAskArchiveVerify(t *testing.T) {

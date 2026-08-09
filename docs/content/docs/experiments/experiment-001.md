@@ -175,6 +175,7 @@ go run ./cmd/ariadne experiment ask-archive verify --json .ariadne/archive-quest
 go run ./cmd/ariadne experiment ask-archive verify --json --expect-sha256 <reflection-sha256> .ariadne/archive-question.json
 go run ./cmd/ariadne experiment ask-archive compare --json <older-report.json> <newer-report.json>
 go run ./cmd/ariadne experiment ask-archive transitions --json <report-1.json> <report-2.json> ...
+go run ./cmd/ariadne experiment ask-archive transitions verify --json <transitions.json>
 go run ./cmd/ariadne experiment finding --json .ariadne/runs/experiment-001 <finding-id-from-evidence.json>
 ```
 
@@ -241,6 +242,11 @@ when `go run` built Ariadne.
   caller-supplied order. It reports the same bounded `same`, `changed`, or
   `incomparable` result as the two-snapshot command, with stable reflection
   identities and aggregate counts. It never infers chronology or a trend.
+- `experiment ask-archive transitions verify [--json] [--expect-sha256 <digest>] <history.json>`
+  verifies a saved transition ledger's fixed question, caller-order marker,
+  adjacent count contract, safe reflection identities, and deterministic
+  content identity without requiring the source reflections. This is structural
+  verification, not proof of the underlying evidence or chronology.
 - `experiment ask-archive verify [--json] <report.json>` checks a saved
   archive-reflection report offline for its schema, fixed question catalog,
   safe metadata, answer states, provenance digests, and deterministic ordering.

@@ -39,6 +39,7 @@ reflection snapshots without exposing captured values:
 go run ./cmd/ariadne experiment ask-archive verify --json <reflection.json>
 go run ./cmd/ariadne experiment ask-archive compare --json <older-reflection.json> <newer-reflection.json>
 go run ./cmd/ariadne experiment ask-archive transitions --json <reflection-1.json> <reflection-2.json> ...
+go run ./cmd/ariadne experiment ask-archive transitions verify --json <transitions.json>
 ```
 
 The comparison reports `same`, `changed`, or `incomparable` for bounded
@@ -46,6 +47,8 @@ per-directory answer states. It does not infer a trend or prove the underlying
 evidence. The transitions command applies those same bounded comparisons to
 each adjacent pair in caller-supplied order and reports only safe reflection
 identities and aggregate change counts.
+The saved transition ledger can be structurally re-verified and given an
+expected content identity before another tool consumes it.
 
 ## Development
 

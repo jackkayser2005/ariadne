@@ -126,6 +126,24 @@ jq -e '
   (.transitions | all(.to_reflection_sha256 | test("^[0-9a-f]{64}$"))) and
   (.transitions | all(.result == "same" and .compared == 1 and .changed == 0 and .from_only == 0 and .to_only == 0))
 ' "${archive_question_transitions_json}"
+archive_question_transitions_verified_json="${RUNNER_TEMP}/ariadne-archive-question-transitions-verified.json"
+"${ariadne}" experiment ask-archive transitions verify --json \
+  "${archive_question_transitions_json}" >"${archive_question_transitions_verified_json}"
+jq -e '
+  (keys_unsorted == ["schema_version", "history_id", "history_question", "question_id", "order_basis", "snapshots", "transitions", "transition_history_sha256"]) and
+  (.schema_version == 1) and
+  (.history_id == "answer-state-transitions") and
+  (.history_question == "At which supplied boundaries did the bounded answer state change?") and
+  (.question_id == "counterfactual-change") and
+  (.order_basis == "caller") and
+  (.snapshots == 3) and
+  (.transitions == 2) and
+  (.transition_history_sha256 | test("^[0-9a-f]{64}$"))
+' "${archive_question_transitions_verified_json}"
+transition_history_sha256="$(jq -r '.transition_history_sha256' "${archive_question_transitions_verified_json}")"
+"${ariadne}" experiment ask-archive transitions verify --json \
+  --expect-sha256 "${transition_history_sha256}" \
+  "${archive_question_transitions_json}" > /dev/null
 
 finding_id="$(jq -r '.comparison.differences[0].id' "${run_dir}/evidence.json")"
 finding_stdout="${RUNNER_TEMP}/ariadne-finding.stdout"
