@@ -230,6 +230,10 @@ when `go run` built Ariadne.
 - `experiment ask-archive verify [--json] <report.json>` checks a saved
   archive-reflection report offline for its schema, fixed question catalog,
   safe metadata, answer states, provenance digests, and deterministic ordering.
+  It also returns a stable SHA-256 identity for the canonical raw-value-free
+  reflection content, so a later caller can refer back to the same snapshot
+  after formatting changes. That identity proves only the report content, not
+  the underlying evidence.
   A successful result proves only that the derived report satisfies Ariadne's
   structural contract; it does not re-verify or prove the underlying evidence.
 - `experiment serve <archive-root>` starts a localhost-only, read-only review

@@ -81,10 +81,11 @@ jq -e '
 archive_question_verified_json="${RUNNER_TEMP}/ariadne-archive-question-verified.json"
 "${ariadne}" experiment ask-archive verify --json "${archive_question_json}" >"${archive_question_verified_json}"
 jq -e '
-  (keys_unsorted == ["schema_version", "question_id", "checked"]) and
+  (keys_unsorted == ["schema_version", "question_id", "checked", "reflection_sha256"]) and
   (.schema_version == 2) and
   (.question_id == "counterfactual-change") and
-  (.checked == 1)
+  (.checked == 1) and
+  (.reflection_sha256 | test("^[0-9a-f]{64}$"))
 ' "${archive_question_verified_json}"
 
 finding_id="$(jq -r '.comparison.differences[0].id' "${run_dir}/evidence.json")"
