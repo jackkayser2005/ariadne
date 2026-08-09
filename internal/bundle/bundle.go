@@ -80,6 +80,11 @@ type Summary struct {
 	Normalizations []string `json:"-"`
 }
 
+// ExportSummary describes a successful raw-value-free export.
+type ExportSummary struct {
+	SourceEvidenceSHA256 string `json:"source_evidence_sha256"`
+}
+
 // Finding is the safe, raw-value-free view of one verified conclusion.
 type Finding struct {
 	Question       string         `json:"question"`
@@ -139,6 +144,56 @@ type document struct {
 	Comparison             analysis.Comparison `json:"comparison"`
 }
 
+type redactedDocument struct {
+	SchemaVersion               int                `json:"schema_version"`
+	SourceEvidenceSchemaVersion int                `json:"source_evidence_schema_version"`
+	Redacted                    bool               `json:"redacted"`
+	SourceEvidenceSHA256        string             `json:"source_evidence_sha256"`
+	ManifestName                string             `json:"manifest_name"`
+	DeclaredVariable            string             `json:"declared_variable"`
+	ManifestContractSHA256      string             `json:"manifest_contract_sha256,omitempty"`
+	Question                    string             `json:"question,omitempty"`
+	AnswerState                 evidence.State     `json:"answer_state,omitempty"`
+	Target                      redactedTarget     `json:"target"`
+	Normalizations              []string           `json:"normalizations"`
+	Artifacts                   []artifact         `json:"artifacts"`
+	Comparison                  redactedComparison `json:"comparison"`
+}
+
+type redactedTarget struct {
+	AndroidAPI         int    `json:"android_api"`
+	Architecture       string `json:"architecture"`
+	Package            string `json:"package"`
+	PackageVersionCode uint64 `json:"package_version_code"`
+	PackageSHA256      string `json:"package_sha256"`
+	AriadneRevision    string `json:"ariadne_revision"`
+	AriadneModified    bool   `json:"ariadne_modified"`
+}
+
+type redactedComparison struct {
+	SchemaVersion    int                  `json:"schema_version"`
+	UnchangedFields  []string             `json:"unchanged_fields"`
+	NormalizedFields []string             `json:"normalized_fields"`
+	Differences      []redactedDifference `json:"differences"`
+	Unknowns         []redactedUnknown    `json:"unknowns"`
+}
+
+type redactedDifference struct {
+	ID       string         `json:"id,omitempty"`
+	Field    string         `json:"field"`
+	Kind     string         `json:"kind"`
+	State    evidence.State `json:"state"`
+	Evidence []string       `json:"evidence"`
+}
+
+type redactedUnknown struct {
+	ID       string         `json:"id,omitempty"`
+	Field    string         `json:"field"`
+	State    evidence.State `json:"state"`
+	Reason   string         `json:"reason,omitempty"`
+	Evidence []string       `json:"evidence"`
+}
+
 type target struct {
 	ADBVersion         string `json:"adb_version"`
 	Device             string `json:"device"`
@@ -189,6 +244,52 @@ func Write(runDir string) (Summary, error) {
 func Verify(runDir string) (Summary, error) {
 	_, summary, err := verifyDocument(runDir)
 	return summary, err
+}
+
+// Export verifies runDir and writes a separate raw-value-free JSON projection.
+// It never overwrites the destination or the authoritative evidence outputs.
+func Export(runDir, exportPath string) (ExportSummary, error) {
+	if strings.TrimSpace(exportPath) == "" {
+		return ExportSummary{}, errors.New("export path is required")
+	}
+
+	evidence, _, existingEvidence, err := verifyDocumentWithOutput(runDir)
+	if err != nil {
+		return ExportSummary{}, err
+	}
+	sum := sha256.Sum256(existingEvidence)
+	sourceDigest := hex.EncodeToString(sum[:])
+	redacted := redactedDocument{
+		SchemaVersion:               1,
+		SourceEvidenceSchemaVersion: evidence.SchemaVersion,
+		Redacted:                    true,
+		SourceEvidenceSHA256:        sourceDigest,
+		ManifestName:                evidence.ManifestName,
+		DeclaredVariable:            evidence.DeclaredVariable,
+		ManifestContractSHA256:      evidence.ManifestContractSHA256,
+		Question:                    evidence.Question,
+		AnswerState:                 evidence.AnswerState,
+		Target: redactedTarget{
+			AndroidAPI:         evidence.Target.AndroidAPI,
+			Architecture:       evidence.Target.Architecture,
+			Package:            evidence.Target.Package,
+			PackageVersionCode: evidence.Target.PackageVersionCode,
+			PackageSHA256:      evidence.Target.PackageSHA256,
+			AriadneRevision:    evidence.Target.AriadneRevision,
+			AriadneModified:    evidence.Target.AriadneModified,
+		},
+		Normalizations: slices.Clone(evidence.Normalizations),
+		Artifacts:      slices.Clone(evidence.Artifacts),
+		Comparison:     redactedComparisonFor(evidence.Comparison),
+	}
+	exportData, err := encodeRedactedDocument(redacted)
+	if err != nil {
+		return ExportSummary{}, err
+	}
+	if err := writeExclusive(exportPath, exportData); err != nil {
+		return ExportSummary{}, err
+	}
+	return ExportSummary{SourceEvidenceSHA256: sourceDigest}, nil
 }
 
 // Find verifies a bundle and returns one finding without observed values.
@@ -320,40 +421,45 @@ func comparisonFindingIDs(comparison analysis.Comparison) []string {
 }
 
 func verifyDocument(runDir string) (document, Summary, error) {
+	evidence, summary, _, err := verifyDocumentWithOutput(runDir)
+	return evidence, summary, err
+}
+
+func verifyDocumentWithOutput(runDir string) (document, Summary, []byte, error) {
 	if strings.TrimSpace(runDir) == "" {
-		return document{}, Summary{}, errors.New("run directory is required")
+		return document{}, Summary{}, nil, errors.New("run directory is required")
 	}
 	existingEvidence, err := readFileBounded(filepath.Join(runDir, "evidence.json"), maxOutputBytes)
 	if err != nil {
-		return document{}, Summary{}, fmt.Errorf("evidence output: %w", err)
+		return document{}, Summary{}, nil, fmt.Errorf("evidence output: %w", err)
 	}
 	outputSchemaVersion, err := evidenceOutputSchema(existingEvidence)
 	if err != nil {
-		return document{}, Summary{}, fmt.Errorf("evidence output: %w", err)
+		return document{}, Summary{}, nil, fmt.Errorf("evidence output: %w", err)
 	}
 	evidence, summary, err := buildDocument(runDir, outputSchemaVersion == 7)
 	if err != nil {
-		return document{}, Summary{}, err
+		return document{}, Summary{}, nil, err
 	}
 	evidenceData, err := encodeDocument(evidence)
 	if err != nil {
-		return document{}, Summary{}, err
+		return document{}, Summary{}, nil, err
 	}
 	if !bytes.Equal(existingEvidence, evidenceData) {
-		return document{}, Summary{}, errors.New("evidence output does not match verified artifacts")
+		return document{}, Summary{}, nil, errors.New("evidence output does not match verified artifacts")
 	}
 	existingReport, err := readFileBounded(filepath.Join(runDir, "report.md"), maxOutputBytes)
 	if err != nil {
-		return document{}, Summary{}, fmt.Errorf("report output: %w", err)
+		return document{}, Summary{}, nil, fmt.Errorf("report output: %w", err)
 	}
 	reportData, err := encodeReport(evidence)
 	if err != nil {
-		return document{}, Summary{}, err
+		return document{}, Summary{}, nil, err
 	}
 	if !bytes.Equal(existingReport, reportData) {
-		return document{}, Summary{}, errors.New("report output does not match verified artifacts")
+		return document{}, Summary{}, nil, errors.New("report output does not match verified artifacts")
 	}
-	return evidence, summary, nil
+	return evidence, summary, existingEvidence, nil
 }
 
 func buildDocument(runDir string, includeFindingIDs bool) (document, Summary, error) {
@@ -576,6 +682,47 @@ func encodeDocument(evidence document) ([]byte, error) {
 	data = append(data, '\n')
 	if len(data) > maxOutputBytes {
 		return nil, fmt.Errorf("evidence output exceeds %d-byte limit", maxOutputBytes)
+	}
+	return data, nil
+}
+
+func redactedComparisonFor(comparison analysis.Comparison) redactedComparison {
+	redacted := redactedComparison{
+		SchemaVersion:    comparison.SchemaVersion,
+		UnchangedFields:  slices.Clone(comparison.UnchangedFields),
+		NormalizedFields: slices.Clone(comparison.NormalizedFields),
+		Differences:      make([]redactedDifference, 0, len(comparison.Differences)),
+		Unknowns:         make([]redactedUnknown, 0, len(comparison.Unknowns)),
+	}
+	for _, difference := range comparison.Differences {
+		redacted.Differences = append(redacted.Differences, redactedDifference{
+			ID:       difference.ID,
+			Field:    difference.Field,
+			Kind:     difference.Kind,
+			State:    difference.State,
+			Evidence: slices.Clone(difference.Evidence),
+		})
+	}
+	for _, unknown := range comparison.Unknowns {
+		redacted.Unknowns = append(redacted.Unknowns, redactedUnknown{
+			ID:       unknown.ID,
+			Field:    unknown.Field,
+			State:    unknown.State,
+			Reason:   safeUnknownReason(unknown.Reason),
+			Evidence: slices.Clone(unknown.Evidence),
+		})
+	}
+	return redacted
+}
+
+func encodeRedactedDocument(export redactedDocument) ([]byte, error) {
+	data, err := json.MarshalIndent(export, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("encode redacted export: %w", err)
+	}
+	data = append(data, '\n')
+	if len(data) > maxOutputBytes {
+		return nil, fmt.Errorf("redacted export exceeds %d-byte limit", maxOutputBytes)
 	}
 	return data, nil
 }
