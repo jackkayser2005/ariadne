@@ -1,8 +1,10 @@
 package bundle
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 const (
@@ -197,6 +199,43 @@ func CompareArchiveQuestionHistory(reportPaths []string) (ArchiveQuestionTransit
 		})
 	}
 	return history, nil
+}
+
+// SaveArchiveQuestionTransitionHistory writes one validated transition ledger
+// without overwriting an existing path.
+func SaveArchiveQuestionTransitionHistory(reportPaths []string, historyPath string) (ArchiveQuestionTransitionVerificationSummary, error) {
+	if strings.TrimSpace(historyPath) == "" {
+		return ArchiveQuestionTransitionVerificationSummary{}, errors.New("archive question transition history path is required")
+	}
+	history, err := CompareArchiveQuestionHistory(reportPaths)
+	if err != nil {
+		return ArchiveQuestionTransitionVerificationSummary{}, err
+	}
+	if err := validateArchiveQuestionTransitionHistory(history); err != nil {
+		return ArchiveQuestionTransitionVerificationSummary{}, err
+	}
+	historySHA256, err := archiveQuestionTransitionHistorySHA256(history)
+	if err != nil {
+		return ArchiveQuestionTransitionVerificationSummary{}, err
+	}
+	data, err := json.Marshal(history)
+	if err != nil {
+		return ArchiveQuestionTransitionVerificationSummary{}, err
+	}
+	data = append(data, '\n')
+	if err := writeExclusive(historyPath, data); err != nil {
+		return ArchiveQuestionTransitionVerificationSummary{}, err
+	}
+	return ArchiveQuestionTransitionVerificationSummary{
+		SchemaVersion:           history.SchemaVersion,
+		HistoryID:               history.HistoryID,
+		HistoryQuestion:         history.HistoryQuestion,
+		QuestionID:              history.QuestionID,
+		OrderBasis:              history.OrderBasis,
+		Snapshots:               history.Snapshots,
+		Transitions:             len(history.Transitions),
+		TransitionHistorySHA256: historySHA256,
+	}, nil
 }
 
 func archiveQuestionStates(report ArchiveQuestionReport) map[string]string {

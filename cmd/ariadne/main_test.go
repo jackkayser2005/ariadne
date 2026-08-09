@@ -72,6 +72,7 @@ func TestRunUsage(t *testing.T) {
 		{"experiment", "ask-archive", "compare"},
 		{"experiment", "ask-archive", "compare-current"},
 		{"experiment", "ask-archive", "transitions"},
+		{"experiment", "ask-archive", "transitions", "save"},
 		{"experiment", "ask-archive", "transitions", "verify"},
 		{"experiment", "ask-archive", "verify"},
 		{"experiment", "questions", "extra"},
@@ -1440,6 +1441,117 @@ func TestRunAskArchiveTransitions(t *testing.T) {
 			t.Fatalf("runAskArchiveTransitions() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
 		}
 	})
+}
+
+func TestRunAskArchiveTransitionsSave(t *testing.T) {
+	summary := bundle.ArchiveQuestionTransitionVerificationSummary{
+		SchemaVersion:           1,
+		HistoryID:               "answer-state-transitions",
+		HistoryQuestion:         "At which supplied boundaries did the bounded answer state change?",
+		QuestionID:              "counterfactual-change",
+		OrderBasis:              "caller",
+		Snapshots:               2,
+		Transitions:             1,
+		TransitionHistorySHA256: strings.Repeat("a", 64),
+	}
+
+	t.Run("human", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsSave(
+			[]string{"one.json", "two.json", "history.json"},
+			&stdout,
+			&stderr,
+			func(paths []string, historyPath string) (bundle.ArchiveQuestionTransitionVerificationSummary, error) {
+				if strings.Join(paths, ",") != "one.json,two.json" || historyPath != "history.json" {
+					t.Fatalf("SaveArchiveQuestionTransitionHistory() arguments = %q, %q", paths, historyPath)
+				}
+				return summary, nil
+			},
+		)
+		want := "archive reflection transitions saved\n" +
+			"schema_version: 1\n" +
+			"history_id: answer-state-transitions\n" +
+			"history_question: At which supplied boundaries did the bounded answer state change?\n" +
+			"question_id: counterfactual-change\n" +
+			"order_basis: caller\n" +
+			"snapshots: 2\n" +
+			"transitions: 1\n" +
+			"transition_history_sha256: " + strings.Repeat("a", 64) + "\n"
+		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+			t.Fatalf("runAskArchiveTransitionsSave() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("json", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsSave(
+			[]string{"--json", "one.json", "two.json", "history.json"},
+			&stdout,
+			&stderr,
+			func([]string, string) (bundle.ArchiveQuestionTransitionVerificationSummary, error) {
+				return summary, nil
+			},
+		)
+		want := `{"schema_version":1,"history_id":"answer-state-transitions","history_question":"At which supplied boundaries did the bounded answer state change?","question_id":"counterfactual-change","order_basis":"caller","snapshots":2,"transitions":1,"transition_history_sha256":"` + strings.Repeat("a", 64) + `"}` + "\n"
+		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+			t.Fatalf("runAskArchiveTransitionsSave() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+}
+
+func TestRunAskArchiveTransitionsSaveFailures(t *testing.T) {
+	for _, args := range [][]string{nil, {"one.json", "history.json"}, {"--json=invalid", "one.json", "two.json", "history.json"}} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			exitCode := runAskArchiveTransitionsSave(
+				args,
+				&stdout,
+				&stderr,
+				func([]string, string) (bundle.ArchiveQuestionTransitionVerificationSummary, error) {
+					t.Fatal("SaveArchiveQuestionTransitionHistory called for invalid usage")
+					return bundle.ArchiveQuestionTransitionVerificationSummary{}, nil
+				},
+			)
+			if exitCode != 2 || stdout.Len() != 0 || stderr.String() != usage {
+				t.Fatalf("runAskArchiveTransitionsSave() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+			}
+		})
+	}
+
+	t.Run("save error", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsSave(
+			[]string{"one.json", "two.json", "history.json"},
+			&stdout,
+			&stderr,
+			func([]string, string) (bundle.ArchiveQuestionTransitionVerificationSummary, error) {
+				return bundle.ArchiveQuestionTransitionVerificationSummary{}, errors.New("history path is invalid")
+			},
+		)
+		if exitCode != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "history path is invalid") {
+			t.Fatalf("runAskArchiveTransitionsSave() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	for _, args := range [][]string{
+		{"one.json", "two.json", "history.json"},
+		{"--json", "one.json", "two.json", "history.json"},
+	} {
+		t.Run("write output "+strings.Join(args, "_"), func(t *testing.T) {
+			var stderr bytes.Buffer
+			exitCode := runAskArchiveTransitionsSave(
+				args,
+				failingWriter{},
+				&stderr,
+				func([]string, string) (bundle.ArchiveQuestionTransitionVerificationSummary, error) {
+					return bundle.ArchiveQuestionTransitionVerificationSummary{}, nil
+				},
+			)
+			if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+				t.Fatalf("runAskArchiveTransitionsSave() = %d, stderr=%q", exitCode, stderr.String())
+			}
+		})
+	}
 }
 
 func TestRunAskArchiveTransitionsFailures(t *testing.T) {

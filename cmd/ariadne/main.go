@@ -33,6 +33,7 @@ const usage = `usage:
   ariadne experiment ask-archive compare [--json] <older-report.json> <newer-report.json>
   ariadne experiment ask-archive compare-current [--json] <older-report.json> <archive-root>
   ariadne experiment ask-archive transitions [--json] <report-1.json> <report-2.json> ...
+  ariadne experiment ask-archive transitions save [--json] <report-1.json> <report-2.json> ... <history.json>
   ariadne experiment ask-archive transitions verify [--json] [--expect-sha256 <digest>] <history.json>
   ariadne experiment ask-archive verify [--json] [--expect-sha256 <digest>] <report.json>
   ariadne experiment questions [--json]
@@ -81,6 +82,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) >= 2 && args[0] == "experiment" && args[1] == "ask-archive" {
 		if len(args) >= 3 && args[2] == "save" {
 			return runAskArchiveSave(args[3:], stdout, stderr, bundle.SaveArchiveQuestionReport)
+		}
+		if len(args) >= 4 && args[2] == "transitions" && args[3] == "save" {
+			return runAskArchiveTransitionsSave(args[4:], stdout, stderr, bundle.SaveArchiveQuestionTransitionHistory)
 		}
 		if len(args) >= 4 && args[2] == "transitions" && args[3] == "verify" {
 			return runAskArchiveTransitionsVerify(args[4:], stdout, stderr, bundle.VerifyArchiveQuestionTransitionHistory)
@@ -159,6 +163,7 @@ type bundleArchiveQuestionSaver func(string, string, string) (bundle.ArchiveQues
 type bundleArchiveQuestionReportVerifier func(string) (bundle.ArchiveQuestionVerificationSummary, error)
 type bundleArchiveQuestionReportComparer func(string, string) (bundle.ArchiveQuestionComparison, error)
 type bundleArchiveQuestionTransitionComparer func([]string) (bundle.ArchiveQuestionTransitionHistory, error)
+type bundleArchiveQuestionHistorySaver func([]string, string) (bundle.ArchiveQuestionTransitionVerificationSummary, error)
 type bundleArchiveQuestionTransitionVerifier func(string) (bundle.ArchiveQuestionTransitionVerificationSummary, error)
 type bundleQuestionLister func() []bundle.Question
 type bundleArchiveIndexer func(string) ([]bundle.ArchiveEntry, error)
@@ -799,6 +804,51 @@ func runAskArchiveTransitions(
 	}
 	if _, err := io.WriteString(stdout, "note: transitions follow caller-supplied order; incomparable membership is not a change claim, and this does not infer a trend or prove the underlying evidence\n"); err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func runAskArchiveTransitionsSave(
+	args []string,
+	stdout, stderr io.Writer,
+	save bundleArchiveQuestionHistorySaver,
+) int {
+	flags := flag.NewFlagSet("experiment ask-archive transitions save", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() < 3 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+	paths := flags.Args()
+	historyPath := paths[len(paths)-1]
+	reportPaths := paths[:len(paths)-1]
+	summary, err := save(reportPaths, historyPath)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions save: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(summary); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions save: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if _, err := fmt.Fprintf(
+		stdout,
+		"archive reflection transitions saved\nschema_version: %d\nhistory_id: %s\nhistory_question: %s\nquestion_id: %s\norder_basis: %s\nsnapshots: %d\ntransitions: %d\ntransition_history_sha256: %s\n",
+		summary.SchemaVersion,
+		summary.HistoryID,
+		summary.HistoryQuestion,
+		summary.QuestionID,
+		summary.OrderBasis,
+		summary.Snapshots,
+		summary.Transitions,
+		summary.TransitionHistorySHA256,
+	); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions save: write output: %v\n", err)
 		return 1
 	}
 	return 0

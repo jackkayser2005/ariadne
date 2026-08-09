@@ -2,6 +2,7 @@ package bundle
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -159,5 +160,44 @@ func TestCompareArchiveQuestionHistoryRejectsMismatchedQuestions(t *testing.T) {
 	newerPath := writeArchiveQuestionReport(t, newerReport)
 	if _, err := CompareArchiveQuestionHistory([]string{olderPath, newerPath}); err == nil || !strings.Contains(err.Error(), "questions do not match") {
 		t.Fatalf("CompareArchiveQuestionHistory() mismatch error = %v", err)
+	}
+}
+
+func TestSaveArchiveQuestionTransitionHistory(t *testing.T) {
+	olderPath, _ := savedArchiveQuestionReport(t, "a-run")
+	newerPath, _ := savedArchiveQuestionReport(t, "a-run")
+	historyPath := filepath.Join(t.TempDir(), "transitions.json")
+
+	summary, err := SaveArchiveQuestionTransitionHistory([]string{olderPath, newerPath}, historyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	verified, err := VerifyArchiveQuestionTransitionHistory(historyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary != verified || summary.HistoryID != "answer-state-transitions" || summary.Snapshots != 2 || summary.Transitions != 1 || !validDigest(summary.TransitionHistorySHA256) {
+		t.Fatalf("SaveArchiveQuestionTransitionHistory() summary = %#v, verified = %#v", summary, verified)
+	}
+	data, err := os.ReadFile(historyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) == 0 || data[len(data)-1] != '\n' {
+		t.Fatalf("saved transition history does not end with a newline: %q", data)
+	}
+	for _, rawValue := range []string{"standard", "personalized", "baseline@example.invalid", "treatment@example.invalid", "emulator-5554"} {
+		if strings.Contains(string(data), rawValue) {
+			t.Fatalf("SaveArchiveQuestionTransitionHistory() exposed raw value %q: %s", rawValue, data)
+		}
+	}
+	if _, err := SaveArchiveQuestionTransitionHistory([]string{olderPath, newerPath}, historyPath); err == nil || !strings.Contains(err.Error(), "file exists") {
+		t.Fatalf("second SaveArchiveQuestionTransitionHistory() error = %v", err)
+	}
+}
+
+func TestSaveArchiveQuestionTransitionHistoryRequiresPath(t *testing.T) {
+	if _, err := SaveArchiveQuestionTransitionHistory(nil, " "); err == nil || !strings.Contains(err.Error(), "path is required") {
+		t.Fatalf("SaveArchiveQuestionTransitionHistory() error = %v", err)
 	}
 }

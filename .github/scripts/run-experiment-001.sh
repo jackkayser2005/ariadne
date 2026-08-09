@@ -134,10 +134,22 @@ jq -e '
   (.newer_only == 0)
 ' "${archive_question_current_comparison_json}"
 archive_question_transitions_json="${RUNNER_TEMP}/ariadne-archive-question-transitions.json"
-"${ariadne}" experiment ask-archive transitions --json \
+archive_question_transitions_save_summary_json="${RUNNER_TEMP}/ariadne-archive-question-transitions-save-summary.json"
+"${ariadne}" experiment ask-archive transitions save --json \
   "${archive_question_json}" \
   "${archive_question_older_json}" \
-  "${archive_question_newer_json}" >"${archive_question_transitions_json}"
+  "${archive_question_newer_json}" \
+  "${archive_question_transitions_json}" >"${archive_question_transitions_save_summary_json}"
+jq -e '
+  (keys_unsorted == ["schema_version", "history_id", "history_question", "question_id", "order_basis", "snapshots", "transitions", "transition_history_sha256"]) and
+  (.schema_version == 1) and
+  (.history_id == "answer-state-transitions") and
+  (.question_id == "counterfactual-change") and
+  (.order_basis == "caller") and
+  (.snapshots == 3) and
+  (.transitions == 2) and
+  (.transition_history_sha256 | test("^[0-9a-f]{64}$"))
+' "${archive_question_transitions_save_summary_json}"
 jq -e '
   (keys_unsorted == ["schema_version", "history_id", "history_question", "question_id", "question", "order_basis", "snapshots", "transitions"]) and
   (.schema_version == 1) and

@@ -41,6 +41,7 @@ go run ./cmd/ariadne experiment ask-archive save --json <archive-root> <question
 go run ./cmd/ariadne experiment ask-archive compare --json <older-reflection.json> <newer-reflection.json>
 go run ./cmd/ariadne experiment ask-archive compare-current --json <older-reflection.json> <archive-root>
 go run ./cmd/ariadne experiment ask-archive transitions --json <reflection-1.json> <reflection-2.json> ...
+go run ./cmd/ariadne experiment ask-archive transitions save --json <reflection-1.json> <reflection-2.json> ... <history.json>
 go run ./cmd/ariadne experiment ask-archive transitions verify --json <transitions.json>
 ```
 
@@ -56,6 +57,9 @@ Use `ask-archive save` to create a new snapshot with exclusive file creation;
 it never overwrites an existing reflection. The command returns the same
 canonical identity used by offline verification, so saved snapshots can feed
 the comparison and transition commands without exposing captured values.
+
+Use `transitions save` to persist the verified adjacent-boundary ledger with
+the same no-overwrite behavior before opening it in the local history view.
 
 The local review page can also receive a verified transition ledger with
 `experiment serve --history <history.json> <archive-root>`. It renders the
