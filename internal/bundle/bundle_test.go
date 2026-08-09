@@ -134,6 +134,13 @@ func TestExportIsVerifiedAndRawValueFree(t *testing.T) {
 	if summary.SourceEvidenceSHA256 != wantDigest {
 		t.Fatalf("Export() digest = %q, want %q", summary.SourceEvidenceSHA256, wantDigest)
 	}
+	verification, err := VerifyExport(exportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verification.SchemaVersion != 1 || verification.SourceEvidenceSHA256 != wantDigest {
+		t.Fatalf("VerifyExport() = %#v", verification)
+	}
 
 	exportData, err := os.ReadFile(exportPath)
 	if err != nil {
@@ -202,6 +209,162 @@ func TestExportSupportsLegacyBundles(t *testing.T) {
 	if !exported.Redacted || exported.SourceEvidenceSchemaVersion != 4 ||
 		exported.Comparison.Differences[0].ID != "" {
 		t.Fatalf("legacy export = %#v", exported)
+	}
+	if _, err := VerifyExport(exportPath); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestVerifyExportSupportsUnknowns(t *testing.T) {
+	runDir := makeStorageFailureRun(t, treatmentObservation)
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+	exportPath := filepath.Join(t.TempDir(), "unknown-redacted.json")
+	if _, err := Export(runDir, exportPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyExport(exportPath); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestVerifyExportRejectsInvalidEnvelope(t *testing.T) {
+	runDir := makeRun(t, runOptions{})
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+	exportPath := filepath.Join(t.TempDir(), "invalid-redacted.json")
+	if _, err := Export(runDir, exportPath); err != nil {
+		t.Fatal(err)
+	}
+	valid, err := os.ReadFile(exportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var validExport redactedDocument
+	if err := json.Unmarshal(valid, &validExport); err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name string
+		data string
+		want string
+	}{
+		{name: "malformed JSON", data: "{", want: "invalid JSON"},
+		{name: "trailing data", data: string(valid) + "{}", want: "trailing data"},
+		{
+			name: "duplicate key",
+			data: strings.Replace(
+				string(valid),
+				"{\n  \"schema_version\": 1,",
+				"{\n  \"schema_version\": 1,\n  \"schema_version\": 1,",
+				1,
+			),
+			want: "duplicate key",
+		},
+		{
+			name: "unknown key",
+			data: strings.Replace(
+				string(valid),
+				"{\n  \"schema_version\": 1,",
+				"{\n  \"extra\": true,\n  \"schema_version\": 1,",
+				1,
+			),
+			want: "unknown field",
+		},
+		{
+			name: "unsupported export schema",
+			data: strings.Replace(string(valid), `"schema_version": 1`, `"schema_version": 2`, 1),
+			want: "unsupported schema_version",
+		},
+		{
+			name: "missing redacted marker",
+			data: strings.Replace(string(valid), `"redacted": true`, `"redacted": false`, 1),
+			want: "redacted marker",
+		},
+		{
+			name: "invalid source digest",
+			data: strings.Replace(string(valid), validExport.SourceEvidenceSHA256, "bad", 1),
+			want: "source_evidence_sha256",
+		},
+		{
+			name: "unsupported source schema",
+			data: strings.Replace(string(valid), `"source_evidence_schema_version": 7`, `"source_evidence_schema_version": 99`, 1),
+			want: "source_evidence_schema_version",
+		},
+		{
+			name: "incompatible current comparison schema",
+			data: strings.Replace(string(valid), `"schema_version": 5`, `"schema_version": 4`, 1),
+			want: "comparison schema_version",
+		},
+		{
+			name: "incompatible legacy comparison schema",
+			data: strings.Replace(string(valid), `"source_evidence_schema_version": 7`, `"source_evidence_schema_version": 6`, 1),
+			want: "comparison schema_version",
+		},
+		{
+			name: "invalid finding ID",
+			data: strings.Replace(string(valid), "sha256:", "finding:", 1),
+			want: "difference is invalid",
+		},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			if err := os.WriteFile(exportPath, []byte(test.data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := VerifyExport(exportPath); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("VerifyExport() error = %v, want %q", err, test.want)
+			}
+			if err := os.WriteFile(exportPath, valid, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestVerifyExportRejectsInvalidFields(t *testing.T) {
+	runDir := makeRun(t, runOptions{})
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+	exportPath := filepath.Join(t.TempDir(), "invalid-fields.json")
+	if _, err := Export(runDir, exportPath); err != nil {
+		t.Fatal(err)
+	}
+	valid, err := os.ReadFile(exportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name    string
+		replace string
+		with    string
+		want    string
+	}{
+		{name: "manifest metadata", replace: `"manifest_name": "experiment-001-email"`, with: `"manifest_name": ""`, want: "manifest metadata"},
+		{name: "contract digest", replace: `"manifest_contract_sha256": "` + strings.Repeat("c", 64) + `"`, with: `"manifest_contract_sha256": "bad"`, want: "manifest_contract_sha256"},
+		{name: "answer state", replace: `"answer_state": "observed"`, with: `"answer_state": "not-a-state"`, want: "answer_state"},
+		{name: "target metadata", replace: `"android_api": 35`, with: `"android_api": 0`, want: "target metadata"},
+		{name: "artifact metadata", replace: `"size_bytes": 2497`, with: `"size_bytes": -1`, want: "artifact metadata"},
+		{name: "comparison schema", replace: `"schema_version": 5`, with: `"schema_version": 3`, want: "comparison schema_version"},
+		{name: "comparison field", replace: `"field": "variant"`, with: `"field": "bad field"`, want: "comparison field"},
+		{name: "difference kind", replace: `"kind": "changed"`, with: `"kind": "other"`, want: "difference is invalid"},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			data := strings.Replace(string(valid), test.replace, test.with, 1)
+			if data == string(valid) {
+				t.Fatalf("test replacement did not match: %q", test.replace)
+			}
+			if err := os.WriteFile(exportPath, []byte(data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := VerifyExport(exportPath); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("VerifyExport() error = %v, want %q", err, test.want)
+			}
+		})
 	}
 }
 

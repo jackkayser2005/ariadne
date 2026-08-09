@@ -160,6 +160,7 @@ go run ./cmd/ariadne android check --device emulator-5554 --package dev.ariadne.
 go run ./cmd/ariadne experiment run --device emulator-5554 --package dev.ariadne.fixture --output .ariadne/runs/experiment-001 examples/experiment-001.json
 go run ./cmd/ariadne experiment report .ariadne/runs/experiment-001
 go run ./cmd/ariadne experiment export .ariadne/runs/experiment-001 .ariadne/runs/experiment-001.redacted.json
+go run ./cmd/ariadne experiment export verify .ariadne/runs/experiment-001.redacted.json
 go run ./cmd/ariadne experiment verify .ariadne/runs/experiment-001
 go run ./cmd/ariadne experiment verify --json .ariadne/runs/experiment-001
 go run ./cmd/ariadne experiment list --json .ariadne/runs
@@ -202,6 +203,12 @@ when `go run` built Ariadne.
   version, and baseline/treatment comparison values, and refuses an existing
   destination. The authoritative `evidence.json` and `report.md` remain the
   local analysis source and must not be shared as the redacted export.
+- `experiment export verify [--json] <export.json>` validates a received
+  projection without needing the original run directory. It checks the
+  export schema, duplicate/unknown keys, source schema version, hashes,
+  states, artifact metadata, and finding IDs. A successful result proves only
+  that the export satisfies Ariadne's structural contract; it does not prove
+  the original source evidence.
 - `experiment list --json <archive-root>` inspects only immediate child
   directories, rejects symbolic links, and returns only relative directory
   names plus verified summary fields.
@@ -251,6 +258,7 @@ outputs:
 ```console
 go run ./cmd/ariadne experiment report .ariadne/runs/experiment-001
 go run ./cmd/ariadne experiment export .ariadne/runs/experiment-001 .ariadne/runs/experiment-001.redacted.json
+go run ./cmd/ariadne experiment export verify .ariadne/runs/experiment-001.redacted.json
 go run ./cmd/ariadne experiment verify .ariadne/runs/experiment-001
 go run ./cmd/ariadne experiment finding .ariadne/runs/experiment-001 <finding-id-from-evidence.json>
 go run ./cmd/ariadne experiment ask .ariadne/runs/experiment-001 counterfactual-change
@@ -338,6 +346,9 @@ serial, ADB version, and all baseline/treatment values. It never overwrites an
 existing destination. Keep the authoritative `evidence.json`, `report.md`, and
 raw session artifacts local because the report can contain comparison values
 needed for local analysis.
+The companion `export verify` command can check the received projection's
+shape without the source run, but it intentionally makes no claim about the
+truth of the source evidence.
 
 Observation schema 1 is a bounded JSON object containing `schema_version: 1`
 and 1 to 64 string fields. Field names are restricted so evidence references
