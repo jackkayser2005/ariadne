@@ -170,6 +170,7 @@ go run ./cmd/ariadne experiment questions
 go run ./cmd/ariadne experiment questions --json
 go run ./cmd/ariadne experiment ask .ariadne/runs/experiment-001 counterfactual-change
 go run ./cmd/ariadne experiment ask --json .ariadne/runs/experiment-001 counterfactual-change
+go run ./cmd/ariadne experiment ask-archive --json .ariadne/runs counterfactual-change
 go run ./cmd/ariadne experiment finding --json .ariadne/runs/experiment-001 <finding-id-from-evidence.json>
 ```
 
@@ -212,6 +213,14 @@ when `go run` built Ariadne.
 - `experiment list --json <archive-root>` inspects only immediate child
   directories, rejects symbolic links, and returns only relative directory
   names plus verified summary fields.
+- `experiment ask-archive [--json] <archive-root> <question-id>` re-verifies one
+  fixed bounded question across those immediate children. It orders dated
+  results oldest first by verifier-provided UTC recording time, places undated
+  results last, and reports observed, unknown, unavailable, and checked counts.
+  Unavailable entries do not expose their internal verification errors.
+  JSON contains only safe directory and manifest names, timestamps, bounded
+  answer states, verifier-owned reasons, and finding IDs; it never returns
+  observed or persona values and does not infer a trend.
 - `experiment serve <archive-root>` starts a localhost-only, read-only review
   page at `http://127.0.0.1:8787/`; only loopback IP addresses are accepted, and
   it lists verified bundles and links to the same bounded questions and finding
