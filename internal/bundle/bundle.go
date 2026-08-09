@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -63,6 +64,8 @@ type Summary struct {
 	ManifestContractSHA256 string         `json:"-"`
 	AriadneRevision        string         `json:"-"`
 	AriadneModified        bool           `json:"-"`
+	// RecordedAt is the verified baseline session start in UTC for current bundles.
+	RecordedAt string `json:"-"`
 }
 
 // Finding is the safe, raw-value-free view of one verified conclusion.
@@ -411,10 +414,12 @@ func buildDocument(runDir string, includeFindingIDs bool) (document, Summary, er
 	evidenceSchemaVersion := 4
 	question := ""
 	answerState := evidence.State("")
+	recordedAt := ""
 	if baseline.record.ManifestContractSHA256 != "" {
 		evidenceSchemaVersion = 6
 		question = "Did changing " + baseline.record.DeclaredVariable + " influence an observed output?"
 		answerState = evidence.Observed
+		recordedAt = baseline.record.StartedAt.UTC().Format(time.RFC3339Nano)
 		if !sessionComplete(treatment.record) {
 			answerState = evidence.Unknown
 		}
@@ -457,6 +462,7 @@ func buildDocument(runDir string, includeFindingIDs bool) (document, Summary, er
 		ManifestContractSHA256: evidence.ManifestContractSHA256,
 		AriadneRevision:        evidence.Target.AriadneRevision,
 		AriadneModified:        evidence.Target.AriadneModified,
+		RecordedAt:             recordedAt,
 	}, nil
 }
 

@@ -37,6 +37,7 @@ func TestWrite(t *testing.T) {
 		summary.AnswerState != evidencestate.Observed ||
 		summary.ManifestContractSHA256 != strings.Repeat("c", 64) ||
 		summary.AriadneRevision != strings.Repeat("b", 40) ||
+		summary.RecordedAt != "2026-07-25T12:00:00Z" ||
 		summary.AriadneModified {
 		t.Fatalf("Write() = %#v", summary)
 	}
@@ -585,7 +586,7 @@ func TestWriteAcceptsLegacySessions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if summary.Question != "" || summary.AnswerState != "" || summary.ManifestContractSHA256 != "" {
+	if summary.Question != "" || summary.AnswerState != "" || summary.ManifestContractSHA256 != "" || summary.RecordedAt != "" {
 		t.Fatalf("legacy summary = %#v", summary)
 	}
 }
@@ -597,7 +598,7 @@ func TestWriteAcceptsStableIDSessionsWithoutContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if summary.Question != "" || summary.AnswerState != "" || summary.ManifestContractSHA256 != "" {
+	if summary.Question != "" || summary.AnswerState != "" || summary.ManifestContractSHA256 != "" || summary.RecordedAt != "" {
 		t.Fatalf("stable-ID summary = %#v", summary)
 	}
 }

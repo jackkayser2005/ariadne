@@ -318,13 +318,14 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
   </header>
 
   {{define "provenance"}}
-  {{if or .Summary.Question .Summary.AnswerState .Summary.ManifestContractSHA256 .Summary.AriadneRevision}}
+  {{if or .Summary.Question .Summary.AnswerState .Summary.ManifestContractSHA256 .Summary.AriadneRevision .Summary.RecordedAt}}
   <section class="panel">
     <h2>Verified provenance</h2>
     <dl>
       {{with .Summary.Question}}<dt>question</dt><dd>{{.}}</dd>{{end}}
       {{with .Summary.AnswerState}}<dt>answer state</dt><dd><span class="status status-{{.}}">{{.}}</span></dd>{{end}}
       {{with .Summary.ManifestContractSHA256}}<dt>manifest contract</dt><dd>{{.}}</dd>{{end}}
+      {{with .Summary.RecordedAt}}<dt>recorded (UTC)</dt><dd>{{.}}</dd>{{end}}
       {{with .Summary.AriadneRevision}}<dt>Ariadne revision</dt><dd>{{.}}</dd><dt>working tree</dt><dd>{{if $.Summary.AriadneModified}}modified{{else}}clean{{end}}</dd>{{end}}
     </dl>
     <p class="context">This context is structural metadata only; observations and persona values are not rendered.</p>
