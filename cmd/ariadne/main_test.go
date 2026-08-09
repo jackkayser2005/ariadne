@@ -1218,6 +1218,25 @@ func TestRunAskArchiveVerify(t *testing.T) {
 			t.Fatalf("runAskArchiveVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
 		}
 	})
+
+	t.Run("expected identity", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		expected := strings.Repeat("a", 64)
+		exitCode := runAskArchiveVerify(
+			[]string{"--expect-sha256", expected, "report.json"},
+			&stdout,
+			&stderr,
+			func(path string) (bundle.ArchiveQuestionVerificationSummary, error) {
+				if path != "report.json" {
+					t.Fatalf("VerifyArchiveQuestionReport() path = %q", path)
+				}
+				return summary, nil
+			},
+		)
+		if exitCode != 0 || stdout.Len() == 0 || stderr.Len() != 0 {
+			t.Fatalf("runAskArchiveVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
 }
 
 func TestRunAskArchiveVerifyFailures(t *testing.T) {
@@ -1250,6 +1269,37 @@ func TestRunAskArchiveVerifyFailures(t *testing.T) {
 			},
 		)
 		if exitCode != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "report is invalid") {
+			t.Fatalf("runAskArchiveVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("invalid expected identity", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveVerify(
+			[]string{"--expect-sha256", "bad", "report.json"},
+			&stdout,
+			&stderr,
+			func(string) (bundle.ArchiveQuestionVerificationSummary, error) {
+				t.Fatal("VerifyArchiveQuestionReport called for invalid expected identity")
+				return bundle.ArchiveQuestionVerificationSummary{}, nil
+			},
+		)
+		if exitCode != 2 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "expect-sha256 must be") {
+			t.Fatalf("runAskArchiveVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("mismatched expected identity", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveVerify(
+			[]string{"--expect-sha256", strings.Repeat("b", 64), "report.json"},
+			&stdout,
+			&stderr,
+			func(string) (bundle.ArchiveQuestionVerificationSummary, error) {
+				return bundle.ArchiveQuestionVerificationSummary{ReflectionSHA256: strings.Repeat("a", 64)}, nil
+			},
+		)
+		if exitCode != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "reflection SHA-256 mismatch") {
 			t.Fatalf("runAskArchiveVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
 		}
 	})

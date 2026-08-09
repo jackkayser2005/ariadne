@@ -29,7 +29,7 @@ const usage = `usage:
   ariadne experiment finding [--json] <run-directory> <finding-id>
   ariadne experiment ask [--json] <run-directory> <question-id>
   ariadne experiment ask-archive [--json] <archive-root> <question-id>
-  ariadne experiment ask-archive verify [--json] <report.json>
+  ariadne experiment ask-archive verify [--json] [--expect-sha256 <digest>] <report.json>
   ariadne experiment questions [--json]
   ariadne experiment list [--json] <archive-root>
   ariadne experiment serve [--addr <address>] <archive-root>
@@ -292,6 +292,10 @@ func validRevision(value string) bool {
 		}
 	}
 	return true
+}
+
+func validReflectionSHA256(value string) bool {
+	return len(value) == 64 && validRevision(value)
 }
 
 func runReport(
@@ -619,14 +623,23 @@ func runAskArchiveVerify(
 	flags := flag.NewFlagSet("experiment ask-archive verify", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	jsonOutput := flags.Bool("json", false, "")
+	expectedSHA256 := flags.String("expect-sha256", "", "")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
 		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+	if *expectedSHA256 != "" && !validReflectionSHA256(*expectedSHA256) {
+		_, _ = io.WriteString(stderr, "ariadne: experiment ask-archive verify: expect-sha256 must be a lowercase 64-character SHA-256 digest\n")
 		return 2
 	}
 
 	summary, err := verify(flags.Arg(0))
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive verify: %v\n", err)
+		return 1
+	}
+	if *expectedSHA256 != "" && summary.ReflectionSHA256 != *expectedSHA256 {
+		_, _ = io.WriteString(stderr, "ariadne: experiment ask-archive verify: reflection SHA-256 mismatch\n")
 		return 1
 	}
 	if *jsonOutput {

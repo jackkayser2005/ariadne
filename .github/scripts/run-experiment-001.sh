@@ -87,6 +87,8 @@ jq -e '
   (.checked == 1) and
   (.reflection_sha256 | test("^[0-9a-f]{64}$"))
 ' "${archive_question_verified_json}"
+reflection_sha256="$(jq -r '.reflection_sha256' "${archive_question_verified_json}")"
+"${ariadne}" experiment ask-archive verify --json --expect-sha256 "${reflection_sha256}" "${archive_question_json}" > /dev/null
 
 finding_id="$(jq -r '.comparison.differences[0].id' "${run_dir}/evidence.json")"
 finding_stdout="${RUNNER_TEMP}/ariadne-finding.stdout"
