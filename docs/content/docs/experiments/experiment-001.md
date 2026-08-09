@@ -225,7 +225,9 @@ when `go run` built Ariadne.
   re-verified board for the fixed question catalog. Question and finding detail
   pages retain that same context after following a link. Available archive-lens
   results show the same safe contract, UTC recorded time, revision, and
-  working-tree context, target identity, and normalization context.
+  working-tree context, target identity, and normalization context. The
+  selected archive question also reports how many bundles are observed,
+  unknown, unavailable, and checked before the individual result cards.
 - If `ariadne_modified` is unexpectedly `true`, inspect `git status --short`
   before treating the run as reproducible from the recorded revision alone.
 - Finding lookup re-verifies the bundle first and prints only the question,
