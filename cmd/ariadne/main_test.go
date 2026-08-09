@@ -1024,7 +1024,7 @@ func TestRunAskFailures(t *testing.T) {
 func TestRunAskArchive(t *testing.T) {
 	findingID := "sha256:" + strings.Repeat("a", 64)
 	report := bundle.ArchiveQuestionReport{
-		SchemaVersion: 1,
+		SchemaVersion: 2,
 		QuestionID:    "counterfactual-change",
 		Question:      "Did it change?",
 		Summary: bundle.ArchiveQuestionSummary{
@@ -1039,6 +1039,7 @@ func TestRunAskArchive(t *testing.T) {
 				RecordedAt:   "2026-07-24T12:00:00Z",
 				Provenance: &bundle.ArchiveQuestionProvenance{
 					ManifestContractSHA256: strings.Repeat("c", 64),
+					SourceEvidenceSHA256:   strings.Repeat("d", 64),
 					AriadneRevision:        strings.Repeat("b", 40),
 				},
 				Answer: &bundle.Answer{
@@ -1099,7 +1100,7 @@ func TestRunAskArchive(t *testing.T) {
 			&stderr,
 			func(string, string) (bundle.ArchiveQuestionReport, error) { return report, nil },
 		)
-		want := `{"schema_version":1,"question_id":"counterfactual-change","question":"Did it change?","summary":{"observed":1,"unknown":0,"unavailable":1,"checked":2},"results":[{"directory":"old-run","manifest_name":"current","recorded_at":"2026-07-24T12:00:00Z","provenance":{"manifest_contract_sha256":"` + strings.Repeat("c", 64) + `","ariadne_revision":"` + strings.Repeat("b", 40) + `","ariadne_modified":false},"answer":{"question_id":"counterfactual-change","question":"Did it change?","answer_state":"observed","finding_ids":["` + findingID + `"]},"available":true},{"directory":"legacy-run","manifest_name":"legacy","available":false}]}` + "\n"
+		want := `{"schema_version":2,"question_id":"counterfactual-change","question":"Did it change?","summary":{"observed":1,"unknown":0,"unavailable":1,"checked":2},"results":[{"directory":"old-run","manifest_name":"current","recorded_at":"2026-07-24T12:00:00Z","provenance":{"manifest_contract_sha256":"` + strings.Repeat("c", 64) + `","source_evidence_sha256":"` + strings.Repeat("d", 64) + `","ariadne_revision":"` + strings.Repeat("b", 40) + `","ariadne_modified":false},"answer":{"question_id":"counterfactual-change","question":"Did it change?","answer_state":"observed","finding_ids":["` + findingID + `"]},"available":true},{"directory":"legacy-run","manifest_name":"legacy","available":false}]}` + "\n"
 		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
 			t.Fatalf("runAskArchive() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
 		}

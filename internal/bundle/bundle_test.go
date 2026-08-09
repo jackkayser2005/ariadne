@@ -488,7 +488,8 @@ func TestVerifyPreservesOutputs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if summary.Differences != 1 || summary.Unknowns != 0 {
+	evidenceDigest := sha256.Sum256(evidenceBefore)
+	if summary.Differences != 1 || summary.Unknowns != 0 || summary.EvidenceSHA256 != hex.EncodeToString(evidenceDigest[:]) {
 		t.Fatalf("Verify() = %#v", summary)
 	}
 	evidenceAfter, err := os.ReadFile(filepath.Join(runDir, "evidence.json"))
