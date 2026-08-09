@@ -56,7 +56,7 @@ func TestVerifyArchiveQuestionReportAcceptsUnavailableEntry(t *testing.T) {
 }
 
 func TestVerifyArchiveQuestionReportRejectsInvalidReports(t *testing.T) {
-	path, report := savedArchiveQuestionReport(t, "a-run")
+	path, _ := savedArchiveQuestionReport(t, "a-run")
 	valid, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
