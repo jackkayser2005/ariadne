@@ -2230,6 +2230,23 @@ func TestRunServe(t *testing.T) {
 			t.Fatalf("runServe() with history = %d, handler=%v, stdout=%q, stderr=%q", exitCode, gotHandler, stdout.String(), stderr.String())
 		}
 	})
+
+	t.Run("reflection flag", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		var gotHandler http.Handler
+		exitCode := runServe(
+			[]string{"--reflection", "reflection.json", "archive-root"},
+			&stdout,
+			&stderr,
+			func(_ string, handler http.Handler) error {
+				gotHandler = handler
+				return nil
+			},
+		)
+		if exitCode != 0 || gotHandler == nil || stderr.Len() != 0 || !strings.Contains(stdout.String(), "review UI listening") {
+			t.Fatalf("runServe() with reflection = %d, handler=%v, stdout=%q, stderr=%q", exitCode, gotHandler, stdout.String(), stderr.String())
+		}
+	})
 }
 
 func TestRunServeFailures(t *testing.T) {

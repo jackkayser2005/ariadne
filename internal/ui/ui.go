@@ -14,14 +14,15 @@ import (
 )
 
 type handler struct {
-	root       string
-	index      func(string) ([]bundle.ArchiveEntry, error)
-	verify     func(string) (bundle.Summary, error)
-	questions  func() []bundle.Question
-	ask        func(string, string) (bundle.Answer, error)
-	askArchive func(string, string) (bundle.ArchiveQuestionReport, error)
-	history    func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error)
-	find       func(string, string) (bundle.Finding, error)
+	root           string
+	index          func(string) ([]bundle.ArchiveEntry, error)
+	verify         func(string) (bundle.Summary, error)
+	questions      func() []bundle.Question
+	ask            func(string, string) (bundle.Answer, error)
+	askArchive     func(string, string) (bundle.ArchiveQuestionReport, error)
+	history        func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error)
+	compareCurrent func() (bundle.ArchiveQuestionComparison, error)
+	find           func(string, string) (bundle.Finding, error)
 }
 
 type archiveQuestionResult struct {
@@ -40,39 +41,56 @@ type archiveQuestionSummary struct {
 }
 
 type pageData struct {
-	View                       string
-	Title                      string
-	Directory                  string
-	Entries                    []bundle.ArchiveEntry
-	Questions                  []bundle.Question
-	SelectedQuestion           bundle.Question
-	ArchiveAnswers             []archiveQuestionResult
-	ArchiveSummary             archiveQuestionSummary
-	Summary                    bundle.Summary
-	Answers                    []bundle.Answer
-	Answer                     bundle.Answer
-	Finding                    bundle.Finding
-	CurrentReflectionRequested bool
-	CurrentReflectionAvailable bool
-	CurrentReflectionSHA256    string
-	CurrentReflectionChecked   int
-	ReflectionHistoryRequested bool
-	ReflectionHistoryAvailable bool
-	ReflectionHistory          bundle.ArchiveQuestionTransitionHistory
-	ReflectionHistorySummary   bundle.ArchiveQuestionTransitionVerificationSummary
+	View                               string
+	Title                              string
+	Directory                          string
+	Entries                            []bundle.ArchiveEntry
+	Questions                          []bundle.Question
+	SelectedQuestion                   bundle.Question
+	ArchiveAnswers                     []archiveQuestionResult
+	ArchiveSummary                     archiveQuestionSummary
+	Summary                            bundle.Summary
+	Answers                            []bundle.Answer
+	Answer                             bundle.Answer
+	Finding                            bundle.Finding
+	CurrentReflectionRequested         bool
+	CurrentReflectionAvailable         bool
+	CurrentReflectionSHA256            string
+	CurrentReflectionChecked           int
+	ReflectionHistoryRequested         bool
+	ReflectionHistoryAvailable         bool
+	ReflectionHistory                  bundle.ArchiveQuestionTransitionHistory
+	ReflectionHistorySummary           bundle.ArchiveQuestionTransitionVerificationSummary
+	SavedReflectionComparisonRequested bool
+	SavedReflectionComparisonAvailable bool
+	SavedReflectionComparison          bundle.ArchiveQuestionComparison
 }
 
 // Handler returns a read-only HTTP handler for one explicitly supplied archive root.
 func Handler(archiveRoot string) http.Handler {
-	return newHandler(archiveHandler(archiveRoot))
+	return HandlerWithReview(archiveRoot, "", "")
 }
 
 // HandlerWithHistory returns a read-only HTTP handler that also shows one
 // structurally verified saved reflection history.
 func HandlerWithHistory(archiveRoot, historyPath string) http.Handler {
+	return HandlerWithReview(archiveRoot, historyPath, "")
+}
+
+// HandlerWithReview returns a read-only HTTP handler that can show one
+// structurally verified saved reflection history and one bounded comparison
+// between a saved reflection and the current archive.
+func HandlerWithReview(archiveRoot, historyPath, reflectionPath string) http.Handler {
 	h := archiveHandler(archiveRoot)
-	h.history = func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error) {
-		return bundle.ReadArchiveQuestionTransitionHistory(historyPath)
+	if historyPath != "" {
+		h.history = func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error) {
+			return bundle.ReadArchiveQuestionTransitionHistory(historyPath)
+		}
+	}
+	if reflectionPath != "" {
+		h.compareCurrent = func() (bundle.ArchiveQuestionComparison, error) {
+			return bundle.CompareArchiveQuestionReportWithArchive(reflectionPath, archiveRoot)
+		}
 	}
 	return newHandler(h)
 }
@@ -134,10 +152,18 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	reflectionHistoryAvailable := false
 	var reflectionHistory bundle.ArchiveQuestionTransitionHistory
 	var reflectionHistorySummary bundle.ArchiveQuestionTransitionVerificationSummary
+	savedReflectionComparisonRequested := h.compareCurrent != nil
+	savedReflectionComparisonAvailable := false
+	var savedReflectionComparison bundle.ArchiveQuestionComparison
 	if h.history != nil {
 		var historyErr error
 		reflectionHistory, reflectionHistorySummary, historyErr = h.history()
 		reflectionHistoryAvailable = historyErr == nil
+	}
+	if h.compareCurrent != nil {
+		var comparisonErr error
+		savedReflectionComparison, comparisonErr = h.compareCurrent()
+		savedReflectionComparisonAvailable = comparisonErr == nil
 	}
 	if questionID != "" {
 		var ok bool
@@ -177,21 +203,24 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		archiveSummary = summarizeArchiveAnswers(archiveAnswers)
 	}
 	render(w, pageData{
-		View:                       "index",
-		Title:                      "Ariadne — evidence review",
-		Entries:                    entries,
-		Questions:                  questions,
-		SelectedQuestion:           selectedQuestion,
-		ArchiveAnswers:             archiveAnswers,
-		ArchiveSummary:             archiveSummary,
-		CurrentReflectionRequested: currentReflectionRequested,
-		CurrentReflectionAvailable: currentReflectionAvailable,
-		CurrentReflectionSHA256:    currentReflectionSHA256,
-		CurrentReflectionChecked:   currentReflectionChecked,
-		ReflectionHistoryRequested: reflectionHistoryRequested,
-		ReflectionHistoryAvailable: reflectionHistoryAvailable,
-		ReflectionHistory:          reflectionHistory,
-		ReflectionHistorySummary:   reflectionHistorySummary,
+		View:                               "index",
+		Title:                              "Ariadne — evidence review",
+		Entries:                            entries,
+		Questions:                          questions,
+		SelectedQuestion:                   selectedQuestion,
+		ArchiveAnswers:                     archiveAnswers,
+		ArchiveSummary:                     archiveSummary,
+		CurrentReflectionRequested:         currentReflectionRequested,
+		CurrentReflectionAvailable:         currentReflectionAvailable,
+		CurrentReflectionSHA256:            currentReflectionSHA256,
+		CurrentReflectionChecked:           currentReflectionChecked,
+		ReflectionHistoryRequested:         reflectionHistoryRequested,
+		ReflectionHistoryAvailable:         reflectionHistoryAvailable,
+		ReflectionHistory:                  reflectionHistory,
+		ReflectionHistorySummary:           reflectionHistorySummary,
+		SavedReflectionComparisonRequested: savedReflectionComparisonRequested,
+		SavedReflectionComparisonAvailable: savedReflectionComparisonAvailable,
+		SavedReflectionComparison:          savedReflectionComparison,
 	})
 }
 
@@ -480,6 +509,27 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       <p class="context">The ledger follows caller-supplied order. It records bounded state changes only; it does not establish chronology or infer a trend.</p>
       {{else}}
       <p class="context">Saved reflection history is unavailable. The internal verification error is not rendered.</p>
+      {{end}}
+    </section>
+    {{end}}
+    {{if and .SavedReflectionComparisonRequested (or (not .SelectedQuestion.ID) (eq .SelectedQuestion.ID .SavedReflectionComparison.QuestionID))}}
+    <section class="panel">
+      <div class="section-head"><h2>Saved reflection vs current</h2><span class="context">bounded comparison</span></div>
+      {{if .SavedReflectionComparisonAvailable}}
+      <p class="context">{{.SavedReflectionComparison.Question}}</p>
+      <dl>
+        <dt>comparison question</dt><dd>{{.SavedReflectionComparison.ComparisonQuestion}}</dd>
+        <dt>result</dt><dd><span class="status">{{.SavedReflectionComparison.Result}}</span></dd>
+        <dt>saved reflection SHA-256</dt><dd>{{.SavedReflectionComparison.OlderReflectionSHA256}}</dd>
+        <dt>current reflection SHA-256</dt><dd>{{.SavedReflectionComparison.NewerReflectionSHA256}}</dd>
+        <dt>compared</dt><dd>{{.SavedReflectionComparison.Compared}}</dd>
+        <dt>changed</dt><dd>{{.SavedReflectionComparison.Changed}}</dd>
+        <dt>saved-only</dt><dd>{{.SavedReflectionComparison.OlderOnly}}</dd>
+        <dt>current-only</dt><dd>{{.SavedReflectionComparison.NewerOnly}}</dd>
+      </dl>
+      <p class="context">This compares bounded answer states only. It does not establish chronology, infer a trend, or prove the underlying evidence.</p>
+      {{else}}
+      <p class="context">Saved reflection comparison is unavailable. The internal verification error is not rendered.</p>
       {{end}}
     </section>
     {{end}}

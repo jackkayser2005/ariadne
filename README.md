@@ -61,10 +61,14 @@ the comparison and transition commands without exposing captured values.
 Use `transitions save` to persist the verified adjacent-boundary ledger with
 the same no-overwrite behavior before opening it in the local history view.
 
-The local review page can also receive a verified transition ledger with
-`experiment serve --history <history.json> <archive-root>`. It renders the
-saved bounded transitions beside the current question lens, preserving caller
-order without turning it into chronology or trend inference.
+The local review page can receive a verified transition ledger and a saved
+reflection with
+`experiment serve --history <history.json> --reflection <reflection.json> <archive-root>`.
+It renders caller-ordered bounded transitions and re-asks the saved reflection's
+fixed question against the current archive, showing only safe comparison counts
+and identities. An unavailable comparison remains a generic bounded state; the
+page does not turn it into chronology, trend inference, or a claim about the
+underlying evidence.
 
 The read-only review page exposes the same canonical SHA-256 identity for the
 currently derived archive question report. It is computed in memory, contains

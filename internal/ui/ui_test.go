@@ -264,6 +264,71 @@ func TestHandlerHidesReflectionHistoryErrors(t *testing.T) {
 	}
 }
 
+func TestHandlerRendersSavedReflectionComparison(t *testing.T) {
+	comparison := bundle.ArchiveQuestionComparison{
+		ComparisonQuestion:    "Did the bounded answer state change between these saved reflection snapshots?",
+		QuestionID:            "counterfactual-change",
+		Question:              "Did changing the declared variable influence an observed output?",
+		Result:                "changed",
+		OlderReflectionSHA256: strings.Repeat("a", 64),
+		NewerReflectionSHA256: strings.Repeat("b", 64),
+		Compared:              3,
+		Changed:               1,
+		OlderOnly:             0,
+		NewerOnly:             0,
+	}
+	h := newHandler(handler{
+		root:  "archive-root",
+		index: func(string) ([]bundle.ArchiveEntry, error) { return nil, nil },
+		compareCurrent: func() (bundle.ArchiveQuestionComparison, error) {
+			return comparison, nil
+		},
+	})
+
+	recorder := httptest.NewRecorder()
+	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	body := recorder.Body.String()
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%q", recorder.Code, body)
+	}
+	for _, want := range []string{
+		"Saved reflection vs current",
+		"bounded comparison",
+		comparison.Question,
+		comparison.ComparisonQuestion,
+		comparison.Result,
+		comparison.OlderReflectionSHA256,
+		comparison.NewerReflectionSHA256,
+		"compared",
+		"changed",
+		"does not establish chronology",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body missing %q: %s", want, body)
+		}
+	}
+}
+
+func TestHandlerHidesSavedReflectionComparisonErrors(t *testing.T) {
+	h := newHandler(handler{
+		root:  "archive-root",
+		index: func(string) ([]bundle.ArchiveEntry, error) { return nil, nil },
+		compareCurrent: func() (bundle.ArchiveQuestionComparison, error) {
+			return bundle.ArchiveQuestionComparison{}, errors.New("private comparison failure")
+		},
+	})
+
+	recorder := httptest.NewRecorder()
+	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	body := recorder.Body.String()
+	if recorder.Code != http.StatusOK || !strings.Contains(body, "Saved reflection comparison is unavailable") {
+		t.Fatalf("status = %d, body=%q", recorder.Code, body)
+	}
+	if strings.Contains(body, "private comparison failure") {
+		t.Fatal("body disclosed saved reflection comparison error")
+	}
+}
+
 func TestSummarizeArchiveAnswers(t *testing.T) {
 	summary := summarizeArchiveAnswers([]archiveQuestionResult{
 		{Available: true, Answer: bundle.Answer{State: "observed"}},
