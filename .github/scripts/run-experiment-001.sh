@@ -64,7 +64,7 @@ archive_question_json="${RUNNER_TEMP}/ariadne-archive-question.json"
 "${ariadne}" experiment ask-archive --json ".ariadne/ci" counterfactual-change >"${archive_question_json}"
 jq -e '
   (keys_unsorted == ["schema_version", "question_id", "question", "summary", "results"]) and
-  (.schema_version == 1) and
+  (.schema_version == 2) and
   (.question_id == "counterfactual-change") and
   (.summary | keys_unsorted == ["observed", "unknown", "unavailable", "checked"]) and
   (.summary == {observed: 1, unknown: 0, unavailable: 0, checked: 1}) and

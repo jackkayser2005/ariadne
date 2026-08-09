@@ -9,7 +9,7 @@ import (
 	"github.com/jackkayser2005/ariadne/internal/evidence"
 )
 
-const archiveQuestionReportSchemaVersion = 1
+const archiveQuestionReportSchemaVersion = 2
 
 // ArchiveQuestionSummary counts the safe outcomes of one archive question.
 type ArchiveQuestionSummary struct {

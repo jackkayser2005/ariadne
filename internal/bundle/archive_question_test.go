@@ -19,7 +19,7 @@ func TestAskArchiveReturnsOrderedSafeResults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.SchemaVersion != 1 || report.QuestionID != "counterfactual-change" || report.Question == "" {
+	if report.SchemaVersion != 2 || report.QuestionID != "counterfactual-change" || report.Question == "" {
 		t.Fatalf("AskArchive() question = %#v", report)
 	}
 	if report.Summary.Checked != 2 || report.Summary.Observed != 2 || report.Summary.Unknown != 0 || report.Summary.Unavailable != 0 {
