@@ -69,6 +69,7 @@ type pageData struct {
 	ReflectionHistoryAvailable         bool
 	ReflectionHistory                  bundle.ArchiveQuestionTransitionHistory
 	ReflectionHistorySummary           bundle.ArchiveQuestionTransitionVerificationSummary
+	ReflectionHistoryAnswer            bundle.ArchiveQuestionTransitionHistoryAnswer
 	SavedReflectionComparisonRequested bool
 	SavedReflectionComparisonAvailable bool
 	SavedReflectionComparison          bundle.ArchiveQuestionComparison
@@ -174,6 +175,7 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	reflectionHistoryAvailable := false
 	var reflectionHistory bundle.ArchiveQuestionTransitionHistory
 	var reflectionHistorySummary bundle.ArchiveQuestionTransitionVerificationSummary
+	var reflectionHistoryAnswer bundle.ArchiveQuestionTransitionHistoryAnswer
 	savedReflectionComparisonRequested := h.compareCurrent != nil
 	savedReflectionComparisonAvailable := false
 	var savedReflectionComparison bundle.ArchiveQuestionComparison
@@ -181,6 +183,9 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		var historyErr error
 		reflectionHistory, reflectionHistorySummary, historyErr = h.history()
 		reflectionHistoryAvailable = historyErr == nil
+		if reflectionHistoryAvailable {
+			reflectionHistoryAnswer = bundle.AnswerArchiveQuestionTransitionHistory(reflectionHistory, reflectionHistorySummary.TransitionHistorySHA256)
+		}
 	}
 	if h.compareCurrent != nil {
 		var comparisonErr error
@@ -240,6 +245,7 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		ReflectionHistoryAvailable:         reflectionHistoryAvailable,
 		ReflectionHistory:                  reflectionHistory,
 		ReflectionHistorySummary:           reflectionHistorySummary,
+		ReflectionHistoryAnswer:            reflectionHistoryAnswer,
 		SavedReflectionComparisonRequested: savedReflectionComparisonRequested,
 		SavedReflectionComparisonAvailable: savedReflectionComparisonAvailable,
 		SavedReflectionComparison:          savedReflectionComparison,
@@ -600,6 +606,16 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
         <dt>transitions</dt><dd>{{.ReflectionHistorySummary.Transitions}}</dd>
         <dt>history SHA-256</dt><dd>{{.ReflectionHistorySummary.TransitionHistorySHA256}}</dd>
       </dl>
+      <div class="section-head"><h3>History question</h3><span class="status">{{.ReflectionHistoryAnswer.Result}}</span></div>
+      <p class="context">{{.ReflectionHistoryAnswer.Question}}</p>
+      <p class="context">changed transitions:</p>
+      <ul aria-label="Changed history transitions">
+      {{range .ReflectionHistoryAnswer.ChangedTransitions}}<li>transition {{.}}</li>{{end}}
+      </ul>
+      <p class="context">incomparable transitions:</p>
+      <ul aria-label="Incomparable history transitions">
+      {{range .ReflectionHistoryAnswer.IncomparableTransitions}}<li>transition {{.}}</li>{{end}}
+      </ul>
       <ul aria-label="Saved reflection transitions">
       {{range .ReflectionHistory.Transitions}}
         <li><span class="status">{{.Result}}</span> compared {{.Compared}}, changed {{.Changed}}, from-only {{.FromOnly}}, to-only {{.ToOnly}}<br><span class="context">from {{.FromReflectionSHA256}} to {{.ToReflectionSHA256}}</span>

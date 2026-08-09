@@ -180,6 +180,7 @@ go run ./cmd/ariadne experiment ask-archive verify --json --expect-sha256 <refle
 go run ./cmd/ariadne experiment ask-archive compare --json <older-report.json> <newer-report.json>
 go run ./cmd/ariadne experiment ask-archive compare-current --json <older-report.json> <archive-root>
 go run ./cmd/ariadne experiment ask-archive transitions --json <report-1.json> <report-2.json> ...
+go run ./cmd/ariadne experiment ask-archive transitions ask --json <history.json>
 go run ./cmd/ariadne experiment ask-archive transitions save --json <report-1.json> <report-2.json> ... <history.json>
 go run ./cmd/ariadne experiment ask-archive transitions verify --json <transitions.json>
 go run ./cmd/ariadne experiment serve --history <transitions.json> --reflection <reflection.json> .ariadne/runs
@@ -279,6 +280,10 @@ when `go run` built Ariadne.
   identities, aggregate counts, and safe per-directory state changes when
   common entries changed. It never exposes observations or persona values, and
   never infers chronology or a trend.
+- `experiment ask-archive transitions ask [--json] <history.json>` verifies a
+  saved transition ledger and asks its fixed history question. It returns the
+  bounded result plus 1-based indexes for changed and membership-incomparable
+  transitions. It does not infer chronology or prove the underlying evidence.
 - `experiment ask-archive transitions save [--json] <report-1.json> <report-2.json> ... <history.json>`
   verifies the supplied reflections, writes one raw-value-free transition
   ledger with exclusive file creation, including safe per-directory state
@@ -328,7 +333,8 @@ when `go run` built Ariadne.
   boundedly without exposing the internal error.
   When `--history` is supplied, the page also reads one structurally verified
   transition ledger and renders its caller-ordered, raw-value-free boundaries,
-  including safe directory/state changes when present.
+  including the verified history-question result and safe directory/state
+  changes when present.
   When `--reflection` is supplied, the page re-asks that saved reflection's
   fixed question against the current archive and renders a bounded comparison
   with safe result counts and reflection identities. Invalid history or saved

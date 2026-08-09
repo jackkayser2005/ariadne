@@ -1686,6 +1686,139 @@ func TestRunAskArchiveTransitions(t *testing.T) {
 	})
 }
 
+func TestRunAskArchiveTransitionsAsk(t *testing.T) {
+	answer := bundle.ArchiveQuestionTransitionHistoryAnswer{
+		SchemaVersion:           1,
+		QuestionID:              "answer-state-transitions",
+		Question:                "At which supplied boundaries did the bounded answer state change?",
+		Result:                  "changed",
+		TransitionHistorySHA256: strings.Repeat("a", 64),
+		Transitions:             3,
+		ChangedTransitions:      []int{1, 3},
+		IncomparableTransitions: []int{2, 3},
+	}
+
+	t.Run("human", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsAsk(
+			[]string{"history.json"},
+			&stdout,
+			&stderr,
+			func(path string) (bundle.ArchiveQuestionTransitionHistoryAnswer, error) {
+				if path != "history.json" {
+					t.Fatalf("AskArchiveQuestionTransitionHistory() path = %q", path)
+				}
+				return answer, nil
+			},
+		)
+		want := "archive reflection history question answered\n" +
+			"question_id: answer-state-transitions\n" +
+			"question: At which supplied boundaries did the bounded answer state change?\n" +
+			"result: changed\n" +
+			"transition_history_sha256: " + strings.Repeat("a", 64) + "\n" +
+			"transitions: 3\n" +
+			"changed_transitions:\n" +
+			"- 1\n" +
+			"- 3\n" +
+			"incomparable_transitions:\n" +
+			"- 2\n" +
+			"- 3\n" +
+			"note: this answers only the verified history structure; it does not infer chronology or prove the underlying evidence\n"
+		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+			t.Fatalf("runAskArchiveTransitionsAsk() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("json", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsAsk(
+			[]string{"--json", "history.json"},
+			&stdout,
+			&stderr,
+			func(string) (bundle.ArchiveQuestionTransitionHistoryAnswer, error) { return answer, nil },
+		)
+		want := `{"schema_version":1,"question_id":"answer-state-transitions","question":"At which supplied boundaries did the bounded answer state change?","result":"changed","transition_history_sha256":"` + strings.Repeat("a", 64) + `","transitions":3,"changed_transitions":[1,3],"incomparable_transitions":[2,3]}` + "\n"
+		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+			t.Fatalf("runAskArchiveTransitionsAsk() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+}
+
+func TestRunAskArchiveTransitionsAskFailures(t *testing.T) {
+	for _, args := range [][]string{nil, {"history.json", "extra"}, {"--json=invalid", "history.json"}} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			exitCode := runAskArchiveTransitionsAsk(
+				args,
+				&stdout,
+				&stderr,
+				func(string) (bundle.ArchiveQuestionTransitionHistoryAnswer, error) {
+					t.Fatal("AskArchiveQuestionTransitionHistory called for invalid usage")
+					return bundle.ArchiveQuestionTransitionHistoryAnswer{}, nil
+				},
+			)
+			if exitCode != 2 || stdout.Len() != 0 || stderr.String() != usage {
+				t.Fatalf("runAskArchiveTransitionsAsk() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+			}
+		})
+	}
+
+	t.Run("answer error", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsAsk(
+			[]string{"history.json"},
+			&stdout,
+			&stderr,
+			func(string) (bundle.ArchiveQuestionTransitionHistoryAnswer, error) {
+				return bundle.ArchiveQuestionTransitionHistoryAnswer{}, errors.New("history is invalid")
+			},
+		)
+		if exitCode != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "history is invalid") {
+			t.Fatalf("runAskArchiveTransitionsAsk() = %d, stderr=%q", exitCode, stderr.String())
+		}
+	})
+
+	for _, args := range [][]string{{"history.json"}, {"--json", "history.json"}} {
+		t.Run("write output "+strings.Join(args, "_"), func(t *testing.T) {
+			var stderr bytes.Buffer
+			exitCode := runAskArchiveTransitionsAsk(
+				args,
+				failingWriter{},
+				&stderr,
+				func(string) (bundle.ArchiveQuestionTransitionHistoryAnswer, error) {
+					return bundle.ArchiveQuestionTransitionHistoryAnswer{}, nil
+				},
+			)
+			if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+				t.Fatalf("runAskArchiveTransitionsAsk() = %d, stderr=%q", exitCode, stderr.String())
+			}
+		})
+	}
+
+	for _, failAt := range []int{2, 3, 4, 5} {
+		t.Run(fmt.Sprintf("write detail output %d", failAt), func(t *testing.T) {
+			var stderr bytes.Buffer
+			exitCode := runAskArchiveTransitionsAsk(
+				[]string{"history.json"},
+				&failAfterWriter{failAt: failAt},
+				&stderr,
+				func(string) (bundle.ArchiveQuestionTransitionHistoryAnswer, error) {
+					return bundle.ArchiveQuestionTransitionHistoryAnswer{
+						QuestionID:              "answer-state-transitions",
+						Question:                "At which supplied boundaries did the bounded answer state change?",
+						Result:                  "changed",
+						ChangedTransitions:      []int{1},
+						IncomparableTransitions: []int{2},
+					}, nil
+				},
+			)
+			if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+				t.Fatalf("runAskArchiveTransitionsAsk() = %d, stderr=%q", exitCode, stderr.String())
+			}
+		})
+	}
+}
+
 func TestRunAskArchiveTransitionsSave(t *testing.T) {
 	summary := bundle.ArchiveQuestionTransitionVerificationSummary{
 		SchemaVersion:           2,

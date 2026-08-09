@@ -12,6 +12,7 @@ const (
 	archiveQuestionComparisonSchemaVersion              = 2
 	archiveQuestionTransitionHistoryLegacySchemaVersion = 1
 	archiveQuestionTransitionHistorySchemaVersion       = 2
+	archiveQuestionTransitionHistoryAnswerSchemaVersion = 1
 	archiveQuestionComparisonID                         = "answer-state-change"
 	archiveQuestionComparisonText                       = "Did the bounded answer state change between these saved reflection snapshots?"
 	archiveQuestionTransitionHistoryID                  = "answer-state-transitions"
@@ -70,6 +71,20 @@ type ArchiveQuestionTransition struct {
 	FromOnly             int                          `json:"from_only"`
 	ToOnly               int                          `json:"to_only"`
 	StateChanges         []ArchiveQuestionStateChange `json:"state_changes,omitempty"`
+}
+
+// ArchiveQuestionTransitionHistoryAnswer is a raw-value-free answer derived
+// from one verified transition history. It describes the ledger structure,
+// not the underlying evidence or chronology.
+type ArchiveQuestionTransitionHistoryAnswer struct {
+	SchemaVersion           int    `json:"schema_version"`
+	QuestionID              string `json:"question_id"`
+	Question                string `json:"question"`
+	Result                  string `json:"result"`
+	TransitionHistorySHA256 string `json:"transition_history_sha256"`
+	Transitions             int    `json:"transitions"`
+	ChangedTransitions      []int  `json:"changed_transitions"`
+	IncomparableTransitions []int  `json:"incomparable_transitions"`
 }
 
 // CompareArchiveQuestionReports compares only verified answer states from
@@ -222,6 +237,48 @@ func CompareArchiveQuestionHistory(reportPaths []string) (ArchiveQuestionTransit
 		})
 	}
 	return history, nil
+}
+
+// AnswerArchiveQuestionTransitionHistory answers the fixed question carried
+// by a verified transition history. The history and SHA-256 must come from a
+// successful verification call.
+func AnswerArchiveQuestionTransitionHistory(history ArchiveQuestionTransitionHistory, historySHA256 string) ArchiveQuestionTransitionHistoryAnswer {
+	changedTransitions := make([]int, 0)
+	incomparableTransitions := make([]int, 0)
+	for index, transition := range history.Transitions {
+		if transition.Changed > 0 {
+			changedTransitions = append(changedTransitions, index+1)
+		}
+		if transition.Result == "incomparable" {
+			incomparableTransitions = append(incomparableTransitions, index+1)
+		}
+	}
+	result := "same"
+	if len(changedTransitions) > 0 {
+		result = "changed"
+	} else if len(incomparableTransitions) > 0 {
+		result = "incomparable"
+	}
+	return ArchiveQuestionTransitionHistoryAnswer{
+		SchemaVersion:           archiveQuestionTransitionHistoryAnswerSchemaVersion,
+		QuestionID:              history.HistoryID,
+		Question:                history.HistoryQuestion,
+		Result:                  result,
+		TransitionHistorySHA256: historySHA256,
+		Transitions:             len(history.Transitions),
+		ChangedTransitions:      changedTransitions,
+		IncomparableTransitions: incomparableTransitions,
+	}
+}
+
+// AskArchiveQuestionTransitionHistory verifies a saved transition history
+// and answers its fixed raw-value-free question.
+func AskArchiveQuestionTransitionHistory(historyPath string) (ArchiveQuestionTransitionHistoryAnswer, error) {
+	history, summary, err := ReadArchiveQuestionTransitionHistory(historyPath)
+	if err != nil {
+		return ArchiveQuestionTransitionHistoryAnswer{}, err
+	}
+	return AnswerArchiveQuestionTransitionHistory(history, summary.TransitionHistorySHA256), nil
 }
 
 // SaveArchiveQuestionTransitionHistory writes one validated transition ledger

@@ -35,6 +35,7 @@ const usage = `usage:
   ariadne experiment ask-archive compare [--json] <older-report.json> <newer-report.json>
   ariadne experiment ask-archive compare-current [--json] <older-report.json> <archive-root>
   ariadne experiment ask-archive transitions [--json] <report-1.json> <report-2.json> ...
+  ariadne experiment ask-archive transitions ask [--json] <history.json>
   ariadne experiment ask-archive transitions save [--json] <report-1.json> <report-2.json> ... <history.json>
   ariadne experiment ask-archive transitions verify [--json] [--expect-sha256 <digest>] <history.json>
   ariadne experiment ask-archive verify [--json] [--expect-sha256 <digest>] <report.json>
@@ -93,6 +94,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 		if len(args) >= 4 && args[2] == "transitions" && args[3] == "save" {
 			return runAskArchiveTransitionsSave(args[4:], stdout, stderr, bundle.SaveArchiveQuestionTransitionHistory)
+		}
+		if len(args) >= 4 && args[2] == "transitions" && args[3] == "ask" {
+			return runAskArchiveTransitionsAsk(args[4:], stdout, stderr, bundle.AskArchiveQuestionTransitionHistory)
 		}
 		if len(args) >= 4 && args[2] == "transitions" && args[3] == "verify" {
 			return runAskArchiveTransitionsVerify(args[4:], stdout, stderr, bundle.VerifyArchiveQuestionTransitionHistory)
@@ -891,6 +895,66 @@ func runAskArchiveTransitions(
 	}
 	if _, err := io.WriteString(stdout, "note: transitions follow caller-supplied order; incomparable membership is not a change claim, and this does not infer a trend or prove the underlying evidence\n"); err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func runAskArchiveTransitionsAsk(
+	args []string,
+	stdout, stderr io.Writer,
+	ask func(string) (bundle.ArchiveQuestionTransitionHistoryAnswer, error),
+) int {
+	flags := flag.NewFlagSet("experiment ask-archive transitions ask", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+
+	answer, err := ask(flags.Arg(0))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(answer); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if _, err := fmt.Fprintf(
+		stdout,
+		"archive reflection history question answered\nquestion_id: %s\nquestion: %s\nresult: %s\ntransition_history_sha256: %s\ntransitions: %d\nchanged_transitions:\n",
+		answer.QuestionID,
+		answer.Question,
+		answer.Result,
+		answer.TransitionHistorySHA256,
+		answer.Transitions,
+	); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask: write output: %v\n", err)
+		return 1
+	}
+	for _, transition := range answer.ChangedTransitions {
+		if _, err := fmt.Fprintf(stdout, "- %d\n", transition); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask: write output: %v\n", err)
+			return 1
+		}
+	}
+	if _, err := io.WriteString(stdout, "incomparable_transitions:\n"); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask: write output: %v\n", err)
+		return 1
+	}
+	for _, transition := range answer.IncomparableTransitions {
+		if _, err := fmt.Fprintf(stdout, "- %d\n", transition); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask: write output: %v\n", err)
+			return 1
+		}
+	}
+	if _, err := io.WriteString(stdout, "note: this answers only the verified history structure; it does not infer chronology or prove the underlying evidence\n"); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask: write output: %v\n", err)
 		return 1
 	}
 	return 0

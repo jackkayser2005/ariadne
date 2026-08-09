@@ -238,6 +238,20 @@ transition_history_sha256="$(jq -r '.transition_history_sha256' "${archive_quest
 "${ariadne}" experiment ask-archive transitions verify --json \
   --expect-sha256 "${transition_history_sha256}" \
   "${archive_question_transitions_json}" > /dev/null
+archive_question_transition_answer_json="${RUNNER_TEMP}/ariadne-archive-question-transition-answer.json"
+"${ariadne}" experiment ask-archive transitions ask --json \
+  "${archive_question_transitions_json}" >"${archive_question_transition_answer_json}"
+jq -e --arg history_sha256 "${transition_history_sha256}" '
+  (keys_unsorted == ["schema_version", "question_id", "question", "result", "transition_history_sha256", "transitions", "changed_transitions", "incomparable_transitions"]) and
+  (.schema_version == 1) and
+  (.question_id == "answer-state-transitions") and
+  (.question == "At which supplied boundaries did the bounded answer state change?") and
+  (.result == "same") and
+  (.transition_history_sha256 == $history_sha256) and
+  (.transitions == 2) and
+  (.changed_transitions == []) and
+  (.incomparable_transitions == [])
+' "${archive_question_transition_answer_json}"
 
 finding_id="$(jq -r '.comparison.differences[0].id' "${run_dir}/evidence.json")"
 finding_stdout="${RUNNER_TEMP}/ariadne-finding.stdout"
