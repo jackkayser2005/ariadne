@@ -72,6 +72,7 @@ type pageData struct {
 	ReflectionHistorySummary           bundle.ArchiveQuestionTransitionVerificationSummary
 	ReflectionHistoryQuestions         []bundle.Question
 	ReflectionHistoryQuestionRound     bundle.ArchiveQuestionTransitionHistoryQuestionRoundAnswer
+	ReflectionQuestionRoundSHA256      string
 	ReflectionHistoryQuestionID        string
 	ReflectionHistoryAnswer            bundle.ArchiveQuestionTransitionHistoryAnswer
 	ReflectionHistoryRepeatedAnswer    bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer
@@ -188,6 +189,7 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	var reflectionHistorySummary bundle.ArchiveQuestionTransitionVerificationSummary
 	var reflectionHistoryQuestions []bundle.Question
 	var reflectionHistoryQuestionRound bundle.ArchiveQuestionTransitionHistoryQuestionRoundAnswer
+	reflectionHistoryQuestionRoundSHA256 := ""
 	reflectionHistoryQuestionID := r.URL.Query().Get("history_question_id")
 	var reflectionHistoryAnswer bundle.ArchiveQuestionTransitionHistoryAnswer
 	var reflectionHistoryRepeatedAnswer bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer
@@ -217,6 +219,9 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 			reflectionHistorySnapshotAnswer = bundle.AnswerArchiveQuestionTransitionHistorySnapshots(reflectionHistory, reflectionHistorySummary.TransitionHistorySHA256)
 			reflectionHistorySummaryAnswer = bundle.AnswerArchiveQuestionTransitionHistorySummary(reflectionHistory, reflectionHistorySummary.TransitionHistorySHA256)
 			reflectionHistoryQuestionRound = bundle.AnswerArchiveQuestionTransitionHistoryQuestionRound(reflectionHistory, reflectionHistorySummary.TransitionHistorySHA256)
+			if roundSHA256, roundSHAErr := bundle.ArchiveQuestionTransitionHistoryQuestionRoundSHA256(reflectionHistoryQuestionRound); roundSHAErr == nil {
+				reflectionHistoryQuestionRoundSHA256 = roundSHA256
+			}
 			if reflectionHistoryQuestionID != "" {
 				var receiptErr error
 				reflectionHistoryReceipt, receiptErr = bundle.AnswerArchiveQuestionTransitionHistoryReceipt(reflectionHistory, reflectionHistorySummary.TransitionHistorySHA256, reflectionHistoryQuestionID)
@@ -292,6 +297,7 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		ReflectionHistorySummary:           reflectionHistorySummary,
 		ReflectionHistoryQuestions:         reflectionHistoryQuestions,
 		ReflectionHistoryQuestionRound:     reflectionHistoryQuestionRound,
+		ReflectionQuestionRoundSHA256:      reflectionHistoryQuestionRoundSHA256,
 		ReflectionHistoryQuestionID:        reflectionHistoryQuestionID,
 		ReflectionHistoryAnswer:            reflectionHistoryAnswer,
 		ReflectionHistoryRepeatedAnswer:    reflectionHistoryRepeatedAnswer,
@@ -665,6 +671,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
         <dt>snapshots</dt><dd>{{.ReflectionHistorySummary.Snapshots}}</dd>
         <dt>transitions</dt><dd>{{.ReflectionHistorySummary.Transitions}}</dd>
         <dt>history SHA-256</dt><dd>{{.ReflectionHistorySummary.TransitionHistorySHA256}}</dd>
+        <dt>question round SHA-256</dt><dd>{{.ReflectionQuestionRoundSHA256}}</dd>
       </dl>
       {{if .ReflectionHistoryReceiptAvailable}}
       <section class="panel" id="history-answer-receipt-{{.ReflectionHistoryReceipt.QuestionID}}" aria-label="Portable history answer receipt">

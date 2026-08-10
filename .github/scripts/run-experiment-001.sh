@@ -324,6 +324,31 @@ jq -e --arg history_sha256 "${transition_history_sha256}" '
   (.["questions"][2] == {question_id: "answer-state-snapshot-summaries", question: "What bounded answer-state summary did each supplied reflection snapshot record?", result: "available"}) and
   (.["questions"][3] == {question_id: "answer-state-summary-changes", question: "Did the bounded answer-state summary change at any supplied boundary?", result: "same"})
 ' "${archive_question_transition_round_json}"
+archive_question_transition_round_path="${RUNNER_TEMP}/ariadne-archive-question-transition-round-saved.json"
+archive_question_transition_round_save_summary_json="${RUNNER_TEMP}/ariadne-archive-question-transition-round-save-summary.json"
+"${ariadne}" experiment ask-archive transitions ask all save --json \
+  "${archive_question_transitions_json}" \
+  "${archive_question_transition_round_path}" >"${archive_question_transition_round_save_summary_json}"
+jq -e --arg history_sha256 "${transition_history_sha256}" '
+  (keys_unsorted == ["schema_version", "transition_history_sha256", "questions", "round_sha256"]) and
+  (.schema_version == 1) and
+  (.transition_history_sha256 == $history_sha256) and
+  (.questions == 4) and
+  (.round_sha256 | test("^[0-9a-f]{64}$"))
+' "${archive_question_transition_round_save_summary_json}"
+archive_question_transition_round_verify_summary_json="${RUNNER_TEMP}/ariadne-archive-question-transition-round-verify-summary.json"
+archive_question_transition_round_sha256="$(jq -r '.round_sha256' "${archive_question_transition_round_save_summary_json}")"
+"${ariadne}" experiment ask-archive transitions ask all verify --json \
+  --expect-sha256 "${archive_question_transition_round_sha256}" \
+  "${archive_question_transition_round_path}" >"${archive_question_transition_round_verify_summary_json}"
+jq -e --slurpfile saved "${archive_question_transition_round_save_summary_json}" '
+  (keys_unsorted == ["schema_version", "transition_history_sha256", "questions", "round_sha256"]) and
+  (.schema_version == 1) and
+  (.transition_history_sha256 == $saved[0].transition_history_sha256) and
+  (.questions == $saved[0].questions) and
+  (.round_sha256 == $saved[0].round_sha256)
+' "${archive_question_transition_round_verify_summary_json}"
+cmp -s "${archive_question_transition_round_json}" "${archive_question_transition_round_path}"
 archive_question_transition_receipt_json="${RUNNER_TEMP}/ariadne-archive-question-transition-receipt.json"
 "${ariadne}" experiment ask-archive transitions ask receipt --json \
   "${archive_question_transitions_json}" \

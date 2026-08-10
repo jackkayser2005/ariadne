@@ -183,6 +183,9 @@ go run ./cmd/ariadne experiment ask-archive transitions --json <report-1.json> <
 go run ./cmd/ariadne experiment ask-archive transitions questions --json
 go run ./cmd/ariadne experiment ask-archive transitions ask --json <history.json> [<question-id>]
 go run ./cmd/ariadne experiment ask-archive transitions ask repeated --json <history.json>
+go run ./cmd/ariadne experiment ask-archive transitions ask all --json <history.json>
+go run ./cmd/ariadne experiment ask-archive transitions ask all save --json <history.json> <round.json>
+go run ./cmd/ariadne experiment ask-archive transitions ask all verify --json [--expect-sha256 <digest>] <round.json>
 go run ./cmd/ariadne experiment ask-archive transitions ask receipt --json <history.json> <question-id>
 go run ./cmd/ariadne experiment ask-archive transitions ask receipt save --json <history.json> <question-id> <receipt.json>
 go run ./cmd/ariadne experiment ask-archive transitions save --json <report-1.json> <report-2.json> ... <history.json>
@@ -320,6 +323,15 @@ when `go run` built Ariadne.
   the ledger once and records every fixed history question's bounded result in
   stable catalog order. The JSON result is a raw-value-free portable question
   round; use an individual question ID for detailed output.
+- `experiment ask-archive transitions ask all save [--json] <history.json> <round.json>`
+  performs the same verified question round and writes it with exclusive
+  creation. It returns a canonical round SHA-256 so a later reflection pass can
+  retain the exact fixed-question set it asked.
+- `experiment ask-archive transitions ask all verify [--json] [--expect-sha256 <digest>] <round.json>`
+  checks a retained question round without reopening the source history. It
+  validates catalog order, bounded result vocabularies, history identity, and
+  canonical round identity; it does not re-verify the history or prove the
+  underlying evidence.
 - `experiment ask-archive transitions ask receipt [--json] <history.json> <question-id>`
   verifies the ledger once and wraps one selected fixed answer in a common
   raw-value-free receipt. The receipt binds its bounded result and nested
@@ -390,10 +402,11 @@ when `go run` built Ariadne.
   question, and the snapshot-change question when present. The history panel also lists
   a compact verified question round in fixed catalog order, with each bounded
   result and a direct receipt link, so a UI driver can choose a bounded
-  question without inventing natural language. The selected receipt renders
-  its stable history and receipt SHA-256 identities alongside the raw-value-free
-  JSON details. Those links use the
-  validated `history_question_id` query and fail closed for unknown IDs.
+  question without inventing natural language. The page also renders the
+  question-round SHA-256. The selected receipt renders its stable history and
+  receipt SHA-256 identities alongside the raw-value-free JSON details. Those
+  links use the validated `history_question_id` query and fail closed for
+  unknown IDs.
   When `--reflection` is supplied, the page re-asks that saved reflection's
   fixed question against the current archive and renders a bounded comparison
   with safe result counts and reflection identities. Invalid history or saved

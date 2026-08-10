@@ -29,7 +29,9 @@ The repository currently has three evidence-backed layers:
    round containing the bounded result of every fixed question, or a portable
    per-question receipt containing its detailed raw-value-free answer. Saved
    receipts can be independently checked for fixed-question identity and
-   canonical content identity without reopening the source history.
+   canonical content identity without reopening the source history. The complete
+   fixed question round can also be retained and independently checked by its
+   canonical identity without reopening the source history.
 
 The local review page is intentionally read-only. Its compact question round
 and receipt links, including stable history and receipt identities, are a
@@ -39,6 +41,8 @@ is an orientation or acceptance aid rather than evidence about the target
 application. The authorized Android runner also retains a SHA-256 identity of
 the successful UI hierarchy used to resolve its declared control, without
 retaining raw hierarchy XML; this is control provenance, not target evidence.
+The page also exposes the stable question-round identity, so an acceptance pass
+can retain both the round and the selected answer receipt identities.
 
 ## Year-one path
 
@@ -57,11 +61,11 @@ plane; local bundles remain authoritative.
 ### Months 7–9: make reflection repeatable
 
 Turn the historical reflection spine into a durable question workflow. The
-next focused slice after independently verifiable answer receipts is a
-computer-use acceptance path for choosing fixed questions, reading their
-receipts, and retaining their identities. Any new answer must remain bound to
-a verified history and must say `unavailable` when the history lacks the
-required schema.
+fixed question round and individual answer receipts are now independently
+retainable and verifiable. The next focused slice is a computer-use acceptance
+path for choosing fixed questions, reading their receipts, and retaining their
+identities. Any new answer must remain bound to a verified history and must say
+`unavailable` when the history lacks the required schema.
 
 ### Months 10–12: expand only after the contract holds
 

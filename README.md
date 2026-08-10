@@ -61,6 +61,8 @@ go run ./cmd/ariadne experiment ask-archive transitions questions --json
 go run ./cmd/ariadne experiment ask-archive transitions ask --json <history.json> [<question-id>]
 go run ./cmd/ariadne experiment ask-archive transitions ask repeated --json <history.json>
 go run ./cmd/ariadne experiment ask-archive transitions ask all --json <history.json>
+go run ./cmd/ariadne experiment ask-archive transitions ask all save --json <history.json> <round.json>
+go run ./cmd/ariadne experiment ask-archive transitions ask all verify --json [--expect-sha256 <digest>] <round.json>
 go run ./cmd/ariadne experiment ask-archive transitions ask receipt --json <history.json> <question-id>
 go run ./cmd/ariadne experiment ask-archive transitions ask receipt save --json <history.json> <question-id> <receipt.json>
 go run ./cmd/ariadne experiment ask-archive transitions ask receipt verify --json [--expect-sha256 <digest>] <receipt.json>
@@ -119,7 +121,10 @@ chronology or trend claim.
 `transitions ask all <history.json>` verifies the history once and records the
 bounded result of every fixed history question in stable catalog order. Its
 raw-value-free JSON is a portable question-round receipt; call an individual
-question ID for detailed entries or snapshot summaries.
+question ID for detailed entries or snapshot summaries. Use
+`transitions ask all save` to retain that round with exclusive creation; it
+returns a canonical round SHA-256, and `transitions ask all verify` checks the
+retained round without reopening the source history.
 
 `transitions ask receipt <history.json> <question-id>` verifies the history once
 and wraps one selected fixed answer in a portable raw-value-free receipt. The
@@ -164,9 +169,9 @@ question, snapshot-summary question, and snapshot-change question when history
 is available. The history
 panel presents a compact verified question round in fixed catalog order, with
 each bounded result and a direct receipt link, so a UI driver can choose a
-bounded question without inventing natural language. The selected receipt
-renders its stable history and receipt SHA-256 identities alongside the
-raw-value-free JSON details.
+bounded question without inventing natural language. The page also shows the
+question-round SHA-256. The selected receipt renders its stable history and
+receipt SHA-256 identities alongside the raw-value-free JSON details.
 
 Stable-ID Android sessions also record a SHA-256 identity for the successful
 UI hierarchy used to resolve the manifest-declared control. The raw hierarchy

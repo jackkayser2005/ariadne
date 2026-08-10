@@ -2295,6 +2295,203 @@ func TestRunAskArchiveTransitionsAskAllFailures(t *testing.T) {
 	}
 }
 
+func TestRunAskArchiveTransitionsAskAllSave(t *testing.T) {
+	summary := bundle.ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary{
+		SchemaVersion:           1,
+		TransitionHistorySHA256: strings.Repeat("a", 64),
+		Questions:               4,
+		RoundSHA256:             strings.Repeat("b", 64),
+	}
+
+	t.Run("human", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsAskAllSave(
+			[]string{"history.json", "round.json"},
+			&stdout,
+			&stderr,
+			func(historyPath, roundPath string) (bundle.ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary, error) {
+				if historyPath != "history.json" || roundPath != "round.json" {
+					t.Fatalf("SaveArchiveQuestionTransitionHistoryQuestionRound() args = %q, %q", historyPath, roundPath)
+				}
+				return summary, nil
+			},
+		)
+		want := "archive reflection question round saved\n" +
+			"schema_version: 1\n" +
+			"transition_history_sha256: " + strings.Repeat("a", 64) + "\n" +
+			"questions: 4\n" +
+			"round_sha256: " + strings.Repeat("b", 64) + "\n"
+		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+			t.Fatalf("runAskArchiveTransitionsAskAllSave() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("json", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsAskAllSave(
+			[]string{"--json", "history.json", "round.json"},
+			&stdout,
+			&stderr,
+			func(string, string) (bundle.ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary, error) {
+				return summary, nil
+			},
+		)
+		want := `{"schema_version":1,"transition_history_sha256":"` + strings.Repeat("a", 64) + `","questions":4,"round_sha256":"` + strings.Repeat("b", 64) + `"}` + "\n"
+		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+			t.Fatalf("runAskArchiveTransitionsAskAllSave() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+}
+
+func TestRunAskArchiveTransitionsAskAllSaveFailures(t *testing.T) {
+	for _, args := range [][]string{nil, {"history.json"}, {"history.json", "round.json", "extra"}, {"--json=invalid", "history.json", "round.json"}} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			exitCode := runAskArchiveTransitionsAskAllSave(
+				args,
+				&stdout,
+				&stderr,
+				func(string, string) (bundle.ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary, error) {
+					t.Fatal("SaveArchiveQuestionTransitionHistoryQuestionRound called for invalid usage")
+					return bundle.ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary{}, nil
+				},
+			)
+			if exitCode != 2 || stdout.Len() != 0 || stderr.String() != usage {
+				t.Fatalf("runAskArchiveTransitionsAskAllSave() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+			}
+		})
+	}
+
+	t.Run("save error", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsAskAllSave(
+			[]string{"history.json", "round.json"},
+			&stdout,
+			&stderr,
+			func(string, string) (bundle.ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary, error) {
+				return bundle.ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary{}, errors.New("round path exists")
+			},
+		)
+		if exitCode != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "round path exists") {
+			t.Fatalf("runAskArchiveTransitionsAskAllSave() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	for _, args := range [][]string{{"history.json", "round.json"}, {"--json", "history.json", "round.json"}} {
+		t.Run("write output "+strings.Join(args, "_"), func(t *testing.T) {
+			var stderr bytes.Buffer
+			exitCode := runAskArchiveTransitionsAskAllSave(
+				args,
+				failingWriter{},
+				&stderr,
+				func(string, string) (bundle.ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary, error) {
+					return bundle.ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary{}, nil
+				},
+			)
+			if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+				t.Fatalf("runAskArchiveTransitionsAskAllSave() = %d, stderr=%q", exitCode, stderr.String())
+			}
+		})
+	}
+}
+
+func TestRunAskArchiveTransitionsAskAllVerify(t *testing.T) {
+	summary := bundle.ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary{
+		SchemaVersion:           1,
+		TransitionHistorySHA256: strings.Repeat("a", 64),
+		Questions:               4,
+		RoundSHA256:             strings.Repeat("b", 64),
+	}
+
+	t.Run("human", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsAskAllVerify(
+			[]string{"--expect-sha256", strings.Repeat("b", 64), "round.json"},
+			&stdout,
+			&stderr,
+			func(path string) (bundle.ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary, error) {
+				if path != "round.json" {
+					t.Fatalf("VerifyArchiveQuestionTransitionHistoryQuestionRound() path = %q", path)
+				}
+				return summary, nil
+			},
+		)
+		want := "archive reflection question round structurally verified\n" +
+			"schema_version: 1\n" +
+			"transition_history_sha256: " + strings.Repeat("a", 64) + "\n" +
+			"questions: 4\n" +
+			"round_sha256: " + strings.Repeat("b", 64) + "\n" +
+			"note: this verifies the raw-value-free question round contract; it does not re-verify the transition history or prove the underlying evidence\n"
+		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+			t.Fatalf("runAskArchiveTransitionsAskAllVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("json", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsAskAllVerify(
+			[]string{"--json", "round.json"},
+			&stdout,
+			&stderr,
+			func(string) (bundle.ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary, error) {
+				return summary, nil
+			},
+		)
+		want := `{"schema_version":1,"transition_history_sha256":"` + strings.Repeat("a", 64) + `","questions":4,"round_sha256":"` + strings.Repeat("b", 64) + `"}` + "\n"
+		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+			t.Fatalf("runAskArchiveTransitionsAskAllVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+}
+
+func TestRunAskArchiveTransitionsAskAllVerifyFailures(t *testing.T) {
+	verify := func(string) (bundle.ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary, error) {
+		return bundle.ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary{
+			SchemaVersion: 1, TransitionHistorySHA256: strings.Repeat("a", 64), Questions: 4, RoundSHA256: strings.Repeat("b", 64),
+		}, nil
+	}
+	for _, args := range [][]string{nil, {"round.json", "extra"}, {"--json=invalid", "round.json"}, {"--expect-sha256", "bad", "round.json"}} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			exitCode := runAskArchiveTransitionsAskAllVerify(args, &stdout, &stderr, func(string) (bundle.ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary, error) {
+				t.Fatal("VerifyArchiveQuestionTransitionHistoryQuestionRound called for invalid usage")
+				return bundle.ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary{}, nil
+			})
+			if exitCode != 2 || stdout.Len() != 0 || stderr.String() != usage && !strings.Contains(stderr.String(), "expect-sha256") {
+				t.Fatalf("runAskArchiveTransitionsAskAllVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+			}
+		})
+	}
+
+	t.Run("verify error", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsAskAllVerify([]string{"round.json"}, &stdout, &stderr, func(string) (bundle.ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary, error) {
+			return bundle.ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary{}, errors.New("round is invalid")
+		})
+		if exitCode != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "round is invalid") {
+			t.Fatalf("runAskArchiveTransitionsAskAllVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("mismatch", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsAskAllVerify([]string{"--expect-sha256", strings.Repeat("c", 64), "round.json"}, &stdout, &stderr, verify)
+		if exitCode != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "SHA-256 mismatch") {
+			t.Fatalf("runAskArchiveTransitionsAskAllVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	for _, args := range [][]string{{"round.json"}, {"--json", "round.json"}} {
+		t.Run("write output "+strings.Join(args, "_"), func(t *testing.T) {
+			var stderr bytes.Buffer
+			exitCode := runAskArchiveTransitionsAskAllVerify(args, failingWriter{}, &stderr, verify)
+			if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+				t.Fatalf("runAskArchiveTransitionsAskAllVerify() = %d, stderr=%q", exitCode, stderr.String())
+			}
+		})
+	}
+}
+
 func TestRunAskArchiveTransitionsAskReceipt(t *testing.T) {
 	receipt := bundle.ArchiveQuestionTransitionHistoryAnswerReceipt{
 		SchemaVersion:           1,

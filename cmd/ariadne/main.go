@@ -39,6 +39,8 @@ const usage = `usage:
   ariadne experiment ask-archive transitions ask [--json] <history.json> [<question-id>]
   ariadne experiment ask-archive transitions ask repeated [--json] <history.json>
   ariadne experiment ask-archive transitions ask all [--json] <history.json>
+  ariadne experiment ask-archive transitions ask all save [--json] <history.json> <round.json>
+  ariadne experiment ask-archive transitions ask all verify [--json] [--expect-sha256 <digest>] <round.json>
   ariadne experiment ask-archive transitions ask receipt [--json] <history.json> <question-id>
   ariadne experiment ask-archive transitions ask receipt save [--json] <history.json> <question-id> <receipt.json>
   ariadne experiment ask-archive transitions ask receipt verify [--json] [--expect-sha256 <digest>] <receipt.json>
@@ -109,6 +111,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 				return runAskArchiveTransitionsAskRepeated(args[5:], stdout, stderr, bundle.AskArchiveQuestionTransitionHistoryRepeated)
 			}
 			if len(args) >= 5 && args[4] == "all" {
+				if len(args) >= 6 && args[5] == "save" {
+					return runAskArchiveTransitionsAskAllSave(args[6:], stdout, stderr, bundle.SaveArchiveQuestionTransitionHistoryQuestionRound)
+				}
+				if len(args) >= 6 && args[5] == "verify" {
+					return runAskArchiveTransitionsAskAllVerify(args[6:], stdout, stderr, bundle.VerifyArchiveQuestionTransitionHistoryQuestionRound)
+				}
 				return runAskArchiveTransitionsAskAll(args[5:], stdout, stderr, bundle.AskArchiveQuestionTransitionHistoryQuestionRound)
 			}
 			if len(args) >= 5 && args[4] == "receipt" {
@@ -209,6 +217,8 @@ type bundleArchiveQuestionTransitionRepeatedAsker func(string) (bundle.ArchiveQu
 type bundleArchiveQuestionTransitionSnapshotAsker func(string) (bundle.ArchiveQuestionTransitionHistorySnapshotAnswer, error)
 type bundleArchiveQuestionTransitionSummaryAsker func(string) (bundle.ArchiveQuestionTransitionHistorySummaryAnswer, error)
 type bundleArchiveQuestionTransitionRoundAsker func(string) (bundle.ArchiveQuestionTransitionHistoryQuestionRoundAnswer, error)
+type bundleArchiveQuestionTransitionRoundSaver func(string, string) (bundle.ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary, error)
+type bundleArchiveQuestionTransitionRoundVerifier func(string) (bundle.ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary, error)
 type bundleArchiveQuestionTransitionReceiptAsker func(string, string) (bundle.ArchiveQuestionTransitionHistoryAnswerReceipt, error)
 type bundleArchiveQuestionTransitionReceiptSaver func(string, string, string) (bundle.ArchiveQuestionTransitionHistoryAnswerReceiptSaveSummary, error)
 type bundleArchiveQuestionTransitionReceiptVerifier func(string) (bundle.ArchiveQuestionTransitionHistoryAnswerReceiptVerificationSummary, error)
@@ -1067,6 +1077,99 @@ func runAskArchiveTransitionsAskAll(
 	}
 	if _, err := io.WriteString(stdout, "note: this records fixed bounded question results only; inspect an individual question for details, and do not infer chronology or prove the underlying evidence\n"); err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask all: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func runAskArchiveTransitionsAskAllSave(
+	args []string,
+	stdout, stderr io.Writer,
+	save bundleArchiveQuestionTransitionRoundSaver,
+) int {
+	flags := flag.NewFlagSet("experiment ask-archive transitions ask all save", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 2 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+
+	summary, err := save(flags.Arg(0), flags.Arg(1))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask all save: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(summary); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask all save: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if _, err := fmt.Fprintf(
+		stdout,
+		"archive reflection question round saved\nschema_version: %d\ntransition_history_sha256: %s\nquestions: %d\nround_sha256: %s\n",
+		summary.SchemaVersion,
+		summary.TransitionHistorySHA256,
+		summary.Questions,
+		summary.RoundSHA256,
+	); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask all save: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func runAskArchiveTransitionsAskAllVerify(
+	args []string,
+	stdout, stderr io.Writer,
+	verify bundleArchiveQuestionTransitionRoundVerifier,
+) int {
+	flags := flag.NewFlagSet("experiment ask-archive transitions ask all verify", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	expectedSHA256 := flags.String("expect-sha256", "", "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+	expectedSHA256Provided := false
+	flags.Visit(func(visited *flag.Flag) {
+		if visited.Name == "expect-sha256" {
+			expectedSHA256Provided = true
+		}
+	})
+	if expectedSHA256Provided && !validReflectionSHA256(*expectedSHA256) {
+		_, _ = io.WriteString(stderr, "ariadne: experiment ask-archive transitions ask all verify: expect-sha256 must be a lowercase 64-character SHA-256 digest\n")
+		return 2
+	}
+
+	summary, err := verify(flags.Arg(0))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask all verify: %v\n", err)
+		return 1
+	}
+	if expectedSHA256Provided && summary.RoundSHA256 != *expectedSHA256 {
+		_, _ = io.WriteString(stderr, "ariadne: experiment ask-archive transitions ask all verify: question round SHA-256 mismatch\n")
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(summary); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask all verify: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if _, err := fmt.Fprintf(
+		stdout,
+		"archive reflection question round structurally verified\nschema_version: %d\ntransition_history_sha256: %s\nquestions: %d\nround_sha256: %s\nnote: this verifies the raw-value-free question round contract; it does not re-verify the transition history or prove the underlying evidence\n",
+		summary.SchemaVersion,
+		summary.TransitionHistorySHA256,
+		summary.Questions,
+		summary.RoundSHA256,
+	); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask all verify: write output: %v\n", err)
 		return 1
 	}
 	return 0
