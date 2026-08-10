@@ -38,6 +38,9 @@ The repository currently has three evidence-backed layers:
    round to one selected receipt after confirming their history, question, and
    bounded-result identities agree. The local review server can consume that
    record and report whether a selected fixed question matches those identities.
+   It can also compare two retained question rounds in caller order, showing
+   only fixed questions whose bounded results changed and both round/history
+   identity pairs.
 
 The local review page is intentionally read-only. Its compact question round
 and receipt links, including stable history and receipt identities, are a
@@ -73,8 +76,8 @@ plane; local bundles remain authoritative.
 Turn the historical reflection spine into a durable question workflow. The
 fixed question round and individual answer receipts are now independently
 retainable and verifiable. The raw-value-free acceptance record now binds a
-retained round and selected receipt for offline handoff. The next focused slice
-is the rendered computer-use acceptance path for choosing fixed questions,
+retained round and selected receipt for offline handoff. The remaining focused
+slice is a rendered computer-use acceptance pass for choosing fixed questions,
 reading their receipts, and retaining their identities. Any new answer must remain bound to a verified history and must say
 `unavailable` when the history lacks the required schema.
 

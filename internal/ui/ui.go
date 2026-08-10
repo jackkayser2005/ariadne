@@ -23,6 +23,7 @@ type handler struct {
 	askArchive     func(string, string) (bundle.ArchiveQuestionReport, error)
 	history        func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error)
 	acceptance     func() (bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary, error)
+	compareRounds  func() (bundle.ArchiveQuestionTransitionHistoryQuestionRoundComparison, error)
 	compareCurrent func() (bundle.ArchiveQuestionComparison, error)
 	find           func(string, string) (bundle.Finding, error)
 	exportPath     string
@@ -87,6 +88,9 @@ type pageData struct {
 	AcceptanceRecordAvailable          bool
 	AcceptanceRecord                   bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary
 	AcceptanceRecordStatus             string
+	QuestionRoundComparisonRequested   bool
+	QuestionRoundComparisonAvailable   bool
+	QuestionRoundComparison            bundle.ArchiveQuestionTransitionHistoryQuestionRoundComparison
 	SavedReflectionComparisonRequested bool
 	SavedReflectionComparisonAvailable bool
 	SavedReflectionComparison          bundle.ArchiveQuestionComparison
@@ -121,6 +125,12 @@ func HandlerWithReviewAndExport(archiveRoot, historyPath, reflectionPath, export
 // with optional verified history, current-reflection comparison, portable
 // redacted export, and an offline acceptance identity binding.
 func HandlerWithReviewAndExportAndAcceptance(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath string) http.Handler {
+	return HandlerWithReviewAndExportAndAcceptanceAndQuestionRounds(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, "", "")
+}
+
+// HandlerWithReviewAndExportAndAcceptanceAndQuestionRounds returns a
+// read-only review handler with optional saved question-round comparison.
+func HandlerWithReviewAndExportAndAcceptanceAndQuestionRounds(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath string) http.Handler {
 	h := archiveHandler(archiveRoot)
 	if historyPath != "" {
 		h.history = func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error) {
@@ -140,6 +150,11 @@ func HandlerWithReviewAndExportAndAcceptance(archiveRoot, historyPath, reflectio
 	if acceptancePath != "" {
 		h.acceptance = func() (bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary, error) {
 			return bundle.VerifyArchiveQuestionTransitionHistoryAcceptanceRecord(acceptancePath)
+		}
+	}
+	if firstRoundPath != "" && secondRoundPath != "" {
+		h.compareRounds = func() (bundle.ArchiveQuestionTransitionHistoryQuestionRoundComparison, error) {
+			return bundle.CompareArchiveQuestionTransitionHistoryQuestionRounds(firstRoundPath, secondRoundPath)
 		}
 	}
 	return newHandler(h)
@@ -220,6 +235,9 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	acceptanceRecordAvailable := false
 	var acceptanceRecord bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary
 	acceptanceRecordStatus := ""
+	questionRoundComparisonRequested := h.compareRounds != nil
+	questionRoundComparisonAvailable := false
+	var questionRoundComparison bundle.ArchiveQuestionTransitionHistoryQuestionRoundComparison
 	savedReflectionComparisonRequested := h.compareCurrent != nil
 	savedReflectionComparisonAvailable := false
 	var savedReflectionComparison bundle.ArchiveQuestionComparison
@@ -281,6 +299,11 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		default:
 			acceptanceRecordStatus = "mismatch"
 		}
+	}
+	if h.compareRounds != nil {
+		var comparisonErr error
+		questionRoundComparison, comparisonErr = h.compareRounds()
+		questionRoundComparisonAvailable = comparisonErr == nil
 	}
 	if h.compareCurrent != nil {
 		var comparisonErr error
@@ -356,6 +379,9 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		AcceptanceRecordAvailable:          acceptanceRecordAvailable,
 		AcceptanceRecord:                   acceptanceRecord,
 		AcceptanceRecordStatus:             acceptanceRecordStatus,
+		QuestionRoundComparisonRequested:   questionRoundComparisonRequested,
+		QuestionRoundComparisonAvailable:   questionRoundComparisonAvailable,
+		QuestionRoundComparison:            questionRoundComparison,
 		SavedReflectionComparisonRequested: savedReflectionComparisonRequested,
 		SavedReflectionComparisonAvailable: savedReflectionComparisonAvailable,
 		SavedReflectionComparison:          savedReflectionComparison,
@@ -834,6 +860,31 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       <p class="context">The ledger follows caller-supplied order. It records bounded state changes only; it does not establish chronology or infer a trend.</p>
       {{else}}
       <p class="context">Saved reflection history is unavailable. The internal verification error is not rendered.</p>
+      {{end}}
+    </section>
+    {{end}}
+    {{if .QuestionRoundComparisonRequested}}
+    <section class="panel" id="history-question-round-comparison" aria-label="Retained question round comparison">
+      <div class="section-head"><h2>Retained question rounds</h2><span class="context">fixed, read only</span></div>
+      {{if .QuestionRoundComparisonAvailable}}
+      <p class="context">{{.QuestionRoundComparison.ComparisonQuestion}}</p>
+      <dl>
+        <dt>result</dt><dd><span class="status status-{{.QuestionRoundComparison.Result}}">{{.QuestionRoundComparison.Result}}</span></dd>
+        <dt>order basis</dt><dd>{{.QuestionRoundComparison.OrderBasis}}</dd>
+        <dt>first round SHA-256</dt><dd>{{.QuestionRoundComparison.FirstRoundSHA256}}</dd>
+        <dt>second round SHA-256</dt><dd>{{.QuestionRoundComparison.SecondRoundSHA256}}</dd>
+        <dt>first history SHA-256</dt><dd>{{.QuestionRoundComparison.FirstTransitionHistorySHA256}}</dd>
+        <dt>second history SHA-256</dt><dd>{{.QuestionRoundComparison.SecondTransitionHistorySHA256}}</dd>
+        <dt>compared</dt><dd>{{.QuestionRoundComparison.Compared}}</dd>
+        <dt>changed</dt><dd>{{.QuestionRoundComparison.Changed}}</dd>
+      </dl>
+      <p class="context">changed fixed questions:</p>
+      <ul aria-label="Changed retained questions">
+      {{range .QuestionRoundComparison.ChangedQuestions}}<li><code>{{.QuestionID}}</code>: {{.FirstResult}} &rarr; {{.SecondResult}}</li>{{else}}<li>none</li>{{end}}
+      </ul>
+      <p class="context">This compares bounded question results in caller order. It does not establish chronology, infer a trend, or prove the underlying evidence.</p>
+      {{else}}
+      <p class="context">Retained question round comparison is unavailable. The internal verification error is not rendered.</p>
       {{end}}
     </section>
     {{end}}

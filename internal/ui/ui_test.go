@@ -533,6 +533,80 @@ func TestHandlerHidesAcceptanceErrors(t *testing.T) {
 	}
 }
 
+func TestHandlerRendersQuestionRoundComparison(t *testing.T) {
+	comparison := bundle.ArchiveQuestionTransitionHistoryQuestionRoundComparison{
+		SchemaVersion:                 1,
+		ComparisonID:                  "question-round-answer-change",
+		ComparisonQuestion:            "Did the bounded answer results change between these retained question rounds?",
+		OrderBasis:                    "caller",
+		Result:                        "changed",
+		FirstRoundSHA256:              strings.Repeat("a", 64),
+		SecondRoundSHA256:             strings.Repeat("b", 64),
+		FirstTransitionHistorySHA256:  strings.Repeat("c", 64),
+		SecondTransitionHistorySHA256: strings.Repeat("d", 64),
+		Compared:                      4,
+		Changed:                       1,
+		ChangedQuestions: []bundle.ArchiveQuestionTransitionHistoryQuestionRoundChange{{
+			QuestionID:   "answer-state-transitions",
+			FirstResult:  "same",
+			SecondResult: "changed",
+		}},
+	}
+	h := newHandler(handler{
+		root:  "archive-root",
+		index: func(string) ([]bundle.ArchiveEntry, error) { return nil, nil },
+		compareRounds: func() (bundle.ArchiveQuestionTransitionHistoryQuestionRoundComparison, error) {
+			return comparison, nil
+		},
+	})
+
+	recorder := httptest.NewRecorder()
+	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	body := recorder.Body.String()
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%q", recorder.Code, body)
+	}
+	for _, want := range []string{
+		"history-question-round-comparison",
+		"Retained question rounds",
+		comparison.ComparisonQuestion,
+		comparison.Result,
+		comparison.OrderBasis,
+		comparison.FirstRoundSHA256,
+		comparison.SecondRoundSHA256,
+		comparison.FirstTransitionHistorySHA256,
+		comparison.SecondTransitionHistorySHA256,
+		"answer-state-transitions",
+		"same",
+		"changed",
+		"does not establish chronology",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body missing %q: %s", want, body)
+		}
+	}
+}
+
+func TestHandlerHidesQuestionRoundComparisonErrors(t *testing.T) {
+	h := newHandler(handler{
+		root:  "archive-root",
+		index: func(string) ([]bundle.ArchiveEntry, error) { return nil, nil },
+		compareRounds: func() (bundle.ArchiveQuestionTransitionHistoryQuestionRoundComparison, error) {
+			return bundle.ArchiveQuestionTransitionHistoryQuestionRoundComparison{}, errors.New("private round comparison failure")
+		},
+	})
+
+	recorder := httptest.NewRecorder()
+	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	body := recorder.Body.String()
+	if recorder.Code != http.StatusOK || !strings.Contains(body, "Retained question round comparison is unavailable") {
+		t.Fatalf("status = %d, body=%q", recorder.Code, body)
+	}
+	if strings.Contains(body, "private round comparison failure") {
+		t.Fatal("body disclosed round comparison error")
+	}
+}
+
 func TestHandlerRendersSavedReflectionComparison(t *testing.T) {
 	comparison := bundle.ArchiveQuestionComparison{
 		ComparisonQuestion:    "Did the bounded answer state change between these saved reflection snapshots?",

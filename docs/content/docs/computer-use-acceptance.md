@@ -32,6 +32,11 @@ go run ./cmd/ariadne experiment serve --history <history.json> --acceptance <acc
 ```
 
 The server accepts loopback addresses only and is read-only.
+To include a comparison of two retained rounds, supply both optional paths:
+
+```console
+go run ./cmd/ariadne experiment serve --history <history.json> --acceptance <acceptance.json> --round-first <first-round.json> --round-second <second-round.json> <archive-root>
+```
 
 ## Driver sequence
 
@@ -44,7 +49,10 @@ The server accepts loopback addresses only and is read-only.
    receipt` and that its result is one of the fixed bounded states.
 6. Check that `Portable question acceptance` reports `matched` after selecting
    the question named by the saved acceptance record.
-7. Retain only the question ID and the three identities. Do not submit forms,
+7. If retained-round comparison was enabled, inspect `Retained question
+   rounds` for bounded result changes and both round identities; preserve the
+   caller-supplied order and do not infer chronology.
+8. Retain only the question ID and the three identities. Do not submit forms,
    follow mutation controls, or copy page text beyond the bounded receipt.
 
 The page exposes accessible labels and stable receipt panel IDs for this
@@ -59,6 +67,8 @@ acceptance artifact is a raw-value-free identity binding made after the round
 and receipt have been checked; it is useful for retaining what the pass was
 intended to select, but its verifier does not prove that a UI driver performed
 the selection. The server-side `matched` status compares only the safe
-identities; it is not UI proof. Mark the UI check `not run` if the computer-use host cannot
+identities; it is not UI proof. The optional retained-round panel compares
+fixed bounded results only; it is not a trend or chronology claim. Mark the UI
+check `not run` if the computer-use host cannot
 enumerate or activate a window. Deterministic handler tests and the offline
 verifiers remain authoritative until a real rendered-flow check is available.

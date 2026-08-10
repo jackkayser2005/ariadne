@@ -385,7 +385,7 @@ when `go run` built Ariadne.
   exactly the expected identity; a mismatch produces no verification output.
   A successful result proves only that the derived report satisfies Ariadne's
   structural contract; it does not re-verify or prove the underlying evidence.
-- `experiment serve [--history <history.json>] [--reflection <report.json>] [--export <export.json>] [--acceptance <acceptance.json>] <archive-root>` starts a
+- `experiment serve [--history <history.json>] [--reflection <report.json>] [--export <export.json>] [--acceptance <acceptance.json>] [--round-first <round.json> --round-second <round.json>] <archive-root>` starts a
   localhost-only, read-only review
   page at `http://127.0.0.1:8787/`; only loopback IP addresses are accepted, and
   it lists verified bundles and links to the same bounded questions and finding

@@ -52,7 +52,7 @@ const usage = `usage:
   ariadne experiment ask-archive verify [--json] [--expect-sha256 <digest>] <report.json>
   ariadne experiment questions [--json]
   ariadne experiment list [--json] <archive-root>
-  ariadne experiment serve [--addr <address>] [--history <history.json>] [--reflection <report.json>] [--export <export.json>] [--acceptance <acceptance.json>] <archive-root>
+  ariadne experiment serve [--addr <address>] [--history <history.json>] [--reflection <report.json>] [--export <export.json>] [--acceptance <acceptance.json>] [--round-first <round.json> --round-second <round.json>] <archive-root>
 `
 
 const adbCheckTimeout = 10 * time.Second
@@ -1942,6 +1942,8 @@ func runServe(
 	reflectionPath := flags.String("reflection", "", "")
 	exportPath := flags.String("export", "", "")
 	acceptancePath := flags.String("acceptance", "", "")
+	roundFirstPath := flags.String("round-first", "", "")
+	roundSecondPath := flags.String("round-second", "", "")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
 		_, _ = io.WriteString(stderr, usage)
 		return 2
@@ -1954,11 +1956,15 @@ func runServe(
 		_, _ = io.WriteString(stderr, "ariadne: experiment serve: --acceptance requires --history\n")
 		return 2
 	}
+	if (*roundFirstPath == "") != (*roundSecondPath == "") {
+		_, _ = io.WriteString(stderr, "ariadne: experiment serve: --round-first and --round-second must be supplied together\n")
+		return 2
+	}
 	if _, err := fmt.Fprintf(stdout, "ariadne: review UI listening at http://%s/\n", *address); err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment serve: write output: %v\n", err)
 		return 1
 	}
-	reviewHandler := ui.HandlerWithReviewAndExportAndAcceptance(flags.Arg(0), *historyPath, *reflectionPath, *exportPath, *acceptancePath)
+	reviewHandler := ui.HandlerWithReviewAndExportAndAcceptanceAndQuestionRounds(flags.Arg(0), *historyPath, *reflectionPath, *exportPath, *acceptancePath, *roundFirstPath, *roundSecondPath)
 	if err := serve(*address, reviewHandler); err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment serve: %v\n", err)
 		return 1
