@@ -1187,7 +1187,8 @@ func validateSession(record adb.SessionRecord, kind string) error {
 		record.SchemaVersion != 3 &&
 		record.SchemaVersion != 4 &&
 		record.SchemaVersion != 5 &&
-		record.SchemaVersion != 6) ||
+		record.SchemaVersion != 6 &&
+		record.SchemaVersion != 7) ||
 		record.Kind != kind {
 		return errors.New("schema_version or kind is invalid")
 	}
@@ -1289,6 +1290,17 @@ func validateSession(record adb.SessionRecord, kind string) error {
 			step.FinishedAt.Before(step.StartedAt) ||
 			record.FinishedAt.Before(step.FinishedAt) {
 			return fmt.Errorf("step %q is invalid", expected)
+		}
+		if record.SchemaVersion < 7 && step.UIHierarchySHA256 != "" {
+			return errors.New("legacy session ui_hierarchy_sha256 is invalid")
+		}
+		if record.SchemaVersion >= 7 {
+			if expected == "interact" && step.Status == "ok" && !validDigest(step.UIHierarchySHA256) {
+				return errors.New("interact UI hierarchy SHA-256 is invalid")
+			}
+			if expected != "interact" && step.UIHierarchySHA256 != "" {
+				return fmt.Errorf("step %q UI hierarchy SHA-256 is invalid", expected)
+			}
 		}
 		previous = step.FinishedAt
 	}

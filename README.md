@@ -167,6 +167,12 @@ each bounded result and a direct receipt link, so a UI driver can choose a
 bounded question without inventing natural language. The selected receipt
 renders its stable history and receipt SHA-256 identities alongside the
 raw-value-free JSON details.
+
+Stable-ID Android sessions also record a SHA-256 identity for the successful
+UI hierarchy used to resolve the manifest-declared control. The raw hierarchy
+XML is never retained in session metadata; this identity is control provenance
+only and does not prove anything about the target application.
+
 Those links use the validated `history_question_id` query and fail closed for
 unknown IDs. An
 unavailable comparison remains a generic bounded state; the

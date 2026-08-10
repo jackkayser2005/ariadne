@@ -451,6 +451,16 @@ func TestVerifyExportRejectsInvalidFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	validText := string(valid)
+	sizeStart := strings.Index(validText, `"size_bytes": `)
+	if sizeStart < 0 {
+		t.Fatal("export did not contain artifact size")
+	}
+	sizeEnd := strings.Index(validText[sizeStart:], ",")
+	if sizeEnd < 0 {
+		t.Fatal("export artifact size was not terminated")
+	}
+	artifactSize := validText[sizeStart : sizeStart+sizeEnd]
 	cases := []struct {
 		name    string
 		replace string
@@ -461,7 +471,7 @@ func TestVerifyExportRejectsInvalidFields(t *testing.T) {
 		{name: "contract digest", replace: `"manifest_contract_sha256": "` + strings.Repeat("c", 64) + `"`, with: `"manifest_contract_sha256": "bad"`, want: "manifest_contract_sha256"},
 		{name: "answer state", replace: `"answer_state": "observed"`, with: `"answer_state": "not-a-state"`, want: "answer_state"},
 		{name: "target metadata", replace: `"android_api": 35`, with: `"android_api": 0`, want: "target metadata"},
-		{name: "artifact metadata", replace: `"size_bytes": 2497`, with: `"size_bytes": -1`, want: "artifact metadata"},
+		{name: "artifact metadata", replace: artifactSize, with: `"size_bytes": -1`, want: "artifact metadata"},
 		{name: "comparison schema", replace: `"schema_version": 5`, with: `"schema_version": 3`, want: "comparison schema_version"},
 		{name: "comparison field", replace: `"field": "variant"`, with: `"field": "bad field"`, want: "comparison field"},
 		{name: "difference kind", replace: `"kind": "changed"`, with: `"kind": "other"`, want: "difference is invalid"},
@@ -1251,6 +1261,22 @@ func TestWriteRejectsInvalidSessions(t *testing.T) {
 			want: "manifest_contract_sha256",
 		},
 		{
+			name: "legacy UI hierarchy digest",
+			mutate: func(record *adb.SessionRecord) {
+				record.SchemaVersion = 6
+				record.Steps[3].UIHierarchySHA256 = strings.Repeat("d", 64)
+			},
+			want: "legacy session ui_hierarchy_sha256",
+		},
+		{
+			name: "missing UI hierarchy digest",
+			mutate: func(record *adb.SessionRecord) {
+				record.SchemaVersion = 7
+				record.Steps[3].UIHierarchySHA256 = ""
+			},
+			want: "interact UI hierarchy SHA-256",
+		},
+		{
 			name: "legacy manifest contract digest",
 			mutate: func(record *adb.SessionRecord) {
 				record.SchemaVersion = 5
@@ -1447,8 +1473,8 @@ func TestWriteRejectsInvalidSessionJSON(t *testing.T) {
 			change: func(input string) string {
 				return strings.Replace(
 					input,
-					`"schema_version": 6,`,
-					`"schema_version": 6, "schema_version": 6,`,
+					`"schema_version": 7,`,
+					`"schema_version": 7, "schema_version": 7,`,
 					1,
 				)
 			},
@@ -1648,7 +1674,7 @@ func makeRun(t *testing.T, options runOptions) string {
 	t.Helper()
 	runDir := filepath.Join(t.TempDir(), "run")
 	if options.sessionSchemaVersion == 0 {
-		options.sessionSchemaVersion = 6
+		options.sessionSchemaVersion = 7
 	}
 	if options.baselineStorage == "" {
 		options.baselineStorage = baselineObservation
@@ -1724,6 +1750,9 @@ func writeSession(
 			FinishedAt: stepStart.Add(time.Second),
 			Status:     "ok",
 			ExitCode:   0,
+		}
+		if schemaVersion >= 7 && name == "interact" {
+			steps[index].UIHierarchySHA256 = strings.Repeat("d", 64)
 		}
 	}
 	record := adb.SessionRecord{

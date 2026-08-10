@@ -479,8 +479,11 @@ package version and SHA-256, Ariadne Git revision and modified state, ADB
 version, timestamps, step status, exit codes, and a SHA-256 record for each
 captured artifact. Session schemas 3 and 4 remain readable for launch-only
 runs; schema 5 remains readable for stable-ID runs without a contract digest;
-current schema 6 records `tap_resource_id`, the structural
-`manifest_contract_sha256`, and the successful `interact` step. All current
+schema 6 remains readable for stable-ID runs with a contract digest; current
+schema 7 records `tap_resource_id`, the structural
+`manifest_contract_sha256`, and the successful `interact` step's
+`ui_hierarchy_sha256`. That digest binds the exact bounded UI hierarchy used
+to resolve the declared control without retaining the raw XML. All current
 schemas record `status` as `complete` or `incomplete`. Incomplete sessions
 record only a controlled `failure_stage`; they never persist raw errors.
 Metadata excludes persona values, command arguments, raw APK bytes, and raw

@@ -233,10 +233,13 @@ func TestRunPairUsesStableResourceInteraction(t *testing.T) {
 			t.Fatal(err)
 		}
 		text := string(data)
-		if !strings.Contains(text, `"schema_version": 6`) ||
+		uiSum := sha256.Sum256(ui)
+		if !strings.Contains(text, `"schema_version": 7`) ||
 			!strings.Contains(text, `"tap_resource_id": "dev.ariadne.fixture:id/observe_button"`) ||
 			!strings.Contains(text, `"manifest_contract_sha256": "`+contractDigest+`"`) ||
-			!strings.Contains(text, `"name": "interact"`) {
+			!strings.Contains(text, `"name": "interact"`) ||
+			!strings.Contains(text, `"ui_hierarchy_sha256": "`+fmt.Sprintf("%x", uiSum)+`"`) ||
+			strings.Contains(text, string(ui)) {
 			t.Fatalf("%s session metadata = %s", kind, text)
 		}
 	}

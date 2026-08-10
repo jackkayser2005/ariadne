@@ -21,7 +21,7 @@ import (
 	"github.com/jackkayser2005/ariadne/internal/experiment"
 )
 
-const sessionSchemaVersion = 6
+const sessionSchemaVersion = 7
 const networkObservationTimeout = 5 * time.Second
 const networkCleanupTimeout = 5 * time.Second
 const uiHierarchySettleTimeout = 2 * time.Second
@@ -63,11 +63,12 @@ type SessionRecord struct {
 
 // StepRecord describes one session operation without arguments or output.
 type StepRecord struct {
-	Name       string    `json:"name"`
-	StartedAt  time.Time `json:"started_at"`
-	FinishedAt time.Time `json:"finished_at"`
-	Status     string    `json:"status"`
-	ExitCode   int       `json:"exit_code"`
+	Name              string    `json:"name"`
+	StartedAt         time.Time `json:"started_at"`
+	FinishedAt        time.Time `json:"finished_at"`
+	Status            string    `json:"status"`
+	ExitCode          int       `json:"exit_code"`
+	UIHierarchySHA256 string    `json:"ui_hierarchy_sha256,omitempty"`
 }
 
 // Artifact identifies one captured file and its origin.
@@ -519,6 +520,7 @@ func runInteractionStep(
 	}
 
 	var coordinates [2]int
+	uiHierarchySHA256 := ""
 	settleDeadline := time.Now().Add(uiHierarchySettleTimeout)
 	for {
 		if _, err := run(
@@ -544,12 +546,17 @@ func runInteractionStep(
 		}
 
 		coordinates, err = tapCoordinates(dump, resourceID)
+		if err == nil {
+			sum := sha256.Sum256(dump)
+			uiHierarchySHA256 = fmt.Sprintf("%x", sum)
+		}
 		cleanupErr := cleanup()
 		if err == nil {
 			if cleanupErr != nil {
 				step.ExitCode = commandExitCode(cleanupErr)
 				return finish(errors.New("remove UI hierarchy"))
 			}
+			step.UIHierarchySHA256 = uiHierarchySHA256
 			break
 		}
 		if !errors.Is(err, errFixtureControlNotUnique) || time.Now().After(settleDeadline) {

@@ -36,7 +36,9 @@ and receipt links, including stable history and receipt identities, are a
 bounded UI-control surface for a computer-use driver;
 deterministic UI tests remain the authoritative local check, and computer-use
 is an orientation or acceptance aid rather than evidence about the target
-application.
+application. The authorized Android runner also retains a SHA-256 identity of
+the successful UI hierarchy used to resolve its declared control, without
+retaining raw hierarchy XML; this is control provenance, not target evidence.
 
 ## Year-one path
 
@@ -64,9 +66,11 @@ required schema.
 ### Months 10–12: expand only after the contract holds
 
 Evaluate one additional authorized target or capture edge only after the
-evidence and reflection contracts are stable. Target-specific runners belong at
-the edges; the deterministic comparison, provenance, redaction, and question
-engine stay small and portable.
+evidence and reflection contracts are stable. The first edge is now bounded UI
+control provenance: a successful Android interaction records only the
+hierarchy digest that located the declared resource ID. Target-specific runners
+belong at the edges; the deterministic comparison, provenance, redaction, and
+question engine stay small and portable.
 
 ## Acceptance gates
 
