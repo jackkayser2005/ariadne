@@ -193,15 +193,16 @@ question-round SHA-256. The selected receipt renders its stable history and
 receipt SHA-256 identities alongside the raw-value-free JSON details.
 When `--acceptance` is supplied, the page also reports whether the selected
 question and receipt match the saved history, round, and receipt identities.
-When verified history is available, the saved question ID is also a direct link
-back to that bounded history-question route. This is a read-only identity
-comparison; it does not prove that a UI driver performed the selection.
+When the supplied verified history has the saved history identity, the saved
+question ID is also a direct link back to that bounded history-question route.
+This is a read-only identity comparison; it does not prove that a UI driver
+performed the selection.
 When both `--round-first` and `--round-second` are supplied, the page also
 shows which fixed question results changed between those retained rounds,
 alongside both round and history identities. The comparison preserves caller
 order and does not infer chronology; each changed fixed-question ID links back
-to the same bounded history-question route for a repeatable re-check when the
-same verified history is supplied.
+to the same bounded history-question route for a repeatable re-check only when
+the supplied history identity matches one of the compared rounds.
 
 Stable-ID Android sessions also record a SHA-256 identity for the successful
 UI hierarchy used to resolve the manifest-declared control. The raw hierarchy

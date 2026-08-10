@@ -465,6 +465,30 @@ func TestHandlerRendersReflectionHistory(t *testing.T) {
 	if response.StatusCode != http.StatusOK || !strings.Contains(response.Header.Get("Content-Type"), "text/html") || !strings.Contains(string(rendered), questionRoundSHA256) || !strings.Contains(string(rendered), "history-answer-receipt-answer-state-summary-changes") {
 		t.Fatalf("rendered history flow status = %d, content-type=%q, body=%q", response.StatusCode, response.Header.Get("Content-Type"), rendered)
 	}
+	mismatchedSummary := summary
+	mismatchedSummary.TransitionHistorySHA256 = strings.Repeat("d", 64)
+	mismatchedAcceptance := newHandler(handler{
+		root:  "archive-root",
+		index: func(string) ([]bundle.ArchiveEntry, error) { return nil, nil },
+		history: func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error) {
+			return history, mismatchedSummary, nil
+		},
+		acceptance: func() (bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary, error) {
+			return bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary{
+				SchemaVersion:           acceptanceRecord.SchemaVersion,
+				TransitionHistorySHA256: acceptanceRecord.TransitionHistorySHA256,
+				QuestionRoundSHA256:     acceptanceRecord.QuestionRoundSHA256,
+				QuestionID:              acceptanceRecord.QuestionID,
+				ReceiptSHA256:           acceptanceRecord.ReceiptSHA256,
+				AcceptanceSHA256:        acceptanceSHA256,
+			}, nil
+		},
+	})
+	mismatchedAcceptanceRecorder := httptest.NewRecorder()
+	mismatchedAcceptance.ServeHTTP(mismatchedAcceptanceRecorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	if mismatchedAcceptanceRecorder.Code != http.StatusOK || strings.Contains(mismatchedAcceptanceRecorder.Body.String(), "Ask accepted history question") {
+		t.Fatalf("acceptance link with mismatched history status = %d, body=%q", mismatchedAcceptanceRecorder.Code, mismatchedAcceptanceRecorder.Body.String())
+	}
 }
 
 func TestHandlerHidesReflectionHistoryErrors(t *testing.T) {
@@ -559,7 +583,7 @@ func TestHandlerRendersQuestionRoundComparison(t *testing.T) {
 		root:  "archive-root",
 		index: func(string) ([]bundle.ArchiveEntry, error) { return nil, nil },
 		history: func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error) {
-			return bundle.ArchiveQuestionTransitionHistory{}, bundle.ArchiveQuestionTransitionVerificationSummary{}, nil
+			return bundle.ArchiveQuestionTransitionHistory{}, bundle.ArchiveQuestionTransitionVerificationSummary{TransitionHistorySHA256: strings.Repeat("c", 64)}, nil
 		},
 		compareRounds: func() (bundle.ArchiveQuestionTransitionHistoryQuestionRoundComparison, error) {
 			return comparison, nil
@@ -609,6 +633,21 @@ func TestHandlerRendersQuestionRoundComparison(t *testing.T) {
 	withoutHistory.ServeHTTP(withoutHistoryRecorder, httptest.NewRequest(http.MethodGet, "/", nil))
 	if withoutHistoryRecorder.Code != http.StatusOK || strings.Contains(withoutHistoryRecorder.Body.String(), "Ask changed retained question") {
 		t.Fatalf("comparison without history status = %d, body=%q", withoutHistoryRecorder.Code, withoutHistoryRecorder.Body.String())
+	}
+	mismatchedHistory := newHandler(handler{
+		root:  "archive-root",
+		index: func(string) ([]bundle.ArchiveEntry, error) { return nil, nil },
+		history: func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error) {
+			return bundle.ArchiveQuestionTransitionHistory{}, bundle.ArchiveQuestionTransitionVerificationSummary{TransitionHistorySHA256: strings.Repeat("e", 64)}, nil
+		},
+		compareRounds: func() (bundle.ArchiveQuestionTransitionHistoryQuestionRoundComparison, error) {
+			return comparison, nil
+		},
+	})
+	mismatchedHistoryRecorder := httptest.NewRecorder()
+	mismatchedHistory.ServeHTTP(mismatchedHistoryRecorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	if mismatchedHistoryRecorder.Code != http.StatusOK || strings.Contains(mismatchedHistoryRecorder.Body.String(), "Ask changed retained question") {
+		t.Fatalf("comparison with mismatched history status = %d, body=%q", mismatchedHistoryRecorder.Code, mismatchedHistoryRecorder.Body.String())
 	}
 }
 

@@ -754,7 +754,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
         <div class="section-head"><h3>Portable question acceptance</h3><span class="status">{{.AcceptanceRecordStatus}}</span></div>
         {{if .AcceptanceRecordAvailable}}
         <dl>
-          <dt>question ID</dt><dd>{{if and $.ReflectionHistoryRequested $.ReflectionHistoryAvailable}}<a href="/?history_question_id={{query .AcceptanceRecord.QuestionID}}" aria-label="Ask accepted history question {{.AcceptanceRecord.QuestionID}}"><code>{{.AcceptanceRecord.QuestionID}}</code></a>{{else}}<code>{{.AcceptanceRecord.QuestionID}}</code>{{end}}</dd>
+          <dt>question ID</dt><dd>{{if and $.ReflectionHistoryRequested $.ReflectionHistoryAvailable (eq $.ReflectionHistorySummary.TransitionHistorySHA256 .AcceptanceRecord.TransitionHistorySHA256)}}<a href="/?history_question_id={{query .AcceptanceRecord.QuestionID}}" aria-label="Ask accepted history question {{.AcceptanceRecord.QuestionID}}"><code>{{.AcceptanceRecord.QuestionID}}</code></a>{{else}}<code>{{.AcceptanceRecord.QuestionID}}</code>{{end}}</dd>
           <dt>history SHA-256</dt><dd>{{.AcceptanceRecord.TransitionHistorySHA256}}</dd>
           <dt>question round SHA-256</dt><dd>{{.AcceptanceRecord.QuestionRoundSHA256}}</dd>
           <dt>receipt SHA-256</dt><dd>{{.AcceptanceRecord.ReceiptSHA256}}</dd>
@@ -880,7 +880,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       </dl>
       <p class="context">changed fixed questions:</p>
       <ul aria-label="Changed retained questions">
-      {{range .QuestionRoundComparison.ChangedQuestions}}<li>{{if and $.ReflectionHistoryRequested $.ReflectionHistoryAvailable}}<a href="/?history_question_id={{query .QuestionID}}" aria-label="Ask changed retained question {{.QuestionID}}"><code>{{.QuestionID}}</code></a>{{else}}<code>{{.QuestionID}}</code>{{end}}: {{.FirstResult}} &rarr; {{.SecondResult}}</li>{{else}}<li>none</li>{{end}}
+      {{range .QuestionRoundComparison.ChangedQuestions}}<li>{{if and $.ReflectionHistoryRequested $.ReflectionHistoryAvailable (or (eq $.ReflectionHistorySummary.TransitionHistorySHA256 $.QuestionRoundComparison.FirstTransitionHistorySHA256) (eq $.ReflectionHistorySummary.TransitionHistorySHA256 $.QuestionRoundComparison.SecondTransitionHistorySHA256))}}<a href="/?history_question_id={{query .QuestionID}}" aria-label="Ask changed retained question {{.QuestionID}}"><code>{{.QuestionID}}</code></a>{{else}}<code>{{.QuestionID}}</code>{{end}}: {{.FirstResult}} &rarr; {{.SecondResult}}</li>{{else}}<li>none</li>{{end}}
       </ul>
       <p class="context">This compares bounded question results in caller order. It does not establish chronology, infer a trend, or prove the underlying evidence.</p>
       {{else}}

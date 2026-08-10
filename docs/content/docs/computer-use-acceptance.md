@@ -43,8 +43,10 @@ go run ./cmd/ariadne experiment serve --history <history.json> --acceptance <acc
 1. Open the printed loopback URL in the authorized local browser window.
 2. Locate the region labelled `Verified history question round`.
 3. If `Portable question acceptance` exposes `Ask accepted history question
-   <question-id>`, follow that link to select the saved bound question. Otherwise,
-   choose one link labelled `Ask verified history question <question-id>`.
+   <question-id>`, follow that link to select the saved bound question; it is
+   shown only when the supplied history identity matches the saved record.
+   Otherwise, choose one link labelled `Ask verified history question
+   <question-id>`.
 4. Read the visible history SHA-256, question-round SHA-256, selected question
    ID, receipt SHA-256, and the raw-value-free receipt JSON.
 5. Check that the selected receipt panel is labelled `Portable history answer
@@ -54,8 +56,9 @@ go run ./cmd/ariadne experiment serve --history <history.json> --acceptance <acc
 7. If retained-round comparison was enabled, inspect `Retained question
    rounds` for bounded result changes and both round identities; preserve the
    caller-supplied order and do not infer chronology. If a changed question is
-   present, use its `Ask changed retained question <question-id>` link to
-   re-ask that fixed question through the same bounded route.
+   present and the supplied history identity matches one of the compared rounds,
+   use its `Ask changed retained question <question-id>` link to re-ask that
+   fixed question through the same bounded route.
 8. Retain only the question ID and the three identities. Do not submit forms,
    follow mutation controls, or copy page text beyond the bounded receipt.
 
