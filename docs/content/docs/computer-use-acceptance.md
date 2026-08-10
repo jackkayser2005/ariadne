@@ -66,6 +66,17 @@ The page exposes accessible labels and stable receipt panel IDs for this
 sequence. A driver may use those labels or the visible question IDs; it must
 not invent natural-language questions or infer chronology from the ledger.
 
+## Recorded rendered-flow check
+
+On 2026-08-10, an authorized Windows Chrome smoke pass opened the loopback
+review page from a synthetic raw-value-free transition history and acceptance
+record, followed `Ask accepted history question answer-state-transitions`, and
+observed `MATCHED` with the raw-value-free receipt and stable identities
+visible. No mutation control was used. This proves the rendered route,
+accessible label, and read-only receipt flow; it does not prove the target
+application or the underlying evidence. The real Android capture workflow
+remains the authority for target-specific evidence.
+
 ## Acceptance record
 
 Record the round SHA-256, history SHA-256, selected question ID, receipt
@@ -78,4 +89,5 @@ identities; it is not UI proof. The optional retained-round panel compares
 fixed bounded results only; it is not a trend or chronology claim. Mark the UI
 check `not run` if the computer-use host cannot
 enumerate or activate a window. Deterministic handler tests and the offline
-verifiers remain authoritative until a real rendered-flow check is available.
+verifiers remain authoritative alongside the recorded rendered-flow check; a
+new host or build should repeat the UI check before relying on its result.

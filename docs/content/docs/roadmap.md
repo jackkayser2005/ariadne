@@ -77,8 +77,10 @@ Turn the historical reflection spine into a durable question workflow. The
 fixed question round and individual answer receipts are now independently
 retainable and verifiable. The raw-value-free acceptance record now binds a
 retained round and selected receipt for offline handoff. The remaining focused
-slice is a rendered computer-use acceptance pass for choosing fixed questions,
-reading their receipts, and retaining their identities. Any new answer must remain bound to a verified history and must say
+slice has now been exercised in an authorized Windows Chrome smoke pass for
+choosing a fixed question, reading its receipt, and checking the matched
+identity status. That pass validates the rendered route only; any new answer
+must remain bound to a verified history and must say
 `unavailable` when the history lacks the required schema.
 
 ### Months 10–12: expand only after the contract holds

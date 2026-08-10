@@ -197,6 +197,10 @@ When the supplied verified history has the saved history identity, the saved
 question ID is also a direct link back to that bounded history-question route.
 This is a read-only identity comparison; it does not prove that a UI driver
 performed the selection.
+On 2026-08-10, a Windows Chrome smoke pass opened the loopback page, followed
+the saved acceptance link, and rendered `MATCHED` with the raw-value-free
+receipt identities visible. That validates the rendered route and accessibility
+contract only; it does not prove target-application behavior.
 When both `--round-first` and `--round-second` are supplied, the page also
 shows which fixed question results changed between those retained rounds,
 alongside both round and history identities. The comparison preserves caller
