@@ -31,7 +31,10 @@ The repository currently has three evidence-backed layers:
    receipts can be independently checked for fixed-question identity and
    canonical content identity without reopening the source history. The complete
    fixed question round can also be retained and independently checked by its
-   canonical identity without reopening the source history.
+   canonical identity without reopening the source history. Two retained rounds
+   can also be compared in caller order, returning only the fixed question IDs
+   whose bounded results changed and the identities that bind both rounds to
+   their histories.
 
 The local review page is intentionally read-only. Its compact question round
 and receipt links, including stable history and receipt identities, are a

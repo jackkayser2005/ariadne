@@ -37,22 +37,27 @@ func ArchiveQuestionTransitionHistoryQuestionRoundSHA256(round ArchiveQuestionTr
 // validates the fixed question catalog and canonical identity, not the
 // underlying evidence or the history referenced by its digest.
 func VerifyArchiveQuestionTransitionHistoryQuestionRound(roundPath string) (ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary, error) {
+	_, summary, err := readArchiveQuestionTransitionHistoryQuestionRound(roundPath)
+	return summary, err
+}
+
+func readArchiveQuestionTransitionHistoryQuestionRound(roundPath string) (ArchiveQuestionTransitionHistoryQuestionRoundAnswer, ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary, error) {
 	if strings.TrimSpace(roundPath) == "" {
-		return ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary{}, errors.New("archive question round path is required")
+		return ArchiveQuestionTransitionHistoryQuestionRoundAnswer{}, ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary{}, errors.New("archive question round path is required")
 	}
 	data, err := readFileBounded(roundPath, maxOutputBytes)
 	if err != nil {
-		return ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary{}, fmt.Errorf("archive question round: %w", err)
+		return ArchiveQuestionTransitionHistoryQuestionRoundAnswer{}, ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary{}, fmt.Errorf("archive question round: %w", err)
 	}
 	round, err := decodeArchiveQuestionTransitionHistoryQuestionRound(data)
 	if err != nil {
-		return ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary{}, fmt.Errorf("archive question round: %w", err)
+		return ArchiveQuestionTransitionHistoryQuestionRoundAnswer{}, ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary{}, fmt.Errorf("archive question round: %w", err)
 	}
 	roundSHA256, err := ArchiveQuestionTransitionHistoryQuestionRoundSHA256(round)
 	if err != nil {
-		return ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary{}, err
+		return ArchiveQuestionTransitionHistoryQuestionRoundAnswer{}, ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary{}, err
 	}
-	return ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary{
+	return round, ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary{
 		SchemaVersion:           round.SchemaVersion,
 		TransitionHistorySHA256: round.TransitionHistorySHA256,
 		Questions:               len(round.Questions),

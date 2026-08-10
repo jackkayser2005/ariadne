@@ -332,6 +332,11 @@ when `go run` built Ariadne.
   validates catalog order, bounded result vocabularies, history identity, and
   canonical round identity; it does not re-verify the history or prove the
   underlying evidence.
+- `experiment ask-archive transitions ask all compare [--json] <first-round.json> <second-round.json>`
+  verifies two retained question rounds and compares their fixed bounded
+  results in caller order. It returns both round identities, both referenced
+  history identities, and any changed question IDs; it does not infer chronology
+  or prove the underlying evidence.
 - `experiment ask-archive transitions ask receipt [--json] <history.json> <question-id>`
   verifies the ledger once and wraps one selected fixed answer in a common
   raw-value-free receipt. The receipt binds its bounded result and nested

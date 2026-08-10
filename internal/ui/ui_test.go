@@ -3,6 +3,7 @@ package ui
 import (
 	"errors"
 	"html/template"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -422,6 +423,21 @@ func TestHandlerRendersReflectionHistory(t *testing.T) {
 	h.ServeHTTP(invalidRecorder, httptest.NewRequest(http.MethodGet, "/?history_question_id=not-a-question", nil))
 	if invalidRecorder.Code != http.StatusNotFound || !strings.Contains(invalidRecorder.Body.String(), "history question not found") {
 		t.Fatalf("invalid history question status = %d, body=%q", invalidRecorder.Code, invalidRecorder.Body.String())
+	}
+
+	server := httptest.NewServer(h)
+	defer server.Close()
+	response, err := server.Client().Get(server.URL + "/?history_question_id=answer-state-summary-changes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	rendered, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || !strings.Contains(response.Header.Get("Content-Type"), "text/html") || !strings.Contains(string(rendered), questionRoundSHA256) || !strings.Contains(string(rendered), "history-answer-receipt-answer-state-summary-changes") {
+		t.Fatalf("rendered history flow status = %d, content-type=%q, body=%q", response.StatusCode, response.Header.Get("Content-Type"), rendered)
 	}
 }
 

@@ -41,6 +41,7 @@ const usage = `usage:
   ariadne experiment ask-archive transitions ask all [--json] <history.json>
   ariadne experiment ask-archive transitions ask all save [--json] <history.json> <round.json>
   ariadne experiment ask-archive transitions ask all verify [--json] [--expect-sha256 <digest>] <round.json>
+  ariadne experiment ask-archive transitions ask all compare [--json] <first-round.json> <second-round.json>
   ariadne experiment ask-archive transitions ask receipt [--json] <history.json> <question-id>
   ariadne experiment ask-archive transitions ask receipt save [--json] <history.json> <question-id> <receipt.json>
   ariadne experiment ask-archive transitions ask receipt verify [--json] [--expect-sha256 <digest>] <receipt.json>
@@ -116,6 +117,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 				}
 				if len(args) >= 6 && args[5] == "verify" {
 					return runAskArchiveTransitionsAskAllVerify(args[6:], stdout, stderr, bundle.VerifyArchiveQuestionTransitionHistoryQuestionRound)
+				}
+				if len(args) >= 6 && args[5] == "compare" {
+					return runAskArchiveTransitionsAskAllCompare(args[6:], stdout, stderr, bundle.CompareArchiveQuestionTransitionHistoryQuestionRounds)
 				}
 				return runAskArchiveTransitionsAskAll(args[5:], stdout, stderr, bundle.AskArchiveQuestionTransitionHistoryQuestionRound)
 			}
@@ -219,6 +223,7 @@ type bundleArchiveQuestionTransitionSummaryAsker func(string) (bundle.ArchiveQue
 type bundleArchiveQuestionTransitionRoundAsker func(string) (bundle.ArchiveQuestionTransitionHistoryQuestionRoundAnswer, error)
 type bundleArchiveQuestionTransitionRoundSaver func(string, string) (bundle.ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary, error)
 type bundleArchiveQuestionTransitionRoundVerifier func(string) (bundle.ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary, error)
+type bundleArchiveQuestionTransitionRoundComparer func(string, string) (bundle.ArchiveQuestionTransitionHistoryQuestionRoundComparison, error)
 type bundleArchiveQuestionTransitionReceiptAsker func(string, string) (bundle.ArchiveQuestionTransitionHistoryAnswerReceipt, error)
 type bundleArchiveQuestionTransitionReceiptSaver func(string, string, string) (bundle.ArchiveQuestionTransitionHistoryAnswerReceiptSaveSummary, error)
 type bundleArchiveQuestionTransitionReceiptVerifier func(string) (bundle.ArchiveQuestionTransitionHistoryAnswerReceiptVerificationSummary, error)
@@ -1170,6 +1175,62 @@ func runAskArchiveTransitionsAskAllVerify(
 		summary.RoundSHA256,
 	); err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask all verify: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func runAskArchiveTransitionsAskAllCompare(
+	args []string,
+	stdout, stderr io.Writer,
+	compare bundleArchiveQuestionTransitionRoundComparer,
+) int {
+	flags := flag.NewFlagSet("experiment ask-archive transitions ask all compare", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 2 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+
+	comparison, err := compare(flags.Arg(0), flags.Arg(1))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask all compare: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(comparison); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask all compare: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if _, err := fmt.Fprintf(
+		stdout,
+		"archive reflection question round comparison complete\nschema_version: %d\ncomparison_id: %s\ncomparison_question: %s\norder_basis: %s\nresult: %s\nfirst_round_sha256: %s\nsecond_round_sha256: %s\nfirst_transition_history_sha256: %s\nsecond_transition_history_sha256: %s\ncompared: %d\nchanged: %d\nchanged_questions:\n",
+		comparison.SchemaVersion,
+		comparison.ComparisonID,
+		comparison.ComparisonQuestion,
+		comparison.OrderBasis,
+		comparison.Result,
+		comparison.FirstRoundSHA256,
+		comparison.SecondRoundSHA256,
+		comparison.FirstTransitionHistorySHA256,
+		comparison.SecondTransitionHistorySHA256,
+		comparison.Compared,
+		comparison.Changed,
+	); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask all compare: write output: %v\n", err)
+		return 1
+	}
+	for _, change := range comparison.ChangedQuestions {
+		if _, err := fmt.Fprintf(stdout, "- question_id: %s\n  first_result: %s\n  second_result: %s\n", change.QuestionID, change.FirstResult, change.SecondResult); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask all compare: write output: %v\n", err)
+			return 1
+		}
+	}
+	if _, err := io.WriteString(stdout, "note: this compares fixed bounded question results in caller order; it does not infer chronology or prove the underlying evidence\n"); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment ask-archive transitions ask all compare: write output: %v\n", err)
 		return 1
 	}
 	return 0

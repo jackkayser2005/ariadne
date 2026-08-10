@@ -65,6 +65,7 @@ go run ./cmd/ariadne experiment ask-archive transitions ask repeated --json <his
 go run ./cmd/ariadne experiment ask-archive transitions ask all --json <history.json>
 go run ./cmd/ariadne experiment ask-archive transitions ask all save --json <history.json> <round.json>
 go run ./cmd/ariadne experiment ask-archive transitions ask all verify --json [--expect-sha256 <digest>] <round.json>
+go run ./cmd/ariadne experiment ask-archive transitions ask all compare --json <first-round.json> <second-round.json>
 go run ./cmd/ariadne experiment ask-archive transitions ask receipt --json <history.json> <question-id>
 go run ./cmd/ariadne experiment ask-archive transitions ask receipt save --json <history.json> <question-id> <receipt.json>
 go run ./cmd/ariadne experiment ask-archive transitions ask receipt verify --json [--expect-sha256 <digest>] <receipt.json>
@@ -127,6 +128,11 @@ question ID for detailed entries or snapshot summaries. Use
 `transitions ask all save` to retain that round with exclusive creation; it
 returns a canonical round SHA-256, and `transitions ask all verify` checks the
 retained round without reopening the source history.
+
+`transitions ask all compare <first-round.json> <second-round.json>` verifies
+two retained rounds and compares their fixed bounded results in caller order.
+It returns the two round and history identities plus any changed question IDs;
+it does not infer chronology or prove the underlying evidence.
 
 `transitions ask receipt <history.json> <question-id>` verifies the history once
 and wraps one selected fixed answer in a portable raw-value-free receipt. The
