@@ -71,6 +71,7 @@ type pageData struct {
 	ReflectionHistory                  bundle.ArchiveQuestionTransitionHistory
 	ReflectionHistorySummary           bundle.ArchiveQuestionTransitionVerificationSummary
 	ReflectionHistoryQuestions         []bundle.Question
+	ReflectionHistoryQuestionRound     bundle.ArchiveQuestionTransitionHistoryQuestionRoundAnswer
 	ReflectionHistoryQuestionID        string
 	ReflectionHistoryAnswer            bundle.ArchiveQuestionTransitionHistoryAnswer
 	ReflectionHistoryRepeatedAnswer    bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer
@@ -185,6 +186,7 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	var reflectionHistory bundle.ArchiveQuestionTransitionHistory
 	var reflectionHistorySummary bundle.ArchiveQuestionTransitionVerificationSummary
 	var reflectionHistoryQuestions []bundle.Question
+	var reflectionHistoryQuestionRound bundle.ArchiveQuestionTransitionHistoryQuestionRoundAnswer
 	reflectionHistoryQuestionID := r.URL.Query().Get("history_question_id")
 	var reflectionHistoryAnswer bundle.ArchiveQuestionTransitionHistoryAnswer
 	var reflectionHistoryRepeatedAnswer bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer
@@ -212,6 +214,7 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 			reflectionHistoryRepeatedAnswer = bundle.AnswerArchiveQuestionTransitionHistoryRepeated(reflectionHistory, reflectionHistorySummary.TransitionHistorySHA256)
 			reflectionHistorySnapshotAnswer = bundle.AnswerArchiveQuestionTransitionHistorySnapshots(reflectionHistory, reflectionHistorySummary.TransitionHistorySHA256)
 			reflectionHistorySummaryAnswer = bundle.AnswerArchiveQuestionTransitionHistorySummary(reflectionHistory, reflectionHistorySummary.TransitionHistorySHA256)
+			reflectionHistoryQuestionRound = bundle.AnswerArchiveQuestionTransitionHistoryQuestionRound(reflectionHistory, reflectionHistorySummary.TransitionHistorySHA256)
 			if reflectionHistoryQuestionID != "" {
 				var receiptErr error
 				reflectionHistoryReceipt, receiptErr = bundle.AnswerArchiveQuestionTransitionHistoryReceipt(reflectionHistory, reflectionHistorySummary.TransitionHistorySHA256, reflectionHistoryQuestionID)
@@ -284,6 +287,7 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		ReflectionHistory:                  reflectionHistory,
 		ReflectionHistorySummary:           reflectionHistorySummary,
 		ReflectionHistoryQuestions:         reflectionHistoryQuestions,
+		ReflectionHistoryQuestionRound:     reflectionHistoryQuestionRound,
 		ReflectionHistoryQuestionID:        reflectionHistoryQuestionID,
 		ReflectionHistoryAnswer:            reflectionHistoryAnswer,
 		ReflectionHistoryRepeatedAnswer:    reflectionHistoryRepeatedAnswer,
@@ -647,9 +651,9 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       <div class="section-head"><h2>Saved reflection history</h2><span class="context">verified ledger</span></div>
       {{if .ReflectionHistoryAvailable}}
       <p class="context">{{.ReflectionHistory.Question}}</p>
-      <div class="section-head"><h3>History questions</h3><span class="context">fixed, read only</span></div>
-      <div class="question-list" aria-label="Saved reflection history questions">
-      {{range .ReflectionHistoryQuestions}}<a class="button" href="/?history_question_id={{query .ID}}"{{if eq $.ReflectionHistoryQuestionID .ID}} aria-current="page"{{end}}><span><code>{{.ID}}</code><br>{{.Text}}</span><span aria-hidden="true">&rarr;</span></a>{{end}}
+      <div class="section-head"><h3>Question round</h3><span class="context">fixed, verified, read only</span></div>
+      <div class="question-list" aria-label="Verified history question round">
+      {{range .ReflectionHistoryQuestionRound.Questions}}<a class="button" href="/?history_question_id={{query .QuestionID}}" aria-label="Ask verified history question {{.QuestionID}}"{{if eq $.ReflectionHistoryQuestionID .QuestionID}} aria-current="page"{{end}}><span><code>{{.QuestionID}}</code><br>{{.Question}}</span><span class="status status-{{.Result}}">{{.Result}}</span></a>{{end}}
       </div>
       <dl>
         <dt>order basis</dt><dd>{{.ReflectionHistory.OrderBasis}}</dd>

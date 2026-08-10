@@ -148,8 +148,10 @@ fixed question against the current archive, showing only safe comparison counts,
 identities, per-directory bounded state changes, and the repeated-change
 question, snapshot-summary question, and snapshot-change question when history
 is available. The history
-panel also lists those fixed question IDs and links directly to each answer, so
-a UI driver can choose a bounded question without inventing natural language.
+panel presents a compact verified question round in fixed catalog order, with
+each bounded result and a direct receipt link, so a UI driver can choose a
+bounded question without inventing natural language. The selected receipt
+renders its stable identity and raw-value-free JSON details.
 Those links use the validated `history_question_id` query and fail closed for
 unknown IDs. An
 unavailable comparison remains a generic bounded state; the
