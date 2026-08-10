@@ -183,6 +183,8 @@ go run ./cmd/ariadne experiment ask-archive transitions --json <report-1.json> <
 go run ./cmd/ariadne experiment ask-archive transitions questions --json
 go run ./cmd/ariadne experiment ask-archive transitions ask --json <history.json> [<question-id>]
 go run ./cmd/ariadne experiment ask-archive transitions ask repeated --json <history.json>
+go run ./cmd/ariadne experiment ask-archive transitions ask receipt --json <history.json> <question-id>
+go run ./cmd/ariadne experiment ask-archive transitions ask receipt save --json <history.json> <question-id> <receipt.json>
 go run ./cmd/ariadne experiment ask-archive transitions save --json <report-1.json> <report-2.json> ... <history.json>
 go run ./cmd/ariadne experiment ask-archive transitions verify --json <transitions.json>
 go run ./cmd/ariadne experiment serve --history <transitions.json> --reflection <reflection.json> .ariadne/runs
@@ -324,6 +326,11 @@ when `go run` built Ariadne.
   detailed answer to the verified transition-history SHA-256; it does not
   infer chronology or prove the underlying evidence. The local review page
   renders the same receipt envelope for a selected history question.
+- `experiment ask-archive transitions ask receipt save [--json] <history.json> <question-id> <receipt.json>`
+  performs the same verified ask and writes the raw-value-free receipt with
+  exclusive creation. It returns a receipt SHA-256 and refuses to overwrite an
+  existing receipt, so later reflection work can retain the exact answer
+  artifact.
 - `experiment ask-archive transitions save [--json] <report-1.json> <report-2.json> ... <history.json>`
   verifies the supplied reflections, writes one raw-value-free transition
   ledger with exclusive file creation, including safe per-directory state

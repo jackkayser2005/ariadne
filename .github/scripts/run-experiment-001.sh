@@ -342,6 +342,21 @@ jq -e --arg history_sha256 "${transition_history_sha256}" '
   (.answer.transitions == 2) and
   (.answer.changed_transitions == [])
 ' "${archive_question_transition_receipt_json}"
+archive_question_transition_receipt_path="${RUNNER_TEMP}/ariadne-archive-question-transition-receipt-saved.json"
+archive_question_transition_receipt_save_summary_json="${RUNNER_TEMP}/ariadne-archive-question-transition-receipt-save-summary.json"
+"${ariadne}" experiment ask-archive transitions ask receipt save --json \
+  "${archive_question_transitions_json}" \
+  answer-state-summary-changes \
+  "${archive_question_transition_receipt_path}" >"${archive_question_transition_receipt_save_summary_json}"
+jq -e --arg history_sha256 "${transition_history_sha256}" '
+  (keys_unsorted == ["schema_version", "question_id", "question", "result", "transition_history_sha256", "receipt_sha256"]) and
+  (.schema_version == 1) and
+  (.question_id == "answer-state-summary-changes") and
+  (.result == "same") and
+  (.transition_history_sha256 == $history_sha256) and
+  (.receipt_sha256 | test("^[0-9a-f]{64}$"))
+' "${archive_question_transition_receipt_save_summary_json}"
+cmp -s "${archive_question_transition_receipt_json}" "${archive_question_transition_receipt_path}"
 archive_question_transition_questions_json="${RUNNER_TEMP}/ariadne-archive-question-transition-questions.json"
 "${ariadne}" experiment ask-archive transitions questions --json >"${archive_question_transition_questions_json}"
 jq -e '

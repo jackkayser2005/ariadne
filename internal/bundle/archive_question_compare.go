@@ -1,6 +1,8 @@
 package bundle
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -192,6 +194,17 @@ type ArchiveQuestionTransitionHistoryAnswerReceipt struct {
 	Result                  string          `json:"result"`
 	TransitionHistorySHA256 string          `json:"transition_history_sha256"`
 	Answer                  json.RawMessage `json:"answer"`
+}
+
+// ArchiveQuestionTransitionHistoryAnswerReceiptSaveSummary describes one
+// exclusively saved, raw-value-free answer receipt.
+type ArchiveQuestionTransitionHistoryAnswerReceiptSaveSummary struct {
+	SchemaVersion           int    `json:"schema_version"`
+	QuestionID              string `json:"question_id"`
+	Question                string `json:"question"`
+	Result                  string `json:"result"`
+	TransitionHistorySHA256 string `json:"transition_history_sha256"`
+	ReceiptSHA256           string `json:"receipt_sha256"`
 }
 
 // ArchiveQuestionTransitionHistoryQuestions returns the fixed questions
@@ -640,6 +653,48 @@ func AskArchiveQuestionTransitionHistoryReceipt(historyPath, questionID string) 
 		return ArchiveQuestionTransitionHistoryAnswerReceipt{}, err
 	}
 	return AnswerArchiveQuestionTransitionHistoryReceipt(history, summary.TransitionHistorySHA256, questionID)
+}
+
+// SaveArchiveQuestionTransitionHistoryAnswerReceipt verifies a saved
+// transition history, asks one fixed question, and writes its portable
+// receipt without overwriting an existing path.
+func SaveArchiveQuestionTransitionHistoryAnswerReceipt(historyPath, questionID, receiptPath string) (ArchiveQuestionTransitionHistoryAnswerReceiptSaveSummary, error) {
+	if strings.TrimSpace(receiptPath) == "" {
+		return ArchiveQuestionTransitionHistoryAnswerReceiptSaveSummary{}, errors.New("archive question answer receipt path is required")
+	}
+	receipt, err := AskArchiveQuestionTransitionHistoryReceipt(historyPath, questionID)
+	if err != nil {
+		return ArchiveQuestionTransitionHistoryAnswerReceiptSaveSummary{}, err
+	}
+	receiptSHA256, err := archiveQuestionTransitionHistoryAnswerReceiptSHA256(receipt)
+	if err != nil {
+		return ArchiveQuestionTransitionHistoryAnswerReceiptSaveSummary{}, err
+	}
+	data, err := json.Marshal(receipt)
+	if err != nil {
+		return ArchiveQuestionTransitionHistoryAnswerReceiptSaveSummary{}, fmt.Errorf("encode answer receipt: %w", err)
+	}
+	data = append(data, '\n')
+	if err := writeExclusive(receiptPath, data); err != nil {
+		return ArchiveQuestionTransitionHistoryAnswerReceiptSaveSummary{}, err
+	}
+	return ArchiveQuestionTransitionHistoryAnswerReceiptSaveSummary{
+		SchemaVersion:           receipt.SchemaVersion,
+		QuestionID:              receipt.QuestionID,
+		Question:                receipt.Question,
+		Result:                  receipt.Result,
+		TransitionHistorySHA256: receipt.TransitionHistorySHA256,
+		ReceiptSHA256:           receiptSHA256,
+	}, nil
+}
+
+func archiveQuestionTransitionHistoryAnswerReceiptSHA256(receipt ArchiveQuestionTransitionHistoryAnswerReceipt) (string, error) {
+	data, err := json.Marshal(receipt)
+	if err != nil {
+		return "", fmt.Errorf("canonicalize answer receipt: %w", err)
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
 }
 
 // SaveArchiveQuestionTransitionHistory writes one validated transition ledger

@@ -2399,6 +2399,110 @@ func TestRunAskArchiveTransitionsAskReceiptFailures(t *testing.T) {
 	}
 }
 
+func TestRunAskArchiveTransitionsAskReceiptSave(t *testing.T) {
+	summary := bundle.ArchiveQuestionTransitionHistoryAnswerReceiptSaveSummary{
+		SchemaVersion:           1,
+		QuestionID:              "answer-state-summary-changes",
+		Question:                "Did the bounded answer-state summary change at any supplied boundary?",
+		Result:                  "same",
+		TransitionHistorySHA256: strings.Repeat("a", 64),
+		ReceiptSHA256:           strings.Repeat("b", 64),
+	}
+
+	t.Run("human", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsAskReceiptSave(
+			[]string{"history.json", "answer-state-summary-changes", "receipt.json"},
+			&stdout,
+			&stderr,
+			func(historyPath, questionID, receiptPath string) (bundle.ArchiveQuestionTransitionHistoryAnswerReceiptSaveSummary, error) {
+				if historyPath != "history.json" || questionID != "answer-state-summary-changes" || receiptPath != "receipt.json" {
+					t.Fatalf("SaveArchiveQuestionTransitionHistoryAnswerReceipt() args = %q, %q, %q", historyPath, questionID, receiptPath)
+				}
+				return summary, nil
+			},
+		)
+		want := "archive reflection answer receipt saved\n" +
+			"schema_version: 1\n" +
+			"question_id: answer-state-summary-changes\n" +
+			"question: Did the bounded answer-state summary change at any supplied boundary?\n" +
+			"result: same\n" +
+			"transition_history_sha256: " + strings.Repeat("a", 64) + "\n" +
+			"receipt_sha256: " + strings.Repeat("b", 64) + "\n"
+		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+			t.Fatalf("runAskArchiveTransitionsAskReceiptSave() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("json", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsAskReceiptSave(
+			[]string{"--json", "history.json", "answer-state-summary-changes", "receipt.json"},
+			&stdout,
+			&stderr,
+			func(string, string, string) (bundle.ArchiveQuestionTransitionHistoryAnswerReceiptSaveSummary, error) {
+				return summary, nil
+			},
+		)
+		want := `{"schema_version":1,"question_id":"answer-state-summary-changes","question":"Did the bounded answer-state summary change at any supplied boundary?","result":"same","transition_history_sha256":"` + strings.Repeat("a", 64) + `","receipt_sha256":"` + strings.Repeat("b", 64) + `"}` + "\n"
+		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+			t.Fatalf("runAskArchiveTransitionsAskReceiptSave() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+}
+
+func TestRunAskArchiveTransitionsAskReceiptSaveFailures(t *testing.T) {
+	for _, args := range [][]string{nil, {"history.json", "question"}, {"history.json", "question", "receipt.json", "extra"}, {"--json=invalid", "history.json", "question", "receipt.json"}} {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			exitCode := runAskArchiveTransitionsAskReceiptSave(
+				args,
+				&stdout,
+				&stderr,
+				func(string, string, string) (bundle.ArchiveQuestionTransitionHistoryAnswerReceiptSaveSummary, error) {
+					t.Fatal("SaveArchiveQuestionTransitionHistoryAnswerReceipt called for invalid usage")
+					return bundle.ArchiveQuestionTransitionHistoryAnswerReceiptSaveSummary{}, nil
+				},
+			)
+			if exitCode != 2 || stdout.Len() != 0 || stderr.String() != usage {
+				t.Fatalf("runAskArchiveTransitionsAskReceiptSave() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+			}
+		})
+	}
+
+	t.Run("save error", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAskArchiveTransitionsAskReceiptSave(
+			[]string{"history.json", "question", "receipt.json"},
+			&stdout,
+			&stderr,
+			func(string, string, string) (bundle.ArchiveQuestionTransitionHistoryAnswerReceiptSaveSummary, error) {
+				return bundle.ArchiveQuestionTransitionHistoryAnswerReceiptSaveSummary{}, errors.New("receipt path exists")
+			},
+		)
+		if exitCode != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "receipt path exists") {
+			t.Fatalf("runAskArchiveTransitionsAskReceiptSave() = %d, stderr=%q", exitCode, stderr.String())
+		}
+	})
+
+	for _, args := range [][]string{{"history.json", "question", "receipt.json"}, {"--json", "history.json", "question", "receipt.json"}} {
+		t.Run("write output "+strings.Join(args, "_"), func(t *testing.T) {
+			var stderr bytes.Buffer
+			exitCode := runAskArchiveTransitionsAskReceiptSave(
+				args,
+				failingWriter{},
+				&stderr,
+				func(string, string, string) (bundle.ArchiveQuestionTransitionHistoryAnswerReceiptSaveSummary, error) {
+					return bundle.ArchiveQuestionTransitionHistoryAnswerReceiptSaveSummary{}, nil
+				},
+			)
+			if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+				t.Fatalf("runAskArchiveTransitionsAskReceiptSave() = %d, stderr=%q", exitCode, stderr.String())
+			}
+		})
+	}
+}
+
 func TestRunAskArchiveTransitionsAskSummary(t *testing.T) {
 	answer := bundle.ArchiveQuestionTransitionHistorySummaryAnswer{
 		SchemaVersion:           1,
