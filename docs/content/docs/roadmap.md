@@ -43,6 +43,8 @@ the successful UI hierarchy used to resolve its declared control, without
 retaining raw hierarchy XML; this is control provenance, not target evidence.
 The page also exposes the stable question-round identity, so an acceptance pass
 can retain both the round and the selected answer receipt identities.
+The concrete read-only sequence is documented in
+[`computer-use-acceptance.md`](computer-use-acceptance.md).
 
 ## Year-one path
 

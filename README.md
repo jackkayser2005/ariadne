@@ -21,6 +21,8 @@ The first milestone targets an authorized Android test application:
 The detailed design and experiment log live in [`docs/`](docs/).
 The evidence-backed first-year path is tracked in
 [`docs/content/docs/roadmap.md`](docs/content/docs/roadmap.md).
+The read-only computer-use acceptance sequence is documented in
+[`docs/content/docs/computer-use-acceptance.md`](docs/content/docs/computer-use-acceptance.md).
 
 The shareable export has its own canonical SHA-256 identity. Verify a received
 export structurally, and optionally require the expected identity, with
