@@ -37,25 +37,30 @@ func ArchiveQuestionTransitionHistoryAnswerReceiptSHA256(receipt ArchiveQuestion
 // validates the receipt contract and canonical identity, not the underlying
 // evidence or the history referenced by its digest.
 func VerifyArchiveQuestionTransitionHistoryAnswerReceipt(receiptPath string) (ArchiveQuestionTransitionHistoryAnswerReceiptVerificationSummary, error) {
+	_, summary, err := readArchiveQuestionTransitionHistoryAnswerReceipt(receiptPath)
+	return summary, err
+}
+
+func readArchiveQuestionTransitionHistoryAnswerReceipt(receiptPath string) (ArchiveQuestionTransitionHistoryAnswerReceipt, ArchiveQuestionTransitionHistoryAnswerReceiptVerificationSummary, error) {
 	if strings.TrimSpace(receiptPath) == "" {
-		return ArchiveQuestionTransitionHistoryAnswerReceiptVerificationSummary{}, errors.New("archive question answer receipt path is required")
+		return ArchiveQuestionTransitionHistoryAnswerReceipt{}, ArchiveQuestionTransitionHistoryAnswerReceiptVerificationSummary{}, errors.New("archive question answer receipt path is required")
 	}
 	data, err := readFileBounded(receiptPath, maxOutputBytes)
 	if err != nil {
-		return ArchiveQuestionTransitionHistoryAnswerReceiptVerificationSummary{}, fmt.Errorf("archive question answer receipt: %w", err)
+		return ArchiveQuestionTransitionHistoryAnswerReceipt{}, ArchiveQuestionTransitionHistoryAnswerReceiptVerificationSummary{}, fmt.Errorf("archive question answer receipt: %w", err)
 	}
 	receipt, err := decodeArchiveQuestionTransitionHistoryAnswerReceipt(data)
 	if err != nil {
-		return ArchiveQuestionTransitionHistoryAnswerReceiptVerificationSummary{}, fmt.Errorf("archive question answer receipt: %w", err)
+		return ArchiveQuestionTransitionHistoryAnswerReceipt{}, ArchiveQuestionTransitionHistoryAnswerReceiptVerificationSummary{}, fmt.Errorf("archive question answer receipt: %w", err)
 	}
 	if err := validateArchiveQuestionTransitionHistoryAnswerReceipt(receipt); err != nil {
-		return ArchiveQuestionTransitionHistoryAnswerReceiptVerificationSummary{}, fmt.Errorf("archive question answer receipt: %w", err)
+		return ArchiveQuestionTransitionHistoryAnswerReceipt{}, ArchiveQuestionTransitionHistoryAnswerReceiptVerificationSummary{}, fmt.Errorf("archive question answer receipt: %w", err)
 	}
 	receiptSHA256, err := archiveQuestionTransitionHistoryAnswerReceiptSHA256(receipt)
 	if err != nil {
-		return ArchiveQuestionTransitionHistoryAnswerReceiptVerificationSummary{}, fmt.Errorf("archive question answer receipt: %w", err)
+		return ArchiveQuestionTransitionHistoryAnswerReceipt{}, ArchiveQuestionTransitionHistoryAnswerReceiptVerificationSummary{}, fmt.Errorf("archive question answer receipt: %w", err)
 	}
-	return ArchiveQuestionTransitionHistoryAnswerReceiptVerificationSummary{
+	return receipt, ArchiveQuestionTransitionHistoryAnswerReceiptVerificationSummary{
 		SchemaVersion:           receipt.SchemaVersion,
 		QuestionID:              receipt.QuestionID,
 		Question:                receipt.Question,

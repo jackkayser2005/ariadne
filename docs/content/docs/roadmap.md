@@ -34,7 +34,9 @@ The repository currently has three evidence-backed layers:
    canonical identity without reopening the source history. Two retained rounds
    can also be compared in caller order, returning only the fixed question IDs
    whose bounded results changed and the identities that bind both rounds to
-   their histories.
+   their histories. A raw-value-free acceptance record can now bind one retained
+   round to one selected receipt after confirming their history, question, and
+   bounded-result identities agree.
 
 The local review page is intentionally read-only. Its compact question round
 and receipt links, including stable history and receipt identities, are a
@@ -45,7 +47,9 @@ application. The authorized Android runner also retains a SHA-256 identity of
 the successful UI hierarchy used to resolve its declared control, without
 retaining raw hierarchy XML; this is control provenance, not target evidence.
 The page also exposes the stable question-round identity, so an acceptance pass
-can retain both the round and the selected answer receipt identities.
+can retain both the round and the selected answer receipt identities. The
+acceptance record preserves that identity binding, but it is not proof that a
+computer-use driver performed the selection.
 The concrete read-only sequence is documented in
 [`computer-use-acceptance.md`](computer-use-acceptance.md).
 
@@ -67,9 +71,10 @@ plane; local bundles remain authoritative.
 
 Turn the historical reflection spine into a durable question workflow. The
 fixed question round and individual answer receipts are now independently
-retainable and verifiable. The next focused slice is a computer-use acceptance
-path for choosing fixed questions, reading their receipts, and retaining their
-identities. Any new answer must remain bound to a verified history and must say
+retainable and verifiable. The raw-value-free acceptance record now binds a
+retained round and selected receipt for offline handoff. The next focused slice
+is a computer-use acceptance path for choosing fixed questions, reading their
+receipts, and retaining their identities. Any new answer must remain bound to a verified history and must say
 `unavailable` when the history lacks the required schema.
 
 ### Months 10–12: expand only after the contract holds

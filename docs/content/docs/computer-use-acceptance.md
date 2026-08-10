@@ -21,6 +21,8 @@ go run ./cmd/ariadne experiment ask-archive transitions ask all save --json <his
 go run ./cmd/ariadne experiment ask-archive transitions ask all verify --json --expect-sha256 <round-sha256> <round.json>
 go run ./cmd/ariadne experiment ask-archive transitions ask receipt save --json <history.json> <question-id> <receipt.json>
 go run ./cmd/ariadne experiment ask-archive transitions ask receipt verify --json --expect-sha256 <receipt-sha256> <receipt.json>
+go run ./cmd/ariadne experiment ask-archive transitions acceptance save --json <round.json> <receipt.json> <acceptance.json>
+go run ./cmd/ariadne experiment ask-archive transitions acceptance verify --json --expect-sha256 <acceptance-sha256> <acceptance.json>
 ```
 
 Start the local review page with the same verified history:
@@ -50,7 +52,10 @@ not invent natural-language questions or infer chronology from the ledger.
 ## Acceptance record
 
 Record the round SHA-256, history SHA-256, selected question ID, receipt
-SHA-256, and the verifier command exit status. Mark the UI check `not run` if
-the computer-use host cannot enumerate or activate a window. Deterministic
-handler tests and the offline verifiers remain authoritative until a real
-rendered-flow check is available.
+SHA-256, acceptance SHA-256, and the verifier command exit status. The
+acceptance artifact is a raw-value-free identity binding made after the round
+and receipt have been checked; it is useful for retaining what the pass was
+intended to select, but its verifier does not prove that a UI driver performed
+the selection. Mark the UI check `not run` if the computer-use host cannot
+enumerate or activate a window. Deterministic handler tests and the offline
+verifiers remain authoritative until a real rendered-flow check is available.

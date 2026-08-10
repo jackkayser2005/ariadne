@@ -353,6 +353,15 @@ when `go run` built Ariadne.
   the fixed question, nested answer identity, history digest, and canonical
   receipt SHA-256. This verifies the receipt contract only; it does not
   re-verify the transition history or prove the underlying evidence.
+- `experiment ask-archive transitions acceptance save [--json] <round.json> <receipt.json> <acceptance.json>`
+  verifies a retained question round and selected receipt, confirms their
+  history, question, and bounded-result identities agree, and writes a
+  raw-value-free identity binding with exclusive creation. It does not prove
+  that a UI driver performed the selection.
+- `experiment ask-archive transitions acceptance verify [--json] [--expect-sha256 <digest>] <acceptance.json>`
+  checks that acceptance binding offline and returns its canonical identity.
+  This verifies the saved record only; it does not reopen the round or receipt
+  and does not prove the underlying evidence or UI interaction.
 - `experiment ask-archive transitions save [--json] <report-1.json> <report-2.json> ... <history.json>`
   verifies the supplied reflections, writes one raw-value-free transition
   ledger with exclusive file creation, including safe per-directory state

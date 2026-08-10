@@ -69,6 +69,8 @@ go run ./cmd/ariadne experiment ask-archive transitions ask all compare --json <
 go run ./cmd/ariadne experiment ask-archive transitions ask receipt --json <history.json> <question-id>
 go run ./cmd/ariadne experiment ask-archive transitions ask receipt save --json <history.json> <question-id> <receipt.json>
 go run ./cmd/ariadne experiment ask-archive transitions ask receipt verify --json [--expect-sha256 <digest>] <receipt.json>
+go run ./cmd/ariadne experiment ask-archive transitions acceptance save --json <round.json> <receipt.json> <acceptance.json>
+go run ./cmd/ariadne experiment ask-archive transitions acceptance verify --json [--expect-sha256 <digest>] <acceptance.json>
 go run ./cmd/ariadne experiment ask-archive transitions save --json <reflection-1.json> <reflection-2.json> ... <history.json>
 go run ./cmd/ariadne experiment ask-archive transitions verify --json <transitions.json>
 ```
@@ -151,6 +153,14 @@ nested answer identity, history digest, and canonical receipt SHA-256; pass
 `--expect-sha256` to require a previously recorded receipt identity. This
 checks the receipt contract only and does not re-verify the history or prove
 the underlying evidence.
+
+`transitions acceptance save <round.json> <receipt.json> <acceptance.json>`
+verifies a retained question round and selected receipt, confirms their
+history, question, and bounded-result identities agree, and writes only those
+identities with exclusive creation. `transitions acceptance verify
+<acceptance.json>` checks that raw-value-free binding offline and can require
+its canonical SHA-256 with `--expect-sha256`. It does not prove that a UI
+driver performed the selection.
 
 New transition ledgers use schema 3 and include those snapshot summaries;
 schema 2 ledgers remain readable, and schema 1 ledgers remain readable with
