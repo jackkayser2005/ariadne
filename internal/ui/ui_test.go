@@ -415,7 +415,7 @@ func TestHandlerRendersReflectionHistory(t *testing.T) {
 			t.Fatalf("body missing %q: %s", want, body)
 		}
 	}
-	for _, want := range []string{"history-acceptance-record", "Portable question acceptance", "select bound question", "acceptance SHA-256", acceptanceSHA256} {
+	for _, want := range []string{"history-acceptance-record", "Portable question acceptance", "select bound question", "Ask accepted history question answer-state-repeated-changes", "acceptance SHA-256", acceptanceSHA256} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("body missing acceptance binding %q: %s", want, body)
 		}
@@ -497,6 +497,9 @@ func TestHandlerHidesReflectionHistoryErrors(t *testing.T) {
 	}
 	if !strings.Contains(body, "Portable question acceptance") || !strings.Contains(body, "history unavailable") {
 		t.Fatalf("acceptance status missing from failed-history page: %s", body)
+	}
+	if strings.Contains(body, "Ask accepted history question") {
+		t.Fatal("acceptance record exposed a recheck link without verified history")
 	}
 
 	withoutHistory := newHandler(handler{

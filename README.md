@@ -193,8 +193,9 @@ question-round SHA-256. The selected receipt renders its stable history and
 receipt SHA-256 identities alongside the raw-value-free JSON details.
 When `--acceptance` is supplied, the page also reports whether the selected
 question and receipt match the saved history, round, and receipt identities.
-This is a read-only identity comparison; it does not prove that a UI driver
-performed the selection.
+When verified history is available, the saved question ID is also a direct link
+back to that bounded history-question route. This is a read-only identity
+comparison; it does not prove that a UI driver performed the selection.
 When both `--round-first` and `--round-second` are supplied, the page also
 shows which fixed question results changed between those retained rounds,
 alongside both round and history identities. The comparison preserves caller

@@ -42,7 +42,9 @@ go run ./cmd/ariadne experiment serve --history <history.json> --acceptance <acc
 
 1. Open the printed loopback URL in the authorized local browser window.
 2. Locate the region labelled `Verified history question round`.
-3. Choose one link labelled `Ask verified history question <question-id>`.
+3. If `Portable question acceptance` exposes `Ask accepted history question
+   <question-id>`, follow that link to select the saved bound question. Otherwise,
+   choose one link labelled `Ask verified history question <question-id>`.
 4. Read the visible history SHA-256, question-round SHA-256, selected question
    ID, receipt SHA-256, and the raw-value-free receipt JSON.
 5. Check that the selected receipt panel is labelled `Portable history answer

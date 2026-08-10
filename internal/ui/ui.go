@@ -754,7 +754,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
         <div class="section-head"><h3>Portable question acceptance</h3><span class="status">{{.AcceptanceRecordStatus}}</span></div>
         {{if .AcceptanceRecordAvailable}}
         <dl>
-          <dt>question ID</dt><dd><code>{{.AcceptanceRecord.QuestionID}}</code></dd>
+          <dt>question ID</dt><dd>{{if and $.ReflectionHistoryRequested $.ReflectionHistoryAvailable}}<a href="/?history_question_id={{query .AcceptanceRecord.QuestionID}}" aria-label="Ask accepted history question {{.AcceptanceRecord.QuestionID}}"><code>{{.AcceptanceRecord.QuestionID}}</code></a>{{else}}<code>{{.AcceptanceRecord.QuestionID}}</code>{{end}}</dd>
           <dt>history SHA-256</dt><dd>{{.AcceptanceRecord.TransitionHistorySHA256}}</dd>
           <dt>question round SHA-256</dt><dd>{{.AcceptanceRecord.QuestionRoundSHA256}}</dd>
           <dt>receipt SHA-256</dt><dd>{{.AcceptanceRecord.ReceiptSHA256}}</dd>
