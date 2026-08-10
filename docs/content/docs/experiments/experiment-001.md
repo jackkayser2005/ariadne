@@ -331,6 +331,11 @@ when `go run` built Ariadne.
   exclusive creation. It returns a receipt SHA-256 and refuses to overwrite an
   existing receipt, so later reflection work can retain the exact answer
   artifact.
+- `experiment ask-archive transitions ask receipt verify [--json] [--expect-sha256 <digest>] <receipt.json>`
+  checks a retained receipt without reopening its source history. It validates
+  the fixed question, nested answer identity, history digest, and canonical
+  receipt SHA-256. This verifies the receipt contract only; it does not
+  re-verify the transition history or prove the underlying evidence.
 - `experiment ask-archive transitions save [--json] <report-1.json> <report-2.json> ... <history.json>`
   verifies the supplied reflections, writes one raw-value-free transition
   ledger with exclusive file creation, including safe per-directory state

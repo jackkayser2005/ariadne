@@ -63,6 +63,7 @@ go run ./cmd/ariadne experiment ask-archive transitions ask repeated --json <his
 go run ./cmd/ariadne experiment ask-archive transitions ask all --json <history.json>
 go run ./cmd/ariadne experiment ask-archive transitions ask receipt --json <history.json> <question-id>
 go run ./cmd/ariadne experiment ask-archive transitions ask receipt save --json <history.json> <question-id> <receipt.json>
+go run ./cmd/ariadne experiment ask-archive transitions ask receipt verify --json [--expect-sha256 <digest>] <receipt.json>
 go run ./cmd/ariadne experiment ask-archive transitions save --json <reflection-1.json> <reflection-2.json> ... <history.json>
 go run ./cmd/ariadne experiment ask-archive transitions verify --json <transitions.json>
 ```
@@ -130,6 +131,13 @@ chronology or the underlying evidence from it.
 the same verified ask and writes the raw-value-free receipt with exclusive
 creation. It returns a receipt SHA-256 and never overwrites an existing
 receipt, so later reflection work can retain the exact answer artifact.
+
+`transitions ask receipt verify <receipt.json>` checks a retained receipt
+without reopening the source history. It validates the fixed question,
+nested answer identity, history digest, and canonical receipt SHA-256; pass
+`--expect-sha256` to require a previously recorded receipt identity. This
+checks the receipt contract only and does not re-verify the history or prove
+the underlying evidence.
 
 New transition ledgers use schema 3 and include those snapshot summaries;
 schema 2 ledgers remain readable, and schema 1 ledgers remain readable with

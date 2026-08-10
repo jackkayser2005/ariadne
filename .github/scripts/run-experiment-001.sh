@@ -356,6 +356,20 @@ jq -e --arg history_sha256 "${transition_history_sha256}" '
   (.transition_history_sha256 == $history_sha256) and
   (.receipt_sha256 | test("^[0-9a-f]{64}$"))
 ' "${archive_question_transition_receipt_save_summary_json}"
+archive_question_transition_receipt_verify_summary_json="${RUNNER_TEMP}/ariadne-archive-question-transition-receipt-verify-summary.json"
+archive_question_transition_receipt_sha256="$(jq -r '.receipt_sha256' "${archive_question_transition_receipt_save_summary_json}")"
+"${ariadne}" experiment ask-archive transitions ask receipt verify --json \
+  --expect-sha256 "${archive_question_transition_receipt_sha256}" \
+  "${archive_question_transition_receipt_path}" >"${archive_question_transition_receipt_verify_summary_json}"
+jq -e --slurpfile saved "${archive_question_transition_receipt_save_summary_json}" '
+  (keys_unsorted == ["schema_version", "question_id", "question", "result", "transition_history_sha256", "receipt_sha256"]) and
+  (.schema_version == 1) and
+  (.question_id == $saved[0].question_id) and
+  (.question == $saved[0].question) and
+  (.result == $saved[0].result) and
+  (.transition_history_sha256 == $saved[0].transition_history_sha256) and
+  (.receipt_sha256 == $saved[0].receipt_sha256)
+' "${archive_question_transition_receipt_verify_summary_json}"
 cmp -s "${archive_question_transition_receipt_json}" "${archive_question_transition_receipt_path}"
 archive_question_transition_questions_json="${RUNNER_TEMP}/ariadne-archive-question-transition-questions.json"
 "${ariadne}" experiment ask-archive transitions questions --json >"${archive_question_transition_questions_json}"

@@ -27,7 +27,9 @@ The repository currently has three evidence-backed layers:
    safe entry changes, per-snapshot safe summaries, and summary changes across
    supplied boundaries. A verified history can also emit a portable question
    round containing the bounded result of every fixed question, or a portable
-   per-question receipt containing its detailed raw-value-free answer.
+   per-question receipt containing its detailed raw-value-free answer. Saved
+   receipts can be independently checked for fixed-question identity and
+   canonical content identity without reopening the source history.
 
 The local review page is intentionally read-only. Its compact question round
 and receipt links are a bounded UI-control surface for a computer-use driver;
@@ -52,10 +54,11 @@ plane; local bundles remain authoritative.
 ### Months 7–9: make reflection repeatable
 
 Turn the historical reflection spine into a durable question workflow. The
-next focused slice after the portable answer receipt is a computer-use
-acceptance path for choosing fixed questions, reading their receipts, and
-retaining their identities. Any new answer must remain bound to a verified
-history and must say `unavailable` when the history lacks the required schema.
+next focused slice after independently verifiable answer receipts is a
+computer-use acceptance path for choosing fixed questions, reading their
+receipts, and retaining their identities. Any new answer must remain bound to
+a verified history and must say `unavailable` when the history lacks the
+required schema.
 
 ### Months 10–12: expand only after the contract holds
 
