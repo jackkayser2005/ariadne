@@ -880,7 +880,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       </dl>
       <p class="context">changed fixed questions:</p>
       <ul aria-label="Changed retained questions">
-      {{range .QuestionRoundComparison.ChangedQuestions}}<li><code>{{.QuestionID}}</code>: {{.FirstResult}} &rarr; {{.SecondResult}}</li>{{else}}<li>none</li>{{end}}
+      {{range .QuestionRoundComparison.ChangedQuestions}}<li>{{if and $.ReflectionHistoryRequested $.ReflectionHistoryAvailable}}<a href="/?history_question_id={{query .QuestionID}}" aria-label="Ask changed retained question {{.QuestionID}}"><code>{{.QuestionID}}</code></a>{{else}}<code>{{.QuestionID}}</code>{{end}}: {{.FirstResult}} &rarr; {{.SecondResult}}</li>{{else}}<li>none</li>{{end}}
       </ul>
       <p class="context">This compares bounded question results in caller order. It does not establish chronology, infer a trend, or prove the underlying evidence.</p>
       {{else}}

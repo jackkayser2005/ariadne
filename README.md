@@ -198,7 +198,9 @@ performed the selection.
 When both `--round-first` and `--round-second` are supplied, the page also
 shows which fixed question results changed between those retained rounds,
 alongside both round and history identities. The comparison preserves caller
-order and does not infer chronology.
+order and does not infer chronology; each changed fixed-question ID links back
+to the same bounded history-question route for a repeatable re-check when the
+same verified history is supplied.
 
 Stable-ID Android sessions also record a SHA-256 identity for the successful
 UI hierarchy used to resolve the manifest-declared control. The raw hierarchy

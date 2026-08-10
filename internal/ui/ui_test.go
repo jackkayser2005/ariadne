@@ -555,6 +555,9 @@ func TestHandlerRendersQuestionRoundComparison(t *testing.T) {
 	h := newHandler(handler{
 		root:  "archive-root",
 		index: func(string) ([]bundle.ArchiveEntry, error) { return nil, nil },
+		history: func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error) {
+			return bundle.ArchiveQuestionTransitionHistory{}, bundle.ArchiveQuestionTransitionVerificationSummary{}, nil
+		},
 		compareRounds: func() (bundle.ArchiveQuestionTransitionHistoryQuestionRoundComparison, error) {
 			return comparison, nil
 		},
@@ -577,6 +580,8 @@ func TestHandlerRendersQuestionRoundComparison(t *testing.T) {
 		comparison.FirstTransitionHistorySHA256,
 		comparison.SecondTransitionHistorySHA256,
 		"answer-state-transitions",
+		"Ask changed retained question answer-state-transitions",
+		"history_question_id=answer-state-transitions",
 		"same",
 		"changed",
 		"does not establish chronology",
@@ -584,6 +589,23 @@ func TestHandlerRendersQuestionRoundComparison(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("body missing %q: %s", want, body)
 		}
+	}
+	selectedRecorder := httptest.NewRecorder()
+	h.ServeHTTP(selectedRecorder, httptest.NewRequest(http.MethodGet, "/?history_question_id=answer-state-transitions", nil))
+	if selectedRecorder.Code != http.StatusOK {
+		t.Fatalf("changed question route status = %d, body=%q", selectedRecorder.Code, selectedRecorder.Body.String())
+	}
+	withoutHistory := newHandler(handler{
+		root:  "archive-root",
+		index: func(string) ([]bundle.ArchiveEntry, error) { return nil, nil },
+		compareRounds: func() (bundle.ArchiveQuestionTransitionHistoryQuestionRoundComparison, error) {
+			return comparison, nil
+		},
+	})
+	withoutHistoryRecorder := httptest.NewRecorder()
+	withoutHistory.ServeHTTP(withoutHistoryRecorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	if withoutHistoryRecorder.Code != http.StatusOK || strings.Contains(withoutHistoryRecorder.Body.String(), "Ask changed retained question") {
+		t.Fatalf("comparison without history status = %d, body=%q", withoutHistoryRecorder.Code, withoutHistoryRecorder.Body.String())
 	}
 }
 

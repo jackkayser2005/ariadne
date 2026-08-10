@@ -51,7 +51,9 @@ go run ./cmd/ariadne experiment serve --history <history.json> --acceptance <acc
    the question named by the saved acceptance record.
 7. If retained-round comparison was enabled, inspect `Retained question
    rounds` for bounded result changes and both round identities; preserve the
-   caller-supplied order and do not infer chronology.
+   caller-supplied order and do not infer chronology. If a changed question is
+   present, use its `Ask changed retained question <question-id>` link to
+   re-ask that fixed question through the same bounded route.
 8. Retain only the question ID and the three identities. Do not submit forms,
    follow mutation controls, or copy page text beyond the bounded receipt.
 
