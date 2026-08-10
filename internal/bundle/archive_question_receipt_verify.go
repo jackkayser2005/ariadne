@@ -23,6 +23,15 @@ type ArchiveQuestionTransitionHistoryAnswerReceiptVerificationSummary struct {
 	ReceiptSHA256           string `json:"receipt_sha256"`
 }
 
+// ArchiveQuestionTransitionHistoryAnswerReceiptSHA256 returns the canonical
+// identity of one valid raw-value-free answer receipt.
+func ArchiveQuestionTransitionHistoryAnswerReceiptSHA256(receipt ArchiveQuestionTransitionHistoryAnswerReceipt) (string, error) {
+	if err := validateArchiveQuestionTransitionHistoryAnswerReceipt(receipt); err != nil {
+		return "", fmt.Errorf("archive question answer receipt: %w", err)
+	}
+	return archiveQuestionTransitionHistoryAnswerReceiptSHA256(receipt)
+}
+
 // VerifyArchiveQuestionTransitionHistoryAnswerReceipt checks a saved
 // raw-value-free answer receipt without requiring its source history. It
 // validates the receipt contract and canonical identity, not the underlying

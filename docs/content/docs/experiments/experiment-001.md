@@ -387,11 +387,12 @@ when `go run` built Ariadne.
   transition ledger and renders its caller-ordered, raw-value-free boundaries,
   including the verified history-question result, safe directory/state changes,
   safe snapshot summaries, the repeated-change question, the snapshot-summary
-  question, and the snapshot-change question when present. The history panel also lists the
+  question, and the snapshot-change question when present. The history panel also lists
   a compact verified question round in fixed catalog order, with each bounded
   result and a direct receipt link, so a UI driver can choose a bounded
   question without inventing natural language. The selected receipt renders
-  its stable identity and raw-value-free JSON details. Those links use the
+  its stable history and receipt SHA-256 identities alongside the raw-value-free
+  JSON details. Those links use the
   validated `history_question_id` query and fail closed for unknown IDs.
   When `--reflection` is supplied, the page re-asks that saved reflection's
   fixed question against the current archive and renders a bounded comparison

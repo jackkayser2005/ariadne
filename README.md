@@ -165,7 +165,8 @@ is available. The history
 panel presents a compact verified question round in fixed catalog order, with
 each bounded result and a direct receipt link, so a UI driver can choose a
 bounded question without inventing natural language. The selected receipt
-renders its stable identity and raw-value-free JSON details.
+renders its stable history and receipt SHA-256 identities alongside the
+raw-value-free JSON details.
 Those links use the validated `history_question_id` query and fail closed for
 unknown IDs. An
 unavailable comparison remains a generic bounded state; the

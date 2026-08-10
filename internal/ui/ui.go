@@ -79,6 +79,7 @@ type pageData struct {
 	ReflectionHistorySummaryAnswer     bundle.ArchiveQuestionTransitionHistorySummaryAnswer
 	ReflectionHistoryReceiptAvailable  bool
 	ReflectionHistoryReceipt           bundle.ArchiveQuestionTransitionHistoryAnswerReceipt
+	ReflectionHistoryReceiptSHA256     string
 	ReflectionHistoryReceiptJSON       string
 	SavedReflectionComparisonRequested bool
 	SavedReflectionComparisonAvailable bool
@@ -194,6 +195,7 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	var reflectionHistorySummaryAnswer bundle.ArchiveQuestionTransitionHistorySummaryAnswer
 	var reflectionHistoryReceipt bundle.ArchiveQuestionTransitionHistoryAnswerReceipt
 	reflectionHistoryReceiptAvailable := false
+	reflectionHistoryReceiptSHA256 := ""
 	reflectionHistoryReceiptJSON := ""
 	savedReflectionComparisonRequested := h.compareCurrent != nil
 	savedReflectionComparisonAvailable := false
@@ -219,8 +221,10 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 				var receiptErr error
 				reflectionHistoryReceipt, receiptErr = bundle.AnswerArchiveQuestionTransitionHistoryReceipt(reflectionHistory, reflectionHistorySummary.TransitionHistorySHA256, reflectionHistoryQuestionID)
 				if receiptErr == nil {
+					var receiptSHAErr error
+					reflectionHistoryReceiptSHA256, receiptSHAErr = bundle.ArchiveQuestionTransitionHistoryAnswerReceiptSHA256(reflectionHistoryReceipt)
 					reflectionHistoryReceiptJSONBytes, marshalErr := json.MarshalIndent(reflectionHistoryReceipt, "", "  ")
-					if marshalErr == nil {
+					if receiptSHAErr == nil && marshalErr == nil {
 						reflectionHistoryReceiptJSON = string(reflectionHistoryReceiptJSONBytes)
 						reflectionHistoryReceiptAvailable = true
 					}
@@ -295,6 +299,7 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		ReflectionHistorySummaryAnswer:     reflectionHistorySummaryAnswer,
 		ReflectionHistoryReceiptAvailable:  reflectionHistoryReceiptAvailable,
 		ReflectionHistoryReceipt:           reflectionHistoryReceipt,
+		ReflectionHistoryReceiptSHA256:     reflectionHistoryReceiptSHA256,
 		ReflectionHistoryReceiptJSON:       reflectionHistoryReceiptJSON,
 		SavedReflectionComparisonRequested: savedReflectionComparisonRequested,
 		SavedReflectionComparisonAvailable: savedReflectionComparisonAvailable,
@@ -669,6 +674,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
           <dt>question ID</dt><dd><code>{{.ReflectionHistoryReceipt.QuestionID}}</code></dd>
           <dt>result</dt><dd><span class="status status-{{.ReflectionHistoryReceipt.Result}}">{{.ReflectionHistoryReceipt.Result}}</span></dd>
           <dt>history SHA-256</dt><dd>{{.ReflectionHistoryReceipt.TransitionHistorySHA256}}</dd>
+          <dt>receipt SHA-256</dt><dd>{{.ReflectionHistoryReceiptSHA256}}</dd>
         </dl>
         <pre aria-label="Portable history answer receipt JSON">{{.ReflectionHistoryReceiptJSON}}</pre>
         <p class="context">This receipt binds the selected bounded answer to the verified history identity. It does not infer chronology or prove the underlying evidence.</p>

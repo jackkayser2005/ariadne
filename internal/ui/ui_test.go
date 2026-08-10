@@ -384,10 +384,18 @@ func TestHandlerRendersReflectionHistory(t *testing.T) {
 		t.Fatal("body disclosed a raw value")
 	}
 
+	selectedReceipt, err := bundle.AnswerArchiveQuestionTransitionHistoryReceipt(history, summary.TransitionHistorySHA256, "answer-state-repeated-changes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	selectedReceiptSHA256, err := bundle.ArchiveQuestionTransitionHistoryAnswerReceiptSHA256(selectedReceipt)
+	if err != nil {
+		t.Fatal(err)
+	}
 	selectedRecorder := httptest.NewRecorder()
 	h.ServeHTTP(selectedRecorder, httptest.NewRequest(http.MethodGet, "/?history_question_id=answer-state-repeated-changes", nil))
 	selectedBody := selectedRecorder.Body.String()
-	if selectedRecorder.Code != http.StatusOK || !strings.Contains(selectedBody, `aria-current="page"`) || !strings.Contains(selectedBody, `id="history-answer-receipt-answer-state-repeated-changes"`) || !strings.Contains(selectedBody, "Portable answer receipt") || !strings.Contains(selectedBody, "raw-value-free") || !strings.Contains(selectedBody, `id="history-question-answer-state-repeated-changes"`) || strings.Contains(selectedBody, `id="history-answer-receipt-answer-state-transitions"`) || strings.Contains(selectedBody, `id="history-question-answer-state-transitions"`) {
+	if selectedRecorder.Code != http.StatusOK || !strings.Contains(selectedBody, `aria-current="page"`) || !strings.Contains(selectedBody, `id="history-answer-receipt-answer-state-repeated-changes"`) || !strings.Contains(selectedBody, "Portable answer receipt") || !strings.Contains(selectedBody, "receipt SHA-256") || !strings.Contains(selectedBody, selectedReceiptSHA256) || !strings.Contains(selectedBody, "raw-value-free") || !strings.Contains(selectedBody, `id="history-question-answer-state-repeated-changes"`) || strings.Contains(selectedBody, `id="history-answer-receipt-answer-state-transitions"`) || strings.Contains(selectedBody, `id="history-question-answer-state-transitions"`) {
 		t.Fatalf("selected history question status = %d, body=%q", selectedRecorder.Code, selectedBody)
 	}
 

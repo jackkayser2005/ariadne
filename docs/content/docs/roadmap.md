@@ -32,7 +32,8 @@ The repository currently has three evidence-backed layers:
    canonical content identity without reopening the source history.
 
 The local review page is intentionally read-only. Its compact question round
-and receipt links are a bounded UI-control surface for a computer-use driver;
+and receipt links, including stable history and receipt identities, are a
+bounded UI-control surface for a computer-use driver;
 deterministic UI tests remain the authoritative local check, and computer-use
 is an orientation or acceptance aid rather than evidence about the target
 application.
