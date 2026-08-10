@@ -52,7 +52,7 @@ const usage = `usage:
   ariadne experiment ask-archive verify [--json] [--expect-sha256 <digest>] <report.json>
   ariadne experiment questions [--json]
   ariadne experiment list [--json] <archive-root>
-  ariadne experiment serve [--addr <address>] [--history <history.json>] [--reflection <report.json>] [--export <export.json>] <archive-root>
+  ariadne experiment serve [--addr <address>] [--history <history.json>] [--reflection <report.json>] [--export <export.json>] [--acceptance <acceptance.json>] <archive-root>
 `
 
 const adbCheckTimeout = 10 * time.Second
@@ -1941,6 +1941,7 @@ func runServe(
 	historyPath := flags.String("history", "", "")
 	reflectionPath := flags.String("reflection", "", "")
 	exportPath := flags.String("export", "", "")
+	acceptancePath := flags.String("acceptance", "", "")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
 		_, _ = io.WriteString(stderr, usage)
 		return 2
@@ -1949,11 +1950,15 @@ func runServe(
 		_, _ = io.WriteString(stderr, "ariadne: experiment serve: address must use a loopback IP\n")
 		return 2
 	}
+	if *acceptancePath != "" && *historyPath == "" {
+		_, _ = io.WriteString(stderr, "ariadne: experiment serve: --acceptance requires --history\n")
+		return 2
+	}
 	if _, err := fmt.Fprintf(stdout, "ariadne: review UI listening at http://%s/\n", *address); err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment serve: write output: %v\n", err)
 		return 1
 	}
-	reviewHandler := ui.HandlerWithReviewAndExport(flags.Arg(0), *historyPath, *reflectionPath, *exportPath)
+	reviewHandler := ui.HandlerWithReviewAndExportAndAcceptance(flags.Arg(0), *historyPath, *reflectionPath, *exportPath, *acceptancePath)
 	if err := serve(*address, reviewHandler); err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment serve: %v\n", err)
 		return 1

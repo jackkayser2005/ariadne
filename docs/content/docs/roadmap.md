@@ -36,7 +36,8 @@ The repository currently has three evidence-backed layers:
    whose bounded results changed and the identities that bind both rounds to
    their histories. A raw-value-free acceptance record can now bind one retained
    round to one selected receipt after confirming their history, question, and
-   bounded-result identities agree.
+   bounded-result identities agree. The local review server can consume that
+   record and report whether a selected fixed question matches those identities.
 
 The local review page is intentionally read-only. Its compact question round
 and receipt links, including stable history and receipt identities, are a
@@ -73,8 +74,8 @@ Turn the historical reflection spine into a durable question workflow. The
 fixed question round and individual answer receipts are now independently
 retainable and verifiable. The raw-value-free acceptance record now binds a
 retained round and selected receipt for offline handoff. The next focused slice
-is a computer-use acceptance path for choosing fixed questions, reading their
-receipts, and retaining their identities. Any new answer must remain bound to a verified history and must say
+is the rendered computer-use acceptance path for choosing fixed questions,
+reading their receipts, and retaining their identities. Any new answer must remain bound to a verified history and must say
 `unavailable` when the history lacks the required schema.
 
 ### Months 10–12: expand only after the contract holds

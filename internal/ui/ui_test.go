@@ -359,6 +359,30 @@ func TestHandlerRendersReflectionHistory(t *testing.T) {
 		Transitions:             len(history.Transitions),
 		TransitionHistorySHA256: strings.Repeat("c", 64),
 	}
+	questionRound := bundle.AnswerArchiveQuestionTransitionHistoryQuestionRound(history, summary.TransitionHistorySHA256)
+	questionRoundSHA256, err := bundle.ArchiveQuestionTransitionHistoryQuestionRoundSHA256(questionRound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selectedReceipt, err := bundle.AnswerArchiveQuestionTransitionHistoryReceipt(history, summary.TransitionHistorySHA256, "answer-state-repeated-changes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	selectedReceiptSHA256, err := bundle.ArchiveQuestionTransitionHistoryAnswerReceiptSHA256(selectedReceipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	acceptanceRecord := bundle.ArchiveQuestionTransitionHistoryAcceptanceRecord{
+		SchemaVersion:           1,
+		TransitionHistorySHA256: summary.TransitionHistorySHA256,
+		QuestionRoundSHA256:     questionRoundSHA256,
+		QuestionID:              selectedReceipt.QuestionID,
+		ReceiptSHA256:           selectedReceiptSHA256,
+	}
+	acceptanceSHA256, err := bundle.ArchiveQuestionTransitionHistoryAcceptanceRecordSHA256(acceptanceRecord)
+	if err != nil {
+		t.Fatal(err)
+	}
 	h := newHandler(handler{
 		root:  "archive-root",
 		index: func(string) ([]bundle.ArchiveEntry, error) { return nil, nil },
@@ -368,6 +392,16 @@ func TestHandlerRendersReflectionHistory(t *testing.T) {
 		history: func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error) {
 			return history, summary, nil
 		},
+		acceptance: func() (bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary, error) {
+			return bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary{
+				SchemaVersion:           acceptanceRecord.SchemaVersion,
+				TransitionHistorySHA256: acceptanceRecord.TransitionHistorySHA256,
+				QuestionRoundSHA256:     acceptanceRecord.QuestionRoundSHA256,
+				QuestionID:              acceptanceRecord.QuestionID,
+				ReceiptSHA256:           acceptanceRecord.ReceiptSHA256,
+				AcceptanceSHA256:        acceptanceSHA256,
+			}, nil
+		},
 	})
 
 	recorder := httptest.NewRecorder()
@@ -376,39 +410,31 @@ func TestHandlerRendersReflectionHistory(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, body=%q", recorder.Code, body)
 	}
-	questionRound := bundle.AnswerArchiveQuestionTransitionHistoryQuestionRound(history, summary.TransitionHistorySHA256)
-	questionRoundSHA256, err := bundle.ArchiveQuestionTransitionHistoryQuestionRoundSHA256(questionRound)
-	if err != nil {
-		t.Fatal(err)
-	}
 	for _, want := range []string{"Saved reflection history", "verified ledger", history.Question, "Question round", "fixed, verified, read only", "aria-label=\"Verified history question round\"", "answer-state-transitions", "answer-state-repeated-changes", "answer-state-snapshot-summaries", "answer-state-summary-changes", "history_question_id=answer-state-transitions", "history_question_id=answer-state-repeated-changes", "history_question_id=answer-state-snapshot-summaries", "history_question_id=answer-state-summary-changes", "caller", "snapshots", "3", "transitions", "2", "history SHA-256", "question round SHA-256", questionRoundSHA256, strings.Repeat("c", 64), "safe snapshot summaries", "checked 1", "checked 2", "History question", "changed", "changed transitions", "transition 1", "changed entries", "transition 1: run-001", "incomparable transitions", "Repeated-change question", "repeated", "Snapshot-summary question", "Snapshot-change question", "Did the bounded answer-state summary change at any supplied boundary?", "available", "transition 2", strings.Repeat("a", 64), strings.Repeat("b", 64), strings.Repeat("c", 64), "changed archive entries", "run-001", "observed", "unknown", "does not establish chronology"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("body missing %q: %s", want, body)
+		}
+	}
+	for _, want := range []string{"history-acceptance-record", "Portable question acceptance", "select bound question", "acceptance SHA-256", acceptanceSHA256} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body missing acceptance binding %q: %s", want, body)
 		}
 	}
 	if strings.Contains(body, "secret-value") {
 		t.Fatal("body disclosed a raw value")
 	}
 
-	selectedReceipt, err := bundle.AnswerArchiveQuestionTransitionHistoryReceipt(history, summary.TransitionHistorySHA256, "answer-state-repeated-changes")
-	if err != nil {
-		t.Fatal(err)
-	}
-	selectedReceiptSHA256, err := bundle.ArchiveQuestionTransitionHistoryAnswerReceiptSHA256(selectedReceipt)
-	if err != nil {
-		t.Fatal(err)
-	}
 	selectedRecorder := httptest.NewRecorder()
 	h.ServeHTTP(selectedRecorder, httptest.NewRequest(http.MethodGet, "/?history_question_id=answer-state-repeated-changes", nil))
 	selectedBody := selectedRecorder.Body.String()
-	if selectedRecorder.Code != http.StatusOK || !strings.Contains(selectedBody, `aria-current="page"`) || !strings.Contains(selectedBody, `aria-label="Ask verified history question answer-state-repeated-changes"`) || !strings.Contains(selectedBody, `id="history-answer-receipt-answer-state-repeated-changes"`) || !strings.Contains(selectedBody, `aria-label="Portable history answer receipt"`) || !strings.Contains(selectedBody, `aria-label="Portable history answer receipt JSON"`) || !strings.Contains(selectedBody, "Portable answer receipt") || !strings.Contains(selectedBody, "receipt SHA-256") || !strings.Contains(selectedBody, selectedReceiptSHA256) || !strings.Contains(selectedBody, "raw-value-free") || !strings.Contains(selectedBody, `id="history-question-answer-state-repeated-changes"`) || strings.Contains(selectedBody, `id="history-answer-receipt-answer-state-transitions"`) || strings.Contains(selectedBody, `id="history-question-answer-state-transitions"`) {
+	if selectedRecorder.Code != http.StatusOK || !strings.Contains(selectedBody, `aria-current="page"`) || !strings.Contains(selectedBody, `aria-label="Ask verified history question answer-state-repeated-changes"`) || !strings.Contains(selectedBody, `id="history-answer-receipt-answer-state-repeated-changes"`) || !strings.Contains(selectedBody, `aria-label="Portable history answer receipt"`) || !strings.Contains(selectedBody, `aria-label="Portable history answer receipt JSON"`) || !strings.Contains(selectedBody, "Portable answer receipt") || !strings.Contains(selectedBody, "receipt SHA-256") || !strings.Contains(selectedBody, selectedReceiptSHA256) || !strings.Contains(selectedBody, "raw-value-free") || !strings.Contains(selectedBody, "matched") || !strings.Contains(selectedBody, `id="history-question-answer-state-repeated-changes"`) || strings.Contains(selectedBody, `id="history-answer-receipt-answer-state-transitions"`) || strings.Contains(selectedBody, `id="history-question-answer-state-transitions"`) {
 		t.Fatalf("selected history question status = %d, body=%q", selectedRecorder.Code, selectedBody)
 	}
 
 	snapshotRecorder := httptest.NewRecorder()
 	h.ServeHTTP(snapshotRecorder, httptest.NewRequest(http.MethodGet, "/?history_question_id=answer-state-snapshot-summaries", nil))
 	snapshotBody := snapshotRecorder.Body.String()
-	if snapshotRecorder.Code != http.StatusOK || !strings.Contains(snapshotBody, `aria-current="page"`) || !strings.Contains(snapshotBody, `id="history-question-answer-state-snapshot-summaries"`) || strings.Contains(snapshotBody, `id="history-question-answer-state-transitions"`) {
+	if snapshotRecorder.Code != http.StatusOK || !strings.Contains(snapshotBody, `aria-current="page"`) || !strings.Contains(snapshotBody, `id="history-question-answer-state-snapshot-summaries"`) || !strings.Contains(snapshotBody, "mismatch") || strings.Contains(snapshotBody, `id="history-question-answer-state-transitions"`) {
 		t.Fatalf("selected snapshot question status = %d, body=%q", snapshotRecorder.Code, snapshotBody)
 	}
 
@@ -448,6 +474,16 @@ func TestHandlerHidesReflectionHistoryErrors(t *testing.T) {
 		history: func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error) {
 			return bundle.ArchiveQuestionTransitionHistory{}, bundle.ArchiveQuestionTransitionVerificationSummary{}, errors.New("private history failure")
 		},
+		acceptance: func() (bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary, error) {
+			return bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary{
+				SchemaVersion:           1,
+				TransitionHistorySHA256: strings.Repeat("a", 64),
+				QuestionRoundSHA256:     strings.Repeat("b", 64),
+				QuestionID:              "answer-state-transitions",
+				ReceiptSHA256:           strings.Repeat("c", 64),
+				AcceptanceSHA256:        strings.Repeat("d", 64),
+			}, nil
+		},
 	})
 
 	recorder := httptest.NewRecorder()
@@ -459,6 +495,9 @@ func TestHandlerHidesReflectionHistoryErrors(t *testing.T) {
 	if strings.Contains(body, "private history failure") {
 		t.Fatal("body disclosed reflection history error")
 	}
+	if !strings.Contains(body, "Portable question acceptance") || !strings.Contains(body, "history unavailable") {
+		t.Fatalf("acceptance status missing from failed-history page: %s", body)
+	}
 
 	withoutHistory := newHandler(handler{
 		root:  "archive-root",
@@ -468,6 +507,29 @@ func TestHandlerHidesReflectionHistoryErrors(t *testing.T) {
 	withoutHistory.ServeHTTP(withoutHistoryRecorder, httptest.NewRequest(http.MethodGet, "/?history_question_id=answer-state-transitions", nil))
 	if withoutHistoryRecorder.Code != http.StatusOK || strings.Contains(withoutHistoryRecorder.Body.String(), "history question not found") {
 		t.Fatalf("known history question without source status = %d, body=%q", withoutHistoryRecorder.Code, withoutHistoryRecorder.Body.String())
+	}
+}
+
+func TestHandlerHidesAcceptanceErrors(t *testing.T) {
+	h := newHandler(handler{
+		root:  "archive-root",
+		index: func(string) ([]bundle.ArchiveEntry, error) { return nil, nil },
+		history: func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error) {
+			return bundle.ArchiveQuestionTransitionHistory{}, bundle.ArchiveQuestionTransitionVerificationSummary{}, nil
+		},
+		acceptance: func() (bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary, error) {
+			return bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary{}, errors.New("private acceptance failure")
+		},
+	})
+
+	recorder := httptest.NewRecorder()
+	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	body := recorder.Body.String()
+	if recorder.Code != http.StatusOK || !strings.Contains(body, "Portable question acceptance") || !strings.Contains(body, "unavailable") {
+		t.Fatalf("acceptance error status = %d, body=%q", recorder.Code, body)
+	}
+	if strings.Contains(body, "private acceptance failure") {
+		t.Fatal("body disclosed acceptance verification error")
 	}
 }
 

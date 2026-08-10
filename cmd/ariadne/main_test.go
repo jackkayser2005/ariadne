@@ -4039,6 +4039,23 @@ func TestRunServe(t *testing.T) {
 			t.Fatalf("runServe() with export = %d, handler=%v, stdout=%q, stderr=%q", exitCode, gotHandler, stdout.String(), stderr.String())
 		}
 	})
+
+	t.Run("acceptance flag", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		var gotHandler http.Handler
+		exitCode := runServe(
+			[]string{"--history", "history.json", "--acceptance", "acceptance.json", "archive-root"},
+			&stdout,
+			&stderr,
+			func(_ string, handler http.Handler) error {
+				gotHandler = handler
+				return nil
+			},
+		)
+		if exitCode != 0 || gotHandler == nil || stderr.Len() != 0 || !strings.Contains(stdout.String(), "review UI listening") {
+			t.Fatalf("runServe() with acceptance = %d, handler=%v, stdout=%q, stderr=%q", exitCode, gotHandler, stdout.String(), stderr.String())
+		}
+	})
 }
 
 func TestRunServeFailures(t *testing.T) {
@@ -4072,6 +4089,17 @@ func TestRunServeFailures(t *testing.T) {
 			return nil
 		})
 		if exitCode != 2 || stdout.Len() != 0 || stderr.String() != "ariadne: experiment serve: address must use a loopback IP\n" {
+			t.Fatalf("runServe() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("acceptance requires history", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runServe([]string{"--acceptance", "acceptance.json", "archive-root"}, &stdout, &stderr, func(string, http.Handler) error {
+			t.Fatal("server called without history")
+			return nil
+		})
+		if exitCode != 2 || stdout.Len() != 0 || stderr.String() != "ariadne: experiment serve: --acceptance requires --history\n" {
 			t.Fatalf("runServe() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
 		}
 	})

@@ -22,6 +22,7 @@ type handler struct {
 	ask            func(string, string) (bundle.Answer, error)
 	askArchive     func(string, string) (bundle.ArchiveQuestionReport, error)
 	history        func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error)
+	acceptance     func() (bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary, error)
 	compareCurrent func() (bundle.ArchiveQuestionComparison, error)
 	find           func(string, string) (bundle.Finding, error)
 	exportPath     string
@@ -82,6 +83,10 @@ type pageData struct {
 	ReflectionHistoryReceipt           bundle.ArchiveQuestionTransitionHistoryAnswerReceipt
 	ReflectionHistoryReceiptSHA256     string
 	ReflectionHistoryReceiptJSON       string
+	AcceptanceRecordRequested          bool
+	AcceptanceRecordAvailable          bool
+	AcceptanceRecord                   bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary
+	AcceptanceRecordStatus             string
 	SavedReflectionComparisonRequested bool
 	SavedReflectionComparisonAvailable bool
 	SavedReflectionComparison          bundle.ArchiveQuestionComparison
@@ -109,6 +114,13 @@ func HandlerWithReview(archiveRoot, historyPath, reflectionPath string) http.Han
 // verified history, current-reflection comparison, and one portable redacted
 // export.
 func HandlerWithReviewAndExport(archiveRoot, historyPath, reflectionPath, exportPath string) http.Handler {
+	return HandlerWithReviewAndExportAndAcceptance(archiveRoot, historyPath, reflectionPath, exportPath, "")
+}
+
+// HandlerWithReviewAndExportAndAcceptance returns a read-only review handler
+// with optional verified history, current-reflection comparison, portable
+// redacted export, and an offline acceptance identity binding.
+func HandlerWithReviewAndExportAndAcceptance(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath string) http.Handler {
 	h := archiveHandler(archiveRoot)
 	if historyPath != "" {
 		h.history = func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error) {
@@ -124,6 +136,11 @@ func HandlerWithReviewAndExport(archiveRoot, historyPath, reflectionPath, export
 		h.exportPath = exportPath
 		h.exportAsk = bundle.AskExport
 		h.exportFind = bundle.FindExport
+	}
+	if acceptancePath != "" {
+		h.acceptance = func() (bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary, error) {
+			return bundle.VerifyArchiveQuestionTransitionHistoryAcceptanceRecord(acceptancePath)
+		}
 	}
 	return newHandler(h)
 }
@@ -199,6 +216,10 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	reflectionHistoryReceiptAvailable := false
 	reflectionHistoryReceiptSHA256 := ""
 	reflectionHistoryReceiptJSON := ""
+	acceptanceRecordRequested := h.acceptance != nil
+	acceptanceRecordAvailable := false
+	var acceptanceRecord bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary
+	acceptanceRecordStatus := ""
 	savedReflectionComparisonRequested := h.compareCurrent != nil
 	savedReflectionComparisonAvailable := false
 	var savedReflectionComparison bundle.ArchiveQuestionComparison
@@ -235,6 +256,30 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 			}
+		}
+	}
+	if h.acceptance != nil {
+		var acceptanceErr error
+		acceptanceRecord, acceptanceErr = h.acceptance()
+		acceptanceRecordAvailable = acceptanceErr == nil
+		switch {
+		case !acceptanceRecordAvailable:
+			acceptanceRecordStatus = "unavailable"
+		case !reflectionHistoryAvailable:
+			acceptanceRecordStatus = "history unavailable"
+		case reflectionHistoryQuestionID == "":
+			acceptanceRecordStatus = "select bound question"
+		case acceptanceRecordMatches(
+			acceptanceRecord,
+			reflectionHistorySummary,
+			reflectionHistoryQuestionRoundSHA256,
+			reflectionHistoryQuestionID,
+			reflectionHistoryReceiptAvailable,
+			reflectionHistoryReceiptSHA256,
+		):
+			acceptanceRecordStatus = "matched"
+		default:
+			acceptanceRecordStatus = "mismatch"
 		}
 	}
 	if h.compareCurrent != nil {
@@ -307,6 +352,10 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		ReflectionHistoryReceipt:           reflectionHistoryReceipt,
 		ReflectionHistoryReceiptSHA256:     reflectionHistoryReceiptSHA256,
 		ReflectionHistoryReceiptJSON:       reflectionHistoryReceiptJSON,
+		AcceptanceRecordRequested:          acceptanceRecordRequested,
+		AcceptanceRecordAvailable:          acceptanceRecordAvailable,
+		AcceptanceRecord:                   acceptanceRecord,
+		AcceptanceRecordStatus:             acceptanceRecordStatus,
 		SavedReflectionComparisonRequested: savedReflectionComparisonRequested,
 		SavedReflectionComparisonAvailable: savedReflectionComparisonAvailable,
 		SavedReflectionComparison:          savedReflectionComparison,
@@ -350,6 +399,20 @@ func summarizeArchiveAnswers(results []archiveQuestionResult) archiveQuestionSum
 		}
 	}
 	return summary
+}
+
+func acceptanceRecordMatches(
+	record bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary,
+	historySummary bundle.ArchiveQuestionTransitionVerificationSummary,
+	questionRoundSHA256, questionID string,
+	receiptAvailable bool,
+	receiptSHA256 string,
+) bool {
+	return record.TransitionHistorySHA256 == historySummary.TransitionHistorySHA256 &&
+		record.QuestionRoundSHA256 == questionRoundSHA256 &&
+		record.QuestionID == questionID &&
+		receiptAvailable &&
+		record.ReceiptSHA256 == receiptSHA256
 }
 
 func (h handler) handleRun(w http.ResponseWriter, r *http.Request) {
@@ -660,6 +723,21 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
     {{if and .ReflectionHistoryRequested (or (not .SelectedQuestion.ID) (eq .SelectedQuestion.ID .ReflectionHistory.QuestionID))}}
     <section class="panel">
       <div class="section-head"><h2>Saved reflection history</h2><span class="context">verified ledger</span></div>
+      {{if .AcceptanceRecordRequested}}
+      <section class="panel" id="history-acceptance-record" aria-label="Portable question acceptance record">
+        <div class="section-head"><h3>Portable question acceptance</h3><span class="status">{{.AcceptanceRecordStatus}}</span></div>
+        {{if .AcceptanceRecordAvailable}}
+        <dl>
+          <dt>question ID</dt><dd><code>{{.AcceptanceRecord.QuestionID}}</code></dd>
+          <dt>history SHA-256</dt><dd>{{.AcceptanceRecord.TransitionHistorySHA256}}</dd>
+          <dt>question round SHA-256</dt><dd>{{.AcceptanceRecord.QuestionRoundSHA256}}</dd>
+          <dt>receipt SHA-256</dt><dd>{{.AcceptanceRecord.ReceiptSHA256}}</dd>
+          <dt>acceptance SHA-256</dt><dd>{{.AcceptanceRecord.AcceptanceSHA256}}</dd>
+        </dl>
+        {{end}}
+        <p class="context">This compares the selected read-only receipt with a saved raw-value-free identity binding. It does not prove that a UI driver performed the selection.</p>
+      </section>
+      {{end}}
       {{if .ReflectionHistoryAvailable}}
       <p class="context">{{.ReflectionHistory.Question}}</p>
       <div class="section-head"><h3>Question round</h3><span class="context">fixed, verified, read only</span></div>

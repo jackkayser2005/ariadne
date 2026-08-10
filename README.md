@@ -177,9 +177,9 @@ The page shows the same safe snapshot summaries alongside the fixed history
 questions, including a direct snapshot-summary question, so a UI driver can
 choose a question and retain the identities it was asking about.
 
-The local review page can receive a verified transition ledger and a saved
-reflection with
-`experiment serve --history <history.json> --reflection <reflection.json> <archive-root>`.
+The local review page can receive a verified transition ledger, a saved
+reflection, and an acceptance identity binding with
+`experiment serve --history <history.json> --reflection <reflection.json> --acceptance <acceptance.json> <archive-root>`.
 It renders caller-ordered bounded transitions and re-asks the saved reflection's
 fixed question against the current archive, showing only safe comparison counts,
 identities, per-directory bounded state changes, and the repeated-change
@@ -190,6 +190,10 @@ each bounded result and a direct receipt link, so a UI driver can choose a
 bounded question without inventing natural language. The page also shows the
 question-round SHA-256. The selected receipt renders its stable history and
 receipt SHA-256 identities alongside the raw-value-free JSON details.
+When `--acceptance` is supplied, the page also reports whether the selected
+question and receipt match the saved history, round, and receipt identities.
+This is a read-only identity comparison; it does not prove that a UI driver
+performed the selection.
 
 Stable-ID Android sessions also record a SHA-256 identity for the successful
 UI hierarchy used to resolve the manifest-declared control. The raw hierarchy

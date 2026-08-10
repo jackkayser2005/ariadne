@@ -28,7 +28,7 @@ go run ./cmd/ariadne experiment ask-archive transitions acceptance verify --json
 Start the local review page with the same verified history:
 
 ```console
-go run ./cmd/ariadne experiment serve --history <history.json> <archive-root>
+go run ./cmd/ariadne experiment serve --history <history.json> --acceptance <acceptance.json> <archive-root>
 ```
 
 The server accepts loopback addresses only and is read-only.
@@ -42,7 +42,9 @@ The server accepts loopback addresses only and is read-only.
    ID, receipt SHA-256, and the raw-value-free receipt JSON.
 5. Check that the selected receipt panel is labelled `Portable history answer
    receipt` and that its result is one of the fixed bounded states.
-6. Retain only the question ID and the three identities. Do not submit forms,
+6. Check that `Portable question acceptance` reports `matched` after selecting
+   the question named by the saved acceptance record.
+7. Retain only the question ID and the three identities. Do not submit forms,
    follow mutation controls, or copy page text beyond the bounded receipt.
 
 The page exposes accessible labels and stable receipt panel IDs for this
@@ -56,6 +58,7 @@ SHA-256, acceptance SHA-256, and the verifier command exit status. The
 acceptance artifact is a raw-value-free identity binding made after the round
 and receipt have been checked; it is useful for retaining what the pass was
 intended to select, but its verifier does not prove that a UI driver performed
-the selection. Mark the UI check `not run` if the computer-use host cannot
+the selection. The server-side `matched` status compares only the safe
+identities; it is not UI proof. Mark the UI check `not run` if the computer-use host cannot
 enumerate or activate a window. Deterministic handler tests and the offline
 verifiers remain authoritative until a real rendered-flow check is available.
