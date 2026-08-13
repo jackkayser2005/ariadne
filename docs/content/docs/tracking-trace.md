@@ -136,6 +136,9 @@ go run ./cmd/ariadne trace session pair create --json \
 go run ./cmd/ariadne trace session pair verify --json \
   <baseline-session.json> <baseline-trace.json> \
   <treatment-session.json> <treatment-trace.json>
+go run ./cmd/ariadne trace session pair compare --json \
+  <baseline-session.json> <baseline-trace.json> \
+  <treatment-session.json> <treatment-trace.json>
 ```
 
 The envelope records only a fixed adapter label and version, a reviewed
@@ -155,6 +158,12 @@ metadata. Pair verification also requires complementary baseline/treatment
 roles, distinct trace identities, and matching adapter, procedure, scope, order,
 and canonical pair identities. An empty trace can still be valid, but its
 adapter source is an assertion rather than an event-source corroboration.
+
+The pair comparison command verifies the four inputs as one complementary
+session pair before invoking the ordinary trace comparison. Its result nests
+the verified `pair` metadata beside the structural `comparison`, so a changed
+or missing event never becomes a provenance claim and an `unknown` evidence
+state is not turned into an observed outcome.
 
 ## Bigger-picture path
 

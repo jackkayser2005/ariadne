@@ -54,7 +54,9 @@ redacted source-handoff layer:
    truth. Pair creation derives a canonical identity from both verified trace
    identities; pair verification requires complementary roles, distinct traces,
    and matching provenance before two sessions are treated as one matched pair.
-   An empty trace still leaves source corroboration unavailable.
+   A provenance-aware pair comparison now joins that verified metadata to the
+   structural trace result while preserving evidence states. An empty trace
+   still leaves source corroboration unavailable.
 5. **Replicated counterfactual experiments.** The Android runner can execute
    matched baseline/treatment pairs in both `baseline-treatment` and
    `treatment-baseline` order, resetting before every session and recording the

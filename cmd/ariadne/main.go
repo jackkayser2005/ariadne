@@ -29,6 +29,7 @@ const usage = `usage:
 	ariadne trace session verify [--json] [--expect-sha256 <digest>] <session.json> <trace.json>
 	ariadne trace session pair create [--json] --adapter <adapter> --procedure-sha256 <digest> [--adapter-version <n>] --order <baseline-treatment|treatment-baseline> <baseline-trace.json> <treatment-trace.json> <baseline-session.json> <treatment-session.json>
 	ariadne trace session pair verify [--json] <baseline-session.json> <baseline-trace.json> <treatment-session.json> <treatment-trace.json>
+	ariadne trace session pair compare [--json] <baseline-session.json> <baseline-trace.json> <treatment-session.json> <treatment-trace.json>
 	ariadne browser trace [--json] <redacted-browser-audit.json> <trace.json>
 	ariadne experiment run [--adb <path>] --device <serial> --package <package> --output <directory> <manifest.json>
 	ariadne experiment replicate [--adb <path>] --device <serial> --package <package> --pairs <n> --output <directory> <manifest.json>
@@ -95,6 +96,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 			}
 			if args[3] == "verify" {
 				return runTraceSessionPairVerify(args[4:], stdout, stderr, trace.VerifySessionPair)
+			}
+			if args[3] == "compare" {
+				return runTraceSessionPairCompare(args[4:], stdout, stderr, trace.CompareSessionPair)
 			}
 		}
 		if args[2] == "create" {
@@ -597,6 +601,47 @@ func writeTraceSessionPairSummary(stdout io.Writer, heading string, summary trac
 	return err
 }
 
+func runTraceSessionPairCompare(
+	args []string,
+	stdout, stderr io.Writer,
+	compare traceSessionPairComparer,
+) int {
+	flags := flag.NewFlagSet("trace session pair compare", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 4 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+	result, err := compare(flags.Arg(0), flags.Arg(1), flags.Arg(2), flags.Arg(3))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: trace session pair compare: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(result); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: trace session pair compare: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if _, err := fmt.Fprintf(
+		stdout,
+		"trace session pair compared\npair_sha256: %s\nsource: %s\nscope: %s\norder: %s\nunchanged: %d\ndifferences: %d\nunknowns: %d\n",
+		result.Pair.PairSHA256,
+		result.Pair.Source,
+		result.Pair.Scope,
+		result.Pair.Order,
+		len(result.Comparison.Unchanged),
+		len(result.Comparison.Differences),
+		len(result.Comparison.Unknowns),
+	); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: trace session pair compare: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
 func writeTraceSessionSummary(stdout io.Writer, heading string, summary trace.SessionVerificationSummary) error {
 	_, err := fmt.Fprintf(
 		stdout,
@@ -624,6 +669,7 @@ type traceSessionSaver func(string, string, trace.SessionInput) (trace.SessionVe
 type traceSessionVerifier func(string, string) (trace.SessionVerificationSummary, error)
 type traceSessionPairSaver func(string, string, string, string, trace.SessionPairInput) (trace.SessionPairVerificationSummary, error)
 type traceSessionPairVerifier func(string, string, string, string) (trace.SessionPairVerificationSummary, error)
+type traceSessionPairComparer func(string, string, string, string) (trace.SessionPairComparison, error)
 type experimentTraceSaver func(string, string, string) (trace.VerificationSummary, error)
 type browserTraceSaver func(string, string) (trace.VerificationSummary, error)
 type pairRunner func(

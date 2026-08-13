@@ -84,6 +84,7 @@ go run ./cmd/ariadne trace session create --adapter browser-redacted-audit --ada
 go run ./cmd/ariadne trace session verify --json .ariadne/browser-session.json .ariadne/browser-trace.json
 go run ./cmd/ariadne trace session pair create --json --adapter browser-redacted-audit --adapter-version 1 --procedure-sha256 <procedure-sha256> --order baseline-treatment <baseline-trace.json> <treatment-trace.json> <baseline-session.json> <treatment-session.json>
 go run ./cmd/ariadne trace session pair verify --json <baseline-session.json> <baseline-trace.json> <treatment-session.json> <treatment-trace.json>
+go run ./cmd/ariadne trace session pair compare --json <baseline-session.json> <baseline-trace.json> <treatment-session.json> <treatment-trace.json>
 ```
 
 The standalone command creates one envelope. The pair command derives one
@@ -98,6 +99,11 @@ completeness, but have no event source to corroborate the adapter assertion.
 The current fixed adapter catalog covers the implemented Android and browser
 producers; future desktop or proxy producers add their own reviewed labels when
 they exist.
+
+The pair comparison command first verifies the session envelopes, then runs
+the existing raw-value-free trace comparison and returns both objects together.
+Provenance, structural differences, and evidence states remain separate; a
+joined comparison is not a causal claim.
 
 The shareable export has its own canonical SHA-256 identity. Verify a received
 export structurally, and optionally require the expected identity, with

@@ -403,6 +403,63 @@ func TestRunTraceSessionPairCreate(t *testing.T) {
 	}
 }
 
+func TestRunTraceSessionPairCompare(t *testing.T) {
+	result := trace.SessionPairComparison{
+		SchemaVersion: 1,
+		Pair: trace.SessionPairVerificationSummary{
+			SchemaVersion: 1, PairSHA256: strings.Repeat("a", 64), Source: "browser", Adapter: "browser-redacted-audit", AdapterVersion: 1, ProcedureSHA256: strings.Repeat("b", 64), Scope: "outbound", Order: trace.OrderBaselineTreatment,
+			BaselineTraceSHA256: strings.Repeat("c", 64), TreatmentTraceSHA256: strings.Repeat("d", 64), BaselineCompleteness: trace.Complete, TreatmentCompleteness: trace.Complete, BaselineSessionSHA256: strings.Repeat("e", 64), TreatmentSessionSHA256: strings.Repeat("f", 64),
+		},
+		Comparison: trace.Comparison{SchemaVersion: 1, Scope: "outbound", Unchanged: []trace.Event{}, Differences: []trace.EventChange{}, Unknowns: []trace.Unknown{}},
+	}
+	compare := func(baselineSession, baselineTrace, treatmentSession, treatmentTrace string) (trace.SessionPairComparison, error) {
+		if baselineSession != "baseline-session.json" || baselineTrace != "baseline-trace.json" || treatmentSession != "treatment-session.json" || treatmentTrace != "treatment-trace.json" {
+			t.Fatalf("pair compare args = %q, %q, %q, %q", baselineSession, baselineTrace, treatmentSession, treatmentTrace)
+		}
+		return result, nil
+	}
+	args := []string{"baseline-session.json", "baseline-trace.json", "treatment-session.json", "treatment-trace.json"}
+	var stdout, stderr bytes.Buffer
+	if exitCode := runTraceSessionPairCompare(args, &stdout, &stderr, compare); exitCode != 0 {
+		t.Fatalf("runTraceSessionPairCompare() = %d, stderr=%q", exitCode, stderr.String())
+	}
+	for _, want := range []string{"trace session pair compared", "pair_sha256: " + result.Pair.PairSHA256, "source: browser", "scope: outbound", "differences: 0"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("pair compare output missing %q: %q", want, stdout.String())
+		}
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if exitCode := runTraceSessionPairCompare(append([]string{"--json"}, args...), &stdout, &stderr, compare); exitCode != 0 {
+		t.Fatalf("JSON runTraceSessionPairCompare() = %d, stderr=%q", exitCode, stderr.String())
+	}
+	var got trace.SessionPairComparison
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.SchemaVersion != result.SchemaVersion || got.Pair != result.Pair || stderr.Len() != 0 {
+		t.Fatalf("JSON pair compare = %#v, want %#v; stderr=%q", got, result, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if exitCode := runTraceSessionPairCompare([]string{"only-one"}, &stdout, &stderr, compare); exitCode != 2 || stdout.Len() != 0 || stderr.Len() == 0 {
+		t.Fatalf("invalid pair compare usage = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	badCompare := func(string, string, string, string) (trace.SessionPairComparison, error) {
+		return trace.SessionPairComparison{}, errors.New("comparison failed")
+	}
+	if exitCode := runTraceSessionPairCompare(args, &stdout, &stderr, badCompare); exitCode != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "comparison failed") {
+		t.Fatalf("pair compare error = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if exitCode := runTraceSessionPairCompare(append([]string{"--json"}, args...), failingWriter{}, &stderr, compare); exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+		t.Fatalf("pair compare write error = %d, stderr=%q", exitCode, stderr.String())
+	}
+}
+
 func TestRunTraceSessionPairDispatch(t *testing.T) {
 	baselineTrace := writeTraceFile(t, trace.Document{
 		SchemaVersion: 1, Redacted: true, Scope: "outbound", Completeness: trace.Complete,
@@ -434,6 +491,18 @@ func TestRunTraceSessionPairDispatch(t *testing.T) {
 	}
 	if summary != created || summary.BaselineTraceSHA256 == summary.TreatmentTraceSHA256 || stderr.Len() != 0 {
 		t.Fatalf("run pair summary = %#v, stderr=%q", summary, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if exitCode := run([]string{"trace", "session", "pair", "compare", "--json", baselineSession, baselineTrace, treatmentSession, treatmentTrace}, &stdout, &stderr); exitCode != 0 {
+		t.Fatalf("run pair session compare = %d, stderr=%q", exitCode, stderr.String())
+	}
+	var comparison trace.SessionPairComparison
+	if err := json.Unmarshal(stdout.Bytes(), &comparison); err != nil {
+		t.Fatal(err)
+	}
+	if comparison.Pair != created || len(comparison.Comparison.Differences) != 1 || stderr.Len() != 0 {
+		t.Fatalf("run pair comparison = %#v, stderr=%q", comparison, stderr.String())
 	}
 }
 

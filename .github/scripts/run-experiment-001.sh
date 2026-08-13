@@ -744,6 +744,26 @@ jq -e \
   (.baseline_session_sha256 == $baseline_session_sha256) and
   (.treatment_session_sha256 == $treatment_session_sha256)
   ' "${complete_pair_summary}"
+complete_pair_comparison="${complete_trace_dir}/pair-comparison.json"
+"${ariadne}" trace session pair compare --json \
+  "${complete_baseline_session}" "${complete_baseline_trace}" \
+  "${complete_treatment_session}" "${complete_treatment_trace}" >"${complete_pair_comparison}"
+jq -e '
+  (keys_unsorted == ["schema_version", "pair", "comparison"]) and
+  (.schema_version == 1) and
+  (.pair.schema_version == 1) and
+  (.pair.pair_sha256 | test("^[0-9a-f]{64}$")) and
+  (.pair.source == "android") and
+  (.pair.order == "baseline-treatment") and
+  (.comparison.schema_version == 1) and
+  (.comparison.scope == "all") and
+  (.comparison.baseline_completeness == "complete") and
+  (.comparison.treatment_completeness == "complete") and
+  (.comparison.baseline_trace_sha256 == .pair.baseline_trace_sha256) and
+  (.comparison.treatment_trace_sha256 == .pair.treatment_trace_sha256) and
+  (.comparison.differences | length == 0) and
+  (.comparison.unknowns | length == 0)
+' "${complete_pair_comparison}"
 if grep -R -F -q \
   -e "${baseline_email}" \
   -e "${treatment_email}" \
