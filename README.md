@@ -97,6 +97,30 @@ driver was authorized. A future concrete driver must use an isolated profile,
 an explicit local test target, and its own CDP/redaction tests before it can
 be treated as a source producer.
 
+The repository now includes one deterministic local-fixture producer. It takes
+an explicit Chrome executable, creates a fresh temporary profile, serves only a
+loopback fixture, and emits fixed network labels through the same boundary.
+It requires Node 22 or newer:
+
+```console
+go run ./cmd/ariadne browser capture --json \
+  --procedure examples/browser-local-fixture-procedure.json \
+  --driver node \
+  --driver-arg cmd/browser-fixture-driver/browser_fixture_driver.mjs \
+  --driver-arg --browser \
+  --driver-arg "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" \
+  .ariadne/browser-local-trace.json
+```
+
+This producer is fixture evidence only. It does not accept a target URL, reuse
+a profile, read cookies/storage/bodies/DOM, or claim coverage of arbitrary
+browser sessions. Use `browser-local-fixture` as the session adapter when
+binding this trace to provenance.
+
+The same fixture path is exercised by the hosted Windows browser-fixture
+workflow, which checks the safe output and confirms that the temporary profile
+is removed.
+
 Bind a verified trace to its reviewed adapter and capture procedure without
 adding URLs, profile names, or captured values:
 

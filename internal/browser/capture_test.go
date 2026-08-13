@@ -36,9 +36,9 @@ func TestCaptureWithRunnerBindsProcedureAndWritesTrace(t *testing.T) {
 	procedurePath := writeProcedure(t, validProcedureData)
 	outputPath := filepath.Join(t.TempDir(), "nested", "trace.json")
 	var received []byte
-	summary, err := captureWithRunner(procedurePath, "driver", outputPath, func(ctx context.Context, driver string, procedure []byte) ([]byte, error) {
-		if driver != "driver" || ctx.Err() != nil {
-			t.Fatalf("runner args = driver %q, context error %v", driver, ctx.Err())
+	summary, err := captureWithRunner(procedurePath, "driver", []string{"fixture"}, outputPath, func(ctx context.Context, driver string, args []string, procedure []byte) ([]byte, error) {
+		if driver != "driver" || len(args) != 1 || args[0] != "fixture" || ctx.Err() != nil {
+			t.Fatalf("runner args = driver %q, args %#v, context error %v", driver, args, ctx.Err())
 		}
 		received = append([]byte(nil), procedure...)
 		return validDriverAudit, nil
@@ -67,17 +67,25 @@ func TestCaptureWithRunnerBindsProcedureAndWritesTrace(t *testing.T) {
 	if len(document.Events) != 1 || document.Events[0].Source != "browser" || document.Events[0].Fields[0] != "region" {
 		t.Fatalf("document = %#v", document)
 	}
-	if _, err := captureWithRunner(procedurePath, "driver", outputPath, func(context.Context, string, []byte) ([]byte, error) {
+	if _, err := captureWithRunner(procedurePath, "driver", nil, outputPath, func(context.Context, string, []string, []byte) ([]byte, error) {
 		return validDriverAudit, nil
 	}); err == nil {
 		t.Fatal("capture overwrote an existing trace")
 	}
 }
 
+func TestDecodeProcedureAcceptsLocalFixtureProducer(t *testing.T) {
+	data := strings.Replace(string(validProcedureData), BrowserAuditProcedureID, BrowserLocalFixtureProcedureID, 1)
+	procedure, err := DecodeProcedure([]byte(data))
+	if err != nil || procedure.ProcedureID != BrowserLocalFixtureProcedureID {
+		t.Fatalf("DecodeProcedure() = %#v, err = %v", procedure, err)
+	}
+}
+
 func TestCaptureInvokesSelectedDriver(t *testing.T) {
 	t.Setenv("ARIADNE_BROWSER_TEST_DRIVER", "success")
 	outputPath := filepath.Join(t.TempDir(), "trace.json")
-	summary, err := Capture(writeProcedure(t, longProcedureData), os.Args[0], outputPath)
+	summary, err := Capture(writeProcedure(t, longProcedureData), os.Args[0], nil, outputPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,15 +105,17 @@ func TestCaptureWithRunnerRejectsUnsafeDriverResults(t *testing.T) {
 		{name: "invalid audit", data: []byte(`{"schema_version":1}`), want: "browser capture output"},
 		{name: "scope mismatch", data: []byte(`{"schema_version":1,"redacted":true,"scope":"storage","completeness":"complete","events":[]}`), want: "does not match procedure"},
 		{name: "event limit", data: []byte(`{"schema_version":1,"redacted":true,"scope":"outbound","completeness":"complete","events":[{"channel":"network","kind":"request","destination":"analytics","fields":["region"]},{"channel":"network","kind":"response","destination":"first-party","fields":["consent"]},{"channel":"cookie","kind":"cookie-write","destination":"advertising","fields":["consent"]}]}`), want: "does not match procedure"},
-		{name: "driver error", want: "driver unavailable", run: func(context.Context, string, []byte) ([]byte, error) { return nil, errors.New("driver unavailable") }},
+		{name: "driver error", want: "driver unavailable", run: func(context.Context, string, []string, []byte) ([]byte, error) {
+			return nil, errors.New("driver unavailable")
+		}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			run := test.run
 			if run == nil {
-				run = func(context.Context, string, []byte) ([]byte, error) { return test.data, nil }
+				run = func(context.Context, string, []string, []byte) ([]byte, error) { return test.data, nil }
 			}
-			_, err := captureWithRunner(procedurePath, "driver", filepath.Join(t.TempDir(), "trace.json"), run)
+			_, err := captureWithRunner(procedurePath, "driver", nil, filepath.Join(t.TempDir(), "trace.json"), run)
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("error = %v, want %q", err, test.want)
 			}
@@ -114,36 +124,36 @@ func TestCaptureWithRunnerRejectsUnsafeDriverResults(t *testing.T) {
 			}
 		})
 	}
-	if _, err := captureWithRunner("", "driver", "trace.json", func(context.Context, string, []byte) ([]byte, error) { return nil, nil }); err == nil {
+	if _, err := captureWithRunner("", "driver", nil, "trace.json", func(context.Context, string, []string, []byte) ([]byte, error) { return nil, nil }); err == nil {
 		t.Fatal("capture accepted empty procedure path")
 	}
 }
 
 func TestRunDriverBoundsAndTimesOut(t *testing.T) {
 	t.Setenv("ARIADNE_BROWSER_TEST_DRIVER", "success")
-	output, err := runDriver(context.Background(), os.Args[0], []byte("procedure"))
+	output, err := runDriver(context.Background(), os.Args[0], nil, []byte("procedure"))
 	if err != nil || string(output) != string(validDriverAudit) {
 		t.Fatalf("successful driver output = %q, err = %v", output, err)
 	}
 
 	t.Setenv("ARIADNE_BROWSER_TEST_DRIVER", "stdout-overflow")
-	if output, err := runDriver(context.Background(), os.Args[0], nil); err == nil || !strings.Contains(err.Error(), "output exceeds limit") {
+	if output, err := runDriver(context.Background(), os.Args[0], nil, nil); err == nil || !strings.Contains(err.Error(), "output exceeds limit") {
 		t.Fatalf("stdout overflow output length = %d, error = %v", len(output), err)
 	}
 	t.Setenv("ARIADNE_BROWSER_TEST_DRIVER", "stderr-overflow")
-	if _, err := runDriver(context.Background(), os.Args[0], nil); err == nil || !strings.Contains(err.Error(), "diagnostics exceed limit") {
+	if _, err := runDriver(context.Background(), os.Args[0], nil, nil); err == nil || !strings.Contains(err.Error(), "diagnostics exceed limit") {
 		t.Fatalf("stderr overflow error = %v", err)
 	}
 	t.Setenv("ARIADNE_BROWSER_TEST_DRIVER", "sleep")
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	if _, err := runDriver(ctx, os.Args[0], nil); err == nil || !strings.Contains(err.Error(), "timed out") {
+	if _, err := runDriver(ctx, os.Args[0], nil, nil); err == nil || !strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("timeout error = %v", err)
 	}
-	if _, err := runDriver(context.Background(), filepath.Join(t.TempDir(), "missing-driver.exe"), nil); err == nil || !strings.Contains(err.Error(), "driver failed") {
+	if _, err := runDriver(context.Background(), filepath.Join(t.TempDir(), "missing-driver.exe"), nil, nil); err == nil || !strings.Contains(err.Error(), "driver failed") {
 		t.Fatalf("missing driver error = %v", err)
 	}
-	if _, err := runDriver(context.Background(), "", nil); err == nil {
+	if _, err := runDriver(context.Background(), "", nil, nil); err == nil {
 		t.Fatal("runDriver accepted empty driver")
 	}
 }

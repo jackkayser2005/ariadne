@@ -384,6 +384,7 @@ func TestSessionAdapters(t *testing.T) {
 	}{
 		{"android-experiment-001", "android"},
 		{"browser-redacted-audit", "browser"},
+		{"browser-local-fixture", "browser"},
 	} {
 		t.Run(test.adapter, func(t *testing.T) {
 			tracePath := writeTrace(t, Document{

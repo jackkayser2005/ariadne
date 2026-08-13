@@ -19,7 +19,11 @@ const (
 	// BrowserAuditProcedureID is the first catalogued browser procedure. Its
 	// target and interaction are external to Ariadne and are not serialized.
 	BrowserAuditProcedureID = "browser-audit-v1"
-	maxProcedureBytes       = 16 << 10
+	// BrowserLocalFixtureProcedureID identifies the deterministic local browser
+	// fixture producer. Its target is fixed inside that producer and is not
+	// supplied by the procedure.
+	BrowserLocalFixtureProcedureID = "browser-local-fixture-v1"
+	maxProcedureBytes              = 16 << 10
 )
 
 // Procedure is the bounded, raw-value-free input shared with one capture
@@ -88,7 +92,7 @@ func ProcedureSHA256(procedure Procedure) (string, error) {
 
 func validateProcedure(procedure Procedure) error {
 	if procedure.SchemaVersion != CaptureProcedureSchemaVersion ||
-		procedure.ProcedureID != BrowserAuditProcedureID ||
+		!validProcedureID(procedure.ProcedureID) ||
 		!validScope(procedure.Scope) ||
 		procedure.DurationMS < minCaptureDurationMS ||
 		procedure.DurationMS > maxCaptureDurationMS ||
@@ -97,4 +101,8 @@ func validateProcedure(procedure Procedure) error {
 		return errors.New("browser procedure is invalid")
 	}
 	return nil
+}
+
+func validProcedureID(value string) bool {
+	return value == BrowserAuditProcedureID || value == BrowserLocalFixtureProcedureID
 }

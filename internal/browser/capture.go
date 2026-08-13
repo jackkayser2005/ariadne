@@ -20,6 +20,7 @@ const (
 	minCaptureDurationMS = 100
 	maxCaptureDurationMS = 5 * 60 * 1000
 	maxDriverStderrBytes = 64 << 10
+	captureCleanupGrace  = 15 * time.Second
 )
 
 // CaptureSummary identifies the verified procedure and trace produced by a
@@ -32,13 +33,13 @@ type CaptureSummary struct {
 // Capture invokes one explicitly selected driver and stores its redacted
 // audit as a portable trace. The driver receives the validated procedure JSON
 // on stdin and must write exactly one redacted Audit JSON document to stdout.
-func Capture(procedurePath, driverPath, outputPath string) (CaptureSummary, error) {
-	return captureWithRunner(procedurePath, driverPath, outputPath, runDriver)
+func Capture(procedurePath, driverPath string, driverArgs []string, outputPath string) (CaptureSummary, error) {
+	return captureWithRunner(procedurePath, driverPath, driverArgs, outputPath, runDriver)
 }
 
-type captureRunner func(context.Context, string, []byte) ([]byte, error)
+type captureRunner func(context.Context, string, []string, []byte) ([]byte, error)
 
-func captureWithRunner(procedurePath, driverPath, outputPath string, run captureRunner) (CaptureSummary, error) {
+func captureWithRunner(procedurePath, driverPath string, driverArgs []string, outputPath string, run captureRunner) (CaptureSummary, error) {
 	if strings.TrimSpace(procedurePath) == "" || strings.TrimSpace(driverPath) == "" || strings.TrimSpace(outputPath) == "" {
 		return CaptureSummary{}, errors.New("browser capture paths and driver are required")
 	}
@@ -51,9 +52,9 @@ func captureWithRunner(procedurePath, driverPath, outputPath string, run capture
 		return CaptureSummary{}, errors.New("browser procedure identity failed")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(procedure.DurationMS)*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(procedure.DurationMS)*time.Millisecond+captureCleanupGrace)
 	defer cancel()
-	auditData, err := run(ctx, driverPath, procedureData)
+	auditData, err := run(ctx, driverPath, driverArgs, procedureData)
 	if err != nil {
 		return CaptureSummary{}, fmt.Errorf("browser capture driver: %w", err)
 	}
@@ -72,11 +73,11 @@ func captureWithRunner(procedurePath, driverPath, outputPath string, run capture
 	return CaptureSummary{ProcedureSHA256: procedureSHA256, Trace: traceSummary}, nil
 }
 
-func runDriver(ctx context.Context, driverPath string, procedureData []byte) ([]byte, error) {
+func runDriver(ctx context.Context, driverPath string, driverArgs []string, procedureData []byte) ([]byte, error) {
 	if strings.TrimSpace(driverPath) == "" {
 		return nil, errors.New("driver is required")
 	}
-	command := exec.CommandContext(ctx, driverPath)
+	command := exec.CommandContext(ctx, driverPath, driverArgs...)
 	command.Stdin = bytes.NewReader(procedureData)
 	stdout := &boundedBuffer{limit: maxAuditBytes}
 	stderr := &boundedBuffer{limit: maxDriverStderrBytes}

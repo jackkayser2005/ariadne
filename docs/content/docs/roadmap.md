@@ -80,6 +80,12 @@ browser source-boundary layers:
    profile, selector, script, header, payload, or authorization claim. This is
    the boundary for a future isolated driver, not evidence that a browser was
    captured.
+8. **Local browser fixture producer (fixture-scoped).** A Node 22 CDP helper
+   now launches an explicitly supplied Chrome executable with an ephemeral
+   profile, serves a loopback-only fixture, and emits only fixed network labels
+   after discarding URLs and values. It proves the process boundary and cleanup
+   path against one deterministic target. It is not a user-session adapter or
+   universal browser capture.
 
 The local review page is intentionally read-only. Its compact question round
 and receipt links, including stable history and receipt identities, are a
@@ -130,9 +136,10 @@ The browser audit producer and explicit driver protocol are the first post-gate
 handoff slices: keep them narrow and redacted, while the deterministic
 comparison, provenance, redaction, and question engine stay small and portable.
 Session provenance is the join point for later source-specific runs. A real
-browser capture driver, desktop producer, or proxy producer is still a separate
-future slice with its own authorized procedure, isolated target, and redaction
-tests; the trace contract is the handoff boundary, not a universal sniffer.
+browser capture driver for a user-authorized target, desktop producer, or proxy
+producer is still a separate future slice with its own authorized procedure,
+isolated target, and redaction tests; the local fixture is not that capability.
+The trace contract is the handoff boundary, not a universal sniffer.
 
 ## Acceptance gates
 
@@ -140,6 +147,8 @@ tests; the trace contract is the handoff boundary, not a universal sniffer.
   statement coverage.
 - Fixture or runner changes pass the hosted real-emulator workflow when local
   Android tooling is unavailable.
+- The local browser fixture producer passes its hosted Windows Chrome workflow,
+  including redaction and temporary-profile cleanup.
 - UI changes pass deterministic handler tests; use computer-use only when a
   concrete rendered-flow check is needed and the host supports it.
 - No review page, answer, export, or log exposes captured values, secrets, or

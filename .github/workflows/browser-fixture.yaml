@@ -1,0 +1,61 @@
+name: Browser fixture
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  fixture:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Capture local browser fixture
+        shell: pwsh
+        run: |
+          $nodeMajor = [int]((node --version).TrimStart('v').Split('.')[0])
+          if ($nodeMajor -lt 22) {
+            throw "Node 22 or newer is required"
+          }
+          $chromeCandidates = @((Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe'))
+          $programFilesX86 = [Environment]::GetEnvironmentVariable('ProgramFiles(x86)')
+          if ($programFilesX86) {
+            $chromeCandidates += Join-Path $programFilesX86 'Google\Chrome\Application\chrome.exe'
+          }
+          $chrome = $chromeCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          if (-not $chrome) {
+            throw "Chrome executable was not found"
+          }
+          $trace = Join-Path $env:RUNNER_TEMP 'ariadne-browser-local-trace.json'
+          $summary = Join-Path $env:RUNNER_TEMP 'ariadne-browser-local-summary.json'
+          go run ./cmd/ariadne browser capture --json `
+            --procedure examples/browser-local-fixture-procedure.json `
+            --driver node `
+            --driver-arg cmd/browser-fixture-driver/browser_fixture_driver.mjs `
+            --driver-arg --browser `
+            --driver-arg $chrome `
+            $trace | Out-File -LiteralPath $summary -Encoding utf8
+          go run ./cmd/ariadne trace verify --json $trace
+          $content = Get-Content -Raw -LiteralPath $trace
+          if ($content -match 'https://|fixture|session_id|consent=|payload') {
+            throw 'browser fixture trace exposed source values'
+          }
+          $profiles = @(Get-ChildItem -LiteralPath $env:TEMP -Directory -Filter 'ariadne-browser-fixture-*' -ErrorAction SilentlyContinue)
+          if ($profiles.Count -ne 0) {
+            throw "temporary browser profiles remain: $($profiles.FullName -join ', ')"
+          }

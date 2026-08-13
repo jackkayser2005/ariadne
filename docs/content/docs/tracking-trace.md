@@ -150,10 +150,35 @@ and redaction.
 
 This boundary is not a browser capture implementation. Ariadne does not launch
 Chrome, reuse a profile, inspect cookies, retain response bodies, or infer that
-the executable was authorized. The next browser slice must provide one pinned,
-isolated driver against a local fixture and prove that CDP messages cannot cross
-the redaction boundary. Until then, the existing already-redacted audit remains
-the only browser source producer.
+the executable was authorized. The local fixture producer below provides one
+pinned, isolated driver against a local target and proves that CDP messages do
+not cross the redaction boundary; the existing already-redacted audit remains
+the handoff for other browser sources.
+
+### Local fixture producer
+
+The repository also includes one deterministic producer for a local fixture:
+
+```console
+go run ./cmd/ariadne browser capture --json \
+  --procedure examples/browser-local-fixture-procedure.json \
+  --driver node \
+  --driver-arg cmd/browser-fixture-driver/browser_fixture_driver.mjs \
+  --driver-arg --browser \
+  --driver-arg "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" \
+  <trace.json>
+```
+
+The Node 22 driver launches the explicitly supplied Chrome executable with a fresh
+temporary profile, binds a local fixture server to loopback, listens only to
+bounded CDP network events, maps known query-key names to the fixed field
+catalog, and discards URLs and values before writing the audit. It does not
+read cookies, storage values, response bodies, DOM content, or arbitrary
+targets. Unsupported activity becomes partial rather than a completeness
+claim. The generated trace can be bound with adapter `browser-local-fixture`.
+
+This proves one local producer path and its cleanup/redaction behavior; it is
+not evidence about a user's browser or a general browser capture capability.
 
 ## Session provenance
 

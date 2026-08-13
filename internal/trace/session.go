@@ -561,6 +561,8 @@ func adapterSource(adapter string) (string, bool) {
 		return "android", true
 	case "browser-redacted-audit":
 		return "browser", true
+	case "browser-local-fixture":
+		return "browser", true
 	default:
 		return "", false
 	}

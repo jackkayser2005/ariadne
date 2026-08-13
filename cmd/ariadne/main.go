@@ -31,7 +31,7 @@ const usage = `usage:
 	ariadne trace session pair verify [--json] <baseline-session.json> <baseline-trace.json> <treatment-session.json> <treatment-trace.json>
 	ariadne trace session pair compare [--json] <baseline-session.json> <baseline-trace.json> <treatment-session.json> <treatment-trace.json>
 	ariadne browser trace [--json] <redacted-browser-audit.json> <trace.json>
-	ariadne browser capture [--json] --procedure <procedure.json> --driver <executable> <trace.json>
+	ariadne browser capture [--json] --procedure <procedure.json> --driver <executable> [--driver-arg <arg>] <trace.json>
 	ariadne experiment run [--adb <path>] --device <serial> --package <package> --output <directory> <manifest.json>
 	ariadne experiment replicate [--adb <path>] --device <serial> --package <package> --pairs <n> --output <directory> <manifest.json>
 	ariadne experiment replicate verify [--json] <replicated-directory>
@@ -113,7 +113,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runBrowserTrace(args[2:], stdout, stderr, browser.SaveTrace)
 	}
 	if len(args) >= 2 && args[0] == "browser" && args[1] == "capture" {
-		return runBrowserCapture(args[2:], stdout, stderr, browser.Capture)
+		return runBrowserCapture(args[2:], stdout, stderr, func(procedurePath, driverPath string, driverArgs []string, outputPath string) (browser.CaptureSummary, error) {
+			return browser.Capture(procedurePath, driverPath, driverArgs, outputPath)
+		})
 	}
 	if len(args) >= 2 && args[0] == "experiment" && args[1] == "run" {
 		return runExperiment(args[2:], stdout, stderr, adb.Check, adb.RunPair)
@@ -301,7 +303,7 @@ func runBrowserTrace(
 	return 0
 }
 
-type browserCaptureRunner func(string, string, string) (browser.CaptureSummary, error)
+type browserCaptureRunner func(string, string, []string, string) (browser.CaptureSummary, error)
 
 func runBrowserCapture(
 	args []string,
@@ -313,11 +315,16 @@ func runBrowserCapture(
 	jsonOutput := flags.Bool("json", false, "")
 	procedurePath := flags.String("procedure", "", "")
 	driverPath := flags.String("driver", "", "")
+	var driverArgs []string
+	flags.Func("driver-arg", "", func(value string) error {
+		driverArgs = append(driverArgs, value)
+		return nil
+	})
 	if err := flags.Parse(args); err != nil || flags.NArg() != 1 || *procedurePath == "" || *driverPath == "" {
 		_, _ = io.WriteString(stderr, usage)
 		return 2
 	}
-	summary, err := capture(*procedurePath, *driverPath, flags.Arg(0))
+	summary, err := capture(*procedurePath, *driverPath, driverArgs, flags.Arg(0))
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: browser capture: %v\n", err)
 		return 1
