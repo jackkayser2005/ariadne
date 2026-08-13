@@ -59,6 +59,17 @@ func TestCompareArchiveQuestionTransitionHistoryQuestionRoundsRejectsInvalidPath
 	}
 }
 
+func TestCompareArchiveQuestionTransitionHistoryQuestionRoundsRejectsDifferentHistoryQuestions(t *testing.T) {
+	first := AnswerArchiveQuestionTransitionHistoryQuestionRound(validArchiveQuestionTransitionHistory(), strings.Repeat("a", 64))
+	second := first
+	second.HistoryQuestionID = "capture-complete"
+	firstPath := writeQuestionRoundForComparison(t, first)
+	secondPath := writeQuestionRoundForComparison(t, second)
+	if _, err := CompareArchiveQuestionTransitionHistoryQuestionRounds(firstPath, secondPath); err == nil || !strings.Contains(err.Error(), "different history questions") {
+		t.Fatalf("different history question error = %v", err)
+	}
+}
+
 func writeQuestionRoundForComparison(t *testing.T, round ArchiveQuestionTransitionHistoryQuestionRoundAnswer) string {
 	t.Helper()
 	data, err := json.Marshal(round)

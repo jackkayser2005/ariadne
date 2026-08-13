@@ -24,7 +24,7 @@ func TestVerifyArchiveQuestionTransitionHistoryQuestionRound(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if summary.SchemaVersion != 1 || summary.TransitionHistorySHA256 != round.TransitionHistorySHA256 || summary.Questions != 4 || summary.RoundSHA256 != roundSHA256 {
+	if summary.SchemaVersion != 2 || summary.TransitionHistorySHA256 != round.TransitionHistorySHA256 || summary.Questions != 4 || summary.RoundSHA256 != roundSHA256 {
 		t.Fatalf("save summary = %#v", summary)
 	}
 	data, err := os.ReadFile(roundPath)
@@ -74,10 +74,13 @@ func TestVerifyArchiveQuestionTransitionHistoryQuestionRoundRejectsInvalidRounds
 		want string
 	}{
 		{name: "malformed", data: []byte("{"), want: "invalid JSON"},
-		{name: "duplicate", data: bytes.Replace(valid, []byte(`"schema_version":1`), []byte(`"schema_version":1,"schema_version":1`), 1), want: "duplicate key"},
+		{name: "duplicate", data: bytes.Replace(valid, []byte(`"schema_version":2`), []byte(`"schema_version":2,"schema_version":2`), 1), want: "duplicate key"},
 		{name: "unknown", data: bytes.Replace(valid, []byte("{"), []byte(`{"extra":true,`), 1), want: "unknown field"},
 		{name: "trailing", data: append(append([]byte(nil), valid...), []byte("{}")...), want: "trailing data"},
-		{name: "schema", data: bytes.Replace(valid, []byte(`"schema_version":1`), []byte(`"schema_version":2`), 1), want: "unsupported schema_version"},
+		{name: "schema", data: bytes.Replace(valid, []byte(`"schema_version":2`), []byte(`"schema_version":3`), 1), want: "unsupported schema_version"},
+		{name: "history question ID", data: mutateQuestionRound(t, valid, func(round *ArchiveQuestionTransitionHistoryQuestionRoundAnswer) {
+			round.HistoryQuestionID = "other"
+		}), want: "history_question_id is invalid"},
 		{name: "history digest", data: bytes.Replace(valid, []byte(strings.Repeat("a", 64)), []byte("bad"), 1), want: "transition_history_sha256 is invalid"},
 		{name: "count", data: mutateQuestionRound(t, valid, func(round *ArchiveQuestionTransitionHistoryQuestionRoundAnswer) {
 			round.Questions = round.Questions[:1]

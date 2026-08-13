@@ -104,6 +104,49 @@ func TestRunTraceCompare(t *testing.T) {
 	}
 }
 
+func TestRunExperimentTrace(t *testing.T) {
+	summary := trace.VerificationSummary{
+		SchemaVersion: 1,
+		Redacted:      true,
+		Scope:         "all",
+		Completeness:  trace.Complete,
+		Events:        2,
+		TraceSHA256:   strings.Repeat("a", 64),
+	}
+	save := func(runDir, session, tracePath string) (trace.VerificationSummary, error) {
+		if runDir != "run" || session != "baseline" || tracePath != "trace.json" {
+			t.Fatalf("save args = %q, %q, %q", runDir, session, tracePath)
+		}
+		return summary, nil
+	}
+	var stdout, stderr bytes.Buffer
+	if exitCode := runExperimentTrace([]string{"--session", "baseline", "run", "trace.json"}, &stdout, &stderr, save); exitCode != 0 {
+		t.Fatalf("runExperimentTrace() = %d, stderr=%q", exitCode, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "experiment trace complete\nsession: baseline\nscope: all\ncompleteness: complete\nevents: 2\ntrace_sha256: "+strings.Repeat("a", 64)) || stderr.Len() != 0 {
+		t.Fatalf("experiment trace output = %q, stderr=%q", stdout.String(), stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if exitCode := runExperimentTrace([]string{"--json", "--session", "baseline", "run", "trace.json"}, &stdout, &stderr, save); exitCode != 0 {
+		t.Fatalf("JSON runExperimentTrace() = %d, stderr=%q", exitCode, stderr.String())
+	}
+	var got trace.VerificationSummary
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got != summary || stderr.Len() != 0 {
+		t.Fatalf("JSON experiment trace = %#v, want %#v; stderr=%q", got, summary, stderr.String())
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if exitCode := runExperimentTrace([]string{"--session", "baseline", "run"}, &stdout, &stderr, save); exitCode != 2 || stdout.Len() != 0 || stderr.Len() == 0 {
+		t.Fatalf("invalid experiment trace usage = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+}
+
 func TestRunTraceReportsVerificationAndCoverageErrors(t *testing.T) {
 	missing := filepath.Join(t.TempDir(), "missing.json")
 	var stdout, stderr bytes.Buffer

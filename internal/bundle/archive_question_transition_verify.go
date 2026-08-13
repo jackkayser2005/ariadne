@@ -255,6 +255,16 @@ func validateArchiveQuestionTransitionHistory(history ArchiveQuestionTransitionH
 				return errors.New("snapshot summary identity does not match transition boundary")
 			}
 		}
+		for index, transition := range history.Transitions {
+			from := history.SnapshotSummaries[index]
+			to := history.SnapshotSummaries[index+1]
+			if from.Checked != transition.Compared+transition.FromOnly {
+				return fmt.Errorf("transition %d from snapshot checked count does not match transition counts", index+1)
+			}
+			if to.Checked != transition.Compared+transition.ToOnly {
+				return fmt.Errorf("transition %d to snapshot checked count does not match transition counts", index+1)
+			}
+		}
 	}
 	return nil
 }

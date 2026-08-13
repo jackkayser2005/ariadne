@@ -25,6 +25,7 @@ const usage = `usage:
   ariadne trace verify [--json] [--expect-sha256 <digest>] <trace.json>
   ariadne trace compare [--json] <baseline-trace.json> <treatment-trace.json>
   ariadne experiment run [--adb <path>] --device <serial> --package <package> --output <directory> <manifest.json>
+  ariadne experiment trace [--json] --session <baseline|treatment> <run-directory> <trace.json>
   ariadne experiment report <run-directory>
   ariadne experiment export <run-directory> <export.json>
   ariadne experiment export verify [--json] [--expect-sha256 <digest>] <export.json>
@@ -80,6 +81,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(args) >= 2 && args[0] == "experiment" && args[1] == "run" {
 		return runExperiment(args[2:], stdout, stderr, adb.Check, adb.RunPair)
+	}
+	if len(args) >= 2 && args[0] == "experiment" && args[1] == "trace" {
+		return runExperimentTrace(args[2:], stdout, stderr, bundle.SaveExperimentTrace)
 	}
 	if len(args) >= 2 && args[0] == "experiment" && args[1] == "report" {
 		return runReport(args[2:], stdout, stderr, bundle.Write)
@@ -345,6 +349,7 @@ func runTraceCompare(
 type targetChecker func(context.Context, string, string, string) (adb.Target, error)
 type traceVerifier func(string) (trace.VerificationSummary, error)
 type traceComparer func(string, string) (trace.Comparison, error)
+type experimentTraceSaver func(string, string, string) (trace.VerificationSummary, error)
 type pairRunner func(
 	context.Context,
 	string,
@@ -493,6 +498,46 @@ func runExperiment(
 	)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment run: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func runExperimentTrace(
+	args []string,
+	stdout, stderr io.Writer,
+	save experimentTraceSaver,
+) int {
+	flags := flag.NewFlagSet("experiment trace", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	session := flags.String("session", "", "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 2 || *session == "" {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+	summary, err := save(flags.Arg(0), *session, flags.Arg(1))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment trace: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(summary); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment trace: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if _, err := fmt.Fprintf(
+		stdout,
+		"experiment trace complete\nsession: %s\nscope: %s\ncompleteness: %s\nevents: %d\ntrace_sha256: %s\n",
+		*session,
+		summary.Scope,
+		summary.Completeness,
+		summary.Events,
+		summary.TraceSHA256,
+	); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment trace: write output: %v\n", err)
 		return 1
 	}
 	return 0

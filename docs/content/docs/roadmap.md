@@ -43,9 +43,11 @@ The repository currently has three evidence-backed layers:
    identity pairs.
 4. **Source-neutral tracking trace.** Authorized adapters can now exchange a
    strict, raw-value-free trace document containing logical source, channel,
-   destination, and data-category labels. Complete versus partial coverage is
-   explicit, so structural absence remains `unknown` when a source did not
-   claim complete capture.
+   destination, and data-category labels. The first concrete producer now
+   re-verifies an Experiment 001 Android session and projects its known network
+   and private-storage paths into that contract. Complete versus partial
+   coverage is explicit, so structural absence remains `unknown` when a source
+   did not claim complete capture.
 
 The local review page is intentionally read-only. Its compact question round
 and receipt links, including stable history and receipt identities, are a
@@ -90,14 +92,12 @@ must remain bound to a verified history and must say
 
 ### Months 10–12: expand only after the contract holds
 
-Evaluate one additional authorized target or capture edge only after the
-evidence and reflection contracts are stable. The first edge is now bounded UI
-control provenance: a successful Android interaction records only the
-hierarchy digest that located the declared resource ID. Target-specific runners
-belong at the edges; the deterministic comparison, provenance, redaction, and
-question engine stay small and portable. The source-neutral trace contract is
-the handoff boundary for that future work; it does not itself add browser,
-desktop, proxy, or universal network adapters.
+Keep the first Android trace producer narrow and use its emulator evidence as
+the gate for the next edge. Target-specific runners belong at the edges; the
+deterministic comparison, provenance, redaction, and question engine stay
+small and portable. A browser, desktop, or proxy producer is a separate future
+slice with its own authorized capture procedure and redaction tests; the trace
+contract is the handoff boundary, not a universal sniffer.
 
 ## Acceptance gates
 

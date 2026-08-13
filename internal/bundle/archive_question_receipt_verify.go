@@ -129,7 +129,14 @@ func validateArchiveQuestionTransitionHistoryAnswerJSON(data []byte, questionID 
 		if _, err := archiveQuestionArray(answer["incomparable_transitions"], "incomparable_transitions"); err != nil {
 			return err
 		}
-		return validateArchiveQuestionTransitionHistoryChangedEntriesJSON(answer["changed_entries"])
+		if err := validateArchiveQuestionTransitionHistoryChangedEntriesJSON(answer["changed_entries"]); err != nil {
+			return err
+		}
+		var typed ArchiveQuestionTransitionHistoryAnswer
+		if err := decodeArchiveQuestionTransitionHistoryReceiptAnswer(data, &typed); err != nil {
+			return err
+		}
+		return validateArchiveQuestionTransitionHistoryAnswer(typed)
 	case archiveQuestionTransitionHistoryRepeatedQuestionID:
 		answer, err := archiveQuestionObject(data, []string{
 			"schema_version", "question_id", "question", "result",
@@ -151,7 +158,11 @@ func validateArchiveQuestionTransitionHistoryAnswerJSON(data []byte, questionID 
 				return fmt.Errorf("repeated entry changes: %w", err)
 			}
 		}
-		return nil
+		var typed ArchiveQuestionTransitionHistoryRepeatedAnswer
+		if err := decodeArchiveQuestionTransitionHistoryReceiptAnswer(data, &typed); err != nil {
+			return err
+		}
+		return validateArchiveQuestionTransitionHistoryRepeatedAnswer(typed)
 	case archiveQuestionTransitionHistorySnapshotQuestionID:
 		answer, err := archiveQuestionObject(data, []string{
 			"schema_version", "question_id", "question", "result",
@@ -171,7 +182,11 @@ func validateArchiveQuestionTransitionHistoryAnswerJSON(data []byte, questionID 
 				return fmt.Errorf("snapshot summary: %w", err)
 			}
 		}
-		return nil
+		var typed ArchiveQuestionTransitionHistorySnapshotAnswer
+		if err := decodeArchiveQuestionTransitionHistoryReceiptAnswer(data, &typed); err != nil {
+			return err
+		}
+		return validateArchiveQuestionTransitionHistorySnapshotAnswer(typed)
 	case archiveQuestionTransitionHistorySummaryQuestionID:
 		answer, err := archiveQuestionObject(data, []string{
 			"schema_version", "question_id", "question", "result",
@@ -180,8 +195,14 @@ func validateArchiveQuestionTransitionHistoryAnswerJSON(data []byte, questionID 
 		if err != nil {
 			return err
 		}
-		_, err = archiveQuestionArray(answer["changed_transitions"], "changed_transitions")
-		return err
+		if _, err = archiveQuestionArray(answer["changed_transitions"], "changed_transitions"); err != nil {
+			return err
+		}
+		var typed ArchiveQuestionTransitionHistorySummaryAnswer
+		if err := decodeArchiveQuestionTransitionHistoryReceiptAnswer(data, &typed); err != nil {
+			return err
+		}
+		return validateArchiveQuestionTransitionHistorySummaryAnswer(typed)
 	default:
 		return errors.New("question ID is invalid")
 	}
@@ -199,6 +220,238 @@ func validateArchiveQuestionTransitionHistoryChangedEntriesJSON(data []byte) err
 		}, nil); err != nil {
 			return fmt.Errorf("changed entry: %w", err)
 		}
+	}
+	return nil
+}
+
+func validateArchiveQuestionTransitionHistoryAnswerMetadataValues(
+	schemaVersion int,
+	questionID, question, result, historySHA256, expectedQuestionID string,
+) error {
+	if schemaVersion != archiveQuestionTransitionHistoryAnswerSchemaVersion &&
+		schemaVersion != archiveQuestionTransitionHistoryRepeatedAnswerSchemaVersion &&
+		schemaVersion != archiveQuestionTransitionHistorySnapshotAnswerSchemaVersion &&
+		schemaVersion != archiveQuestionTransitionHistorySummaryAnswerSchemaVersion {
+		return errors.New("answer schema_version is invalid")
+	}
+	if questionID != expectedQuestionID {
+		return errors.New("answer question ID is invalid")
+	}
+	expectedQuestion, ok := archiveQuestionTransitionHistoryQuestionForID(expectedQuestionID)
+	if !ok || question != expectedQuestion.Text {
+		return errors.New("answer question text is invalid")
+	}
+	if !validArchiveQuestionTransitionHistoryReceiptResult(expectedQuestionID, result) {
+		return errors.New("answer result is invalid")
+	}
+	if !validDigest(historySHA256) {
+		return errors.New("answer transition_history_sha256 is invalid")
+	}
+	return nil
+}
+
+func validateArchiveQuestionTransitionHistoryAnswer(answer ArchiveQuestionTransitionHistoryAnswer) error {
+	if err := validateArchiveQuestionTransitionHistoryAnswerMetadataValues(
+		answer.SchemaVersion,
+		answer.QuestionID,
+		answer.Question,
+		answer.Result,
+		answer.TransitionHistorySHA256,
+		archiveQuestionTransitionHistoryID,
+	); err != nil {
+		return err
+	}
+	if answer.Transitions < 1 {
+		return errors.New("answer transitions is invalid")
+	}
+	if err := validateArchiveQuestionTransitionHistoryTransitionIndexes(answer.ChangedTransitions, answer.Transitions, "changed_transitions"); err != nil {
+		return err
+	}
+	if err := validateArchiveQuestionTransitionHistoryTransitionIndexes(answer.IncomparableTransitions, answer.Transitions, "incomparable_transitions"); err != nil {
+		return err
+	}
+	incomparable := make(map[int]struct{}, len(answer.IncomparableTransitions))
+	for _, index := range answer.IncomparableTransitions {
+		incomparable[index] = struct{}{}
+	}
+	for _, index := range answer.ChangedTransitions {
+		if _, ok := incomparable[index]; ok {
+			return errors.New("answer transition indexes overlap")
+		}
+	}
+	expectedResult := "same"
+	if len(answer.ChangedTransitions) > 0 {
+		expectedResult = "changed"
+	} else if len(answer.IncomparableTransitions) > 0 {
+		expectedResult = "incomparable"
+	}
+	if answer.Result != expectedResult {
+		return errors.New("answer result does not match detail")
+	}
+	changed := make(map[int]struct{}, len(answer.ChangedTransitions))
+	for _, index := range answer.ChangedTransitions {
+		changed[index] = struct{}{}
+	}
+	entriesByTransition := make(map[int]int, len(changed))
+	reflectionByTransition := make(map[int][2]string, len(changed))
+	lastTransition := 0
+	lastDirectory := ""
+	for _, entry := range answer.ChangedEntries {
+		if _, ok := changed[entry.Transition]; !ok {
+			return errors.New("answer changed entry transition is invalid")
+		}
+		if entry.Transition < lastTransition || (entry.Transition == lastTransition && entry.Directory <= lastDirectory) {
+			return errors.New("answer changed entry ordering is invalid")
+		}
+		if !validDigest(entry.FromReflectionSHA256) || !validDigest(entry.ToReflectionSHA256) {
+			return errors.New("answer changed entry reflection identity is invalid")
+		}
+		identity := [2]string{entry.FromReflectionSHA256, entry.ToReflectionSHA256}
+		if previous, ok := reflectionByTransition[entry.Transition]; ok && previous != identity {
+			return errors.New("answer transition reflection identity is inconsistent")
+		}
+		reflectionByTransition[entry.Transition] = identity
+		if !validArchiveEntryName(entry.Directory) {
+			return errors.New("answer changed entry directory is invalid")
+		}
+		if !validArchiveQuestionState(entry.OlderState) || !validArchiveQuestionState(entry.NewerState) || entry.OlderState == entry.NewerState {
+			return errors.New("answer changed entry state is invalid")
+		}
+		entriesByTransition[entry.Transition]++
+		lastTransition = entry.Transition
+		lastDirectory = entry.Directory
+	}
+	for _, index := range answer.ChangedTransitions {
+		if entriesByTransition[index] == 0 {
+			return errors.New("answer changed entry count does not match changed transitions")
+		}
+	}
+	if len(answer.ChangedEntries) > 0 && len(answer.ChangedTransitions) == 0 {
+		return errors.New("answer changed entry count does not match changed transitions")
+	}
+	return nil
+}
+
+func validateArchiveQuestionTransitionHistoryTransitionIndexes(indexes []int, transitions int, field string) error {
+	previous := 0
+	for _, index := range indexes {
+		if index < 1 || index > transitions || index <= previous {
+			return fmt.Errorf("answer %s ordering or range is invalid", field)
+		}
+		previous = index
+	}
+	return nil
+}
+
+func validateArchiveQuestionTransitionHistoryRepeatedAnswer(answer ArchiveQuestionTransitionHistoryRepeatedAnswer) error {
+	if err := validateArchiveQuestionTransitionHistoryAnswerMetadataValues(
+		answer.SchemaVersion,
+		answer.QuestionID,
+		answer.Question,
+		answer.Result,
+		answer.TransitionHistorySHA256,
+		archiveQuestionTransitionHistoryRepeatedQuestionID,
+	); err != nil {
+		return err
+	}
+	if answer.Transitions < 1 {
+		return errors.New("answer transitions is invalid")
+	}
+	if answer.Result != "repeated" && len(answer.RepeatedEntries) != 0 {
+		return errors.New("answer repeated entries do not match result")
+	}
+	if answer.Result == "repeated" && len(answer.RepeatedEntries) == 0 {
+		return errors.New("answer repeated entries do not match result")
+	}
+	previousDirectory := ""
+	reflectionByTransition := make(map[int][2]string)
+	for _, entry := range answer.RepeatedEntries {
+		if !validArchiveEntryName(entry.Directory) || entry.Directory <= previousDirectory {
+			return errors.New("answer repeated entry directory ordering is invalid")
+		}
+		if len(entry.Changes) < 2 {
+			return errors.New("answer repeated entry needs multiple changes")
+		}
+		previousTransition := 0
+		for _, change := range entry.Changes {
+			if change.Directory != entry.Directory || change.Transition < 1 || change.Transition > answer.Transitions || change.Transition <= previousTransition {
+				return errors.New("answer repeated entry changes are invalid")
+			}
+			if !validDigest(change.FromReflectionSHA256) || !validDigest(change.ToReflectionSHA256) {
+				return errors.New("answer repeated entry reflection identity is invalid")
+			}
+			identity := [2]string{change.FromReflectionSHA256, change.ToReflectionSHA256}
+			if previous, ok := reflectionByTransition[change.Transition]; ok && previous != identity {
+				return errors.New("answer transition reflection identity is inconsistent")
+			}
+			reflectionByTransition[change.Transition] = identity
+			if !validArchiveQuestionState(change.OlderState) || !validArchiveQuestionState(change.NewerState) || change.OlderState == change.NewerState {
+				return errors.New("answer repeated entry state is invalid")
+			}
+			previousTransition = change.Transition
+		}
+		previousDirectory = entry.Directory
+	}
+	return nil
+}
+
+func validateArchiveQuestionTransitionHistorySnapshotAnswer(answer ArchiveQuestionTransitionHistorySnapshotAnswer) error {
+	if err := validateArchiveQuestionTransitionHistoryAnswerMetadataValues(
+		answer.SchemaVersion,
+		answer.QuestionID,
+		answer.Question,
+		answer.Result,
+		answer.TransitionHistorySHA256,
+		archiveQuestionTransitionHistorySnapshotQuestionID,
+	); err != nil {
+		return err
+	}
+	if answer.Snapshots < 2 {
+		return errors.New("answer snapshots is invalid")
+	}
+	if answer.Result == "unavailable" {
+		if len(answer.SnapshotSummaries) != 0 {
+			return errors.New("answer snapshot summaries do not match result")
+		}
+		return nil
+	}
+	if len(answer.SnapshotSummaries) != answer.Snapshots {
+		return errors.New("answer snapshot summary count does not match snapshots")
+	}
+	for index, summary := range answer.SnapshotSummaries {
+		if err := validateArchiveQuestionTransitionSnapshot(summary); err != nil {
+			return fmt.Errorf("answer snapshot %d: %w", index+1, err)
+		}
+	}
+	return nil
+}
+
+func validateArchiveQuestionTransitionHistorySummaryAnswer(answer ArchiveQuestionTransitionHistorySummaryAnswer) error {
+	if err := validateArchiveQuestionTransitionHistoryAnswerMetadataValues(
+		answer.SchemaVersion,
+		answer.QuestionID,
+		answer.Question,
+		answer.Result,
+		answer.TransitionHistorySHA256,
+		archiveQuestionTransitionHistorySummaryQuestionID,
+	); err != nil {
+		return err
+	}
+	if answer.Transitions < 1 {
+		return errors.New("answer transitions is invalid")
+	}
+	if err := validateArchiveQuestionTransitionHistoryTransitionIndexes(answer.ChangedTransitions, answer.Transitions, "changed_transitions"); err != nil {
+		return err
+	}
+	expectedResult := "same"
+	if len(answer.ChangedTransitions) > 0 {
+		expectedResult = "changed"
+	}
+	if answer.Result != "unavailable" && answer.Result != expectedResult {
+		return errors.New("answer result does not match detail")
+	}
+	if answer.Result == "unavailable" && len(answer.ChangedTransitions) != 0 {
+		return errors.New("answer changed transitions do not match result")
 	}
 	return nil
 }
@@ -227,10 +480,16 @@ func validateArchiveQuestionTransitionHistoryAnswerReceipt(receipt ArchiveQuesti
 		if err := decodeArchiveQuestionTransitionHistoryReceiptAnswer(receipt.Answer, &answer); err != nil {
 			return err
 		}
+		if err := validateArchiveQuestionTransitionHistoryAnswer(answer); err != nil {
+			return err
+		}
 		return validateArchiveQuestionTransitionHistoryReceiptAnswerMetadata(receipt, answer.SchemaVersion, answer.QuestionID, answer.Question, answer.Result, answer.TransitionHistorySHA256)
 	case archiveQuestionTransitionHistoryRepeatedQuestionID:
 		var answer ArchiveQuestionTransitionHistoryRepeatedAnswer
 		if err := decodeArchiveQuestionTransitionHistoryReceiptAnswer(receipt.Answer, &answer); err != nil {
+			return err
+		}
+		if err := validateArchiveQuestionTransitionHistoryRepeatedAnswer(answer); err != nil {
 			return err
 		}
 		return validateArchiveQuestionTransitionHistoryReceiptAnswerMetadata(receipt, answer.SchemaVersion, answer.QuestionID, answer.Question, answer.Result, answer.TransitionHistorySHA256)
@@ -239,10 +498,16 @@ func validateArchiveQuestionTransitionHistoryAnswerReceipt(receipt ArchiveQuesti
 		if err := decodeArchiveQuestionTransitionHistoryReceiptAnswer(receipt.Answer, &answer); err != nil {
 			return err
 		}
+		if err := validateArchiveQuestionTransitionHistorySnapshotAnswer(answer); err != nil {
+			return err
+		}
 		return validateArchiveQuestionTransitionHistoryReceiptAnswerMetadata(receipt, answer.SchemaVersion, answer.QuestionID, answer.Question, answer.Result, answer.TransitionHistorySHA256)
 	case archiveQuestionTransitionHistorySummaryQuestionID:
 		var answer ArchiveQuestionTransitionHistorySummaryAnswer
 		if err := decodeArchiveQuestionTransitionHistoryReceiptAnswer(receipt.Answer, &answer); err != nil {
+			return err
+		}
+		if err := validateArchiveQuestionTransitionHistorySummaryAnswer(answer); err != nil {
 			return err
 		}
 		return validateArchiveQuestionTransitionHistoryReceiptAnswerMetadata(receipt, answer.SchemaVersion, answer.QuestionID, answer.Question, answer.Result, answer.TransitionHistorySHA256)

@@ -67,6 +67,23 @@ The same procedure runs on a real API 35 emulator in GitHub Actions. It also
 proves that missing targets, modified observations, and mismatched package
 provenance prevent evidence publication.
 
+After the report is verified, project one selected session into the portable
+tracking trace and compare the two sessions without reopening raw values:
+
+```console
+go run ./cmd/ariadne experiment trace --session baseline .ariadne/runs/experiment-001 .ariadne/baseline-trace.json
+go run ./cmd/ariadne experiment trace --session treatment .ariadne/runs/experiment-001 .ariadne/treatment-trace.json
+go run ./cmd/ariadne trace compare --json .ariadne/baseline-trace.json .ariadne/treatment-trace.json
+```
+
+This first producer is deliberately narrow: it re-verifies the Experiment 001
+bundle, recognizes only the fixture's known network and private-storage
+artifacts, maps the `region` and volatile `request_id` keys to safe category
+labels, and omits the experiment's `variant` value. A storage-gap run produces
+a `partial` treatment trace, so the missing storage event remains `unknown` in
+comparison. Browser, desktop, proxy, and additional Android adapters remain
+separate authorized slices.
+
 Once a report is saved, Ariadne can re-verify it offline and compare two saved
 reflection snapshots without exposing captured values:
 
@@ -150,8 +167,10 @@ retained round without reopening the source history.
 
 `transitions ask all compare <first-round.json> <second-round.json>` verifies
 two retained rounds and compares their fixed bounded results in caller order.
-It returns the two round and history identities plus any changed question IDs;
-it does not infer chronology or prove the underlying evidence.
+Each round carries the source history-question identity, so rounds from
+different source questions are rejected before comparison. The command
+returns the two round and history identities plus any changed question IDs; it
+does not infer chronology or prove the underlying evidence.
 
 `transitions ask receipt <history.json> <question-id>` verifies the history once
 and wraps one selected fixed answer in a portable raw-value-free receipt. The
@@ -166,10 +185,11 @@ receipt, so later reflection work can retain the exact answer artifact.
 
 `transitions ask receipt verify <receipt.json>` checks a retained receipt
 without reopening the source history. It validates the fixed question,
-nested answer identity, history digest, and canonical receipt SHA-256; pass
-`--expect-sha256` to require a previously recorded receipt identity. This
-checks the receipt contract only and does not re-verify the history or prove
-the underlying evidence.
+nested answer's counts, indexes, states, ordering, and result consistency,
+history digest, and canonical receipt SHA-256; pass `--expect-sha256` to
+require a previously recorded receipt identity. This checks the receipt
+contract only and does not re-verify the history or prove the underlying
+evidence.
 
 `transitions acceptance save <round.json> <receipt.json> <acceptance.json>`
 verifies a retained question round and selected receipt, confirms their

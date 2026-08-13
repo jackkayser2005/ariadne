@@ -127,6 +127,15 @@ func TestVerifyArchiveQuestionTransitionHistoryRejectsInvalidSnapshotSummaries(t
 		}, want: "snapshot summary identity does not match transition boundary"},
 		{name: "digest", mutate: func(history *ArchiveQuestionTransitionHistory) { history.SnapshotSummaries[0].ReflectionSHA256 = "bad" }, want: "snapshot reflection identity is invalid"},
 		{name: "counts", mutate: func(history *ArchiveQuestionTransitionHistory) { history.SnapshotSummaries[0].Checked++ }, want: "snapshot summary counts do not match checked"},
+		{name: "from transition counts", mutate: func(history *ArchiveQuestionTransitionHistory) { history.Transitions[0].Compared++ }, want: "from snapshot checked count does not match transition counts"},
+		{name: "to transition counts", mutate: func(history *ArchiveQuestionTransitionHistory) {
+			history.Transitions[0].Result = "incomparable"
+			history.Transitions[0].Compared = history.SnapshotSummaries[0].Checked
+			history.Transitions[0].FromOnly = 0
+			history.Transitions[0].Changed = 0
+			history.Transitions[0].StateChanges = nil
+			history.Transitions[0].ToOnly = 1
+		}, want: "to snapshot checked count does not match transition counts"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

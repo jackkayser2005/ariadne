@@ -2169,7 +2169,8 @@ func TestRunAskArchiveTransitionsAskSnapshotsFailures(t *testing.T) {
 
 func TestRunAskArchiveTransitionsAskAll(t *testing.T) {
 	round := bundle.ArchiveQuestionTransitionHistoryQuestionRoundAnswer{
-		SchemaVersion:           1,
+		SchemaVersion:           2,
+		HistoryQuestionID:       "counterfactual-change",
 		TransitionHistorySHA256: strings.Repeat("a", 64),
 		Questions: []bundle.ArchiveQuestionTransitionHistoryQuestionRoundItem{
 			{QuestionID: "answer-state-transitions", Question: "At which supplied boundaries did the bounded answer state change?", Result: "changed"},
@@ -2221,7 +2222,7 @@ func TestRunAskArchiveTransitionsAskAll(t *testing.T) {
 			&stderr,
 			func(string) (bundle.ArchiveQuestionTransitionHistoryQuestionRoundAnswer, error) { return round, nil },
 		)
-		want := `{"schema_version":1,"transition_history_sha256":"` + strings.Repeat("a", 64) + `","questions":[{"question_id":"answer-state-transitions","question":"At which supplied boundaries did the bounded answer state change?","result":"changed"},{"question_id":"answer-state-repeated-changes","question":"Did any safe archive entry change at more than one supplied boundary?","result":"none"},{"question_id":"answer-state-snapshot-summaries","question":"What bounded answer-state summary did each supplied reflection snapshot record?","result":"available"},{"question_id":"answer-state-summary-changes","question":"Did the bounded answer-state summary change at any supplied boundary?","result":"changed"}]}` + "\n"
+		want := `{"schema_version":2,"history_question_id":"counterfactual-change","transition_history_sha256":"` + strings.Repeat("a", 64) + `","questions":[{"question_id":"answer-state-transitions","question":"At which supplied boundaries did the bounded answer state change?","result":"changed"},{"question_id":"answer-state-repeated-changes","question":"Did any safe archive entry change at more than one supplied boundary?","result":"none"},{"question_id":"answer-state-snapshot-summaries","question":"What bounded answer-state summary did each supplied reflection snapshot record?","result":"available"},{"question_id":"answer-state-summary-changes","question":"Did the bounded answer-state summary change at any supplied boundary?","result":"changed"}]}` + "\n"
 		if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
 			t.Fatalf("runAskArchiveTransitionsAskAll() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
 		}

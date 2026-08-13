@@ -315,8 +315,9 @@ archive_question_transition_round_json="${RUNNER_TEMP}/ariadne-archive-question-
 "${ariadne}" experiment ask-archive transitions ask all --json \
   "${archive_question_transitions_json}" >"${archive_question_transition_round_json}"
 jq -e --arg history_sha256 "${transition_history_sha256}" '
-  (keys_unsorted == ["schema_version", "transition_history_sha256", "questions"]) and
-  (.schema_version == 1) and
+  (keys_unsorted == ["schema_version", "history_question_id", "transition_history_sha256", "questions"]) and
+  (.schema_version == 2) and
+  (.history_question_id == "counterfactual-change") and
   (.transition_history_sha256 == $history_sha256) and
   (.questions | length == 4) and
   (.["questions"][0] == {question_id: "answer-state-transitions", question: "At which supplied boundaries did the bounded answer state change?", result: "same"}) and
@@ -331,7 +332,7 @@ archive_question_transition_round_save_summary_json="${RUNNER_TEMP}/ariadne-arch
   "${archive_question_transition_round_path}" >"${archive_question_transition_round_save_summary_json}"
 jq -e --arg history_sha256 "${transition_history_sha256}" '
   (keys_unsorted == ["schema_version", "transition_history_sha256", "questions", "round_sha256"]) and
-  (.schema_version == 1) and
+  (.schema_version == 2) and
   (.transition_history_sha256 == $history_sha256) and
   (.questions == 4) and
   (.round_sha256 | test("^[0-9a-f]{64}$"))
@@ -343,7 +344,7 @@ archive_question_transition_round_sha256="$(jq -r '.round_sha256' "${archive_que
   "${archive_question_transition_round_path}" >"${archive_question_transition_round_verify_summary_json}"
 jq -e --slurpfile saved "${archive_question_transition_round_save_summary_json}" '
   (keys_unsorted == ["schema_version", "transition_history_sha256", "questions", "round_sha256"]) and
-  (.schema_version == 1) and
+  (.schema_version == 2) and
   (.transition_history_sha256 == $saved[0].transition_history_sha256) and
   (.questions == $saved[0].questions) and
   (.round_sha256 == $saved[0].round_sha256)
@@ -570,6 +571,50 @@ if grep -R -F -q \
   exit 1
 fi
 
+complete_trace_dir="${failure_dir}/complete-traces"
+mkdir "${complete_trace_dir}"
+complete_baseline_trace="${complete_trace_dir}/baseline.json"
+complete_treatment_trace="${complete_trace_dir}/treatment.json"
+complete_baseline_trace_stdout="${complete_trace_dir}/baseline.stdout"
+complete_treatment_trace_stdout="${complete_trace_dir}/treatment.stdout"
+"${ariadne}" experiment trace --session baseline "${run_dir}" "${complete_baseline_trace}" >"${complete_baseline_trace_stdout}"
+"${ariadne}" experiment trace --session treatment "${run_dir}" "${complete_treatment_trace}" >"${complete_treatment_trace_stdout}"
+grep -F -x -q "completeness: complete" "${complete_baseline_trace_stdout}"
+grep -F -x -q "completeness: complete" "${complete_treatment_trace_stdout}"
+complete_baseline_trace_sha256="$(sed -n 's/^trace_sha256: //p' "${complete_baseline_trace_stdout}")"
+complete_treatment_trace_sha256="$(sed -n 's/^trace_sha256: //p' "${complete_treatment_trace_stdout}")"
+[[ "${complete_baseline_trace_sha256}" =~ ^[0-9a-f]{64}$ ]]
+[[ "${complete_treatment_trace_sha256}" =~ ^[0-9a-f]{64}$ ]]
+"${ariadne}" trace verify --json --expect-sha256 "${complete_baseline_trace_sha256}" "${complete_baseline_trace}" >"${complete_trace_dir}/baseline-verify.json"
+"${ariadne}" trace verify --json --expect-sha256 "${complete_treatment_trace_sha256}" "${complete_treatment_trace}" >"${complete_trace_dir}/treatment-verify.json"
+jq -e '
+  (.scope == "all") and
+  (.completeness == "complete") and
+  (.events == 2) and
+  (.trace_sha256 | test("^[0-9a-f]{64}$"))
+' "${complete_trace_dir}/baseline-verify.json"
+complete_trace_comparison="${complete_trace_dir}/comparison.json"
+"${ariadne}" trace compare --json "${complete_baseline_trace}" "${complete_treatment_trace}" >"${complete_trace_comparison}"
+jq -e '
+  (.scope == "all") and
+  (.baseline_completeness == "complete") and
+  (.treatment_completeness == "complete") and
+  (.unchanged | length == 2) and
+  (.differences | length == 0) and
+  (.unknowns | length == 0)
+' "${complete_trace_comparison}"
+if grep -R -F -q \
+  -e "${baseline_email}" \
+  -e "${treatment_email}" \
+  -e "${baseline_request_id}" \
+  -e "${treatment_request_id}" \
+  -e "standard" \
+  -e "personalized" \
+  "${complete_trace_dir}"; then
+  echo "complete trace exposed a captured value" >&2
+  exit 1
+fi
+
 storage_gap_dir=".ariadne/ci/experiment-001-storage-gap"
 storage_gap_stdout="${failure_dir}/storage-gap-run.stdout"
 storage_gap_stderr="${failure_dir}/storage-gap-run.stderr"
@@ -651,6 +696,38 @@ jq -e '
   (.differences == 0) and
   (.unknowns == 3)
 ' "${storage_gap_verify_json}"
+storage_gap_trace_dir="${failure_dir}/storage-gap-traces"
+mkdir "${storage_gap_trace_dir}"
+storage_gap_baseline_trace="${storage_gap_trace_dir}/baseline.json"
+storage_gap_treatment_trace="${storage_gap_trace_dir}/treatment.json"
+storage_gap_baseline_trace_stdout="${storage_gap_trace_dir}/baseline.stdout"
+storage_gap_treatment_trace_stdout="${storage_gap_trace_dir}/treatment.stdout"
+"${ariadne}" experiment trace --session baseline "${storage_gap_dir}" "${storage_gap_baseline_trace}" >"${storage_gap_baseline_trace_stdout}"
+"${ariadne}" experiment trace --session treatment "${storage_gap_dir}" "${storage_gap_treatment_trace}" >"${storage_gap_treatment_trace_stdout}"
+grep -F -x -q "completeness: complete" "${storage_gap_baseline_trace_stdout}"
+grep -F -x -q "completeness: partial" "${storage_gap_treatment_trace_stdout}"
+storage_gap_trace_comparison="${storage_gap_trace_dir}/comparison.json"
+"${ariadne}" trace compare --json "${storage_gap_baseline_trace}" "${storage_gap_treatment_trace}" >"${storage_gap_trace_comparison}"
+jq -e '
+  (.scope == "all") and
+  (.baseline_completeness == "complete") and
+  (.treatment_completeness == "partial") and
+  (.unchanged | length == 1) and
+  (.differences | length == 0) and
+  (.unknowns | length == 1) and
+  (.unknowns[0].state == "unknown")
+' "${storage_gap_trace_comparison}"
+if grep -R -F -q \
+  -e "${baseline_email}" \
+  -e "${treatment_email}" \
+  -e "${storage_gap_baseline_request_id}" \
+  -e "${storage_gap_treatment_request_id}" \
+  -e "standard" \
+  -e "personalized" \
+  "${storage_gap_trace_dir}"; then
+  echo "storage gap trace exposed a captured value" >&2
+  exit 1
+fi
 storage_gap_finding_id="$(jq -r '.comparison.unknowns[0].id' "${storage_gap_dir}/evidence.json")"
 "${ariadne}" experiment finding "${storage_gap_dir}" "${storage_gap_finding_id}" >"${failure_dir}/storage-gap-finding.stdout"
 grep -F -x -q "finding verified" "${failure_dir}/storage-gap-finding.stdout"

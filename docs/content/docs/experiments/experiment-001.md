@@ -177,6 +177,9 @@ go run ./cmd/ariadne experiment ask-archive --json .ariadne/runs counterfactual-
 go run ./cmd/ariadne experiment ask-archive save --json .ariadne/runs counterfactual-change .ariadne/archive-question.json
 go run ./cmd/ariadne experiment ask-archive verify --json .ariadne/archive-question.json
 go run ./cmd/ariadne experiment ask-archive verify --json --expect-sha256 <reflection-sha256> .ariadne/archive-question.json
+go run ./cmd/ariadne experiment trace --session baseline <run-directory> <baseline-trace.json>
+go run ./cmd/ariadne experiment trace --session treatment <run-directory> <treatment-trace.json>
+go run ./cmd/ariadne trace compare --json <baseline-trace.json> <treatment-trace.json>
 go run ./cmd/ariadne experiment ask-archive compare --json <older-report.json> <newer-report.json>
 go run ./cmd/ariadne experiment ask-archive compare-current --json <older-report.json> <archive-root>
 go run ./cmd/ariadne experiment ask-archive transitions --json <report-1.json> <report-2.json> ...
@@ -217,6 +220,14 @@ when `go run` built Ariadne.
   fails closed for unsupported capture shapes or artifact integrity failures.
 - Verification can use `--json` for the stable raw-value-free fields
   `manifest_name`, `differences`, and `unknowns`; it remains non-destructive.
+- `experiment trace --session baseline|treatment <run-directory> <trace.json>`
+  re-verifies the bundle and writes a raw-value-free trace for one selected
+  Android session. It recognizes only the fixture's known network and private
+  storage artifacts, maps the `region` and volatile `request_id` keys to safe
+  category labels, omits `variant`, and marks an incomplete treatment trace
+  `partial`.
+  Use `trace compare` to keep a missing storage event `unknown` rather than
+  treating it as an observed absence.
 - `experiment export <run-directory> <export.json>` re-verifies the source
   bundle, then writes an additive raw-value-free JSON projection. It includes
   the verified source `evidence.json` SHA-256, safe target and provenance
@@ -334,9 +345,11 @@ when `go run` built Ariadne.
   underlying evidence.
 - `experiment ask-archive transitions ask all compare [--json] <first-round.json> <second-round.json>`
   verifies two retained question rounds and compares their fixed bounded
-  results in caller order. It returns both round identities, both referenced
-  history identities, and any changed question IDs; it does not infer chronology
-  or prove the underlying evidence.
+  results in caller order. Each round carries a source history-question
+  identity, and mismatched source questions are rejected before comparison. It
+  returns both round identities, both referenced history identities, and any
+  changed question IDs; it does not infer chronology or prove the underlying
+  evidence.
 - `experiment ask-archive transitions ask receipt [--json] <history.json> <question-id>`
   verifies the ledger once and wraps one selected fixed answer in a common
   raw-value-free receipt. The receipt binds its bounded result and nested
@@ -350,9 +363,10 @@ when `go run` built Ariadne.
   artifact.
 - `experiment ask-archive transitions ask receipt verify [--json] [--expect-sha256 <digest>] <receipt.json>`
   checks a retained receipt without reopening its source history. It validates
-  the fixed question, nested answer identity, history digest, and canonical
-  receipt SHA-256. This verifies the receipt contract only; it does not
-  re-verify the transition history or prove the underlying evidence.
+  the fixed question, nested answer identity, detailed counts, indexes, states,
+  ordering, result consistency, history digest, and canonical receipt SHA-256.
+  This verifies the receipt contract only; it does not re-verify the transition
+  history or prove the underlying evidence.
 - `experiment ask-archive transitions acceptance save [--json] <round.json> <receipt.json> <acceptance.json>`
   verifies a retained question round and selected receipt, confirms their
   history, question, and bounded-result identities agree, and writes a

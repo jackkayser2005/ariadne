@@ -19,7 +19,7 @@ const (
 	archiveQuestionTransitionHistoryRepeatedAnswerSchemaVersion = 1
 	archiveQuestionTransitionHistorySnapshotAnswerSchemaVersion = 1
 	archiveQuestionTransitionHistorySummaryAnswerSchemaVersion  = 1
-	archiveQuestionTransitionHistoryQuestionRoundSchemaVersion  = 1
+	archiveQuestionTransitionHistoryQuestionRoundSchemaVersion  = 2
 	archiveQuestionTransitionHistoryAnswerReceiptSchemaVersion  = 1
 	archiveQuestionComparisonID                                 = "answer-state-change"
 	archiveQuestionComparisonText                               = "Did the bounded answer state change between these saved reflection snapshots?"
@@ -172,6 +172,7 @@ type ArchiveQuestionTransitionHistorySummaryAnswer struct {
 // receipt of the fixed questions asked of one verified transition history.
 type ArchiveQuestionTransitionHistoryQuestionRoundAnswer struct {
 	SchemaVersion           int                                                 `json:"schema_version"`
+	HistoryQuestionID       string                                              `json:"history_question_id"`
 	TransitionHistorySHA256 string                                              `json:"transition_history_sha256"`
 	Questions               []ArchiveQuestionTransitionHistoryQuestionRoundItem `json:"questions"`
 }
@@ -551,6 +552,7 @@ func AnswerArchiveQuestionTransitionHistoryQuestionRound(history ArchiveQuestion
 	}
 	return ArchiveQuestionTransitionHistoryQuestionRoundAnswer{
 		SchemaVersion:           archiveQuestionTransitionHistoryQuestionRoundSchemaVersion,
+		HistoryQuestionID:       history.QuestionID,
 		TransitionHistorySHA256: historySHA256,
 		Questions:               items,
 	}

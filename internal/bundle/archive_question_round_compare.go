@@ -1,6 +1,9 @@
 package bundle
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 const (
 	archiveQuestionTransitionHistoryQuestionRoundComparisonSchemaVersion = 1
@@ -45,6 +48,9 @@ func CompareArchiveQuestionTransitionHistoryQuestionRounds(firstPath, secondPath
 	second, secondSummary, err := readArchiveQuestionTransitionHistoryQuestionRound(secondPath)
 	if err != nil {
 		return ArchiveQuestionTransitionHistoryQuestionRoundComparison{}, fmt.Errorf("second question round: %w", err)
+	}
+	if first.HistoryQuestionID != second.HistoryQuestionID {
+		return ArchiveQuestionTransitionHistoryQuestionRoundComparison{}, errors.New("question rounds reference different history questions")
 	}
 
 	comparison := ArchiveQuestionTransitionHistoryQuestionRoundComparison{

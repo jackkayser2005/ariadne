@@ -88,6 +88,7 @@ func decodeArchiveQuestionTransitionHistoryQuestionRound(data []byte) (ArchiveQu
 func validateArchiveQuestionTransitionHistoryQuestionRoundJSON(data []byte) error {
 	root, err := archiveQuestionObject(data, []string{
 		"schema_version",
+		"history_question_id",
 		"transition_history_sha256",
 		"questions",
 	}, nil)
@@ -114,6 +115,9 @@ func validateArchiveQuestionTransitionHistoryQuestionRound(round ArchiveQuestion
 	}
 	if !validDigest(round.TransitionHistorySHA256) {
 		return errors.New("transition_history_sha256 is invalid")
+	}
+	if _, ok := questionForID(round.HistoryQuestionID); !ok {
+		return errors.New("history_question_id is invalid")
 	}
 	questions := ArchiveQuestionTransitionHistoryQuestions()
 	if len(round.Questions) != len(questions) {

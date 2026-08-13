@@ -414,7 +414,7 @@ func TestAnswerArchiveQuestionTransitionHistoryQuestionRound(t *testing.T) {
 		{ReflectionSHA256: strings.Repeat("b", 64), Unknown: 1, Checked: 1},
 	}
 	round := AnswerArchiveQuestionTransitionHistoryQuestionRound(history, strings.Repeat("c", 64))
-	if round.SchemaVersion != 1 || round.TransitionHistorySHA256 != strings.Repeat("c", 64) || len(round.Questions) != 4 {
+	if round.SchemaVersion != 2 || round.HistoryQuestionID != "counterfactual-change" || round.TransitionHistorySHA256 != strings.Repeat("c", 64) || len(round.Questions) != 4 {
 		t.Fatalf("question round = %#v", round)
 	}
 	want := []ArchiveQuestionTransitionHistoryQuestionRoundItem{
