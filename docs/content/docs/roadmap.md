@@ -54,7 +54,9 @@ The repository currently has five evidence-backed layers:
    order in a safe root receipt. The verifier aggregates complete pair results
    as `replicated-change`, `no-change-observed`, `mixed-inconsistent`, or
    `unknown`. That outcome is intentionally separate from the evidence model's
-   `evidence_state`; an aggregate classification is not a causal proof.
+   `evidence_state`; an aggregate classification is not a causal proof. The
+   verifier also rechecks each pair's authoritative evidence outputs and
+   exposes only the root receipt and pair evidence SHA-256 identities.
 
 The local review page is intentionally read-only. Its compact question round
 and receipt links, including stable history and receipt identities, are a

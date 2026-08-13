@@ -613,8 +613,9 @@ func runReplicateVerify(
 	}
 	_, err = fmt.Fprintf(
 		stdout,
-		"replicated experiment verified\nname: %s\noutcome: %s\nevidence_state: %s\npairs: %d\npairs_per_order: %d\ncompleted_pairs: %d\nchanged_pairs: %d\nno_change_pairs: %d\nunknown_pairs: %d\n",
+		"replicated experiment verified\nname: %s\nreceipt_sha256: %s\noutcome: %s\nevidence_state: %s\npairs: %d\npairs_per_order: %d\ncompleted_pairs: %d\nchanged_pairs: %d\nno_change_pairs: %d\nunknown_pairs: %d\n",
 		summary.ManifestName,
+		summary.ReceiptSHA256,
 		summary.Outcome,
 		summary.EvidenceState,
 		summary.Pairs,

@@ -217,13 +217,16 @@ two independently verifiable pair directories: one runs baseline then
 treatment, and the other runs treatment then baseline. Every session begins
 with `adb shell pm clear`, and `replication.json` records the reset policy,
 pair order, and completion status without persona values or captured output.
-`experiment replicate verify` rechecks each complete pair and returns four
+`experiment replicate verify` rechecks each complete pair's `evidence.json` and
+`report.md`, returns their safe evidence SHA-256 identities, and returns four
 possible aggregate outcomes: `replicated-change` when every ordered pair
 changed, `no-change-observed` when none changed, `mixed-inconsistent` when
 complete pairs disagree, and `unknown` when a pair or its evidence is
 incomplete. Its `evidence_state` is a separate field and remains `unknown`
 when the captures do not support a conclusion. The outcome is repeat evidence,
-not a universal causal claim.
+not a universal causal claim. The root receipt SHA-256 binds the summary to the
+recorded execution order and reset policy; it does not turn the result into a
+universal causal claim.
 
 ### Common failures
 

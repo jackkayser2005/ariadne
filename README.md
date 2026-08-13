@@ -34,7 +34,10 @@ Replication verification classifies the aggregate as `replicated-change`,
 `no-change-observed`, `mixed-inconsistent`, or `unknown`. That outcome is
 separate from the evidence model: `evidence_state` still reports whether the
 captured artifacts support the result. A replicated change is stronger repeat
-evidence, not proof of universal causal truth.
+evidence, not proof of universal causal truth. Verification also rechecks each
+complete pair's existing `evidence.json` and `report.md`, and returns a safe
+receipt SHA-256 plus one evidence SHA-256 per ordered pair so the aggregate can
+be bound back to the files that were checked.
 
 The detailed design and experiment log live in [`docs/`](docs/).
 The evidence-backed first-year path is tracked in
@@ -88,7 +91,9 @@ provenance prevent evidence publication.
 The hosted workflow also runs one replicated pair in both orders. The two
 ordered pair directories are independently reportable, while the root receipt
 checks the reset policy, recorded order, pair completeness, and aggregate
-classification without exposing persona values or captured payloads.
+classification without exposing persona values or captured payloads. The
+replication verifier rechecks each pair's authoritative outputs and exposes
+only their safe SHA-256 identities.
 
 After the report is verified, project one selected session into the portable
 tracking trace and compare the two sessions without reopening raw values:

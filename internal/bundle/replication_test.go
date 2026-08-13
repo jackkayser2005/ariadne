@@ -59,6 +59,46 @@ func TestVerifyReplicatedClassifiesAggregateOutcomes(t *testing.T) {
 	}
 }
 
+func TestVerifyReplicatedReturnsSafeEvidenceIdentities(t *testing.T) {
+	root := makeReplicatedRoot(t, false, false)
+	summary, err := VerifyReplicated(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := os.ReadFile(filepath.Join(root, "replication.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.ReceiptSHA256 != digestSHA256(receipt) || len(summary.ReceiptSHA256) != 64 {
+		t.Fatalf("receipt digest = %q", summary.ReceiptSHA256)
+	}
+	for _, pair := range summary.PairSummaries {
+		if pair.EvidenceSHA256 == "" || len(pair.EvidenceSHA256) != 64 {
+			t.Fatalf("pair evidence digest missing: %#v", pair)
+		}
+	}
+}
+
+func TestVerifyReplicatedRejectsTamperedVerifiedOutputs(t *testing.T) {
+	for _, name := range []string{"evidence.json", "report.md"} {
+		t.Run(name, func(t *testing.T) {
+			root := makeReplicatedRoot(t, false, false)
+			path := filepath.Join(root, "pair-001-baseline-treatment", name)
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data = append(data, '\n')
+			if err := os.WriteFile(path, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := VerifyReplicated(root); err == nil {
+				t.Fatal("VerifyReplicated() error = nil")
+			}
+		})
+	}
+}
+
 func TestVerifyReplicatedRejectsCrossPairProvenanceMismatch(t *testing.T) {
 	root := makeReplicatedRoot(t, false, false)
 	for _, kind := range []string{"baseline", "treatment"} {
@@ -82,6 +122,33 @@ func TestVerifyReplicatedRejectsCrossPairProvenanceMismatch(t *testing.T) {
 	}
 	if _, err := VerifyReplicated(root); err == nil {
 		t.Fatal("VerifyReplicated() error = nil")
+	}
+}
+
+func TestVerifyReplicatedRejectsReceiptManifestMetadataMismatch(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		mutate func(*adb.ReplicatedRunRecord)
+	}{
+		{name: "manifest", mutate: func(record *adb.ReplicatedRunRecord) { record.ManifestName = "other" }},
+		{name: "declared variable", mutate: func(record *adb.ReplicatedRunRecord) { record.DeclaredVariable = "region" }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := makeReplicatedRoot(t, false, false)
+			data, err := os.ReadFile(filepath.Join(root, "replication.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var record adb.ReplicatedRunRecord
+			if err := json.Unmarshal(data, &record); err != nil {
+				t.Fatal(err)
+			}
+			test.mutate(&record)
+			writeReplicatedRecordForTest(t, root, record)
+			if _, err := VerifyReplicated(root); err == nil {
+				t.Fatal("VerifyReplicated() error = nil")
+			}
+		})
 	}
 }
 
@@ -205,6 +272,9 @@ func makeReplicatedPair(
 	directory := "pair-001-" + order
 	if err := os.Rename(runDir, filepath.Join(root, directory)); err != nil {
 		t.Fatal(err)
+	}
+	if _, err := Write(filepath.Join(root, directory)); err != nil {
+		t.Fatalf("Write(%s): %v", directory, err)
 	}
 	first, second := "baseline", "treatment"
 	if order == adb.ReplicationOrderTreatmentBaseline {
@@ -488,6 +558,10 @@ func TestVerifyReplicatedClassifiesCompletePairWithUnknownEvidence(t *testing.T)
 	)); err != nil {
 		t.Fatal(err)
 	}
+	removePairOutputs(t, filepath.Join(root, "pair-001-baseline-treatment"))
+	if _, err := Write(filepath.Join(root, "pair-001-baseline-treatment")); err != nil {
+		t.Fatalf("Write(unknown pair): %v", err)
+	}
 
 	summary, err := VerifyReplicated(root)
 	if err != nil {
@@ -521,5 +595,14 @@ func updateArtifactForTest(t *testing.T, path, artifactPath string, data []byte)
 	}
 	if err := os.WriteFile(path, append(data, '\n'), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func removePairOutputs(t *testing.T, pairDir string) {
+	t.Helper()
+	for _, name := range []string{"evidence.json", "report.md"} {
+		if err := os.Remove(filepath.Join(pairDir, name)); err != nil {
+			t.Fatalf("remove %s: %v", name, err)
+		}
 	}
 }

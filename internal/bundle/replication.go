@@ -2,6 +2,8 @@ package bundle
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -36,12 +38,13 @@ const (
 
 // ReplicatedPairSummary is the safe result for one ordered pair.
 type ReplicatedPairSummary struct {
-	Pair          int            `json:"pair"`
-	Order         string         `json:"order"`
-	Outcome       string         `json:"outcome"`
-	EvidenceState evidence.State `json:"evidence_state"`
-	Differences   int            `json:"differences"`
-	Unknowns      int            `json:"unknowns"`
+	Pair           int            `json:"pair"`
+	Order          string         `json:"order"`
+	Outcome        string         `json:"outcome"`
+	EvidenceState  evidence.State `json:"evidence_state"`
+	Differences    int            `json:"differences"`
+	Unknowns       int            `json:"unknowns"`
+	EvidenceSHA256 string         `json:"evidence_sha256,omitempty"`
 }
 
 // ReplicatedExperimentSummary is a raw-value-free aggregate verification result.
@@ -49,6 +52,7 @@ type ReplicatedExperimentSummary struct {
 	SchemaVersion          int                     `json:"schema_version"`
 	ManifestName           string                  `json:"manifest_name"`
 	DeclaredVariable       string                  `json:"declared_variable"`
+	ReceiptSHA256          string                  `json:"receipt_sha256"`
 	Pairs                  int                     `json:"pairs"`
 	PairsPerOrder          int                     `json:"pairs_per_order"`
 	BaselineTreatmentPairs int                     `json:"baseline_treatment_pairs"`
@@ -65,7 +69,7 @@ type ReplicatedExperimentSummary struct {
 // VerifyReplicated verifies the safe replication receipt and each complete pair.
 // Incomplete executions return a successful structural summary with unknown outcome.
 func VerifyReplicated(rootDir string) (ReplicatedExperimentSummary, error) {
-	record, err := readReplicatedRecord(rootDir)
+	record, receiptData, err := readReplicatedRecord(rootDir)
 	if err != nil {
 		return ReplicatedExperimentSummary{}, err
 	}
@@ -101,6 +105,7 @@ func VerifyReplicated(rootDir string) (ReplicatedExperimentSummary, error) {
 			}
 			result.Differences = summary.Differences
 			result.Unknowns = summary.Unknowns
+			result.EvidenceSHA256 = summary.EvidenceSHA256
 			result.EvidenceState = replicatedEvidenceState(summary)
 			if result.Unknowns > 0 || result.EvidenceState == evidence.Unknown {
 				result.Outcome = replicatedPairOutcomeUnknown
@@ -135,6 +140,7 @@ func VerifyReplicated(rootDir string) (ReplicatedExperimentSummary, error) {
 		SchemaVersion:          adb.ReplicatedRunSchemaVersion,
 		ManifestName:           record.ManifestName,
 		DeclaredVariable:       record.DeclaredVariable,
+		ReceiptSHA256:          digestSHA256(receiptData),
 		Pairs:                  totalPairs,
 		PairsPerOrder:          record.PairsPerOrder,
 		BaselineTreatmentPairs: record.PairsPerOrder,
@@ -166,28 +172,28 @@ func VerifyReplicated(rootDir string) (ReplicatedExperimentSummary, error) {
 	return result, nil
 }
 
-func readReplicatedRecord(rootDir string) (adb.ReplicatedRunRecord, error) {
+func readReplicatedRecord(rootDir string) (adb.ReplicatedRunRecord, []byte, error) {
 	if strings.TrimSpace(rootDir) == "" {
-		return adb.ReplicatedRunRecord{}, errors.New("replicated run directory is required")
+		return adb.ReplicatedRunRecord{}, nil, errors.New("replicated run directory is required")
 	}
 	data, err := readFileBounded(filepath.Join(rootDir, "replication.json"), maxOutputBytes)
 	if err != nil {
-		return adb.ReplicatedRunRecord{}, fmt.Errorf("replication metadata: %w", err)
+		return adb.ReplicatedRunRecord{}, nil, fmt.Errorf("replication metadata: %w", err)
 	}
 	if err := jsoncheck.RejectDuplicateKeys(data); err != nil {
-		return adb.ReplicatedRunRecord{}, fmt.Errorf("replication metadata: %w", err)
+		return adb.ReplicatedRunRecord{}, nil, fmt.Errorf("replication metadata: %w", err)
 	}
 	var record adb.ReplicatedRunRecord
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&record); err != nil {
-		return adb.ReplicatedRunRecord{}, fmt.Errorf("replication metadata: decode: %w", err)
+		return adb.ReplicatedRunRecord{}, nil, fmt.Errorf("replication metadata: decode: %w", err)
 	}
 	var trailing json.RawMessage
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		return adb.ReplicatedRunRecord{}, errors.New("replication metadata: trailing data")
+		return adb.ReplicatedRunRecord{}, nil, errors.New("replication metadata: trailing data")
 	}
-	return record, nil
+	return record, data, nil
 }
 
 func validateReplicatedRecord(rootDir string, record adb.ReplicatedRunRecord) error {
@@ -280,11 +286,16 @@ func verifyReplicatedPair(pairDir string, pair adb.ReplicatedPairRecord) (Summar
 		second.record.StartedAt.Before(first.record.FinishedAt) {
 		return Summary{}, errors.New("replication pair session order is invalid")
 	}
-	_, summary, err := buildDocument(pairDir, true)
+	_, summary, _, err := verifyDocumentWithOutput(pairDir)
 	if err != nil {
 		return Summary{}, fmt.Errorf("replication pair %d %s: %w", pair.Pair, pair.Order, err)
 	}
 	return summary, nil
+}
+
+func digestSHA256(data []byte) string {
+	digest := sha256.Sum256(data)
+	return hex.EncodeToString(digest[:])
 }
 
 func replicatedEvidenceState(summary Summary) evidence.State {

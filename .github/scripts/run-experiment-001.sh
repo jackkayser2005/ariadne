@@ -45,10 +45,11 @@ replicated_verify_json="${RUNNER_TEMP}/ariadne-replicated-verify.json"
 "${ariadne}" experiment replicate verify --json \
   "${replicated_dir}" >"${replicated_verify_json}"
 jq -e '
-  (keys_unsorted == ["schema_version", "manifest_name", "declared_variable", "pairs", "pairs_per_order", "baseline_treatment_pairs", "treatment_baseline_pairs", "outcome", "evidence_state", "completed_pairs", "changed_pairs", "no_change_pairs", "unknown_pairs", "pair_summaries"]) and
+  (keys_unsorted == ["schema_version", "manifest_name", "declared_variable", "receipt_sha256", "pairs", "pairs_per_order", "baseline_treatment_pairs", "treatment_baseline_pairs", "outcome", "evidence_state", "completed_pairs", "changed_pairs", "no_change_pairs", "unknown_pairs", "pair_summaries"]) and
   (.schema_version == 1) and
   (.manifest_name == "experiment-001-email") and
   (.declared_variable == "email") and
+  (.receipt_sha256 | test("^[0-9a-f]{64}$")) and
   (.pairs == 2) and
   (.pairs_per_order == 1) and
   (.baseline_treatment_pairs == 1) and
@@ -60,7 +61,7 @@ jq -e '
   (.no_change_pairs == 0) and
   (.unknown_pairs == 0) and
   (.pair_summaries | length == 2) and
-  (all(.pair_summaries[]; .outcome == "changed" and .evidence_state == "observed" and .differences == 1 and .unknowns == 0))
+  (all(.pair_summaries[]; .outcome == "changed" and .evidence_state == "observed" and .differences == 1 and .unknowns == 0 and (.evidence_sha256 | test("^[0-9a-f]{64}$"))))
 ' "${replicated_verify_json}"
 if grep -F -q \
   -e "baseline@example.invalid" \
