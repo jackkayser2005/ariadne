@@ -22,10 +22,12 @@ import (
 const usage = `usage:
   ariadne validate <manifest.json>
   ariadne android check [--adb <path>] --device <serial> --package <package>
-  ariadne trace verify [--json] [--expect-sha256 <digest>] <trace.json>
-  ariadne trace compare [--json] <baseline-trace.json> <treatment-trace.json>
-  ariadne experiment run [--adb <path>] --device <serial> --package <package> --output <directory> <manifest.json>
-  ariadne experiment trace [--json] --session <baseline|treatment> <run-directory> <trace.json>
+	ariadne trace verify [--json] [--expect-sha256 <digest>] <trace.json>
+	ariadne trace compare [--json] <baseline-trace.json> <treatment-trace.json>
+	ariadne experiment run [--adb <path>] --device <serial> --package <package> --output <directory> <manifest.json>
+	ariadne experiment replicate [--adb <path>] --device <serial> --package <package> --pairs <n> --output <directory> <manifest.json>
+	ariadne experiment replicate verify [--json] <replicated-directory>
+	ariadne experiment trace [--json] --session <baseline|treatment> <run-directory> <trace.json>
   ariadne experiment report <run-directory>
   ariadne experiment export <run-directory> <export.json>
   ariadne experiment export verify [--json] [--expect-sha256 <digest>] <export.json>
@@ -61,6 +63,7 @@ const usage = `usage:
 
 const adbCheckTimeout = 10 * time.Second
 const experimentRunTimeout = 60 * time.Second
+const experimentReplicateTimeout = 16 * experimentRunTimeout
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -81,6 +84,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(args) >= 2 && args[0] == "experiment" && args[1] == "run" {
 		return runExperiment(args[2:], stdout, stderr, adb.Check, adb.RunPair)
+	}
+	if len(args) >= 3 && args[0] == "experiment" && args[1] == "replicate" && args[2] == "verify" {
+		return runReplicateVerify(args[3:], stdout, stderr, bundle.VerifyReplicated)
+	}
+	if len(args) >= 2 && args[0] == "experiment" && args[1] == "replicate" {
+		return runExperimentReplicate(args[2:], stdout, stderr, adb.Check, adb.RunReplicated)
 	}
 	if len(args) >= 2 && args[0] == "experiment" && args[1] == "trace" {
 		return runExperimentTrace(args[2:], stdout, stderr, bundle.SaveExperimentTrace)
@@ -357,7 +366,16 @@ type pairRunner func(
 	experiment.Manifest,
 	string,
 ) error
+type replicatedRunner func(
+	context.Context,
+	string,
+	adb.Target,
+	experiment.Manifest,
+	string,
+	int,
+) error
 type bundleWriter func(string) (bundle.Summary, error)
+type replicatedVerifier func(string) (bundle.ReplicatedExperimentSummary, error)
 type bundleExporter func(string, string) (bundle.ExportSummary, error)
 type bundleExportVerifier func(string) (bundle.ExportVerificationSummary, error)
 type bundleFinder func(string, string) (bundle.Finding, error)
@@ -498,6 +516,116 @@ func runExperiment(
 	)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment run: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func runExperimentReplicate(
+	args []string,
+	stdout, stderr io.Writer,
+	check targetChecker,
+	run replicatedRunner,
+) int {
+	flags := flag.NewFlagSet("experiment replicate", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	binary := flags.String("adb", "adb", "")
+	device := flags.String("device", "", "")
+	packageName := flags.String("package", "", "")
+	pairs := flags.Int("pairs", 0, "")
+	outputDir := flags.String("output", "", "")
+	if err := flags.Parse(args); err != nil ||
+		flags.NArg() != 1 ||
+		*device == "" ||
+		*packageName == "" ||
+		*pairs < 1 ||
+		*outputDir == "" {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+
+	file, err := os.Open(flags.Arg(0))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment replicate: open manifest: %v\n", err)
+		return 1
+	}
+	defer file.Close()
+
+	manifest, err := experiment.Decode(file)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment replicate: %v\n", err)
+		return 1
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), experimentReplicateTimeout)
+	defer cancel()
+	target, err := check(ctx, *binary, *device, *packageName)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment replicate: %v\n", err)
+		return 1
+	}
+	target.AriadneRevision, target.AriadneModified = buildIdentity()
+	if err := run(ctx, *binary, target, manifest, *outputDir, *pairs); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment replicate: %v\n", err)
+		return 1
+	}
+
+	_, err = fmt.Fprintf(
+		stdout,
+		"experiment replication complete\nname: %s\npairs_per_order: %d\nruns: %d\norder: %s, %s\nreset_policy: %s\n",
+		manifest.Name,
+		*pairs,
+		*pairs*2,
+		adb.ReplicationOrderBaselineTreatment,
+		adb.ReplicationOrderTreatmentBaseline,
+		adb.ReplicationResetPolicy,
+	)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment replicate: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func runReplicateVerify(
+	args []string,
+	stdout, stderr io.Writer,
+	verify replicatedVerifier,
+) int {
+	flags := flag.NewFlagSet("experiment replicate verify", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+	summary, err := verify(flags.Arg(0))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment replicate verify: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(summary); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment replicate verify: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	_, err = fmt.Fprintf(
+		stdout,
+		"replicated experiment verified\nname: %s\noutcome: %s\nevidence_state: %s\npairs: %d\npairs_per_order: %d\ncompleted_pairs: %d\nchanged_pairs: %d\nno_change_pairs: %d\nunknown_pairs: %d\n",
+		summary.ManifestName,
+		summary.Outcome,
+		summary.EvidenceState,
+		summary.Pairs,
+		summary.PairsPerOrder,
+		summary.CompletedPairs,
+		summary.ChangedPairs,
+		summary.NoChangePairs,
+		summary.UnknownPairs,
+	)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment replicate verify: write output: %v\n", err)
 		return 1
 	}
 	return 0

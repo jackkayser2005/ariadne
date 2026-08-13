@@ -98,9 +98,14 @@ The intended flow is:
 1. An authorized source-specific adapter captures within a declared scope.
 2. The adapter redacts payloads and maps source details to the trace contract.
 3. Ariadne verifies and compares the portable trace documents.
-4. Existing evidence bundles retain the authoritative artifacts and bounded
+4. Replicated counterfactual experiments repeat the matched comparison in both
+   orders before a new capture edge is added. Their aggregate outcome remains
+   separate from the evidence state.
+5. Existing evidence bundles retain the authoritative artifacts and bounded
    conclusions; the trace is a safe index for asking where a category appeared.
 
-The Experiment 001 Android producer is the first implemented edge. A new
-adapter should be added only when there is an authorized target, a reproducible
-capture procedure, and tests proving that its redaction boundary is safe.
+The Experiment 001 Android producer is the first implemented edge. The
+replicated runner is the next evidence gate. Browser, desktop, and proxy
+adapters should be added only after that gate and only with an authorized
+target, a reproducible capture procedure, and tests proving that the redaction
+boundary is safe.

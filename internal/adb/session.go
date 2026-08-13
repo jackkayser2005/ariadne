@@ -88,7 +88,20 @@ func RunPair(
 	manifest experiment.Manifest,
 	outputDir string,
 ) error {
-	return runPairWith(ctx, binary, target, manifest, outputDir, runCommand, time.Now)
+	return runPairWith(
+		ctx,
+		binary,
+		target,
+		manifest,
+		outputDir,
+		runCommand,
+		time.Now,
+	)
+}
+
+type sessionSpec struct {
+	kind    string
+	persona experiment.Persona
 }
 
 func runPairWith(
@@ -99,6 +112,66 @@ func runPairWith(
 	outputDir string,
 	run commandRunner,
 	now func() time.Time,
+) error {
+	return runPairWithOrder(
+		ctx,
+		binary,
+		target,
+		manifest,
+		outputDir,
+		[]sessionSpec{
+			{kind: "baseline", persona: manifest.Baseline},
+			{kind: "treatment", persona: manifest.Treatment},
+		},
+		run,
+		now,
+	)
+}
+
+func runPairWithOrder(
+	ctx context.Context,
+	binary string,
+	target Target,
+	manifest experiment.Manifest,
+	outputDir string,
+	sessions []sessionSpec,
+	run commandRunner,
+	now func() time.Time,
+) error {
+	if err := validatePairConfig(binary, target, manifest, outputDir, sessions); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(outputDir), 0o700); err != nil {
+		return fmt.Errorf("create output parent: %w", err)
+	}
+	if err := os.Mkdir(outputDir, 0o700); err != nil {
+		return fmt.Errorf("create output directory: %w", err)
+	}
+
+	for _, session := range sessions {
+		if err := runSession(
+			ctx,
+			binary,
+			target,
+			manifest,
+			outputDir,
+			session.kind,
+			session.persona,
+			run,
+			now,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validatePairConfig(
+	binary string,
+	target Target,
+	manifest experiment.Manifest,
+	outputDir string,
+	sessions []sessionSpec,
 ) error {
 	if !validSelection(binary) {
 		return errors.New("adb binary is invalid")
@@ -139,36 +212,43 @@ func runPairWith(
 	if err := validatePersonaForShell(manifest.Treatment); err != nil {
 		return fmt.Errorf("treatment: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(outputDir), 0o700); err != nil {
-		return fmt.Errorf("create output parent: %w", err)
+	if len(sessions) != 2 {
+		return errors.New("session order must contain baseline and treatment")
 	}
-	if err := os.Mkdir(outputDir, 0o700); err != nil {
-		return fmt.Errorf("create output directory: %w", err)
-	}
-
-	sessions := []struct {
-		kind    string
-		persona experiment.Persona
-	}{
-		{kind: "baseline", persona: manifest.Baseline},
-		{kind: "treatment", persona: manifest.Treatment},
-	}
+	seen := make(map[string]struct{}, len(sessions))
 	for _, session := range sessions {
-		if err := runSession(
-			ctx,
-			binary,
-			target,
-			manifest,
-			outputDir,
-			session.kind,
-			session.persona,
-			run,
-			now,
-		); err != nil {
-			return err
+		if (session.kind != "baseline" && session.kind != "treatment") ||
+			!samePersona(session.kind, session.persona, manifest) {
+			return errors.New("session order is invalid")
 		}
+		if _, ok := seen[session.kind]; ok {
+			return errors.New("session order contains a duplicate")
+		}
+		seen[session.kind] = struct{}{}
+	}
+	if len(seen) != 2 {
+		return errors.New("session order must contain baseline and treatment")
 	}
 	return nil
+}
+
+func samePersona(kind string, persona experiment.Persona, manifest experiment.Manifest) bool {
+	if kind == "baseline" {
+		return mapsEqual(persona, manifest.Baseline)
+	}
+	return mapsEqual(persona, manifest.Treatment)
+}
+
+func mapsEqual(left, right experiment.Persona) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for key, value := range left {
+		if right[key] != value {
+			return false
+		}
+	}
+	return true
 }
 
 func runSession(

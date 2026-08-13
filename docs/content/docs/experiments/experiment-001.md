@@ -158,6 +158,10 @@ Validate the manifest, verify the selected target, and execute the experiment:
 go run ./cmd/ariadne validate examples/experiment-001.json
 go run ./cmd/ariadne android check --device emulator-5554 --package dev.ariadne.fixture
 go run ./cmd/ariadne experiment run --device emulator-5554 --package dev.ariadne.fixture --output .ariadne/runs/experiment-001 examples/experiment-001.json
+go run ./cmd/ariadne experiment replicate --device emulator-5554 --package dev.ariadne.fixture --pairs 1 --output .ariadne/runs/experiment-001-replicated examples/experiment-001.json
+go run ./cmd/ariadne experiment report .ariadne/runs/experiment-001-replicated/pair-001-baseline-treatment
+go run ./cmd/ariadne experiment report .ariadne/runs/experiment-001-replicated/pair-001-treatment-baseline
+go run ./cmd/ariadne experiment replicate verify --json .ariadne/runs/experiment-001-replicated
 go run ./cmd/ariadne experiment report .ariadne/runs/experiment-001
 go run ./cmd/ariadne experiment export .ariadne/runs/experiment-001 .ariadne/runs/experiment-001.redacted.json
 go run ./cmd/ariadne experiment export verify --json .ariadne/runs/experiment-001.redacted.json
@@ -207,6 +211,19 @@ In `evidence.json`, `target.package_sha256` must equal the SHA-256 of the built
 APK, `target.ariadne_revision` must equal `git rev-parse HEAD`, and
 `target.ariadne_modified` must reflect whether the checkout had source changes
 when `go run` built Ariadne.
+
+For replicated execution, use a separate output directory. `--pairs 1` creates
+two independently verifiable pair directories: one runs baseline then
+treatment, and the other runs treatment then baseline. Every session begins
+with `adb shell pm clear`, and `replication.json` records the reset policy,
+pair order, and completion status without persona values or captured output.
+`experiment replicate verify` rechecks each complete pair and returns four
+possible aggregate outcomes: `replicated-change` when every ordered pair
+changed, `no-change-observed` when none changed, `mixed-inconsistent` when
+complete pairs disagree, and `unknown` when a pair or its evidence is
+incomplete. Its `evidence_state` is a separate field and remains `unknown`
+when the captures do not support a conclusion. The outcome is repeat evidence,
+not a universal causal claim.
 
 ### Common failures
 

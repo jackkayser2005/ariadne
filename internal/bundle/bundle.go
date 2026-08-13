@@ -58,6 +58,7 @@ var legacyExpectedSteps = []string{
 // Summary describes a completed evidence bundle without observed values.
 type Summary struct {
 	ManifestName           string         `json:"manifest_name"`
+	DeclaredVariable       string         `json:"-"`
 	Differences            int            `json:"differences"`
 	Unknowns               int            `json:"unknowns"`
 	Question               string         `json:"-"`
@@ -71,6 +72,10 @@ type Summary struct {
 	RecordedAt string `json:"-"`
 	// TargetPackage is the verified package identity for the selected target.
 	TargetPackage string `json:"-"`
+	// TargetDevice is the verified device identity for internal provenance checks.
+	TargetDevice string `json:"-"`
+	// TargetADBVersion is the verified ADB version for internal provenance checks.
+	TargetADBVersion string `json:"-"`
 	// TargetAndroidAPI is the verified Android API for the selected target.
 	TargetAndroidAPI int `json:"-"`
 	// TargetArchitecture is the verified architecture for the selected target.
@@ -749,6 +754,7 @@ func buildDocument(runDir string, includeFindingIDs bool) (document, Summary, er
 
 	return evidence, Summary{
 		ManifestName:             evidence.ManifestName,
+		DeclaredVariable:         evidence.DeclaredVariable,
 		Differences:              len(comparison.Differences),
 		Unknowns:                 len(comparison.Unknowns),
 		Question:                 evidence.Question,
@@ -758,6 +764,8 @@ func buildDocument(runDir string, includeFindingIDs bool) (document, Summary, er
 		AriadneModified:          evidence.Target.AriadneModified,
 		RecordedAt:               recordedAt,
 		TargetPackage:            evidence.Target.Package,
+		TargetDevice:             evidence.Target.Device,
+		TargetADBVersion:         evidence.Target.ADBVersion,
 		TargetAndroidAPI:         evidence.Target.AndroidAPI,
 		TargetArchitecture:       evidence.Target.Architecture,
 		TargetPackageVersionCode: evidence.Target.PackageVersionCode,
@@ -1308,6 +1316,8 @@ func validateSession(record adb.SessionRecord, kind string) error {
 }
 
 func validatePair(baseline, treatment adb.SessionRecord) error {
+	sessionsOverlap := baseline.StartedAt.Before(treatment.FinishedAt) &&
+		treatment.StartedAt.Before(baseline.FinishedAt)
 	if !sessionComplete(baseline) ||
 		baseline.SchemaVersion != treatment.SchemaVersion ||
 		baseline.ManifestName != treatment.ManifestName ||
@@ -1325,7 +1335,7 @@ func validatePair(baseline, treatment adb.SessionRecord) error {
 		baseline.AriadneModified != treatment.AriadneModified ||
 		baseline.TapResourceID != treatment.TapResourceID ||
 		baseline.ManifestContractSHA256 != treatment.ManifestContractSHA256 ||
-		treatment.StartedAt.Before(baseline.FinishedAt) {
+		sessionsOverlap {
 		return errors.New("baseline and treatment session metadata disagree")
 	}
 	return nil

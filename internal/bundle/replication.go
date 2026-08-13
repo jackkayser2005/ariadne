@@ -1,0 +1,332 @@
+package bundle
+
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"path/filepath"
+	"strings"
+
+	"github.com/jackkayser2005/ariadne/internal/adb"
+	"github.com/jackkayser2005/ariadne/internal/evidence"
+	"github.com/jackkayser2005/ariadne/internal/jsoncheck"
+)
+
+const (
+	replicatedPairOutcomeChanged = "changed"
+	replicatedPairOutcomeSame    = "same"
+	replicatedPairOutcomeUnknown = "unknown"
+)
+
+// ReplicatedOutcome classifies the aggregate result independently of evidence.State.
+type ReplicatedOutcome string
+
+const (
+	// ReplicatedChange means every complete pair in both orders observed a difference.
+	ReplicatedChange ReplicatedOutcome = "replicated-change"
+	// NoChangeObserved means every complete pair in both orders observed no difference.
+	NoChangeObserved ReplicatedOutcome = "no-change-observed"
+	// MixedInconsistent means complete pairs disagree about whether a difference occurred.
+	MixedInconsistent ReplicatedOutcome = "mixed-inconsistent"
+	// ReplicationUnknown means a reset, capture, or pair verification is incomplete.
+	ReplicationUnknown ReplicatedOutcome = "unknown"
+)
+
+// ReplicatedPairSummary is the safe result for one ordered pair.
+type ReplicatedPairSummary struct {
+	Pair          int            `json:"pair"`
+	Order         string         `json:"order"`
+	Outcome       string         `json:"outcome"`
+	EvidenceState evidence.State `json:"evidence_state"`
+	Differences   int            `json:"differences"`
+	Unknowns      int            `json:"unknowns"`
+}
+
+// ReplicatedExperimentSummary is a raw-value-free aggregate verification result.
+type ReplicatedExperimentSummary struct {
+	SchemaVersion          int                     `json:"schema_version"`
+	ManifestName           string                  `json:"manifest_name"`
+	DeclaredVariable       string                  `json:"declared_variable"`
+	Pairs                  int                     `json:"pairs"`
+	PairsPerOrder          int                     `json:"pairs_per_order"`
+	BaselineTreatmentPairs int                     `json:"baseline_treatment_pairs"`
+	TreatmentBaselinePairs int                     `json:"treatment_baseline_pairs"`
+	Outcome                ReplicatedOutcome       `json:"outcome"`
+	EvidenceState          evidence.State          `json:"evidence_state"`
+	CompletedPairs         int                     `json:"completed_pairs"`
+	ChangedPairs           int                     `json:"changed_pairs"`
+	NoChangePairs          int                     `json:"no_change_pairs"`
+	UnknownPairs           int                     `json:"unknown_pairs"`
+	PairSummaries          []ReplicatedPairSummary `json:"pair_summaries"`
+}
+
+// VerifyReplicated verifies the safe replication receipt and each complete pair.
+// Incomplete executions return a successful structural summary with unknown outcome.
+func VerifyReplicated(rootDir string) (ReplicatedExperimentSummary, error) {
+	record, err := readReplicatedRecord(rootDir)
+	if err != nil {
+		return ReplicatedExperimentSummary{}, err
+	}
+	if err := validateReplicatedRecord(rootDir, record); err != nil {
+		return ReplicatedExperimentSummary{}, err
+	}
+
+	totalPairs := record.PairsPerOrder * 2
+	pairSummaries := make([]ReplicatedPairSummary, 0, totalPairs)
+	byKey := make(map[string]ReplicatedPairSummary, len(record.Pairs))
+	var provenance *Summary
+	for _, pair := range record.Pairs {
+		result := ReplicatedPairSummary{
+			Pair:          pair.Pair,
+			Order:         pair.Order,
+			Outcome:       replicatedPairOutcomeUnknown,
+			EvidenceState: evidence.Unknown,
+		}
+		if pair.Status == adb.ReplicationStatusComplete {
+			summary, err := verifyReplicatedPair(filepath.Join(rootDir, pair.Directory), pair)
+			if err != nil {
+				return ReplicatedExperimentSummary{}, err
+			}
+			if summary.ManifestName != record.ManifestName ||
+				summary.DeclaredVariable != record.DeclaredVariable {
+				return ReplicatedExperimentSummary{}, errors.New("replication pair manifest metadata disagrees")
+			}
+			if provenance == nil {
+				copy := summary
+				provenance = &copy
+			} else if !sameReplicatedProvenance(*provenance, summary) {
+				return ReplicatedExperimentSummary{}, errors.New("replication pair provenance disagrees")
+			}
+			result.Differences = summary.Differences
+			result.Unknowns = summary.Unknowns
+			result.EvidenceState = replicatedEvidenceState(summary)
+			if result.Unknowns > 0 || result.EvidenceState == evidence.Unknown {
+				result.Outcome = replicatedPairOutcomeUnknown
+			} else if result.Differences > 0 {
+				result.Outcome = replicatedPairOutcomeChanged
+			} else {
+				result.Outcome = replicatedPairOutcomeSame
+			}
+		}
+		byKey[replicatedPairKey(pair.Pair, pair.Order)] = result
+	}
+	for pair := 1; pair <= record.PairsPerOrder; pair++ {
+		for _, order := range []string{
+			adb.ReplicationOrderBaselineTreatment,
+			adb.ReplicationOrderTreatmentBaseline,
+		} {
+			key := replicatedPairKey(pair, order)
+			result, ok := byKey[key]
+			if !ok {
+				result = ReplicatedPairSummary{
+					Pair:          pair,
+					Order:         order,
+					Outcome:       replicatedPairOutcomeUnknown,
+					EvidenceState: evidence.Unknown,
+				}
+			}
+			pairSummaries = append(pairSummaries, result)
+		}
+	}
+
+	result := ReplicatedExperimentSummary{
+		SchemaVersion:          adb.ReplicatedRunSchemaVersion,
+		ManifestName:           record.ManifestName,
+		DeclaredVariable:       record.DeclaredVariable,
+		Pairs:                  totalPairs,
+		PairsPerOrder:          record.PairsPerOrder,
+		BaselineTreatmentPairs: record.PairsPerOrder,
+		TreatmentBaselinePairs: record.PairsPerOrder,
+		CompletedPairs:         record.CompletedPairs,
+		PairSummaries:          pairSummaries,
+	}
+	for _, pair := range pairSummaries {
+		switch pair.Outcome {
+		case replicatedPairOutcomeChanged:
+			result.ChangedPairs++
+		case replicatedPairOutcomeSame:
+			result.NoChangePairs++
+		default:
+			result.UnknownPairs++
+		}
+	}
+	result.EvidenceState = aggregateEvidenceState(pairSummaries)
+	switch {
+	case result.UnknownPairs > 0:
+		result.Outcome = ReplicationUnknown
+	case result.ChangedPairs == totalPairs:
+		result.Outcome = ReplicatedChange
+	case result.NoChangePairs == totalPairs:
+		result.Outcome = NoChangeObserved
+	default:
+		result.Outcome = MixedInconsistent
+	}
+	return result, nil
+}
+
+func readReplicatedRecord(rootDir string) (adb.ReplicatedRunRecord, error) {
+	if strings.TrimSpace(rootDir) == "" {
+		return adb.ReplicatedRunRecord{}, errors.New("replicated run directory is required")
+	}
+	data, err := readFileBounded(filepath.Join(rootDir, "replication.json"), maxOutputBytes)
+	if err != nil {
+		return adb.ReplicatedRunRecord{}, fmt.Errorf("replication metadata: %w", err)
+	}
+	if err := jsoncheck.RejectDuplicateKeys(data); err != nil {
+		return adb.ReplicatedRunRecord{}, fmt.Errorf("replication metadata: %w", err)
+	}
+	var record adb.ReplicatedRunRecord
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&record); err != nil {
+		return adb.ReplicatedRunRecord{}, fmt.Errorf("replication metadata: decode: %w", err)
+	}
+	var trailing json.RawMessage
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return adb.ReplicatedRunRecord{}, errors.New("replication metadata: trailing data")
+	}
+	return record, nil
+}
+
+func validateReplicatedRecord(rootDir string, record adb.ReplicatedRunRecord) error {
+	if record.SchemaVersion != adb.ReplicatedRunSchemaVersion ||
+		!validMetadataValue(record.ManifestName) ||
+		!validMetadataValue(record.DeclaredVariable) {
+		return errors.New("replication metadata is invalid")
+	}
+	if record.PairsPerOrder < 1 || record.PairsPerOrder > 8 ||
+		record.ResetPolicy != adb.ReplicationResetPolicy {
+		return errors.New("replication metadata configuration is invalid")
+	}
+	switch record.Status {
+	case adb.ReplicationStatusComplete, adb.ReplicationStatusIncomplete:
+	default:
+		return errors.New("replication metadata status is invalid")
+	}
+	if record.CompletedPairs < 0 || record.CompletedPairs > record.PairsPerOrder*2 {
+		return errors.New("replication metadata completed_pairs is invalid")
+	}
+	seen := make(map[string]struct{}, len(record.Pairs))
+	completeCount := 0
+	failureMatches := false
+	for _, pair := range record.Pairs {
+		if pair.Pair < 1 || pair.Pair > record.PairsPerOrder ||
+			(pair.Order != adb.ReplicationOrderBaselineTreatment &&
+				pair.Order != adb.ReplicationOrderTreatmentBaseline) {
+			return errors.New("replication pair metadata is invalid")
+		}
+		expectedDirectory := fmt.Sprintf("pair-%03d-%s", pair.Pair, pair.Order)
+		if pair.Directory != expectedDirectory ||
+			!validPairSessions(pair) ||
+			(pair.Status != adb.ReplicationStatusComplete &&
+				pair.Status != adb.ReplicationStatusIncomplete) {
+			return errors.New("replication pair metadata is invalid")
+		}
+		key := replicatedPairKey(pair.Pair, pair.Order)
+		if _, ok := seen[key]; ok {
+			return errors.New("replication pair metadata contains a duplicate")
+		}
+		seen[key] = struct{}{}
+		if pair.Status == adb.ReplicationStatusComplete {
+			completeCount++
+		}
+		info, err := lstatNoSymlinkPath(filepath.Join(rootDir, pair.Directory))
+		if err != nil || !info.IsDir() {
+			return errors.New("replication pair directory is invalid")
+		}
+		if record.Status == adb.ReplicationStatusIncomplete &&
+			pair.Pair == record.FailurePair && pair.Order == record.FailureOrder &&
+			pair.Status == adb.ReplicationStatusIncomplete {
+			failureMatches = true
+		}
+	}
+	if completeCount != record.CompletedPairs {
+		return errors.New("replication metadata completed_pairs disagrees")
+	}
+	if record.Status == adb.ReplicationStatusComplete {
+		if len(record.Pairs) != record.PairsPerOrder*2 ||
+			record.CompletedPairs != len(record.Pairs) ||
+			record.FailurePair != 0 || record.FailureOrder != "" {
+			return errors.New("complete replication metadata is incomplete")
+		}
+	} else {
+		if record.FailurePair < 1 || record.FailurePair > record.PairsPerOrder ||
+			!failureMatches {
+			return errors.New("incomplete replication metadata is missing its failure")
+		}
+	}
+	return nil
+}
+
+func validPairSessions(pair adb.ReplicatedPairRecord) bool {
+	if pair.Order == adb.ReplicationOrderBaselineTreatment {
+		return pair.FirstSession == "baseline" && pair.SecondSession == "treatment"
+	}
+	return pair.FirstSession == "treatment" && pair.SecondSession == "baseline"
+}
+
+func verifyReplicatedPair(pairDir string, pair adb.ReplicatedPairRecord) (Summary, error) {
+	first, err := loadSession(pairDir, pair.FirstSession)
+	if err != nil {
+		return Summary{}, fmt.Errorf("replication pair %d %s: %w", pair.Pair, pair.Order, err)
+	}
+	second, err := loadSession(pairDir, pair.SecondSession)
+	if err != nil {
+		return Summary{}, fmt.Errorf("replication pair %d %s: %w", pair.Pair, pair.Order, err)
+	}
+	if !first.record.StartedAt.Before(second.record.StartedAt) ||
+		second.record.StartedAt.Before(first.record.FinishedAt) {
+		return Summary{}, errors.New("replication pair session order is invalid")
+	}
+	_, summary, err := buildDocument(pairDir, true)
+	if err != nil {
+		return Summary{}, fmt.Errorf("replication pair %d %s: %w", pair.Pair, pair.Order, err)
+	}
+	return summary, nil
+}
+
+func replicatedEvidenceState(summary Summary) evidence.State {
+	if summary.Unknowns > 0 || summary.AnswerState == evidence.Unknown {
+		return evidence.Unknown
+	}
+	if summary.AnswerState.Valid() {
+		return summary.AnswerState
+	}
+	return evidence.Unknown
+}
+
+func aggregateEvidenceState(pairs []ReplicatedPairSummary) evidence.State {
+	for _, pair := range pairs {
+		if pair.EvidenceState == evidence.Unknown {
+			return evidence.Unknown
+		}
+	}
+	for _, pair := range pairs {
+		if pair.EvidenceState != evidence.Observed {
+			return evidence.Unknown
+		}
+	}
+	return evidence.Observed
+}
+
+func replicatedPairKey(pair int, order string) string {
+	return fmt.Sprintf("%d:%s", pair, order)
+}
+
+func sameReplicatedProvenance(left, right Summary) bool {
+	return left.ManifestName == right.ManifestName &&
+		left.DeclaredVariable == right.DeclaredVariable &&
+		left.ManifestContractSHA256 == right.ManifestContractSHA256 &&
+		left.Question == right.Question &&
+		left.TargetADBVersion == right.TargetADBVersion &&
+		left.TargetDevice == right.TargetDevice &&
+		left.TargetPackage == right.TargetPackage &&
+		left.TargetAndroidAPI == right.TargetAndroidAPI &&
+		left.TargetArchitecture == right.TargetArchitecture &&
+		left.TargetPackageVersionCode == right.TargetPackageVersionCode &&
+		left.TargetPackageSHA256 == right.TargetPackageSHA256 &&
+		left.AriadneRevision == right.AriadneRevision &&
+		left.AriadneModified == right.AriadneModified
+}

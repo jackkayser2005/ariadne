@@ -27,6 +27,64 @@ jq -e '
   (.differences == 1) and
   (.unknowns == 0)
 ' "${verify_json}"
+
+replicated_dir=".ariadne/ci/experiment-001-replicated"
+"${ariadne}" experiment replicate \
+  --device emulator-5554 \
+  --package dev.ariadne.fixture \
+  --pairs 1 \
+  --output "${replicated_dir}" \
+  examples/experiment-001.json
+for pair_dir in \
+  "${replicated_dir}/pair-001-baseline-treatment" \
+  "${replicated_dir}/pair-001-treatment-baseline"; do
+  "${ariadne}" experiment report "${pair_dir}"
+  "${ariadne}" experiment verify "${pair_dir}"
+done
+replicated_verify_json="${RUNNER_TEMP}/ariadne-replicated-verify.json"
+"${ariadne}" experiment replicate verify --json \
+  "${replicated_dir}" >"${replicated_verify_json}"
+jq -e '
+  (keys_unsorted == ["schema_version", "manifest_name", "declared_variable", "pairs", "pairs_per_order", "baseline_treatment_pairs", "treatment_baseline_pairs", "outcome", "evidence_state", "completed_pairs", "changed_pairs", "no_change_pairs", "unknown_pairs", "pair_summaries"]) and
+  (.schema_version == 1) and
+  (.manifest_name == "experiment-001-email") and
+  (.declared_variable == "email") and
+  (.pairs == 2) and
+  (.pairs_per_order == 1) and
+  (.baseline_treatment_pairs == 1) and
+  (.treatment_baseline_pairs == 1) and
+  (.outcome == "replicated-change") and
+  (.evidence_state == "observed") and
+  (.completed_pairs == 2) and
+  (.changed_pairs == 2) and
+  (.no_change_pairs == 0) and
+  (.unknown_pairs == 0) and
+  (.pair_summaries | length == 2) and
+  (all(.pair_summaries[]; .outcome == "changed" and .evidence_state == "observed" and .differences == 1 and .unknowns == 0))
+' "${replicated_verify_json}"
+if grep -F -q \
+  -e "baseline@example.invalid" \
+  -e "treatment@example.invalid" \
+  -e "standard" \
+  -e "personalized" \
+  -e "request_id" \
+  "${replicated_dir}/replication.json" \
+  "${replicated_verify_json}"; then
+  echo "replicated receipt exposed a persona or captured value" >&2
+  exit 1
+fi
+replication_json="${replicated_dir}/replication.json"
+jq -e '
+  (keys_unsorted == ["schema_version", "manifest_name", "declared_variable", "pairs_per_order", "reset_policy", "status", "completed_pairs", "pairs"]) and
+  (.schema_version == 1) and
+  (.reset_policy == "reset-before-each-session") and
+  (.status == "complete") and
+  (.completed_pairs == 2) and
+  (.pairs | length == 2) and
+  (.pairs[0].order == "baseline-treatment" and .pairs[0].first_session == "baseline" and .pairs[0].second_session == "treatment") and
+  (.pairs[1].order == "treatment-baseline" and .pairs[1].first_session == "treatment" and .pairs[1].second_session == "baseline")
+' "${replication_json}"
+
 redacted_export_json="${RUNNER_TEMP}/ariadne-redacted-export.json"
 redacted_export_stdout="${RUNNER_TEMP}/ariadne-redacted-export.stdout"
 "${ariadne}" experiment export "${run_dir}" "${redacted_export_json}" >"${redacted_export_stdout}"

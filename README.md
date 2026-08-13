@@ -18,6 +18,24 @@ The first milestone targets an authorized Android test application:
 5. Report outputs influenced by the changed value.
 6. Produce a redacted, reproducible export from a verified evidence bundle.
 
+The runner can also replicate the experiment in both orders. Each requested
+replication runs baseline-treatment and treatment-baseline, resetting the
+package before every session and recording the order in a raw-value-free
+`replication.json` receipt:
+
+```console
+go run ./cmd/ariadne experiment replicate --device emulator-5554 --package dev.ariadne.fixture --pairs 1 --output .ariadne/runs/experiment-001-replicated examples/experiment-001.json
+go run ./cmd/ariadne experiment report .ariadne/runs/experiment-001-replicated/pair-001-baseline-treatment
+go run ./cmd/ariadne experiment report .ariadne/runs/experiment-001-replicated/pair-001-treatment-baseline
+go run ./cmd/ariadne experiment replicate verify --json .ariadne/runs/experiment-001-replicated
+```
+
+Replication verification classifies the aggregate as `replicated-change`,
+`no-change-observed`, `mixed-inconsistent`, or `unknown`. That outcome is
+separate from the evidence model: `evidence_state` still reports whether the
+captured artifacts support the result. A replicated change is stronger repeat
+evidence, not proof of universal causal truth.
+
 The detailed design and experiment log live in [`docs/`](docs/).
 The evidence-backed first-year path is tracked in
 [`docs/content/docs/roadmap.md`](docs/content/docs/roadmap.md).
@@ -66,6 +84,11 @@ resulting evidence bundle.
 The same procedure runs on a real API 35 emulator in GitHub Actions. It also
 proves that missing targets, modified observations, and mismatched package
 provenance prevent evidence publication.
+
+The hosted workflow also runs one replicated pair in both orders. The two
+ordered pair directories are independently reportable, while the root receipt
+checks the reset policy, recorded order, pair completeness, and aggregate
+classification without exposing persona values or captured payloads.
 
 After the report is verified, project one selected session into the portable
 tracking trace and compare the two sessions without reopening raw values:

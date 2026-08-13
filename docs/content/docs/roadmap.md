@@ -13,7 +13,7 @@ values.
 
 ## Current position
 
-The repository currently has three evidence-backed layers:
+The repository currently has five evidence-backed layers:
 
 1. **Investigation core.** Experiment 001 defines personas, captures network
    and storage observations, validates provenance, compares answer states, and
@@ -48,6 +48,13 @@ The repository currently has three evidence-backed layers:
    and private-storage paths into that contract. Complete versus partial
    coverage is explicit, so structural absence remains `unknown` when a source
    did not claim complete capture.
+5. **Replicated counterfactual experiments.** The Android runner can execute
+   matched baseline/treatment pairs in both `baseline-treatment` and
+   `treatment-baseline` order, resetting before every session and recording the
+   order in a safe root receipt. The verifier aggregates complete pair results
+   as `replicated-change`, `no-change-observed`, `mixed-inconsistent`, or
+   `unknown`. That outcome is intentionally separate from the evidence model's
+   `evidence_state`; an aggregate classification is not a causal proof.
 
 The local review page is intentionally read-only. Its compact question round
 and receipt links, including stable history and receipt identities, are a
@@ -92,11 +99,13 @@ must remain bound to a verified history and must say
 
 ### Months 10–12: expand only after the contract holds
 
-Keep the first Android trace producer narrow and use its emulator evidence as
-the gate for the next edge. Target-specific runners belong at the edges; the
-deterministic comparison, provenance, redaction, and question engine stay
-small and portable. A browser, desktop, or proxy producer is a separate future
-slice with its own authorized capture procedure and redaction tests; the trace
+Use the two-order replicated Android experiment as the next evidence gate. It
+tests whether a reported change survives repeated resets and reversed session
+order before adding more capture surface. Keep the first Android trace
+producer narrow; target-specific runners belong at the edges, while the
+deterministic comparison, provenance, redaction, and question engine stay small
+and portable. A browser, desktop, or proxy producer is a separate future slice
+with its own authorized capture procedure and redaction tests; the trace
 contract is the handoff boundary, not a universal sniffer.
 
 ## Acceptance gates

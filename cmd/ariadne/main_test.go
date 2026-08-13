@@ -72,6 +72,8 @@ func TestRunUsage(t *testing.T) {
 		{"experiment", "export", "verify"},
 		{"experiment", "export", "ask"},
 		{"experiment", "export", "finding"},
+		{"experiment", "replicate"},
+		{"experiment", "replicate", "verify"},
 		{"experiment", "verify"},
 		{"experiment", "finding"},
 		{"experiment", "ask"},
@@ -261,6 +263,143 @@ func TestRunExperimentUsage(t *testing.T) {
 					stdout.String(),
 					stderr.String(),
 				)
+			}
+		})
+	}
+}
+
+func TestRunExperimentReplicate(t *testing.T) {
+	path := writeManifest(t, validManifest)
+	outputDir := filepath.Join(t.TempDir(), "replicated")
+	var stdout, stderr bytes.Buffer
+	check := func(
+		ctx context.Context,
+		binary, device, packageName string,
+	) (adb.Target, error) {
+		if _, ok := ctx.Deadline(); !ok {
+			t.Fatal("check() context has no deadline")
+		}
+		return adb.Target{
+			Version:            "1.0.41",
+			Device:             device,
+			Package:            packageName,
+			AndroidAPI:         35,
+			Architecture:       "x86_64",
+			PackageVersionCode: 1,
+			PackageSHA256:      strings.Repeat("a", 64),
+		}, nil
+	}
+	runReplicated := func(
+		ctx context.Context,
+		binary string,
+		target adb.Target,
+		manifest experiment.Manifest,
+		output string,
+		pairs int,
+	) error {
+		if _, ok := ctx.Deadline(); !ok ||
+			binary != "custom-adb" ||
+			target.Device != "emulator-5554" ||
+			manifest.Name != "experiment-001-email" ||
+			output != outputDir || pairs != 2 {
+			t.Fatalf("runReplicated() arguments = %#v, %q, %#v, %q, %d", ctx, binary, target, output, pairs)
+		}
+		return nil
+	}
+
+	exitCode := runExperimentReplicate(
+		[]string{
+			"--adb", "custom-adb",
+			"--device", "emulator-5554",
+			"--package", "dev.ariadne.fixture",
+			"--pairs", "2",
+			"--output", outputDir,
+			path,
+		},
+		&stdout,
+		&stderr,
+		check,
+		runReplicated,
+	)
+	want := "experiment replication complete\n" +
+		"name: experiment-001-email\n" +
+		"pairs_per_order: 2\n" +
+		"runs: 4\n" +
+		"order: baseline-treatment, treatment-baseline\n" +
+		"reset_policy: reset-before-each-session\n"
+	if exitCode != 0 || stdout.String() != want || stderr.Len() != 0 {
+		t.Fatalf("runExperimentReplicate() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+}
+
+func TestRunExperimentReplicateUsage(t *testing.T) {
+	tests := [][]string{
+		nil,
+		{"--device", "emulator-5554", "--package", "dev.ariadne.fixture", "--output", "run", "manifest.json"},
+		{"--device", "emulator-5554", "--package", "dev.ariadne.fixture", "--pairs", "0", "--output", "run", "manifest.json"},
+		{"--device", "emulator-5554", "--package", "dev.ariadne.fixture", "--pairs", "1", "--output", "run"},
+	}
+	for _, args := range tests {
+		t.Run(strings.Join(args, "_"), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			exitCode := runExperimentReplicate(
+				args,
+				&stdout,
+				&stderr,
+				func(context.Context, string, string, string) (adb.Target, error) {
+					t.Fatal("check called for invalid usage")
+					return adb.Target{}, nil
+				},
+				nil,
+			)
+			if exitCode != 2 || stdout.Len() != 0 || stderr.String() != usage {
+				t.Fatalf("runExperimentReplicate() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+			}
+		})
+	}
+}
+
+func TestRunReplicateVerify(t *testing.T) {
+	for _, jsonOutput := range []bool{false, true} {
+		t.Run(fmt.Sprintf("json-%t", jsonOutput), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			args := []string{"replicated"}
+			if jsonOutput {
+				args = []string{"--json", "replicated"}
+			}
+			exitCode := runReplicateVerify(
+				args,
+				&stdout,
+				&stderr,
+				func(path string) (bundle.ReplicatedExperimentSummary, error) {
+					if path != "replicated" {
+						t.Fatalf("verify path = %q", path)
+					}
+					return bundle.ReplicatedExperimentSummary{
+						ManifestName:   "experiment-001-email",
+						Outcome:        bundle.ReplicatedChange,
+						EvidenceState:  "observed",
+						Pairs:          2,
+						PairsPerOrder:  1,
+						CompletedPairs: 2,
+						ChangedPairs:   2,
+					}, nil
+				},
+			)
+			if exitCode != 0 || stderr.Len() != 0 {
+				t.Fatalf("runReplicateVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+			}
+			if jsonOutput {
+				var got bundle.ReplicatedExperimentSummary
+				if err := json.Unmarshal(stdout.Bytes(), &got); err != nil {
+					t.Fatal(err)
+				}
+				if got.Outcome != bundle.ReplicatedChange || got.ChangedPairs != 2 {
+					t.Fatalf("JSON summary = %#v", got)
+				}
+			} else if !strings.Contains(stdout.String(), "outcome: replicated-change") ||
+				!strings.Contains(stdout.String(), "evidence_state: observed") {
+				t.Fatalf("human summary = %q", stdout.String())
 			}
 		})
 	}
