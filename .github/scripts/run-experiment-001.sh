@@ -86,6 +86,26 @@ jq -e '
   (.pairs[1].order == "treatment-baseline" and .pairs[1].first_session == "treatment" and .pairs[1].second_session == "baseline")
 ' "${replication_json}"
 
+browser_trace_json="${RUNNER_TEMP}/ariadne-browser-trace.json"
+browser_trace_summary="${RUNNER_TEMP}/ariadne-browser-trace-summary.json"
+"${ariadne}" browser trace --json \
+  examples/browser-audit.json \
+  "${browser_trace_json}" >"${browser_trace_summary}"
+jq -e '
+  (keys_unsorted == ["schema_version", "redacted", "scope", "completeness", "events", "trace_sha256"]) and
+  (.schema_version == 1) and
+  (.redacted == true) and
+  (.scope == "outbound") and
+  (.completeness == "complete") and
+  (.events == 2) and
+  (.trace_sha256 | test("^[0-9a-f]{64}$"))
+' "${browser_trace_summary}"
+"${ariadne}" trace verify --json "${browser_trace_json}" > /dev/null
+if grep -F -q -e "https://" -e "payload" -e "cookie_value" "${browser_trace_json}"; then
+  echo "browser trace exposed source details" >&2
+  exit 1
+fi
+
 redacted_export_json="${RUNNER_TEMP}/ariadne-redacted-export.json"
 redacted_export_stdout="${RUNNER_TEMP}/ariadne-redacted-export.stdout"
 "${ariadne}" experiment export "${run_dir}" "${redacted_export_json}" >"${redacted_export_stdout}"

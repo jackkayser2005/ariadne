@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "redacted": true,
+  "scope": "outbound",
+  "completeness": "complete",
+  "events": [
+    {
+      "channel": "cookie",
+      "kind": "cookie-write",
+      "destination": "advertising",
+      "fields": ["consent"]
+    },
+    {
+      "channel": "network",
+      "kind": "request",
+      "destination": "analytics",
+      "fields": ["region", "session-id"]
+    }
+  ]
+}

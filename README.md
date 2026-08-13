@@ -62,6 +62,20 @@ remains `unknown` rather than becoming a false absence claim. Browser, desktop,
 proxy, and additional Android adapters are not implied by this contract; each
 needs an authorized capture procedure and its own redaction tests.
 
+The first browser edge accepts an authorized driver's already-redacted audit and
+projects it into the same trace contract:
+
+```console
+go run ./cmd/ariadne browser trace --json examples/browser-audit.json .ariadne/browser-trace.json
+go run ./cmd/ariadne trace verify --json .ariadne/browser-trace.json
+```
+
+The browser adapter accepts only fixed network, cookie, and web-storage labels;
+it rejects URLs, payloads, cookie values, arbitrary destinations, and arbitrary
+fields. It is a redacted handoff boundary, not browser capture or a universal
+sniffer. The authorized driver that produces the audit remains a separate
+source-specific concern.
+
 The shareable export has its own canonical SHA-256 identity. Verify a received
 export structurally, and optionally require the expected identity, with
 `experiment export verify --json --expect-sha256 <export-sha256> <export.json>`.

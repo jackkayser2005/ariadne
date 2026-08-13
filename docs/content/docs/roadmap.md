@@ -13,7 +13,8 @@ values.
 
 ## Current position
 
-The repository currently has five evidence-backed layers:
+The repository currently has five evidence-backed layers and one separate
+redacted source-handoff layer:
 
 1. **Investigation core.** Experiment 001 defines personas, captures network
    and storage observations, validates provenance, compares answer states, and
@@ -57,6 +58,12 @@ The repository currently has five evidence-backed layers:
    `evidence_state`; an aggregate classification is not a causal proof. The
    verifier also rechecks each pair's authoritative evidence outputs and
    exposes only the root receipt and pair evidence SHA-256 identities.
+6. **Browser audit handoff (not evidence-backed capture).** An authorized
+   browser driver can provide a bounded, already-redacted audit that Ariadne
+   projects into the same
+   source-neutral trace contract. The producer accepts only reviewed network,
+   cookie, and web-storage labels and remains explicit about partial coverage;
+   it does not launch a browser or act as a universal sniffer.
 
 The local review page is intentionally read-only. Its compact question round
 and receipt links, including stable history and receipt identities, are a
@@ -101,14 +108,14 @@ must remain bound to a verified history and must say
 
 ### Months 10–12: expand only after the contract holds
 
-Use the two-order replicated Android experiment as the next evidence gate. It
-tests whether a reported change survives repeated resets and reversed session
-order before adding more capture surface. Keep the first Android trace
-producer narrow; target-specific runners belong at the edges, while the
-deterministic comparison, provenance, redaction, and question engine stay small
-and portable. A browser, desktop, or proxy producer is a separate future slice
-with its own authorized capture procedure and redaction tests; the trace
-contract is the handoff boundary, not a universal sniffer.
+Use the two-order replicated Android experiment as the evidence gate. It tests
+whether a reported change survives repeated resets and reversed session order.
+The browser audit producer is now the first post-gate handoff slice: keep it
+narrow and redacted, while the deterministic comparison, provenance, redaction,
+and question engine stay small and portable. A real browser capture driver,
+desktop producer, or proxy producer is a separate future slice with its own
+authorized procedure and redaction tests; the trace contract is the handoff
+boundary, not a universal sniffer.
 
 ## Acceptance gates
 

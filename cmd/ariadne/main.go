@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jackkayser2005/ariadne/internal/adb"
+	"github.com/jackkayser2005/ariadne/internal/browser"
 	"github.com/jackkayser2005/ariadne/internal/bundle"
 	"github.com/jackkayser2005/ariadne/internal/experiment"
 	"github.com/jackkayser2005/ariadne/internal/trace"
@@ -24,6 +25,7 @@ const usage = `usage:
   ariadne android check [--adb <path>] --device <serial> --package <package>
 	ariadne trace verify [--json] [--expect-sha256 <digest>] <trace.json>
 	ariadne trace compare [--json] <baseline-trace.json> <treatment-trace.json>
+	ariadne browser trace [--json] <redacted-browser-audit.json> <trace.json>
 	ariadne experiment run [--adb <path>] --device <serial> --package <package> --output <directory> <manifest.json>
 	ariadne experiment replicate [--adb <path>] --device <serial> --package <package> --pairs <n> --output <directory> <manifest.json>
 	ariadne experiment replicate verify [--json] <replicated-directory>
@@ -81,6 +83,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(args) >= 2 && args[0] == "trace" && args[1] == "compare" {
 		return runTraceCompare(args[2:], stdout, stderr, trace.CompareFiles)
+	}
+	if len(args) >= 2 && args[0] == "browser" && args[1] == "trace" {
+		return runBrowserTrace(args[2:], stdout, stderr, browser.SaveTrace)
 	}
 	if len(args) >= 2 && args[0] == "experiment" && args[1] == "run" {
 		return runExperiment(args[2:], stdout, stderr, adb.Check, adb.RunPair)
@@ -230,6 +235,44 @@ func runValidate(path string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+func runBrowserTrace(
+	args []string,
+	stdout, stderr io.Writer,
+	save browserTraceSaver,
+) int {
+	flags := flag.NewFlagSet("browser trace", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 2 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+	summary, err := save(flags.Arg(0), flags.Arg(1))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: browser trace: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(summary); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: browser trace: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if _, err := fmt.Fprintf(
+		stdout,
+		"browser trace complete\nscope: %s\ncompleteness: %s\nevents: %d\ntrace_sha256: %s\n",
+		summary.Scope,
+		summary.Completeness,
+		summary.Events,
+		summary.TraceSHA256,
+	); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: browser trace: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
 func runTraceVerify(
 	args []string,
 	stdout, stderr io.Writer,
@@ -359,6 +402,7 @@ type targetChecker func(context.Context, string, string, string) (adb.Target, er
 type traceVerifier func(string) (trace.VerificationSummary, error)
 type traceComparer func(string, string) (trace.Comparison, error)
 type experimentTraceSaver func(string, string, string) (trace.VerificationSummary, error)
+type browserTraceSaver func(string, string) (trace.VerificationSummary, error)
 type pairRunner func(
 	context.Context,
 	string,

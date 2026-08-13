@@ -66,6 +66,9 @@ func TestRunUsage(t *testing.T) {
 		{"trace", "unknown"},
 		{"trace", "verify"},
 		{"trace", "compare"},
+		{"browser"},
+		{"browser", "unknown"},
+		{"browser", "trace"},
 		{"experiment"},
 		{"experiment", "unknown"},
 		{"experiment", "export"},
@@ -106,6 +109,38 @@ func TestRunUsage(t *testing.T) {
 			}
 			if stderr.String() != usage {
 				t.Fatalf("run() stderr = %q, want %q", stderr.String(), usage)
+			}
+		})
+	}
+}
+
+func TestRunBrowserTrace(t *testing.T) {
+	input := filepath.Join(t.TempDir(), "browser-audit.json")
+	data := []byte(`{"schema_version":1,"redacted":true,"scope":"outbound","completeness":"complete","events":[{"channel":"network","kind":"request","destination":"analytics","fields":["region"]}]}`)
+	if err := os.WriteFile(input, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, jsonOutput := range []bool{false, true} {
+		t.Run(fmt.Sprintf("json-%t", jsonOutput), func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			output := filepath.Join(t.TempDir(), "browser-trace.json")
+			args := []string{"browser", "trace", input, output}
+			if jsonOutput {
+				args = []string{"browser", "trace", "--json", input, output}
+			}
+			if exitCode := run(args, &stdout, &stderr); exitCode != 0 || stderr.Len() != 0 {
+				t.Fatalf("run() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+			}
+			if jsonOutput {
+				var summary map[string]any
+				if err := json.Unmarshal(stdout.Bytes(), &summary); err != nil {
+					t.Fatal(err)
+				}
+				if summary["scope"] != "outbound" || summary["events"] != float64(1) {
+					t.Fatalf("summary = %#v", summary)
+				}
+			} else if !strings.Contains(stdout.String(), "browser trace complete") || !strings.Contains(stdout.String(), "events: 1") {
+				t.Fatalf("human output = %q", stdout.String())
 			}
 		})
 	}
