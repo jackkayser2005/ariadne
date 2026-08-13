@@ -682,6 +682,68 @@ jq -e '
   (.differences | length == 0) and
   (.unknowns | length == 0)
 ' "${complete_trace_comparison}"
+complete_baseline_session="${complete_trace_dir}/baseline-session.json"
+complete_treatment_session="${complete_trace_dir}/treatment-session.json"
+complete_pair_summary="${complete_trace_dir}/pair-summary.json"
+"${ariadne}" trace session pair create --json \
+  --adapter android-experiment-001 \
+  --adapter-version 1 \
+  --procedure-sha256 "${contract_digest}" \
+  --order baseline-treatment \
+  "${complete_baseline_trace}" "${complete_treatment_trace}" \
+  "${complete_baseline_session}" "${complete_treatment_session}" >"${complete_pair_summary}"
+jq -e \
+  --arg contract_digest "${contract_digest}" \
+  '
+  (keys_unsorted == ["schema_version", "pair_sha256", "source", "adapter", "adapter_version", "procedure_sha256", "scope", "order", "baseline_trace_sha256", "treatment_trace_sha256", "baseline_completeness", "treatment_completeness", "baseline_session_sha256", "treatment_session_sha256"]) and
+  (.schema_version == 1) and
+  (.source == "android") and
+  (.adapter == "android-experiment-001") and
+  (.adapter_version == 1) and
+  (.procedure_sha256 == $contract_digest) and
+  (.scope == "all") and
+  (.order == "baseline-treatment") and
+  (.baseline_trace_sha256 | test("^[0-9a-f]{64}$")) and
+  (.treatment_trace_sha256 | test("^[0-9a-f]{64}$")) and
+  (.baseline_completeness == "complete") and
+  (.treatment_completeness == "complete") and
+  (.baseline_session_sha256 | test("^[0-9a-f]{64}$")) and
+  (.treatment_session_sha256 | test("^[0-9a-f]{64}$")) and
+  (.pair_sha256 | test("^[0-9a-f]{64}$"))
+  ' "${complete_pair_summary}"
+complete_baseline_session_sha256="$(jq -r '.baseline_session_sha256' "${complete_pair_summary}")"
+complete_treatment_session_sha256="$(jq -r '.treatment_session_sha256' "${complete_pair_summary}")"
+"${ariadne}" trace session verify --json \
+  --expect-sha256 "${complete_baseline_session_sha256}" \
+  "${complete_baseline_session}" "${complete_baseline_trace}" >"${complete_trace_dir}/baseline-session-verify.json"
+"${ariadne}" trace session verify --json \
+  --expect-sha256 "${complete_treatment_session_sha256}" \
+  "${complete_treatment_session}" "${complete_treatment_trace}" >"${complete_trace_dir}/treatment-session-verify.json"
+"${ariadne}" trace session pair verify --json \
+  "${complete_baseline_session}" "${complete_baseline_trace}" \
+  "${complete_treatment_session}" "${complete_treatment_trace}" >"${complete_pair_summary}"
+jq -e \
+  --arg contract_digest "${contract_digest}" \
+  --arg baseline_trace_sha256 "${complete_baseline_trace_sha256}" \
+  --arg treatment_trace_sha256 "${complete_treatment_trace_sha256}" \
+  --arg baseline_session_sha256 "${complete_baseline_session_sha256}" \
+  --arg treatment_session_sha256 "${complete_treatment_session_sha256}" \
+  '
+  (keys_unsorted == ["schema_version", "pair_sha256", "source", "adapter", "adapter_version", "procedure_sha256", "scope", "order", "baseline_trace_sha256", "treatment_trace_sha256", "baseline_completeness", "treatment_completeness", "baseline_session_sha256", "treatment_session_sha256"]) and
+  (.schema_version == 1) and
+  (.source == "android") and
+  (.adapter == "android-experiment-001") and
+  (.adapter_version == 1) and
+  (.procedure_sha256 == $contract_digest) and
+  (.scope == "all") and
+  (.order == "baseline-treatment") and
+  (.baseline_trace_sha256 == $baseline_trace_sha256) and
+  (.treatment_trace_sha256 == $treatment_trace_sha256) and
+  (.baseline_completeness == "complete") and
+  (.treatment_completeness == "complete") and
+  (.baseline_session_sha256 == $baseline_session_sha256) and
+  (.treatment_session_sha256 == $treatment_session_sha256)
+  ' "${complete_pair_summary}"
 if grep -R -F -q \
   -e "${baseline_email}" \
   -e "${treatment_email}" \

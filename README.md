@@ -76,6 +76,29 @@ fields. It is a redacted handoff boundary, not browser capture or a universal
 sniffer. The authorized driver that produces the audit remains a separate
 source-specific concern.
 
+Bind a verified trace to its reviewed adapter and capture procedure without
+adding URLs, profile names, or captured values:
+
+```console
+go run ./cmd/ariadne trace session create --adapter browser-redacted-audit --adapter-version 1 --procedure-sha256 <procedure-sha256> .ariadne/browser-trace.json .ariadne/browser-session.json
+go run ./cmd/ariadne trace session verify --json .ariadne/browser-session.json .ariadne/browser-trace.json
+go run ./cmd/ariadne trace session pair create --json --adapter browser-redacted-audit --adapter-version 1 --procedure-sha256 <procedure-sha256> --order baseline-treatment <baseline-trace.json> <treatment-trace.json> <baseline-session.json> <treatment-session.json>
+go run ./cmd/ariadne trace session pair verify --json <baseline-session.json> <baseline-trace.json> <treatment-session.json> <treatment-trace.json>
+```
+
+The standalone command creates one envelope. The pair command derives one
+canonical pair identity from both verified trace identities and shared
+provenance, then writes complementary baseline/treatment envelopes. Pair order
+is explicit: use `baseline-treatment` or `treatment-baseline`. The envelope checks the trace hash,
+source, scope, and completeness, but does not prove authorization, capture
+truth, or causal impact. Pair verification additionally requires complementary
+roles, distinct trace identities, and matching adapter, procedure, scope,
+order, and canonical pair identity. Empty traces retain their declared
+completeness, but have no event source to corroborate the adapter assertion.
+The current fixed adapter catalog covers the implemented Android and browser
+producers; future desktop or proxy producers add their own reviewed labels when
+they exist.
+
 The shareable export has its own canonical SHA-256 identity. Verify a received
 export structurally, and optionally require the expected identity, with
 `experiment export verify --json --expect-sha256 <export-sha256> <export.json>`.

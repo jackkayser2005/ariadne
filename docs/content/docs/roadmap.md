@@ -48,7 +48,13 @@ redacted source-handoff layer:
    re-verifies an Experiment 001 Android session and projects its known network
    and private-storage paths into that contract. Complete versus partial
    coverage is explicit, so structural absence remains `unknown` when a source
-   did not claim complete capture.
+   did not claim complete capture. A bounded session envelope now binds each
+   trace to a current fixed adapter, reviewed procedure identity, and optional
+   counterfactual role/order without adding captured values or claiming capture
+   truth. Pair creation derives a canonical identity from both verified trace
+   identities; pair verification requires complementary roles, distinct traces,
+   and matching provenance before two sessions are treated as one matched pair.
+   An empty trace still leaves source corroboration unavailable.
 5. **Replicated counterfactual experiments.** The Android runner can execute
    matched baseline/treatment pairs in both `baseline-treatment` and
    `treatment-baseline` order, resetting before every session and recording the
@@ -112,8 +118,9 @@ Use the two-order replicated Android experiment as the evidence gate. It tests
 whether a reported change survives repeated resets and reversed session order.
 The browser audit producer is now the first post-gate handoff slice: keep it
 narrow and redacted, while the deterministic comparison, provenance, redaction,
-and question engine stay small and portable. A real browser capture driver,
-desktop producer, or proxy producer is a separate future slice with its own
+and question engine stay small and portable. Session provenance is the join
+point for later source-specific runs. A real browser capture driver, desktop
+producer, or proxy producer is a separate future slice with its own
 authorized procedure and redaction tests; the trace contract is the handoff
 boundary, not a universal sniffer.
 

@@ -115,6 +115,47 @@ a browser, inspect a user's session, or claim that the supplied audit is true;
 the authorized capture driver is responsible for producing the audit within its
 declared scope.
 
+## Session provenance
+
+A trace can be retained with a small provenance envelope after it verifies:
+
+```console
+go run ./cmd/ariadne trace session create \
+  --adapter browser-redacted-audit \
+  --adapter-version 1 \
+  --procedure-sha256 <procedure-sha256> \
+  <trace.json> <session.json>
+go run ./cmd/ariadne trace session verify --json <session.json> <trace.json>
+go run ./cmd/ariadne trace session pair create --json \
+  --adapter browser-redacted-audit \
+  --adapter-version 1 \
+  --procedure-sha256 <procedure-sha256> \
+  --order baseline-treatment \
+  <baseline-trace.json> <treatment-trace.json> \
+  <baseline-session.json> <treatment-session.json>
+go run ./cmd/ariadne trace session pair verify --json \
+  <baseline-session.json> <baseline-trace.json> \
+  <treatment-session.json> <treatment-trace.json>
+```
+
+The envelope records only a fixed adapter label and version, a reviewed
+procedure SHA-256, the trace SHA-256, scope, completeness, and a standalone or
+counterfactual role. The pair-create command derives one canonical pair
+identity from both verified trace identities and shared provenance, then writes
+both sides with either `baseline-treatment` or `treatment-baseline` order. Both
+sides of a matched pair share the pair identity; their role and order remain
+separate fields.
+
+Verification re-reads the trace and fails closed when its canonical identity,
+source, scope, or completeness no longer agrees. The envelope does not prove
+that a driver was authorized, that its capture is complete in the real world,
+or that a counterfactual result is causal. Fixed adapter labels keep this
+joinable without accepting profile names, URLs, device identifiers, or free-form
+metadata. Pair verification also requires complementary baseline/treatment
+roles, distinct trace identities, and matching adapter, procedure, scope, order,
+and canonical pair identities. An empty trace can still be valid, but its
+adapter source is an assertion rather than an event-source corroboration.
+
 ## Bigger-picture path
 
 The intended flow is:
@@ -130,7 +171,8 @@ The intended flow is:
 
 The Experiment 001 Android producer remains the authoritative evidence-backed
 edge, and the replicated runner is the evidence gate. The browser audit
-producer now supplies the next safe handoff boundary. A real browser capture
-driver, then desktop and proxy producers, remain separate slices requiring an
-authorized target, a reproducible capture procedure, and tests proving that the
-redaction boundary is safe.
+producer now supplies the next safe handoff boundary, and session provenance
+binds each trace to its reviewed procedure before sources are joined. A real
+browser capture driver, then desktop and proxy producers, remain separate
+slices requiring an authorized target, a reproducible capture procedure, and
+tests proving that the redaction boundary is safe.
