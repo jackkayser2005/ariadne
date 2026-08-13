@@ -41,6 +41,11 @@ The repository currently has three evidence-backed layers:
    It can also compare two retained question rounds in caller order, showing
    only fixed questions whose bounded results changed and both round/history
    identity pairs.
+4. **Source-neutral tracking trace.** Authorized adapters can now exchange a
+   strict, raw-value-free trace document containing logical source, channel,
+   destination, and data-category labels. Complete versus partial coverage is
+   explicit, so structural absence remains `unknown` when a source did not
+   claim complete capture.
 
 The local review page is intentionally read-only. Its compact question round
 and receipt links, including stable history and receipt identities, are a
@@ -90,7 +95,9 @@ evidence and reflection contracts are stable. The first edge is now bounded UI
 control provenance: a successful Android interaction records only the
 hierarchy digest that located the declared resource ID. Target-specific runners
 belong at the edges; the deterministic comparison, provenance, redaction, and
-question engine stay small and portable.
+question engine stay small and portable. The source-neutral trace contract is
+the handoff boundary for that future work; it does not itself add browser,
+desktop, proxy, or universal network adapters.
 
 ## Acceptance gates
 

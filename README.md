@@ -23,6 +23,23 @@ The evidence-backed first-year path is tracked in
 [`docs/content/docs/roadmap.md`](docs/content/docs/roadmap.md).
 The read-only computer-use acceptance sequence is documented in
 [`docs/content/docs/computer-use-acceptance.md`](docs/content/docs/computer-use-acceptance.md).
+The source-neutral tracking trace contract is documented in
+[`docs/content/docs/tracking-trace.md`](docs/content/docs/tracking-trace.md).
+
+Ariadne now verifies and compares raw-value-free tracking traces from an
+authorized source adapter:
+
+```console
+go run ./cmd/ariadne trace verify --json <trace.json>
+go run ./cmd/ariadne trace compare --json <baseline-trace.json> <treatment-trace.json>
+```
+
+These traces contain only verifier-owned logical source, channel, destination,
+and data-category labels. They do not contain payloads or URLs. Complete versus
+partial source coverage is explicit, so an absent event in a partial capture
+remains `unknown` rather than becoming a false absence claim. Browser, desktop,
+proxy, and additional Android adapters are not implied by this contract; each
+needs an authorized capture procedure and its own redaction tests.
 
 The shareable export has its own canonical SHA-256 identity. Verify a received
 export structurally, and optionally require the expected identity, with

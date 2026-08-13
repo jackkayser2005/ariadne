@@ -15,12 +15,15 @@ import (
 	"github.com/jackkayser2005/ariadne/internal/adb"
 	"github.com/jackkayser2005/ariadne/internal/bundle"
 	"github.com/jackkayser2005/ariadne/internal/experiment"
+	"github.com/jackkayser2005/ariadne/internal/trace"
 	"github.com/jackkayser2005/ariadne/internal/ui"
 )
 
 const usage = `usage:
   ariadne validate <manifest.json>
   ariadne android check [--adb <path>] --device <serial> --package <package>
+  ariadne trace verify [--json] [--expect-sha256 <digest>] <trace.json>
+  ariadne trace compare [--json] <baseline-trace.json> <treatment-trace.json>
   ariadne experiment run [--adb <path>] --device <serial> --package <package> --output <directory> <manifest.json>
   ariadne experiment report <run-directory>
   ariadne experiment export <run-directory> <export.json>
@@ -68,6 +71,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(args) >= 2 && args[0] == "android" && args[1] == "check" {
 		return runAndroidCheck(args[2:], stdout, stderr, adb.Check)
+	}
+	if len(args) >= 2 && args[0] == "trace" && args[1] == "verify" {
+		return runTraceVerify(args[2:], stdout, stderr, trace.Verify)
+	}
+	if len(args) >= 2 && args[0] == "trace" && args[1] == "compare" {
+		return runTraceCompare(args[2:], stdout, stderr, trace.CompareFiles)
 	}
 	if len(args) >= 2 && args[0] == "experiment" && args[1] == "run" {
 		return runExperiment(args[2:], stdout, stderr, adb.Check, adb.RunPair)
@@ -208,7 +217,134 @@ func runValidate(path string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+func runTraceVerify(
+	args []string,
+	stdout, stderr io.Writer,
+	verify traceVerifier,
+) int {
+	flags := flag.NewFlagSet("trace verify", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	expectSHA256 := flags.String("expect-sha256", "", "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+	expectSHA256Set := false
+	flags.Visit(func(visited *flag.Flag) {
+		if visited.Name == "expect-sha256" {
+			expectSHA256Set = true
+		}
+	})
+	if expectSHA256Set && !trace.ValidSHA256(*expectSHA256) {
+		_, _ = io.WriteString(stderr, "ariadne: trace verify: expected SHA-256 must be 64 lowercase hexadecimal characters\n")
+		return 1
+	}
+
+	summary, err := verify(flags.Arg(0))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: trace verify: %v\n", err)
+		return 1
+	}
+	if expectSHA256Set && *expectSHA256 != summary.TraceSHA256 {
+		_, _ = io.WriteString(stderr, "ariadne: trace verify: trace SHA-256 does not match expected identity\n")
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(summary); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: trace verify: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if _, err := fmt.Fprintf(
+		stdout,
+		"trace verified\nscope: %s\ncompleteness: %s\nevents: %d\ntrace_sha256: %s\n",
+		summary.Scope,
+		summary.Completeness,
+		summary.Events,
+		summary.TraceSHA256,
+	); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: trace verify: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func runTraceCompare(
+	args []string,
+	stdout, stderr io.Writer,
+	compare traceComparer,
+) int {
+	flags := flag.NewFlagSet("trace compare", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 2 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+
+	comparison, err := compare(flags.Arg(0), flags.Arg(1))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: trace compare: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(comparison); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: trace compare: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if _, err := fmt.Fprintf(
+		stdout,
+		"trace compared\nscope: %s\nbaseline_completeness: %s\ntreatment_completeness: %s\nunchanged: %d\ndifferences: %d\nunknowns: %d\n",
+		comparison.Scope,
+		comparison.BaselineCompleteness,
+		comparison.TreatmentCompleteness,
+		len(comparison.Unchanged),
+		len(comparison.Differences),
+		len(comparison.Unknowns),
+	); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: trace compare: write output: %v\n", err)
+		return 1
+	}
+	for _, difference := range comparison.Differences {
+		if _, err := fmt.Fprintf(
+			stdout,
+			"- source: %s\n  channel: %s\n  kind: %s\n  destination: %s\n  change: %s\n  state: %s\n",
+			difference.Source,
+			difference.Channel,
+			difference.Kind,
+			difference.Destination,
+			difference.KindOfChange,
+			difference.State,
+		); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: trace compare: write output: %v\n", err)
+			return 1
+		}
+	}
+	for _, unknown := range comparison.Unknowns {
+		if _, err := fmt.Fprintf(
+			stdout,
+			"- source: %s\n  channel: %s\n  kind: %s\n  destination: %s\n  state: %s\n  reason: %s\n",
+			unknown.Source,
+			unknown.Channel,
+			unknown.Kind,
+			unknown.Destination,
+			unknown.State,
+			unknown.Reason,
+		); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: trace compare: write output: %v\n", err)
+			return 1
+		}
+	}
+	return 0
+}
+
 type targetChecker func(context.Context, string, string, string) (adb.Target, error)
+type traceVerifier func(string) (trace.VerificationSummary, error)
+type traceComparer func(string, string) (trace.Comparison, error)
 type pairRunner func(
 	context.Context,
 	string,

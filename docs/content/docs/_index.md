@@ -9,3 +9,6 @@ Start with the [project principles](concepts/principles/) and then read the
 
 The [first-year roadmap](roadmap/) records the current evidence-backed stage,
 next reflection slices, and acceptance gates.
+
+The [source-neutral tracking trace](tracking-trace/) documents the portable,
+raw-value-free contract for comparing authorized capture sources.
