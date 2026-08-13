@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "procedure_id": "browser-audit-v1",
+  "scope": "outbound",
+  "duration_ms": 5000,
+  "max_events": 64
+}

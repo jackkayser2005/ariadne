@@ -115,6 +115,46 @@ a browser, inspect a user's session, or claim that the supplied audit is true;
 the authorized capture driver is responsible for producing the audit within its
 declared scope.
 
+## Explicit browser driver boundary
+
+Ariadne can now invoke one explicitly selected capture executable through a
+small process boundary:
+
+```console
+go run ./cmd/ariadne browser capture --json \
+  --procedure examples/browser-procedure.json \
+  --driver <fixed-redacting-driver> \
+  <trace.json>
+```
+
+The procedure is bounded and raw-value-free:
+
+```json
+{
+  "schema_version": 1,
+  "procedure_id": "browser-audit-v1",
+  "scope": "outbound",
+  "duration_ms": 5000,
+  "max_events": 64
+}
+```
+
+The command sends the validated procedure bytes to the executable on stdin and
+accepts exactly one bounded redacted browser audit on stdout. It invokes the
+executable without a shell, enforces the procedure timeout and event limit,
+requires the audit scope to match, and never returns driver diagnostics. The
+procedure catalog intentionally has no URL, profile path, selector, script,
+header, payload, or `authorized` field. Authorization is an external
+precondition, and the selected executable is responsible for its own isolation
+and redaction.
+
+This boundary is not a browser capture implementation. Ariadne does not launch
+Chrome, reuse a profile, inspect cookies, retain response bodies, or infer that
+the executable was authorized. The next browser slice must provide one pinned,
+isolated driver against a local fixture and prove that CDP messages cannot cross
+the redaction boundary. Until then, the existing already-redacted audit remains
+the only browser source producer.
+
 ## Session provenance
 
 A trace can be retained with a small provenance envelope after it verifies:

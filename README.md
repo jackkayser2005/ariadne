@@ -76,6 +76,27 @@ fields. It is a redacted handoff boundary, not browser capture or a universal
 sniffer. The authorized driver that produces the audit remains a separate
 source-specific concern.
 
+The capture command now provides one explicit process boundary for that driver:
+
+```console
+go run ./cmd/ariadne browser capture --json --procedure examples/browser-procedure.json --driver <fixed-redacting-driver> .ariadne/browser-trace.json
+```
+
+A validated procedure contains only a catalogued procedure ID, scope, duration,
+and event limit. Ariadne sends those bytes to the selected executable on stdin,
+accepts exactly one bounded redacted audit on stdout, invokes it without a
+shell, and rejects scope mismatches, oversized output, timeouts, and unsafe
+audit members. The procedure has no URL, profile path, selector, JavaScript,
+header, payload, or `authorized` claim; authorization remains an external
+precondition. `examples/browser-procedure.json` is a safe metadata-only
+starting point, not a capture configuration.
+
+This is a driver boundary, not browser capture yet. It does not launch Chrome,
+reuse a profile, collect cookies, inspect bodies, or prove that an external
+driver was authorized. A future concrete driver must use an isolated profile,
+an explicit local test target, and its own CDP/redaction tests before it can
+be treated as a source producer.
+
 Bind a verified trace to its reviewed adapter and capture procedure without
 adding URLs, profile names, or captured values:
 

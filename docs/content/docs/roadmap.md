@@ -13,8 +13,8 @@ values.
 
 ## Current position
 
-The repository currently has five evidence-backed layers and one separate
-redacted source-handoff layer:
+The repository currently has five evidence-backed layers and two separate
+browser source-boundary layers:
 
 1. **Investigation core.** Experiment 001 defines personas, captures network
    and storage observations, validates provenance, compares answer states, and
@@ -72,6 +72,14 @@ redacted source-handoff layer:
    source-neutral trace contract. The producer accepts only reviewed network,
    cookie, and web-storage labels and remains explicit about partial coverage;
    it does not launch a browser or act as a universal sniffer.
+7. **Browser driver protocol (not browser capture).** The CLI now invokes one
+   explicitly selected executable without a shell, sends it a bounded
+   raw-value-free procedure, caps stdout/stderr and runtime, and immediately
+   validates the one redacted audit it returns. The procedure contains only a
+   catalogued ID, scope, duration, and event limit; it cannot name a URL,
+   profile, selector, script, header, payload, or authorization claim. This is
+   the boundary for a future isolated driver, not evidence that a browser was
+   captured.
 
 The local review page is intentionally read-only. Its compact question round
 and receipt links, including stable history and receipt identities, are a
@@ -118,13 +126,13 @@ must remain bound to a verified history and must say
 
 Use the two-order replicated Android experiment as the evidence gate. It tests
 whether a reported change survives repeated resets and reversed session order.
-The browser audit producer is now the first post-gate handoff slice: keep it
-narrow and redacted, while the deterministic comparison, provenance, redaction,
-and question engine stay small and portable. Session provenance is the join
-point for later source-specific runs. A real browser capture driver, desktop
-producer, or proxy producer is a separate future slice with its own
-authorized procedure and redaction tests; the trace contract is the handoff
-boundary, not a universal sniffer.
+The browser audit producer and explicit driver protocol are the first post-gate
+handoff slices: keep them narrow and redacted, while the deterministic
+comparison, provenance, redaction, and question engine stay small and portable.
+Session provenance is the join point for later source-specific runs. A real
+browser capture driver, desktop producer, or proxy producer is still a separate
+future slice with its own authorized procedure, isolated target, and redaction
+tests; the trace contract is the handoff boundary, not a universal sniffer.
 
 ## Acceptance gates
 

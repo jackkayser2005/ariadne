@@ -31,6 +31,7 @@ const usage = `usage:
 	ariadne trace session pair verify [--json] <baseline-session.json> <baseline-trace.json> <treatment-session.json> <treatment-trace.json>
 	ariadne trace session pair compare [--json] <baseline-session.json> <baseline-trace.json> <treatment-session.json> <treatment-trace.json>
 	ariadne browser trace [--json] <redacted-browser-audit.json> <trace.json>
+	ariadne browser capture [--json] --procedure <procedure.json> --driver <executable> <trace.json>
 	ariadne experiment run [--adb <path>] --device <serial> --package <package> --output <directory> <manifest.json>
 	ariadne experiment replicate [--adb <path>] --device <serial> --package <package> --pairs <n> --output <directory> <manifest.json>
 	ariadne experiment replicate verify [--json] <replicated-directory>
@@ -110,6 +111,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(args) >= 2 && args[0] == "browser" && args[1] == "trace" {
 		return runBrowserTrace(args[2:], stdout, stderr, browser.SaveTrace)
+	}
+	if len(args) >= 2 && args[0] == "browser" && args[1] == "capture" {
+		return runBrowserCapture(args[2:], stdout, stderr, browser.Capture)
 	}
 	if len(args) >= 2 && args[0] == "experiment" && args[1] == "run" {
 		return runExperiment(args[2:], stdout, stderr, adb.Check, adb.RunPair)
@@ -292,6 +296,49 @@ func runBrowserTrace(
 		summary.TraceSHA256,
 	); err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: browser trace: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+type browserCaptureRunner func(string, string, string) (browser.CaptureSummary, error)
+
+func runBrowserCapture(
+	args []string,
+	stdout, stderr io.Writer,
+	capture browserCaptureRunner,
+) int {
+	flags := flag.NewFlagSet("browser capture", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	procedurePath := flags.String("procedure", "", "")
+	driverPath := flags.String("driver", "", "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 1 || *procedurePath == "" || *driverPath == "" {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+	summary, err := capture(*procedurePath, *driverPath, flags.Arg(0))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: browser capture: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(summary); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: browser capture: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if _, err := fmt.Fprintf(
+		stdout,
+		"browser capture complete\nprocedure_sha256: %s\nscope: %s\ncompleteness: %s\nevents: %d\ntrace_sha256: %s\n",
+		summary.ProcedureSHA256,
+		summary.Trace.Scope,
+		summary.Trace.Completeness,
+		summary.Trace.Events,
+		summary.Trace.TraceSHA256,
+	); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: browser capture: write output: %v\n", err)
 		return 1
 	}
 	return 0
