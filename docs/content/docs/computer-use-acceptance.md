@@ -136,6 +136,13 @@ identities, and do not open an external target in a computer-use acceptance
 session. Its HTTPS origin is an authorization boundary, not evidence that the
 target or the capture was authorized.
 
+The `proxy-connect-v1` producer is also outside this rendered acceptance pass.
+If it is used separately, keep the explicitly supplied process, proxy
+procedure, and target run outside the review page, retain only the reviewed
+procedure and trace identities, and do not treat the loopback proxy as proof of
+authorization, capture truth, or target behavior. Its canonical authority is a
+scope boundary, not a retained hostname or a reason to expose tunneled data.
+
 ## Recorded rendered-flow check
 
 On 2026-08-10, an authorized Windows Chrome smoke pass opened the loopback

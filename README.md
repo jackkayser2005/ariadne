@@ -58,9 +58,10 @@ go run ./cmd/ariadne trace compare --json <baseline-trace.json> <treatment-trace
 These traces contain only verifier-owned logical source, channel, destination,
 and data-category labels. They do not contain payloads or URLs. Complete versus
 partial source coverage is explicit, so an absent event in a partial capture
-remains `unknown` rather than becoming a false absence claim. Browser, desktop,
-proxy, and additional Android adapters are not implied by this contract; each
-needs an authorized capture procedure and its own redaction tests.
+remains `unknown` rather than becoming a false absence claim. Browser and proxy
+producers below are narrow authorized boundaries, not universal tracing; desktop
+and additional Android adapters still need their own reviewed procedures and
+redaction tests.
 
 The first browser edge accepts an authorized driver's already-redacted audit and
 projects it into the same trace contract:
@@ -142,6 +143,32 @@ session, pair, replication-ledger, question-round, and receipt commands. A
 real target run still proves only the declared procedure and redaction
 boundary, not target authorization, capture truth, or causal impact.
 
+The repository also includes a narrow `proxy-connect-v1` producer for one
+explicitly authorized HTTPS authority. Replace the reserved authority in
+`examples/proxy-connect-procedure.json` before use; do not commit a personal
+target procedure:
+
+```console
+go run ./cmd/ariadne proxy capture --json \
+  --procedure examples/proxy-connect-procedure.json \
+  --program "C:\\Path\\to\\authorized-app.exe" \
+  --program-arg <arg> \
+  .ariadne/proxy-trace.json
+```
+
+The producer launches exactly the supplied executable without a shell, passes
+only common runtime path/locale variables plus the proxy variables, and gives
+it a fresh authenticated loopback HTTP proxy. Only `CONNECT` to the
+procedure's canonical `host:port` is accepted; plaintext HTTP, other
+authorities, IP literals, and malformed or oversized requests are rejected.
+The proxy relays encrypted bytes opaquely and never acts as a TLS MITM or
+creates a CA. It retains only a partial `proxy`/`network`/`request`/
+`first-party`/`unknown` event, discarding URLs, hostnames, headers, bodies,
+cookies, credentials, and process arguments. Use `proxy-connect` as the
+session adapter when binding this trace to provenance. This is an authorized
+single-authority boundary, not tracing data from arbitrary applications or
+proof of target authorization, capture truth, or causal impact.
+
 The same fixture path can run a small counterfactual replication. The runner
 owns the fixed baseline/treatment variants, creates a fresh profile before each
 session, records both orders, and verifies the aggregate separately from
@@ -191,9 +218,9 @@ order, and canonical pair identity. The trace paths must be separate, while
 identical normalized trace content is valid evidence for `no-change-observed`.
 Empty traces retain their declared completeness, but have no event source to
 corroborate the adapter assertion.
-The current fixed adapter catalog covers the implemented Android and browser
-producers; future desktop or proxy producers add their own reviewed labels when
-they exist.
+The current fixed adapter catalog covers the implemented Android, browser, and
+loopback proxy producers; future desktop or other adapters add their own
+reviewed labels when they exist.
 
 The pair comparison command first verifies the session envelopes, then runs
 the existing raw-value-free trace comparison and returns both objects together.

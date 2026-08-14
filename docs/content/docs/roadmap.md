@@ -132,7 +132,17 @@ browser source-boundary layers, and a portable trace reflection layer:
     URLs, values, cookies, storage, DOM, headers, and bodies. Unsupported or
     blocked activity remains partial and therefore `unknown`. This is a
     single-origin producer, not a browser-history reader, existing-profile
-    observer, universal sniffer, or proof of authorization.
+     observer, universal sniffer, or proof of authorization.
+13. **Loopback non-MITM proxy producer.** A `proxy-connect-v1` procedure can
+    name one canonical lower-case DNS authority and bind that authority into
+    the procedure identity. Ariadne launches one explicitly supplied,
+    proxy-aware executable without a shell, gives it a fresh authenticated
+    loopback proxy, accepts only that authority over `CONNECT`, and relays
+    encrypted bytes without TLS interception. It retains only a partial,
+    raw-value-free proxy network event; plaintext HTTP, other authorities, IP
+    literals, malformed input, and over-limit requests are rejected. This is
+    one authorized process boundary, not universal network tracing or proof of
+    authorization.
 
 The local review page is intentionally read-only. Its compact question round
 and receipt links, including stable history and receipt identities, are a
@@ -180,19 +190,20 @@ must remain bound to a verified history and must say
 Use the two-order replicated Android experiment and the fixed local-browser
 fixture as evidence gates. They test whether a reported change survives
 repeated resets and reversed session order while keeping source-specific
-capture narrow. The browser audit producer, explicit driver protocol, and
-isolated single-origin target producer are handoff slices: keep them redacted,
-while the deterministic comparison, provenance, redaction, and question engine
-stay small and portable. Retain
+capture narrow. The browser audit producer, explicit driver protocol,
+isolated single-origin target producer, and loopback proxy producer are handoff
+slices: keep them redacted, while the deterministic comparison, provenance,
+redaction, and question engine stay small and portable. Retain
 trace question rounds and selected receipts only as bounded identities, and
 use the source-neutral replication ledger to re-verify already-produced pairs,
 not as a new capture store.
 Session provenance is the join point for later source-specific runs. The
 isolated browser-target producer is now one narrow user-authorized target
-slice; it still does not prove target behavior, authorization, or capture truth.
-Desktop and proxy producers remain separate future slices with their own
-authorization model, isolated target, and redaction tests; the local fixture
-and target producer are not universal browser coverage.
+slice, and the proxy producer is one narrow user-authorized authority slice;
+neither proves target behavior, authorization, or capture truth. Desktop and
+broader proxy coverage remain separate future slices with their own
+authorization model, isolated target, and redaction tests; the local fixture,
+target producer, and proxy producer are not universal coverage.
 The trace archive is now the portable reflection surface for those reviewed
 snapshots, but it is not a chronology model or universal sniffer. The trace
 contract remains the handoff boundary for any future source producer. The
@@ -212,6 +223,10 @@ capture store.
 - The browser-target procedure and driver pass syntax, canonical-origin,
   isolated-profile, resolver-boundary, bounded-network, and raw-value redaction
   checks. A local test must not substitute for authorization or target behavior.
+- The proxy-connect procedure and producer pass syntax, canonical-authority,
+  loopback-authentication, CONNECT-only, opaque-relay, bounded-process, and
+  raw-value redaction checks. A local test must not substitute for authorization
+  or target behavior.
 - Source-neutral trace archives verify their embedded standalone sessions and
   answer only the fixed coverage, change, and source questions; partial or
   incompatible boundaries stay `unknown`. Saved question rounds and selected

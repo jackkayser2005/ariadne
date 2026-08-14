@@ -213,6 +213,37 @@ sniffer, or proof of target authorization, capture truth, or causal impact.
 The resulting trace uses the existing session, pair, replication-ledger,
 question-round, and receipt verification paths.
 
+### Loopback CONNECT proxy producer
+
+The repository also includes a narrow `proxy-connect-v1` producer for one
+explicitly authorized HTTPS authority. Replace the reserved authority in
+`examples/proxy-connect-procedure.json` before use; do not commit a personal
+target procedure:
+
+```console
+go run ./cmd/ariadne proxy capture --json \
+  --procedure examples/proxy-connect-procedure.json \
+  --program "C:\\Path\\to\\authorized-app.exe" \
+  --program-arg <arg> \
+  <trace.json>
+```
+
+The command launches exactly the supplied executable without a shell, passes
+only common runtime path/locale variables plus the proxy variables, and
+injects a fresh one-time credential for a loopback HTTP proxy into the child
+environment. The proxy accepts only authenticated `CONNECT` requests to the
+procedure's canonical lower-case DNS authority. It rejects plaintext HTTP,
+other authorities, IP literals, malformed headers, and requests beyond the
+declared event limit. It relays the tunnel opaquely; it does not terminate TLS,
+install a CA, or retain URLs, hostnames, headers, bodies, cookies, credentials,
+or process arguments. The trace is always `partial`, and an accepted tunnel
+emits only `proxy` / `network` / `request` / `first-party` / `unknown`.
+
+This is a single-authority, non-MITM boundary for a proxy-aware child process,
+not a universal network sniffer or proof of authorization, capture truth, or
+causal impact. Bind a verified trace with adapter `proxy-connect`; the existing
+session, pair, replication-ledger, and question paths remain source-neutral.
+
 ### Replicated local fixture
 
 The fixture also has a counterfactual runner that owns the two fixed variants:
@@ -491,12 +522,15 @@ The intended flow is:
    conclusions; the trace is a safe index for asking where a category appeared.
 8. The isolated browser-target producer can add one explicitly authorized
    HTTPS origin to the same portable path without attaching to a user's
-   existing profile or exposing hostnames and values.
+    existing profile or exposing hostnames and values.
+9. The loopback proxy producer can add one explicitly authorized HTTPS
+   authority through an opaque, non-MITM CONNECT boundary without retaining
+   hostnames, URLs, or tunneled values.
 
 The Experiment 001 Android producer remains the authoritative evidence-backed
 edge, and the replicated runner is the evidence gate. The browser audit and
-isolated browser-target producers now supply two safe browser boundaries, and
-session provenance binds each trace to its reviewed procedure before sources
-are joined. Desktop and proxy producers remain separate slices requiring their
-own authorization model, reproducible capture procedure, and tests proving
-that the redaction boundary is safe.
+isolated browser-target producers now supply two safe browser boundaries; the
+loopback proxy producer supplies one narrow process/network boundary. Session
+provenance binds each trace to its reviewed procedure before sources are joined.
+Desktop and broader proxy coverage remain separate slices requiring their own
+authorization model, reproducible capture procedure, and redaction tests.

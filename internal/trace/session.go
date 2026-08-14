@@ -328,7 +328,7 @@ func SessionPairSHA256(baselineTraceSHA256, treatmentTraceSHA256 string, input S
 	if !ok {
 		return "", errors.New("trace session adapter is invalid")
 	}
-	if input.AdapterVersion < 1 || input.AdapterVersion > maxAdapterVersion {
+	if !validAdapterVersion(input.Adapter, input.AdapterVersion) {
 		return "", errors.New("trace session adapter_version is invalid")
 	}
 	if !ValidSHA256(input.ProcedureSHA256) {
@@ -507,7 +507,7 @@ func validateSession(session Session) error {
 	if !ok || session.Source != source {
 		return errors.New("session adapter or source is invalid")
 	}
-	if session.AdapterVersion < 1 || session.AdapterVersion > maxAdapterVersion {
+	if !validAdapterVersion(session.Adapter, session.AdapterVersion) {
 		return errors.New("session adapter_version is invalid")
 	}
 	if !ValidSHA256(session.ProcedureSHA256) {
@@ -563,9 +563,18 @@ func adapterSource(adapter string) (string, bool) {
 		return "browser", true
 	case "browser-local-fixture":
 		return "browser", true
+	case "proxy-connect":
+		return "proxy", true
 	default:
 		return "", false
 	}
+}
+
+func validAdapterVersion(adapter string, version int) bool {
+	if version < 1 || version > maxAdapterVersion {
+		return false
+	}
+	return adapter != "proxy-connect" || version == 1
 }
 
 func sessionVerificationSummary(session Session, sessionSHA256 string) SessionVerificationSummary {

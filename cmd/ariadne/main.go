@@ -16,6 +16,7 @@ import (
 	"github.com/jackkayser2005/ariadne/internal/browser"
 	"github.com/jackkayser2005/ariadne/internal/bundle"
 	"github.com/jackkayser2005/ariadne/internal/experiment"
+	"github.com/jackkayser2005/ariadne/internal/proxy"
 	"github.com/jackkayser2005/ariadne/internal/trace"
 	"github.com/jackkayser2005/ariadne/internal/ui"
 )
@@ -54,6 +55,7 @@ const usage = `usage:
 	ariadne browser capture [--json] --procedure <procedure.json> --driver <executable> [--driver-arg <arg>] <trace.json>
 	ariadne browser fixture replicate [--json] --procedure <procedure.json> --driver <executable> [--driver-arg <arg>] --pairs <n> --output <directory>
 	ariadne browser fixture replicate verify [--json] <replicated-directory>
+	ariadne proxy capture [--json] --procedure <procedure.json> --program <executable> [--program-arg <arg>] <trace.json>
 	ariadne experiment run [--adb <path>] --device <serial> --package <package> --output <directory> <manifest.json>
 	ariadne experiment replicate [--adb <path>] --device <serial> --package <package> --pairs <n> --output <directory> <manifest.json>
 	ariadne experiment replicate verify [--json] <replicated-directory>
@@ -202,6 +204,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) >= 2 && args[0] == "browser" && args[1] == "capture" {
 		return runBrowserCapture(args[2:], stdout, stderr, func(procedurePath, driverPath string, driverArgs []string, outputPath string) (browser.CaptureSummary, error) {
 			return browser.Capture(procedurePath, driverPath, driverArgs, outputPath)
+		})
+	}
+	if len(args) >= 2 && args[0] == "proxy" && args[1] == "capture" {
+		return runProxyCapture(args[2:], stdout, stderr, func(procedurePath, programPath string, programArgs []string, outputPath string) (proxy.CaptureSummary, error) {
+			return proxy.Capture(procedurePath, programPath, programArgs, outputPath)
 		})
 	}
 	if len(args) >= 4 && args[0] == "browser" && args[1] == "fixture" && args[2] == "replicate" && args[3] == "verify" {
@@ -442,6 +449,54 @@ func runBrowserCapture(
 		summary.Trace.TraceSHA256,
 	); err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: browser capture: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+type proxyCaptureRunner func(string, string, []string, string) (proxy.CaptureSummary, error)
+
+func runProxyCapture(
+	args []string,
+	stdout, stderr io.Writer,
+	capture proxyCaptureRunner,
+) int {
+	flags := flag.NewFlagSet("proxy capture", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	procedurePath := flags.String("procedure", "", "")
+	programPath := flags.String("program", "", "")
+	var programArgs []string
+	flags.Func("program-arg", "", func(value string) error {
+		programArgs = append(programArgs, value)
+		return nil
+	})
+	if err := flags.Parse(args); err != nil || flags.NArg() != 1 || *procedurePath == "" || *programPath == "" {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+	summary, err := capture(*procedurePath, *programPath, programArgs, flags.Arg(0))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: proxy capture: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(summary); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: proxy capture: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if _, err := fmt.Fprintf(
+		stdout,
+		"proxy capture complete\nprocedure_sha256: %s\nscope: %s\ncompleteness: %s\nevents: %d\ntrace_sha256: %s\n",
+		summary.ProcedureSHA256,
+		summary.Trace.Scope,
+		summary.Trace.Completeness,
+		summary.Trace.Events,
+		summary.Trace.TraceSHA256,
+	); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: proxy capture: write output: %v\n", err)
 		return 1
 	}
 	return 0

@@ -391,6 +391,7 @@ func TestSessionAdapters(t *testing.T) {
 		{"android-experiment-001", "android"},
 		{"browser-redacted-audit", "browser"},
 		{"browser-local-fixture", "browser"},
+		{"proxy-connect", "proxy"},
 	} {
 		t.Run(test.adapter, func(t *testing.T) {
 			tracePath := writeTrace(t, Document{
@@ -448,6 +449,11 @@ func TestDecodeSessionRejectsInvalidFields(t *testing.T) {
 		{"source", func(session *Session) { session.Source = "custom-source" }, "adapter or source"},
 		{"version-low", func(session *Session) { session.AdapterVersion = 0 }, "adapter_version"},
 		{"version-high", func(session *Session) { session.AdapterVersion = maxAdapterVersion + 1 }, "adapter_version"},
+		{"proxy-version", func(session *Session) {
+			session.Adapter = "proxy-connect"
+			session.Source = "proxy"
+			session.AdapterVersion = 2
+		}, "adapter_version"},
 		{"procedure-sha", func(session *Session) { session.ProcedureSHA256 = "bad" }, "procedure_sha256"},
 		{"scope", func(session *Session) { session.Scope = "https://source.example" }, "scope"},
 		{"completeness", func(session *Session) { session.Completeness = "unknown" }, "completeness"},
