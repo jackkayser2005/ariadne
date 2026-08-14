@@ -143,6 +143,13 @@ procedure and trace identities, and do not treat the loopback proxy as proof of
 authorization, capture truth, or target behavior. Its canonical authority is a
 scope boundary, not a retained hostname or a reason to expose tunneled data.
 
+The `proxy replicate` runner is outside this rendered acceptance pass as well.
+Verify its receipt from the command line, inspect the two explicit orders and
+the separate aggregate/evidence-state results, and retain only the procedure,
+executable, receipt, and pair identities. Its fresh process/proxy reset does
+not reset remote state, and an `unknown` result must not be relabeled as no
+change merely because the UI is available.
+
 ## Recorded rendered-flow check
 
 On 2026-08-10, an authorized Windows Chrome smoke pass opened the loopback

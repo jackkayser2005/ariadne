@@ -244,6 +244,47 @@ not a universal network sniffer or proof of authorization, capture truth, or
 causal impact. Bind a verified trace with adapter `proxy-connect`; the existing
 session, pair, replication-ledger, and question paths remain source-neutral.
 
+### Replicated proxy process boundary
+
+The proxy producer also has a source-specific replication runner. It accepts
+one executable, shared arguments, and one final controlled argument for each
+condition:
+
+```console
+go run ./cmd/ariadne proxy replicate --json \
+  --procedure examples/proxy-connect-procedure.json \
+  --program "C:\\Path\to\\authorized-app.exe" \
+  --shared-arg <shared-arg> \
+  --baseline-arg <baseline-value> \
+  --treatment-arg <treatment-value> \
+  --pairs 2 \
+  --output .ariadne/proxy-replicated
+go run ./cmd/ariadne proxy replicate verify --json \
+  .ariadne/proxy-replicated
+```
+
+Each requested pair runs both `baseline-treatment` and
+`treatment-baseline`. Each of the four sessions in a two-pair run invokes
+`proxy.Capture`, so it receives a fresh child process, loopback listener, and
+credential. This is a process/proxy reset assertion only; it does not reset a
+remote account, server, filesystem, or device state. The runner stages a
+private run-local executable copy and uses its digest to bind every session to
+the same bytes. The receipt stores the executable SHA-256, order, completion,
+and provenance identities, but not the deterministic procedure digest. It never
+stores the executable path, arguments, condition values, target authority,
+proxy credential, environment, or tunnel data. Procedure-bound session
+envelopes remain the provenance join point for later verification.
+
+Verification recomputes every complete session pair from the trace and session
+files. It reports `replicated-change`, `no-change-observed`,
+`mixed-inconsistent`, or `unknown` separately from `evidence_state`. A partial
+proxy trace can therefore support an observed same event while retaining
+`evidence_state: unknown`; a missing event remains an unknown outcome because
+partial capture cannot establish absence. An interrupted run leaves a bounded
+`incomplete` receipt rather than being promoted to a completed result. This
+runner is a narrow authorized process boundary, not universal tracing or a
+causal proof.
+
 ### Replicated local fixture
 
 The fixture also has a counterfactual runner that owns the two fixed variants:

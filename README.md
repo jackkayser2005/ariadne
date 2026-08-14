@@ -169,6 +169,37 @@ session adapter when binding this trace to provenance. This is an authorized
 single-authority boundary, not tracing data from arbitrary applications or
 proof of target authorization, capture truth, or causal impact.
 
+The same process boundary can run repeated matched counterfactuals in both
+orders. Supply shared process arguments, then one final baseline and treatment
+argument; the runner owns that one controlled difference:
+
+```console
+go run ./cmd/ariadne proxy replicate --json \
+  --procedure examples/proxy-connect-procedure.json \
+  --program "C:\\Path\to\\authorized-app.exe" \
+  --shared-arg <shared-arg> \
+  --baseline-arg <baseline-value> \
+  --treatment-arg <treatment-value> \
+  --pairs 2 \
+  --output .ariadne/proxy-replicated
+go run ./cmd/ariadne proxy replicate verify --json .ariadne/proxy-replicated
+```
+
+Every session gets a new process, loopback proxy, and proxy credential. The
+runner stages a private run-local copy of the executable and records its digest
+so every session uses the same reviewed bytes. The receipt records the
+executable digest, explicit order, pair identities, and reset policy, while
+withholding the executable path, procedure identity, arguments, condition
+values, authority, credentials, and traffic. Procedure-bound session files
+remain the provenance join point for later verification. Verification
+classifies the aggregate as `replicated-change`, `no-change-observed`,
+`mixed-inconsistent`, or `unknown`, independently of `evidence_state`. Because
+the proxy producer is intentionally partial, a repeated observed same event
+can report `no-change-observed` with `evidence_state: unknown`; an absent event
+in partial coverage remains `unknown`. This proves only the declared process,
+proxy, and authority boundary, not remote-state reset, authorization, or
+causality.
+
 The same fixture path can run a small counterfactual replication. The runner
 owns the fixed baseline/treatment variants, creates a fresh profile before each
 session, records both orders, and verifies the aggregate separately from

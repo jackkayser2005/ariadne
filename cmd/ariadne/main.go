@@ -56,6 +56,8 @@ const usage = `usage:
 	ariadne browser fixture replicate [--json] --procedure <procedure.json> --driver <executable> [--driver-arg <arg>] --pairs <n> --output <directory>
 	ariadne browser fixture replicate verify [--json] <replicated-directory>
 	ariadne proxy capture [--json] --procedure <procedure.json> --program <executable> [--program-arg <arg>] <trace.json>
+	ariadne proxy replicate [--json] --procedure <procedure.json> --program <executable> [--shared-arg <arg>] --baseline-arg <arg> --treatment-arg <arg> --pairs <n> --output <directory>
+	ariadne proxy replicate verify [--json] <replicated-directory>
 	ariadne experiment run [--adb <path>] --device <serial> --package <package> --output <directory> <manifest.json>
 	ariadne experiment replicate [--adb <path>] --device <serial> --package <package> --pairs <n> --output <directory> <manifest.json>
 	ariadne experiment replicate verify [--json] <replicated-directory>
@@ -210,6 +212,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runProxyCapture(args[2:], stdout, stderr, func(procedurePath, programPath string, programArgs []string, outputPath string) (proxy.CaptureSummary, error) {
 			return proxy.Capture(procedurePath, programPath, programArgs, outputPath)
 		})
+	}
+	if len(args) >= 4 && args[0] == "proxy" && args[1] == "replicate" && args[2] == "verify" {
+		return runProxyReplicateVerify(args[3:], stdout, stderr, proxy.VerifyReplicated)
+	}
+	if len(args) >= 3 && args[0] == "proxy" && args[1] == "replicate" {
+		return runProxyReplicate(args[2:], stdout, stderr, proxy.RunReplicated, proxy.VerifyReplicated)
 	}
 	if len(args) >= 4 && args[0] == "browser" && args[1] == "fixture" && args[2] == "replicate" && args[3] == "verify" {
 		return runBrowserFixtureReplicateVerify(args[4:], stdout, stderr, browser.VerifyFixtureReplicated)

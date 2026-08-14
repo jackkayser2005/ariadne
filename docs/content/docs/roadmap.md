@@ -134,15 +134,27 @@ browser source-boundary layers, and a portable trace reflection layer:
     single-origin producer, not a browser-history reader, existing-profile
      observer, universal sniffer, or proof of authorization.
 13. **Loopback non-MITM proxy producer.** A `proxy-connect-v1` procedure can
-    name one canonical lower-case DNS authority and bind that authority into
-    the procedure identity. Ariadne launches one explicitly supplied,
-    proxy-aware executable without a shell, gives it a fresh authenticated
-    loopback proxy, accepts only that authority over `CONNECT`, and relays
-    encrypted bytes without TLS interception. It retains only a partial,
-    raw-value-free proxy network event; plaintext HTTP, other authorities, IP
-    literals, malformed input, and over-limit requests are rejected. This is
-    one authorized process boundary, not universal network tracing or proof of
-    authorization.
+     name one canonical lower-case DNS authority and bind that authority into
+     the procedure identity. Ariadne launches one explicitly supplied,
+     proxy-aware executable without a shell, gives it a fresh authenticated
+     loopback proxy, accepts only that authority over `CONNECT`, and relays
+     encrypted bytes without TLS interception. It retains only a partial,
+     raw-value-free proxy network event; plaintext HTTP, other authorities, IP
+     literals, malformed input, and over-limit requests are rejected. This is
+     one authorized process boundary, not universal network tracing or proof of
+     authorization.
+14. **Replicated proxy process boundary.** The proxy runner now executes one
+     executable with shared arguments and one final controlled baseline or
+     treatment argument, in both explicit orders. Every session creates a new
+     process, loopback proxy, and credential; the receipt retains only safe
+     executable, order, completion, and provenance identities, while omitting
+     the deterministic procedure digest from the root receipt.
+     Verification recomputes complete pairs and classifies the aggregate as
+     `replicated-change`, `no-change-observed`, `mixed-inconsistent`, or
+     `unknown` separately from `evidence_state`. Partial proxy visibility can
+     preserve an observed same outcome while reporting unknown evidence; an
+     absent event remains unknown. This asserts only process/proxy reset, not
+     remote-state reset, authorization, universal tracing, or causality.
 
 The local review page is intentionally read-only. Its compact question round
 and receipt links, including stable history and receipt identities, are a
@@ -191,9 +203,10 @@ Use the two-order replicated Android experiment and the fixed local-browser
 fixture as evidence gates. They test whether a reported change survives
 repeated resets and reversed session order while keeping source-specific
 capture narrow. The browser audit producer, explicit driver protocol,
-isolated single-origin target producer, and loopback proxy producer are handoff
-slices: keep them redacted, while the deterministic comparison, provenance,
-redaction, and question engine stay small and portable. Retain
+isolated single-origin target producer, loopback proxy producer, and replicated
+proxy process boundary are handoff slices: keep them redacted, while the
+deterministic comparison, provenance, redaction, and question engine stay small
+and portable. Retain
 trace question rounds and selected receipts only as bounded identities, and
 use the source-neutral replication ledger to re-verify already-produced pairs,
 not as a new capture store.
@@ -227,6 +240,11 @@ capture store.
   loopback-authentication, CONNECT-only, opaque-relay, bounded-process, and
   raw-value redaction checks. A local test must not substitute for authorization
   or target behavior.
+- The proxy replication runner passes both-order, fresh-process/proxy reset,
+  safe-receipt, incomplete-run, provenance-tamper, aggregate-classification,
+  and separate outcome/evidence-state checks. It must not claim remote-state
+  reset or retain process arguments, condition values, authority, credentials,
+  or tunnel data.
 - Source-neutral trace archives verify their embedded standalone sessions and
   answer only the fixed coverage, change, and source questions; partial or
   incompatible boundaries stay `unknown`. Saved question rounds and selected
