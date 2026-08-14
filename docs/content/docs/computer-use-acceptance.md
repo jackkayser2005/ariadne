@@ -46,8 +46,16 @@ portable archive:
 go run ./cmd/ariadne experiment serve --trace-archive <trace-archive.json> <archive-root>
 ```
 
+Or point the same read-only route at a previously verified question round:
+
+```console
+go run ./cmd/ariadne experiment serve --trace-round <trace-round.json> <archive-root>
+```
+
 This adds a link to `/trace-archive`; it does not change the bundle question
-route or merge trace identities into the evidence archive.
+route or merge trace identities into the evidence archive. When both flags are
+supplied, the route fails closed unless the live archive and saved question
+round identities agree.
 
 ## Driver sequence
 
@@ -77,7 +85,8 @@ route or merge trace identities into the evidence archive.
 
 1. From the review index, open `Open trace archive review`.
 2. Check `Verified archive identity`, the `caller` order basis, entry and
-   complete/partial counts, and the archive SHA-256.
+   complete/partial counts, and the archive SHA-256. If a saved round is
+   configured, retain its question-round SHA-256 as well.
 3. Check `Reviewed source adapters`, then read all three fixed question IDs:
    `trace-coverage`, `trace-change`, and `trace-sources`.
 4. For each question, retain the displayed `outcome` and its separate

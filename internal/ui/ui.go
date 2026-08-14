@@ -33,6 +33,8 @@ type handler struct {
 	exportFind       func(string, string) (bundle.Finding, error)
 	traceArchivePath string
 	traceArchiveRead func(string) (trace.Archive, trace.ArchiveVerificationSummary, error)
+	traceRoundPath   string
+	traceRoundRead   func(string) (trace.ArchiveQuestionRound, trace.ArchiveQuestionRoundVerificationSummary, error)
 }
 
 type archiveQuestionResult struct {
@@ -99,6 +101,8 @@ type pageData struct {
 	SavedReflectionComparisonAvailable bool
 	SavedReflectionComparison          bundle.ArchiveQuestionComparison
 	TraceArchiveConfigured             bool
+	TraceArchiveRoundSaved             bool
+	TraceArchiveRoundSHA256            string
 	TraceArchiveSummary                trace.ArchiveVerificationSummary
 	TraceArchiveAnswers                []trace.ArchiveAnswer
 }
@@ -145,6 +149,13 @@ func HandlerWithReviewAndExportAndAcceptanceAndQuestionRounds(archiveRoot, histo
 // returns a read-only review handler with an optional portable trace archive
 // reflection surface.
 func HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceArchive(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, traceArchivePath string) http.Handler {
+	return HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceArchiveRound(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, traceArchivePath, "")
+}
+
+// HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceArchiveRound
+// returns a read-only review handler with an optional live trace archive and
+// optional saved trace question round.
+func HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceArchiveRound(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, traceArchivePath, traceRoundPath string) http.Handler {
 	h := archiveHandler(archiveRoot)
 	if historyPath != "" {
 		h.history = func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error) {
@@ -174,6 +185,10 @@ func HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceArchive(arc
 	if traceArchivePath != "" {
 		h.traceArchivePath = traceArchivePath
 		h.traceArchiveRead = trace.ReadArchive
+	}
+	if traceRoundPath != "" {
+		h.traceRoundPath = traceRoundPath
+		h.traceRoundRead = trace.ReadArchiveQuestionRound
 	}
 	return newHandler(h)
 }
@@ -406,31 +421,78 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		SavedReflectionComparison:          savedReflectionComparison,
 		ExportConfigured:                   h.exportAsk != nil && h.exportFind != nil,
 		TraceArchiveConfigured:             h.traceArchiveConfigured(),
+		TraceArchiveRoundSaved:             h.traceRoundPath != "",
 	})
 }
 
 func (h handler) traceArchiveConfigured() bool {
-	return h.traceArchivePath != "" && h.traceArchiveRead != nil
+	return h.traceArchivePath != "" || h.traceRoundPath != ""
 }
 
-func (h handler) readTraceArchive() (trace.ArchiveVerificationSummary, []trace.ArchiveAnswer, error) {
+func (h handler) readTraceArchive() (trace.ArchiveVerificationSummary, trace.ArchiveQuestionRoundVerificationSummary, []trace.ArchiveAnswer, error) {
 	if !h.traceArchiveConfigured() {
-		return trace.ArchiveVerificationSummary{}, nil, errors.New("trace archive is not configured")
+		return trace.ArchiveVerificationSummary{}, trace.ArchiveQuestionRoundVerificationSummary{}, nil, errors.New("trace archive is not configured")
 	}
-	archive, summary, err := h.traceArchiveRead(h.traceArchivePath)
-	if err != nil {
-		return trace.ArchiveVerificationSummary{}, nil, err
-	}
-	questions := trace.ArchiveQuestions()
-	answers := make([]trace.ArchiveAnswer, 0, len(questions))
-	for _, question := range questions {
-		answer, err := trace.AnswerArchive(archive, summary.ArchiveSHA256, question.ID)
-		if err != nil {
-			return trace.ArchiveVerificationSummary{}, nil, err
+	var summary trace.ArchiveVerificationSummary
+	var round trace.ArchiveQuestionRound
+	var roundSummary trace.ArchiveQuestionRoundVerificationSummary
+	var liveRoundSHA256 string
+	if h.traceArchivePath != "" {
+		if h.traceArchiveRead == nil {
+			return trace.ArchiveVerificationSummary{}, trace.ArchiveQuestionRoundVerificationSummary{}, nil, errors.New("trace archive reader is unavailable")
 		}
-		answers = append(answers, answer)
+		archive, archiveSummary, err := h.traceArchiveRead(h.traceArchivePath)
+		if err != nil {
+			return trace.ArchiveVerificationSummary{}, trace.ArchiveQuestionRoundVerificationSummary{}, nil, err
+		}
+		var roundErr error
+		round, roundErr = trace.AnswerArchiveQuestionRound(archive, archiveSummary)
+		if roundErr != nil {
+			return trace.ArchiveVerificationSummary{}, trace.ArchiveQuestionRoundVerificationSummary{}, nil, roundErr
+		}
+		roundSHA256, roundSHAErr := trace.ArchiveQuestionRoundSHA256(round)
+		if roundSHAErr != nil {
+			return trace.ArchiveVerificationSummary{}, trace.ArchiveQuestionRoundVerificationSummary{}, nil, roundSHAErr
+		}
+		liveRoundSHA256 = roundSHA256
+		summary = archiveSummary
+		roundSummary = trace.ArchiveQuestionRoundVerificationSummary{
+			SchemaVersion: round.SchemaVersion,
+			ArchiveSHA256: round.ArchiveSHA256,
+			Questions:     len(round.Answers),
+			RoundSHA256:   roundSHA256,
+		}
 	}
-	return summary, answers, nil
+	if h.traceRoundPath != "" {
+		if h.traceRoundRead == nil {
+			return trace.ArchiveVerificationSummary{}, trace.ArchiveQuestionRoundVerificationSummary{}, nil, errors.New("trace archive question round reader is unavailable")
+		}
+		var savedSummary trace.ArchiveQuestionRoundVerificationSummary
+		var err error
+		round, savedSummary, err = h.traceRoundRead(h.traceRoundPath)
+		if err != nil {
+			return trace.ArchiveVerificationSummary{}, trace.ArchiveQuestionRoundVerificationSummary{}, nil, err
+		}
+		if summary.ArchiveSHA256 != "" && summary.ArchiveSHA256 != savedSummary.ArchiveSHA256 {
+			return trace.ArchiveVerificationSummary{}, trace.ArchiveQuestionRoundVerificationSummary{}, nil, errors.New("trace archive question round archive identity does not match archive")
+		}
+		if liveRoundSHA256 != "" && liveRoundSHA256 != savedSummary.RoundSHA256 {
+			return trace.ArchiveVerificationSummary{}, trace.ArchiveQuestionRoundVerificationSummary{}, nil, errors.New("trace archive question round identity does not match archive")
+		}
+		roundSummary = savedSummary
+		if summary.ArchiveSHA256 == "" {
+			summary = trace.ArchiveVerificationSummary{
+				SchemaVersion: round.SchemaVersion,
+				OrderBasis:    round.OrderBasis,
+				Entries:       round.Entries,
+				Complete:      round.Complete,
+				Partial:       round.Partial,
+				Sources:       round.Sources,
+				ArchiveSHA256: round.ArchiveSHA256,
+			}
+		}
+	}
+	return summary, roundSummary, round.Answers, nil
 }
 
 func (h handler) handleTraceArchive(w http.ResponseWriter, r *http.Request) {
@@ -441,17 +503,19 @@ func (h handler) handleTraceArchive(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	summary, answers, err := h.readTraceArchive()
+	summary, roundSummary, answers, err := h.readTraceArchive()
 	if err != nil {
 		http.Error(w, "trace archive unavailable", http.StatusUnprocessableEntity)
 		return
 	}
 	render(w, pageData{
-		View:                   "trace-archive",
-		Title:                  "Trace archive review — Ariadne",
-		TraceArchiveConfigured: true,
-		TraceArchiveSummary:    summary,
-		TraceArchiveAnswers:    answers,
+		View:                    "trace-archive",
+		Title:                   "Trace archive review — Ariadne",
+		TraceArchiveConfigured:  true,
+		TraceArchiveRoundSaved:  h.traceRoundPath != "",
+		TraceArchiveRoundSHA256: roundSummary.RoundSHA256,
+		TraceArchiveSummary:     summary,
+		TraceArchiveAnswers:     answers,
 	})
 }
 
@@ -814,7 +878,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
     {{end}}
     {{if .TraceArchiveConfigured}}
     <section class="panel" id="trace-archive-orientation" aria-label="Portable trace archive">
-      <div class="section-head"><h2>Portable trace archive</h2><span class="context">verified at open</span></div>
+      <div class="section-head"><h2>Portable trace archive</h2><span class="context">{{if .TraceArchiveRoundSaved}}saved question round{{else}}verified at open{{end}}</span></div>
       <p class="context">Review caller-ordered trace snapshots and their three fixed source-neutral questions. Outcome and evidence state remain separate; captured values are never rendered.</p>
       <a class="button" href="/trace-archive">Open trace archive review <span aria-hidden="true">&rarr;</span></a>
     </section>
@@ -1067,12 +1131,13 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
         <dt>complete</dt><dd>{{.TraceArchiveSummary.Complete}}</dd>
         <dt>partial</dt><dd>{{.TraceArchiveSummary.Partial}}</dd>
         <dt>archive SHA-256</dt><dd>{{.TraceArchiveSummary.ArchiveSHA256}}</dd>
+        <dt>question round SHA-256</dt><dd>{{.TraceArchiveRoundSHA256}}</dd>
       </dl>
       <h3>Reviewed source adapters</h3>
       <ul aria-label="Reviewed trace sources">
       {{range .TraceArchiveSummary.Sources}}<li>{{.Source}} / {{.Adapter}}: {{.Entries}} entries</li>{{else}}<li>none</li>{{end}}
       </ul>
-      <p class="context">The archive identity binds this fixed question round to the verified normalized traces. It does not prove the underlying source or infer chronology.</p>
+      <p class="context">{{if .TraceArchiveRoundSaved}}This saved question round can be re-verified without reopening the source archive.{{else}}This question round was derived in memory from the verified archive.{{end}} The identities do not prove the underlying source or infer chronology.</p>
     </section>
     <section class="panel" aria-label="Trace archive question round">
       <div class="section-head"><h2>Fixed trace questions</h2><span class="context">caller-ordered, read only</span></div>

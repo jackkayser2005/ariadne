@@ -105,6 +105,10 @@ source-boundary layers, and a portable trace reflection layer:
     not inferred chronology. The loopback review page can now expose the same
     archive through a separate `/trace-archive` route, with one verified
     in-memory question round and separate outcome/evidence-state rendering.
+    The fixed round can also be saved and independently verified, with a
+    selected raw-value-free receipt bound to both archive and round identities.
+    The route can consume that saved round through `--trace-round`; when both
+    live and saved inputs are supplied, identity drift fails closed.
 
 The local review page is intentionally read-only. Its compact question round
 and receipt links, including stable history and receipt identities, are a
@@ -154,7 +158,9 @@ fixture as evidence gates. They test whether a reported change survives
 repeated resets and reversed session order while keeping source-specific
 capture narrow. The browser audit producer and explicit driver protocol are
 handoff slices: keep them redacted, while the deterministic comparison,
-provenance, redaction, and question engine stay small and portable.
+provenance, redaction, and question engine stay small and portable. Retain
+trace question rounds and selected receipts only as bounded identities, not as
+a new capture store.
 Session provenance is the join point for later source-specific runs. A real
 browser capture driver for a user-authorized target, desktop producer, or proxy
 producer is still a separate future slice with its own authorized procedure,
@@ -174,7 +180,8 @@ contract remains the handoff boundary for any future source producer.
   cleanup.
 - Source-neutral trace archives verify their embedded standalone sessions and
   answer only the fixed coverage, change, and source questions; partial or
-  incompatible boundaries stay `unknown`.
+  incompatible boundaries stay `unknown`. Saved question rounds and selected
+  receipts verify independently without reopening the source archive.
 - UI changes pass deterministic handler tests; use computer-use only when a
   concrete rendered-flow check is needed and the host supports it.
 - No review page, answer, export, or log exposes captured values, secrets, or

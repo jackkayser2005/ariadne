@@ -187,6 +187,14 @@ go run ./cmd/ariadne trace archive create --json \
 go run ./cmd/ariadne trace archive verify --json .ariadne/trace-archive.json
 go run ./cmd/ariadne trace archive questions --json
 go run ./cmd/ariadne trace archive ask all --json .ariadne/trace-archive.json
+go run ./cmd/ariadne trace archive ask all save --json \
+  .ariadne/trace-archive.json .ariadne/trace-round.json
+go run ./cmd/ariadne trace archive ask all verify --json \
+  .ariadne/trace-round.json
+go run ./cmd/ariadne trace archive ask receipt save --json \
+  .ariadne/trace-round.json trace-change .ariadne/trace-receipt.json
+go run ./cmd/ariadne trace archive ask receipt verify --json \
+  .ariadne/trace-receipt.json
 ```
 
 The archive stores only normalized trace labels and standalone provenance
@@ -196,7 +204,10 @@ categories changed across compatible adjacent entries, and which reviewed
 source adapters are represented. Partial or incompatible boundaries remain
 `unknown`, and every archive/answer carries a canonical SHA-256 identity. This
 is a portable review index, not a chronology engine, a natural-language engine,
-or a universal capture service.
+or a universal capture service. A saved question round retains all fixed
+answers, and a saved receipt retains one selected answer; both can be verified
+without reopening the source archive. Their outcome semantics remain separate
+from their evidence state.
 
 The shareable export has its own canonical SHA-256 identity. Verify a received
 export structurally, and optionally require the expected identity, with
@@ -380,8 +391,8 @@ choose a question and retain the identities it was asking about.
 
 The local review page can receive a verified transition ledger, a saved
 reflection, an acceptance identity binding, two retained question rounds, and
-one portable trace archive with
-`experiment serve --history <history.json> --reflection <reflection.json> --acceptance <acceptance.json> --round-first <first-round.json> --round-second <second-round.json> --trace-archive <trace-archive.json> <archive-root>`.
+one portable trace archive or saved question round with
+`experiment serve --history <history.json> --reflection <reflection.json> --acceptance <acceptance.json> --round-first <first-round.json> --round-second <second-round.json> --trace-archive <trace-archive.json> --trace-round <trace-round.json> <archive-root>`.
 It renders caller-ordered bounded transitions and re-asks the saved reflection's
 fixed question against the current archive, showing only safe comparison counts,
 identities, per-directory bounded state changes, and the repeated-change
@@ -431,7 +442,9 @@ portable archive once per request, answers all three fixed questions from that
 verified in-memory archive, and renders the archive identity, caller order,
 source summaries, outcome, and evidence state separately. The route is
 read-only and does not accept arbitrary question text or render local input
-paths or captured values.
+paths or captured values. Supply `--trace-round <trace-round.json>` to render a
+saved question round without reopening its source archive; if both flags are
+supplied, the archive and round identities must match or the route fails closed.
 
 It can also review one portable export with
 `experiment serve --export <export.json> <archive-root>`. The export question

@@ -286,6 +286,14 @@ go run ./cmd/ariadne trace archive create --json \
 go run ./cmd/ariadne trace archive verify --json .ariadne/trace-archive.json
 go run ./cmd/ariadne trace archive questions --json
 go run ./cmd/ariadne trace archive ask all --json .ariadne/trace-archive.json
+go run ./cmd/ariadne trace archive ask all save --json \
+  .ariadne/trace-archive.json .ariadne/trace-round.json
+go run ./cmd/ariadne trace archive ask all verify --json \
+  .ariadne/trace-round.json
+go run ./cmd/ariadne trace archive ask receipt save --json \
+  .ariadne/trace-round.json trace-change .ariadne/trace-receipt.json
+go run ./cmd/ariadne trace archive ask receipt verify --json \
+  .ariadne/trace-receipt.json
 ```
 
 The fixed archive questions are deliberately small:
@@ -306,6 +314,12 @@ chronology model, a natural-language question engine, or a universal capture
 service. Future authorized desktop or proxy producers can enter this same
 surface only after their own adapter and redaction contracts exist.
 
+A question round is a durable, raw-value-free answer set bound to the archive
+SHA-256 and caller order. A selected receipt is bound to both the archive and
+round identities. `ask all verify` and `ask receipt verify` validate those
+documents without reopening the source archive; an outcome such as `changed`,
+`same`, or `unknown` remains separate from its `evidence_state`.
+
 ## Read-only trace archive review
 
 The local review page can expose the archive as a separate reflection route:
@@ -315,6 +329,17 @@ go run ./cmd/ariadne experiment serve \
   --trace-archive .ariadne/trace-archive.json \
   <archive-root>
 ```
+
+To render a saved question round without reopening the source archive, use:
+
+```console
+go run ./cmd/ariadne experiment serve \
+  --trace-round .ariadne/trace-round.json \
+  <archive-root>
+```
+
+Supplying both `--trace-archive` and `--trace-round` makes the route verify
+that the live archive and saved round identities agree before rendering.
 
 Open `/trace-archive` from the loopback page. The route re-verifies one archive
 and answers all three fixed questions from that same in-memory document. It

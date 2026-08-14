@@ -218,6 +218,23 @@ func TestHandlerWithReviewAndExportConfiguresExport(t *testing.T) {
 	}
 }
 
+func TestHandlerWithTraceArchiveRoundAcceptsAllOptionalSources(t *testing.T) {
+	h := HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceArchiveRound(
+		"archive-root",
+		"history.json",
+		"reflection.json",
+		"export.json",
+		"acceptance.json",
+		"first-round.json",
+		"second-round.json",
+		"trace-archive.json",
+		"trace-round.json",
+	)
+	if h == nil {
+		t.Fatal("HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceArchiveRound() returned nil")
+	}
+}
+
 func TestHandlerRendersTraceArchiveReflection(t *testing.T) {
 	archive, summary := validUITraceArchive(t)
 	digest := summary.ArchiveSHA256
@@ -272,6 +289,141 @@ func TestHandlerRendersTraceArchiveReflection(t *testing.T) {
 	h.ServeHTTP(postRecorder, httptest.NewRequest(http.MethodPost, "/trace-archive", nil))
 	if postRecorder.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("POST /trace-archive status = %d, body=%q", postRecorder.Code, postRecorder.Body.String())
+	}
+}
+
+func TestHandlerRendersSavedTraceQuestionRound(t *testing.T) {
+	archive, archiveSummary := validUITraceArchive(t)
+	round, err := trace.AnswerArchiveQuestionRound(archive, archiveSummary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roundSHA256, err := trace.ArchiveQuestionRoundSHA256(round)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roundSummary := trace.ArchiveQuestionRoundVerificationSummary{
+		SchemaVersion: round.SchemaVersion,
+		ArchiveSHA256: round.ArchiveSHA256,
+		Questions:     len(round.Answers),
+		RoundSHA256:   roundSHA256,
+	}
+	h := newHandler(handler{
+		root:           "archive-root",
+		index:          func(string) ([]bundle.ArchiveEntry, error) { return nil, nil },
+		traceRoundPath: "trace-round.json",
+		traceRoundRead: func(path string) (trace.ArchiveQuestionRound, trace.ArchiveQuestionRoundVerificationSummary, error) {
+			if path != "trace-round.json" {
+				t.Fatalf("ReadArchiveQuestionRound() path = %q", path)
+			}
+			return round, roundSummary, nil
+		},
+	})
+
+	indexRecorder := httptest.NewRecorder()
+	h.ServeHTTP(indexRecorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	if indexRecorder.Code != http.StatusOK || !strings.Contains(indexRecorder.Body.String(), "saved question round") {
+		t.Fatalf("index status = %d, body=%q", indexRecorder.Code, indexRecorder.Body.String())
+	}
+
+	recorder := httptest.NewRecorder()
+	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/trace-archive", nil))
+	body := recorder.Body.String()
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("saved trace archive status = %d, body=%q", recorder.Code, body)
+	}
+	for _, want := range []string{"saved question round", roundSummary.ArchiveSHA256, roundSummary.RoundSHA256, "re-verified without reopening the source archive"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("saved trace archive body missing %q: %s", want, body)
+		}
+	}
+	if strings.Contains(body, "trace-round.json") {
+		t.Fatal("saved trace archive page disclosed a local input path")
+	}
+}
+
+func TestHandlerRejectsTraceQuestionRoundIdentityDrift(t *testing.T) {
+	archive, archiveSummary := validUITraceArchive(t)
+	round, err := trace.AnswerArchiveQuestionRound(archive, archiveSummary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	round.Answers[0].Reason = "changed after archive review"
+	roundSHA256, err := trace.ArchiveQuestionRoundSHA256(round)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := newHandler(handler{
+		root:             "archive-root",
+		index:            func(string) ([]bundle.ArchiveEntry, error) { return nil, nil },
+		traceArchivePath: "trace-archive.json",
+		traceArchiveRead: func(string) (trace.Archive, trace.ArchiveVerificationSummary, error) {
+			return archive, archiveSummary, nil
+		},
+		traceRoundPath: "trace-round.json",
+		traceRoundRead: func(string) (trace.ArchiveQuestionRound, trace.ArchiveQuestionRoundVerificationSummary, error) {
+			return round, trace.ArchiveQuestionRoundVerificationSummary{
+				SchemaVersion: round.SchemaVersion,
+				ArchiveSHA256: round.ArchiveSHA256,
+				Questions:     len(round.Answers),
+				RoundSHA256:   roundSHA256,
+			}, nil
+		},
+	})
+	recorder := httptest.NewRecorder()
+	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/trace-archive", nil))
+	if recorder.Code != http.StatusUnprocessableEntity || recorder.Body.String() != "trace archive unavailable\n" {
+		t.Fatalf("status = %d, body=%q", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestHandlerCombinesLiveAndSavedTraceQuestionRound(t *testing.T) {
+	archive, archiveSummary := validUITraceArchive(t)
+	round, err := trace.AnswerArchiveQuestionRound(archive, archiveSummary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roundSHA256, err := trace.ArchiveQuestionRoundSHA256(round)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roundSummary := trace.ArchiveQuestionRoundVerificationSummary{
+		SchemaVersion: round.SchemaVersion,
+		ArchiveSHA256: round.ArchiveSHA256,
+		Questions:     len(round.Answers),
+		RoundSHA256:   roundSHA256,
+	}
+	h := newHandler(handler{
+		root:             "archive-root",
+		index:            func(string) ([]bundle.ArchiveEntry, error) { return nil, nil },
+		traceArchivePath: "trace-archive.json",
+		traceArchiveRead: func(string) (trace.Archive, trace.ArchiveVerificationSummary, error) {
+			return archive, archiveSummary, nil
+		},
+		traceRoundPath: "trace-round.json",
+		traceRoundRead: func(string) (trace.ArchiveQuestionRound, trace.ArchiveQuestionRoundVerificationSummary, error) {
+			return round, roundSummary, nil
+		},
+	})
+	recorder := httptest.NewRecorder()
+	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/trace-archive", nil))
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), roundSummary.RoundSHA256) {
+		t.Fatalf("status = %d, body=%q", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestHandlerHidesUnavailableTraceQuestionRoundReaders(t *testing.T) {
+	for name, h := range map[string]handler{
+		"archive": {traceArchivePath: "trace-archive.json"},
+		"round":   {traceRoundPath: "trace-round.json"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			newHandler(h).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/trace-archive", nil))
+			if recorder.Code != http.StatusUnprocessableEntity || recorder.Body.String() != "trace archive unavailable\n" {
+				t.Fatalf("status = %d, body=%q", recorder.Code, recorder.Body.String())
+			}
+		})
 	}
 }
 

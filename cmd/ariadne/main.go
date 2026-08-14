@@ -35,6 +35,11 @@ const usage = `usage:
 	ariadne trace archive questions [--json]
 	ariadne trace archive ask [--json] <archive.json> <question-id>
 	ariadne trace archive ask all [--json] <archive.json>
+	ariadne trace archive ask all save [--json] <archive.json> <round.json>
+	ariadne trace archive ask all verify [--json] [--expect-sha256 <digest>] <round.json>
+	ariadne trace archive ask receipt [--json] <round.json> <question-id>
+	ariadne trace archive ask receipt save [--json] <round.json> <question-id> <receipt.json>
+	ariadne trace archive ask receipt verify [--json] [--expect-sha256 <digest>] <receipt.json>
 	ariadne browser trace [--json] <redacted-browser-audit.json> <trace.json>
 	ariadne browser capture [--json] --procedure <procedure.json> --driver <executable> [--driver-arg <arg>] <trace.json>
 	ariadne browser fixture replicate [--json] --procedure <procedure.json> --driver <executable> [--driver-arg <arg>] --pairs <n> --output <directory>
@@ -73,7 +78,7 @@ const usage = `usage:
   ariadne experiment ask-archive verify [--json] [--expect-sha256 <digest>] <report.json>
   ariadne experiment questions [--json]
   ariadne experiment list [--json] <archive-root>
-  ariadne experiment serve [--addr <address>] [--history <history.json>] [--reflection <report.json>] [--export <export.json>] [--acceptance <acceptance.json>] [--round-first <round.json> --round-second <round.json>] [--trace-archive <archive.json>] <archive-root>
+  ariadne experiment serve [--addr <address>] [--history <history.json>] [--reflection <report.json>] [--export <export.json>] [--acceptance <acceptance.json>] [--round-first <round.json> --round-second <round.json>] [--trace-archive <archive.json>] [--trace-round <round.json>] <archive-root>
 `
 
 const adbCheckTimeout = 10 * time.Second
@@ -110,7 +115,22 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 		if args[2] == "ask" {
 			if len(args) >= 4 && args[3] == "all" {
+				if len(args) >= 5 && args[4] == "save" {
+					return runTraceArchiveAskAllSave(args[5:], stdout, stderr, trace.SaveArchiveQuestionRound)
+				}
+				if len(args) >= 5 && args[4] == "verify" {
+					return runTraceArchiveAskAllVerify(args[5:], stdout, stderr, trace.VerifyArchiveQuestionRound)
+				}
 				return runTraceArchiveAskAll(args[4:], stdout, stderr, trace.AskAllArchive)
+			}
+			if len(args) >= 4 && args[3] == "receipt" {
+				if len(args) >= 5 && args[4] == "save" {
+					return runTraceArchiveAskReceiptSave(args[5:], stdout, stderr, trace.SaveArchiveQuestionReceipt)
+				}
+				if len(args) >= 5 && args[4] == "verify" {
+					return runTraceArchiveAskReceiptVerify(args[5:], stdout, stderr, trace.VerifyArchiveQuestionReceipt)
+				}
+				return runTraceArchiveAskReceipt(args[4:], stdout, stderr, trace.AskArchiveQuestionReceipt)
 			}
 			return runTraceArchiveAsk(args[3:], stdout, stderr, trace.AskArchive)
 		}
@@ -2764,6 +2784,7 @@ func runServe(
 	roundFirstPath := flags.String("round-first", "", "")
 	roundSecondPath := flags.String("round-second", "", "")
 	traceArchivePath := flags.String("trace-archive", "", "")
+	traceRoundPath := flags.String("trace-round", "", "")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
 		_, _ = io.WriteString(stderr, usage)
 		return 2
@@ -2784,7 +2805,7 @@ func runServe(
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment serve: write output: %v\n", err)
 		return 1
 	}
-	reviewHandler := ui.HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceArchive(flags.Arg(0), *historyPath, *reflectionPath, *exportPath, *acceptancePath, *roundFirstPath, *roundSecondPath, *traceArchivePath)
+	reviewHandler := ui.HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceArchiveRound(flags.Arg(0), *historyPath, *reflectionPath, *exportPath, *acceptancePath, *roundFirstPath, *roundSecondPath, *traceArchivePath, *traceRoundPath)
 	if err := serve(*address, reviewHandler); err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment serve: %v\n", err)
 		return 1
