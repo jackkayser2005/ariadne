@@ -206,6 +206,31 @@ adapter, chronology model, statistical model, or causal proof.
 Repeat `--reset-confirmed <pair-index>` once for each pair whose reset was
 confirmed; omitted pair indexes remain unconfirmed and are classified safely.
 
+The ledger has a fixed question catalog for repeatable review. Ask it directly,
+or save a raw-value-free question round and one selected receipt for offline
+rechecking:
+
+```console
+go run ./cmd/ariadne trace replication questions --json
+go run ./cmd/ariadne trace replication ask all --json .ariadne/trace-replication.json
+go run ./cmd/ariadne trace replication ask all save --json \
+  .ariadne/trace-replication.json .ariadne/trace-replication-round.json
+go run ./cmd/ariadne trace replication ask all verify --json \
+  --expect-sha256 <round-sha256> .ariadne/trace-replication-round.json
+go run ./cmd/ariadne trace replication ask receipt save --json \
+  .ariadne/trace-replication-round.json replication-outcome \
+  .ariadne/trace-replication-receipt.json
+go run ./cmd/ariadne trace replication ask receipt verify --json \
+  --expect-sha256 <receipt-sha256> .ariadne/trace-replication-receipt.json
+```
+
+The fixed questions ask for the aggregate outcome, reset/comparison support,
+and agreement across both execution orders. Saved answers bind to the ledger
+identity; receipts bind to both ledger and question-round identities. Results
+such as `replicated-change`, `mixed-inconsistent`, or `unknown` remain separate
+from `evidence_state`. The loopback `/trace-replication` page shows the same
+three questions from the verified ledger without accepting free-form input.
+
 Retain caller-ordered standalone trace snapshots from any reviewed adapter in
 one portable archive, then ask the fixed source-neutral questions without
 reopening source values:
@@ -452,9 +477,10 @@ order and does not infer chronology; each changed fixed-question ID links back
 to the same bounded history-question route for a repeatable re-check only when
 the supplied history identity matches one of the compared rounds.
 When `--trace-replication` is supplied, `/trace-replication` shows the verified
-aggregate, both explicit order counts, reset assertions, pair identities, and
-safe difference/unknown counts. It never renders configured paths, payloads,
-URLs, or captured values, and remains GET-only.
+aggregate, the fixed outcome/support/consistency questions, both explicit order
+counts, reset assertions, pair identities, and safe difference/unknown counts.
+It never renders configured paths, payloads, URLs, or captured values, and
+remains GET-only.
 
 Stable-ID Android sessions also record a SHA-256 identity for the successful
 UI hierarchy used to resolve the manifest-declared control. The raw hierarchy

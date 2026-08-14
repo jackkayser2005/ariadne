@@ -311,6 +311,29 @@ Repeat `--reset-confirmed <pair-index>` once for each confirmed pair. An
 omitted pair index remains unconfirmed, so mixed reset support can be retained
 without overstating the whole ledger.
 
+The ledger also has a fixed question surface for looking back without reopening
+source-specific inputs:
+
+```console
+go run ./cmd/ariadne trace replication questions --json
+go run ./cmd/ariadne trace replication ask all --json .ariadne/trace-replication.json
+go run ./cmd/ariadne trace replication ask all save --json \
+  .ariadne/trace-replication.json .ariadne/trace-replication-round.json
+go run ./cmd/ariadne trace replication ask all verify --json \
+  --expect-sha256 <round-sha256> .ariadne/trace-replication-round.json
+go run ./cmd/ariadne trace replication ask receipt save --json \
+  .ariadne/trace-replication-round.json replication-outcome \
+  .ariadne/trace-replication-receipt.json
+go run ./cmd/ariadne trace replication ask receipt verify --json \
+  --expect-sha256 <receipt-sha256> .ariadne/trace-replication-receipt.json
+```
+
+The three fixed questions cover aggregate outcome, reset/comparison support,
+and consistency across both explicit orders. A question round is bound to the
+ledger SHA-256; a selected receipt is bound to both the ledger and round
+identities. Their result and `evidence_state` remain separate, and offline
+verification does not reopen source paths or captured values.
+
 This ledger is intentionally not a runner, capture adapter, chronology model,
 database, statistical model, or causal proof. Source-specific producers remain
 responsible for authorization, isolation, reset execution, redaction, and
@@ -410,10 +433,11 @@ go run ./cmd/ariadne experiment serve \
   <archive-root>
 ```
 
-Open `/trace-replication` to review the aggregate outcome, separate evidence
-state, both explicit order counts, reset assertions, pair identities, and
-safe difference/unknown counts. The route is GET-only and does not render the
-configured ledger path, source paths, URLs, payloads, or captured values.
+Open `/trace-replication` to review the aggregate outcome, the three fixed
+questions, separate evidence state, both explicit order counts, reset
+assertions, pair identities, and safe difference/unknown counts. The route is
+GET-only and does not render the configured ledger path, source paths, URLs,
+payloads, or captured values.
 Malformed or tampered input produces only `trace replication unavailable`.
 
 ## Bigger-picture path

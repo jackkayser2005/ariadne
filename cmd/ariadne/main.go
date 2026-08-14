@@ -32,6 +32,14 @@ const usage = `usage:
 	ariadne trace session pair compare [--json] <baseline-session.json> <baseline-trace.json> <treatment-session.json> <treatment-trace.json>
 	ariadne trace replication save [--json] [--reset-confirmed <pair-index>] <ledger.json> <baseline-trace.json> <treatment-trace.json> <baseline-session.json> <treatment-session.json> ...
 	ariadne trace replication verify [--json] [--expect-sha256 <digest>] <ledger.json>
+	ariadne trace replication questions [--json]
+	ariadne trace replication ask [--json] <ledger.json> <question-id>
+	ariadne trace replication ask all [--json] <ledger.json>
+	ariadne trace replication ask all save [--json] <ledger.json> <round.json>
+	ariadne trace replication ask all verify [--json] [--expect-sha256 <digest>] <round.json>
+	ariadne trace replication ask receipt [--json] <round.json> <question-id>
+	ariadne trace replication ask receipt save [--json] <round.json> <question-id> <receipt.json>
+	ariadne trace replication ask receipt verify [--json] [--expect-sha256 <digest>] <receipt.json>
 	ariadne trace archive create [--json] --trace <trace.json> --session <session.json> ... <archive.json>
 	ariadne trace archive verify [--json] [--expect-sha256 <digest>] <archive.json>
 	ariadne trace archive questions [--json]
@@ -162,6 +170,30 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 		if args[2] == "verify" {
 			return runTraceReplicationVerify(args[3:], stdout, stderr, trace.VerifyReplicationLedger)
+		}
+		if args[2] == "questions" {
+			return runTraceReplicationQuestions(args[3:], stdout, stderr, trace.ReplicationQuestions)
+		}
+		if args[2] == "ask" {
+			if len(args) >= 4 && args[3] == "all" {
+				if len(args) >= 5 && args[4] == "save" {
+					return runTraceReplicationAskAllSave(args[5:], stdout, stderr, trace.SaveReplicationQuestionRound)
+				}
+				if len(args) >= 5 && args[4] == "verify" {
+					return runTraceReplicationAskAllVerify(args[5:], stdout, stderr, trace.VerifyReplicationQuestionRound)
+				}
+				return runTraceReplicationAskAll(args[4:], stdout, stderr, trace.AskAllReplicationQuestions)
+			}
+			if len(args) >= 4 && args[3] == "receipt" {
+				if len(args) >= 5 && args[4] == "save" {
+					return runTraceReplicationAskReceiptSave(args[5:], stdout, stderr, trace.SaveReplicationQuestionReceipt)
+				}
+				if len(args) >= 5 && args[4] == "verify" {
+					return runTraceReplicationAskReceiptVerify(args[5:], stdout, stderr, trace.VerifyReplicationQuestionReceipt)
+				}
+				return runTraceReplicationAskReceipt(args[4:], stdout, stderr, trace.AskReplicationQuestionReceipt)
+			}
+			return runTraceReplicationAsk(args[3:], stdout, stderr, trace.AskReplicationQuestion)
 		}
 	}
 	if len(args) >= 2 && args[0] == "browser" && args[1] == "trace" {

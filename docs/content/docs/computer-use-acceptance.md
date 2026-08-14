@@ -113,12 +113,21 @@ not invent natural-language questions or infer chronology from the ledger.
 2. Check the aggregate outcome and its separate `evidence state`, both explicit
    order counts, reset-confirmed count, order-balance status, and ledger
    SHA-256.
-3. Inspect the safe pair cards for caller-recorded order, reset assertion,
+3. Read the three fixed question cards: `replication-outcome`,
+   `replication-support`, and `replication-consistency`. Retain the displayed
+   result and its separate evidence state; do not treat `unknown` as no change.
+4. Inspect the safe pair cards for caller-recorded order, reset assertion,
    pair SHA-256, completeness, differences, and unknowns. Treat `unknown` as
    missing support, not as no change.
-4. Do not retain the configured ledger path or infer that the recorded reset
+5. Do not retain the configured ledger path or infer that the recorded reset
    proves a source reset. A failed verification should show only
    `trace replication unavailable`.
+
+The same three answers can be retained before opening the page with
+`trace replication ask all save`, and a selected answer can be retained with
+`trace replication ask receipt save`. Verify the round and receipt SHA-256
+identities offline before the rendered check; those artifacts are identities
+and bounded answers, not proof that a UI driver performed the selection.
 
 ## Recorded rendered-flow check
 

@@ -121,6 +121,7 @@ type pageData struct {
 	TraceArchiveAnswers                []trace.ArchiveAnswer
 	TraceReplicationConfigured         bool
 	TraceReplicationSummary            trace.ReplicationLedgerVerificationSummary
+	TraceReplicationAnswers            []trace.ReplicationAnswer
 	TraceReplicationPairs              []traceReplicationPairData
 }
 
@@ -570,6 +571,11 @@ func (h handler) handleTraceReplication(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "trace replication unavailable", http.StatusUnprocessableEntity)
 		return
 	}
+	answers, err := trace.AnswerAllReplicationQuestionsFromSummary(summary)
+	if err != nil {
+		http.Error(w, "trace replication unavailable", http.StatusUnprocessableEntity)
+		return
+	}
 	pairs := make([]traceReplicationPairData, 0, len(ledger.Pairs))
 	for _, pair := range ledger.Pairs {
 		pairs = append(pairs, traceReplicationPairData{
@@ -589,6 +595,7 @@ func (h handler) handleTraceReplication(w http.ResponseWriter, r *http.Request) 
 		Title:                      "Trace replication review — Ariadne",
 		TraceReplicationConfigured: true,
 		TraceReplicationSummary:    summary,
+		TraceReplicationAnswers:    answers,
 		TraceReplicationPairs:      pairs,
 	})
 }
@@ -1263,6 +1270,22 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
         <dt>ledger SHA-256</dt><dd>{{.TraceReplicationSummary.LedgerSHA256}}</dd>
       </dl>
       <p class="context">{{.TraceReplicationSummary.Reason}} Reset policy: <code>{{.TraceReplicationSummary.ResetPolicy}}</code>. The recorded reset is a caller assertion, not proof that a source was reset.</p>
+    </section>
+    <section class="panel" aria-label="Replicated trace questions">
+      <div class="section-head"><h2>Fixed questions</h2><span class="context">re-verified now</span></div>
+      <div class="question-list">
+      {{range .TraceReplicationAnswers}}
+        <article class="panel question-card" id="trace-replication-question-{{.QuestionID}}">
+          <div class="section-head"><h3>{{.Question}}</h3><span class="status status-{{.EvidenceState}}">{{.Result}}</span></div>
+          <dl>
+            <dt>outcome</dt><dd>{{.Outcome}}</dd>
+            <dt>evidence state</dt><dd>{{.EvidenceState}}</dd>
+          </dl>
+          {{with .Reason}}<p class="context">{{.}}</p>{{end}}
+        </article>
+      {{end}}
+      </div>
+      <p class="context">Question results remain separate from evidence state. The board is read-only and exposes no source paths or captured values.</p>
     </section>
     <section class="panel" aria-label="Replicated trace pairs">
       <div class="section-head"><h2>Matched pairs</h2><span class="context">caller-recorded order</span></div>

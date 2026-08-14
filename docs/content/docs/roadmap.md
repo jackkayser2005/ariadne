@@ -116,8 +116,11 @@ source-boundary layers, and a portable trace reflection layer:
     trace identities, recomputes each comparison, requires equal nonzero order
     counts, and classifies the aggregate as `replicated-change`,
     `no-change-observed`, `mixed-inconsistent`, or `unknown` separately from
-    `evidence_state`. The loopback review page exposes the safe aggregate and
-    pair identities through `/trace-replication`. This is an aggregation and
+    `evidence_state`. Its fixed outcome, support, and order-consistency
+    questions can be answered directly or retained as an independently
+    verifiable question round and selected receipt. The loopback review page
+    exposes the same fixed questions alongside the safe aggregate and pair
+    identities through `/trace-replication`. This is an aggregation and
     re-verification boundary, not a runner, capture adapter, chronology model,
     or causal proof.
 
@@ -179,7 +182,10 @@ producer is still a separate future slice with its own authorized procedure,
 isolated target, and redaction tests; the local fixture is not that capability.
 The trace archive is now the portable reflection surface for those reviewed
 snapshots, but it is not a chronology model or universal sniffer. The trace
-contract remains the handoff boundary for any future source producer.
+contract remains the handoff boundary for any future source producer. The
+replication question round is now the durable reflection surface for asking
+what the repeated comparison established without turning the ledger into a
+capture store.
 
 ## Acceptance gates
 
@@ -196,7 +202,9 @@ contract remains the handoff boundary for any future source producer.
   receipts verify independently without reopening the source archive.
 - Source-neutral replication ledgers verify embedded matched sessions and
   comparisons, retain both explicit pair orders and reset assertions, and
-  require balanced orders before reporting a non-`unknown` aggregate.
+  require balanced orders before reporting a non-`unknown` aggregate. Their
+  fixed question rounds and selected receipts verify independently while
+  preserving outcome and evidence-state semantics.
 - UI changes pass deterministic handler tests; use computer-use only when a
   concrete rendered-flow check is needed and the host supports it.
 - No review page, answer, export, or log exposes captured values, secrets, or
