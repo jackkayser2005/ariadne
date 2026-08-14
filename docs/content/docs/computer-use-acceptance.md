@@ -59,6 +59,12 @@ source-neutral route:
 go run ./cmd/ariadne experiment serve --trace-replication <trace-replication.json> <archive-root>
 ```
 
+To review a verified cross-source case package, use the same read-only server:
+
+```console
+go run ./cmd/ariadne experiment serve --trace-case <case.json> <archive-root>
+```
+
 These options add links to the separate trace review routes; they do not
 change the bundle question route or merge trace identities into the evidence
 archive. When both archive flags are supplied, `/trace-archive` fails closed
@@ -128,6 +134,26 @@ The same three answers can be retained before opening the page with
 `trace replication ask receipt save`. Verify the round and receipt SHA-256
 identities offline before the rendered check; those artifacts are identities
 and bounded answers, not proof that a UI driver performed the selection.
+
+### Optional cross-source case pass
+
+1. From the review index, open `Open trace case review`.
+2. Check `Verified case identity`, the `caller` order basis, archive and
+   replicated-ledger counts, unknown-entry count, and the case SHA-256.
+3. Check the safe reviewed source/adapter summaries and the caller-ordered
+   child entries. Do not describe their positions as earlier or later.
+4. Read the three fixed question IDs: `case-sources`, `case-outcomes`, and
+   `case-support`. For each, retain the displayed outcome and its separate
+   evidence state. Treat `unknown` as missing support, not as no change or
+   cross-source causality.
+5. Inspect child artifact and matching question-round identities only. Do not
+   retain the configured case path, target identifiers, process arguments,
+   URLs, or captured values. A failed verification should show only
+   `trace case unavailable`.
+
+This pass checks the rendered, read-only reflection surface only. It does not
+claim that a computer-use driver selected an answer, that caller order is
+chronology, or that retained results establish causal behavior across sources.
 
 The isolated `browser-target-v1` producer is not part of this rendered
 acceptance pass. If it is used separately, keep the target procedure and

@@ -99,7 +99,7 @@ const usage = `usage:
   ariadne experiment ask-archive verify [--json] [--expect-sha256 <digest>] <report.json>
   ariadne experiment questions [--json]
   ariadne experiment list [--json] <archive-root>
-	ariadne experiment serve [--addr <address>] [--history <history.json>] [--reflection <report.json>] [--export <export.json>] [--acceptance <acceptance.json>] [--round-first <round.json> --round-second <round.json>] [--trace-archive <archive.json>] [--trace-round <round.json>] [--trace-replication <ledger.json>] <archive-root>
+	ariadne experiment serve [--addr <address>] [--history <history.json>] [--reflection <report.json>] [--export <export.json>] [--acceptance <acceptance.json>] [--round-first <round.json> --round-second <round.json>] [--trace-archive <archive.json>] [--trace-round <round.json>] [--trace-replication <ledger.json>] [--trace-case <case.json>] <archive-root>
 `
 
 const adbCheckTimeout = 10 * time.Second
@@ -2921,6 +2921,7 @@ func runServe(
 	traceArchivePath := flags.String("trace-archive", "", "")
 	traceRoundPath := flags.String("trace-round", "", "")
 	traceReplicationPath := flags.String("trace-replication", "", "")
+	traceCasePath := flags.String("trace-case", "", "")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
 		_, _ = io.WriteString(stderr, usage)
 		return 2
@@ -2941,7 +2942,7 @@ func runServe(
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment serve: write output: %v\n", err)
 		return 1
 	}
-	reviewHandler := ui.HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceReplication(flags.Arg(0), *historyPath, *reflectionPath, *exportPath, *acceptancePath, *roundFirstPath, *roundSecondPath, *traceArchivePath, *traceRoundPath, *traceReplicationPath)
+	reviewHandler := ui.HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCase(flags.Arg(0), *historyPath, *reflectionPath, *exportPath, *acceptancePath, *roundFirstPath, *roundSecondPath, *traceArchivePath, *traceRoundPath, *traceReplicationPath, *traceCasePath)
 	if err := serve(*address, reviewHandler); err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment serve: %v\n", err)
 		return 1

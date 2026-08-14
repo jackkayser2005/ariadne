@@ -576,6 +576,31 @@ process arguments, or captured values. It is a durable reflection/index
 boundary, not a database, capture runner, universal sniffer, cross-source
 causal attribution engine, or natural-language question interface.
 
+### Read-only trace-case review
+
+Expose the verified package through the loopback review page when a
+computer-use driver needs to inspect the joined reflection:
+
+```console
+go run ./cmd/ariadne experiment serve \
+  --trace-case .ariadne/case.json \
+  <archive-root>
+```
+
+Open `/trace-case` to see the case SHA-256, caller order basis, archive and
+replication counts, safe reviewed source/adapter summaries, each child
+artifact and question-round identity, and the three fixed case answers. Child
+entries remain in caller order; the page does not describe entries as earlier
+or later. Replicated child outcomes are rendered separately from their
+`evidence_state`, so `unknown` remains missing support rather than a no-change
+claim. The route re-verifies the full embedded package and recomputes answers
+before rendering, accepts only `GET`, and returns only
+`trace case unavailable` for malformed, tampered, or identity-inconsistent
+input. It never renders the configured path, source-specific arguments,
+target identifiers, URLs, or captured values. This is a read-only orientation
+surface, not proof that a computer-use driver selected an answer or that
+cross-source behavior is causal.
+
 ## Bigger-picture path
 
 The intended flow is:
@@ -600,10 +625,10 @@ The intended flow is:
 9. The loopback proxy producer can add one explicitly authorized HTTPS
    authority through an opaque, non-MITM CONNECT boundary without retaining
    hostnames, URLs, or tunneled values.
-10. The case package can join those verified archives and replicated ledgers
-    with their fixed question rounds, giving a computer-use driver one stable
-    raw-value-free object to inspect and ask about without reopening source
-    paths or inferring chronology.
+10. The case package and its read-only `/trace-case` route can join those
+    verified archives and replicated ledgers with their fixed question rounds,
+    giving a computer-use driver one stable raw-value-free object to inspect
+    and ask about without reopening source paths or inferring chronology.
 
 The Experiment 001 Android producer remains the authoritative evidence-backed
 edge, and the replicated runner is the evidence gate. The browser audit and

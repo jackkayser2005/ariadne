@@ -37,6 +37,8 @@ type handler struct {
 	traceRoundRead       func(string) (trace.ArchiveQuestionRound, trace.ArchiveQuestionRoundVerificationSummary, error)
 	traceReplicationPath string
 	traceReplicationRead func(string) (trace.ReplicationLedger, trace.ReplicationLedgerVerificationSummary, error)
+	traceCasePath        string
+	traceCaseRead        func(string) (trace.CasePackage, trace.CaseVerificationSummary, error)
 }
 
 type archiveQuestionResult struct {
@@ -123,6 +125,9 @@ type pageData struct {
 	TraceReplicationSummary            trace.ReplicationLedgerVerificationSummary
 	TraceReplicationAnswers            []trace.ReplicationAnswer
 	TraceReplicationPairs              []traceReplicationPairData
+	TraceCaseConfigured                bool
+	TraceCaseSummary                   trace.CaseVerificationSummary
+	TraceCaseAnswers                   []trace.CaseAnswer
 }
 
 // Handler returns a read-only HTTP handler for one explicitly supplied archive root.
@@ -181,6 +186,13 @@ func HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceArchiveRoun
 // returns a read-only review handler with an optional source-neutral
 // replicated trace ledger.
 func HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceReplication(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, traceArchivePath, traceRoundPath, traceReplicationPath string) http.Handler {
+	return HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCase(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, traceArchivePath, traceRoundPath, traceReplicationPath, "")
+}
+
+// HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCase
+// returns a read-only review handler with an optional portable cross-source
+// trace case.
+func HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCase(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, traceArchivePath, traceRoundPath, traceReplicationPath, traceCasePath string) http.Handler {
 	h := archiveHandler(archiveRoot)
 	if historyPath != "" {
 		h.history = func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error) {
@@ -219,6 +231,10 @@ func HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceReplication
 		h.traceReplicationPath = traceReplicationPath
 		h.traceReplicationRead = trace.ReadReplicationLedger
 	}
+	if traceCasePath != "" {
+		h.traceCasePath = traceCasePath
+		h.traceCaseRead = trace.ReadCase
+	}
 	return newHandler(h)
 }
 
@@ -244,6 +260,7 @@ func newHandler(h handler) http.Handler {
 	mux.HandleFunc("/export-finding", h.handleExportFinding)
 	mux.HandleFunc("/trace-archive", h.handleTraceArchive)
 	mux.HandleFunc("/trace-replication", h.handleTraceReplication)
+	mux.HandleFunc("/trace-case", h.handleTraceCase)
 	mux.HandleFunc("/favicon.ico", handleFavicon)
 	return mux
 }
@@ -453,6 +470,7 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		TraceArchiveConfigured:             h.traceArchiveConfigured(),
 		TraceArchiveRoundSaved:             h.traceRoundPath != "",
 		TraceReplicationConfigured:         h.traceReplicationConfigured(),
+		TraceCaseConfigured:                h.traceCaseConfigured(),
 	})
 }
 
@@ -462,6 +480,10 @@ func (h handler) traceArchiveConfigured() bool {
 
 func (h handler) traceReplicationConfigured() bool {
 	return h.traceReplicationPath != ""
+}
+
+func (h handler) traceCaseConfigured() bool {
+	return h.traceCasePath != ""
 }
 
 func (h handler) readTraceArchive() (trace.ArchiveVerificationSummary, trace.ArchiveQuestionRoundVerificationSummary, []trace.ArchiveAnswer, error) {
@@ -597,6 +619,37 @@ func (h handler) handleTraceReplication(w http.ResponseWriter, r *http.Request) 
 		TraceReplicationSummary:    summary,
 		TraceReplicationAnswers:    answers,
 		TraceReplicationPairs:      pairs,
+	})
+}
+
+func (h handler) handleTraceCase(w http.ResponseWriter, r *http.Request) {
+	if !getOnly(w, r) {
+		return
+	}
+	if r.URL.Path != "/trace-case" || !h.traceCaseConfigured() {
+		http.NotFound(w, r)
+		return
+	}
+	if h.traceCaseRead == nil {
+		http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	casePackage, summary, err := h.traceCaseRead(h.traceCasePath)
+	if err != nil {
+		http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	answers, err := trace.AnswerAllCaseQuestions(casePackage, summary)
+	if err != nil {
+		http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	render(w, pageData{
+		View:                "trace-case",
+		Title:               "Trace case review — Ariadne",
+		TraceCaseConfigured: true,
+		TraceCaseSummary:    summary,
+		TraceCaseAnswers:    answers,
 	})
 }
 
@@ -971,6 +1024,13 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       <a class="button" href="/trace-replication">Open replicated trace review <span aria-hidden="true">&rarr;</span></a>
     </section>
     {{end}}
+    {{if .TraceCaseConfigured}}
+    <section class="panel" id="trace-case-orientation" aria-label="Portable trace case">
+      <div class="section-head"><h2>Portable trace case</h2><span class="context">verified, read only</span></div>
+      <p class="context">Review caller-ordered archives and replicated ledgers through three fixed cross-source questions. Outcome and evidence state remain separate; caller order is not chronology and retained results do not establish causality.</p>
+      <a class="button" href="/trace-case">Open trace case review <span aria-hidden="true">&rarr;</span></a>
+    </section>
+    {{end}}
     {{if and .ReflectionHistoryRequested (or (not .SelectedQuestion.ID) (eq .SelectedQuestion.ID .ReflectionHistory.QuestionID))}}
     <section class="panel">
       <div class="section-head"><h2>Saved reflection history</h2><span class="context">verified ledger</span></div>
@@ -1235,7 +1295,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
           <div class="section-head"><h3><code>{{.QuestionID}}</code></h3><span class="status status-{{.Result}}">{{.Result}}</span></div>
           <p class="question">{{.Question}}</p>
           <dl>
-            <dt>outcome</dt><dd><span class="status status-{{.Result}}">{{.Result}}</span></dd>
+            <dt>result</dt><dd><span class="status status-{{.Result}}">{{.Result}}</span></dd>
             <dt>evidence state</dt><dd><span class="status status-{{.EvidenceState}}">{{.EvidenceState}}</span></dd>
             <dt>archive SHA-256</dt><dd>{{.ArchiveSHA256}}</dd>
             <dt>entries</dt><dd>{{.Entries}}</dd>
@@ -1307,6 +1367,78 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       {{end}}
       </div>
       <p class="context">Each pair comparison is recomputed from the embedded normalized traces during verification. No source paths, payloads, URLs, or captured values are rendered.</p>
+    </section>
+
+  {{else if eq .View "trace-case"}}
+    <a class="back" href="/">&larr; Review archive</a>
+    <p class="eyebrow">portable cross-source case &middot; verified</p>
+    <h1>Trace case reflection</h1>
+    <p class="lede">Review verified trace archives and replicated ledgers in caller order through a fixed question catalog. This is a durable reflection surface, not a chronology model, universal capture service, or cross-source causal proof.</p>
+    <section class="panel" aria-label="Verified trace case identity">
+      <div class="section-head"><h2>Verified case identity</h2><span class="status">raw-value-free</span></div>
+      <dl>
+        <dt>order basis</dt><dd>{{.TraceCaseSummary.OrderBasis}}</dd>
+        <dt>entries</dt><dd>{{.TraceCaseSummary.Entries}}</dd>
+        <dt>archives</dt><dd>{{.TraceCaseSummary.Archives}}</dd>
+        <dt>replicated ledgers</dt><dd>{{.TraceCaseSummary.Replications}}</dd>
+        <dt>unknown entries</dt><dd>{{.TraceCaseSummary.UnknownEntries}}</dd>
+        <dt>case SHA-256</dt><dd>{{.TraceCaseSummary.CaseSHA256}}</dd>
+      </dl>
+      <h3>Reviewed source boundaries</h3>
+      <ul aria-label="Reviewed case sources">
+      {{range .TraceCaseSummary.Sources}}<li>{{.Source}} / {{.Adapter}}: {{.Entries}} entries</li>{{else}}<li>none</li>{{end}}
+      </ul>
+      <p class="context">The package preserves caller order only. It does not infer chronology, join source values, or attribute a result across source boundaries.</p>
+    </section>
+    <section class="panel" aria-label="Trace case questions">
+      <div class="section-head"><h2>Fixed case questions</h2><span class="context">re-verified now</span></div>
+      <div class="question-list">
+      {{range .TraceCaseAnswers}}
+        <article class="panel question-card" id="trace-case-question-{{.QuestionID}}">
+          <div class="section-head"><h3><code>{{.QuestionID}}</code></h3><span class="status status-{{.Result}}">{{.Result}}</span></div>
+          <p class="question">{{.Question}}</p>
+          <dl>
+            <dt>outcome</dt><dd><span class="status status-{{.Result}}">{{.Result}}</span></dd>
+            <dt>evidence state</dt><dd><span class="status status-{{.EvidenceState}}">{{.EvidenceState}}</span></dd>
+            <dt>entries</dt><dd>{{.Entries}}</dd>
+            <dt>archives</dt><dd>{{.Archives}}</dd>
+            <dt>replicated ledgers</dt><dd>{{.Replications}}</dd>
+            <dt>unknown entries</dt><dd>{{.UnknownEntries}}</dd>
+          </dl>
+          {{with .Reason}}<p class="context">{{.}}</p>{{end}}
+        </article>
+      {{end}}
+      </div>
+      <p class="context">The outcome answers the bounded question; evidence state qualifies the support available for that answer. Unknown is not treated as no change or as causal evidence.</p>
+    </section>
+    <section class="panel" aria-label="Trace case entries">
+      <div class="section-head"><h2>Verified case entries</h2><span class="context">caller order</span></div>
+      <div class="question-list">
+      {{range .TraceCaseSummary.EntrySummaries}}
+        <article class="panel" id="trace-case-entry-{{.Position}}">
+          <div class="section-head"><h3>entry {{.Position}} &middot; {{.Kind}}</h3><span class="status status-{{.EvidenceState}}">{{.EvidenceState}}</span></div>
+          <dl>
+            <dt>position</dt><dd>{{.Position}}</dd>
+            <dt>artifact SHA-256</dt><dd>{{.ArtifactSHA256}}</dd>
+            <dt>question round SHA-256</dt><dd>{{.QuestionRoundSHA256}}</dd>
+            <dt>evidence state</dt><dd><span class="status status-{{.EvidenceState}}">{{.EvidenceState}}</span></dd>
+            {{if eq .Kind "trace-archive"}}
+            <dt>complete</dt><dd>{{.Complete}}</dd>
+            <dt>partial</dt><dd>{{.Partial}}</dd>
+            {{else}}
+            <dt>pairs</dt><dd>{{.Pairs}}</dd>
+            <dt>unknown pairs</dt><dd>{{.UnknownPairs}}</dd>
+            <dt>outcome</dt><dd><span class="status status-{{.Outcome}}">{{.Outcome}}</span></dd>
+            {{end}}
+          </dl>
+          <h4>Reviewed source boundaries</h4>
+          <ul>
+          {{range .Sources}}<li>{{.Source}} / {{.Adapter}}: {{.Entries}} entries</li>{{else}}<li>none</li>{{end}}
+          </ul>
+        </article>
+      {{end}}
+      </div>
+      <p class="context">Child artifacts and their matching question rounds were re-verified before rendering. No local input paths, target identifiers, process arguments, URLs, or captured values are shown.</p>
     </section>
 
   {{else if eq .View "run"}}

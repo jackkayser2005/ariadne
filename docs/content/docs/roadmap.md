@@ -161,10 +161,13 @@ browser source-boundary layers, and a portable trace reflection layer:
      artifact and round identity, rejects duplicate child identities, and
      answers fixed questions about represented source boundaries, retained
      replicated outcomes, and unknown or incompletely supported conclusions.
-     The case and its question round have separate canonical identities. This
-     is a durable reflection/index boundary, not chronology inference, a
-     database, a capture runner, a universal sniffer, or cross-source causal
-     attribution.
+     The case and its question round have separate canonical identities. The
+     loopback review page can now expose the verified package through a
+     separate GET-only `/trace-case` route, preserving caller order and
+     rendering child identities, safe source summaries, fixed answers, and
+     separate outcome/evidence-state fields. This is a durable
+     reflection/index boundary, not chronology inference, a database, a
+     capture runner, a universal sniffer, or cross-source causal attribution.
 
 The local review page is intentionally read-only. Its compact question round
 and receipt links, including stable history and receipt identities, are a
@@ -178,6 +181,9 @@ The page also exposes the stable question-round identity, so an acceptance pass
 can retain both the round and the selected answer receipt identities. The
 acceptance record preserves that identity binding, but it is not proof that a
 computer-use driver performed the selection.
+The same page can expose a verified cross-source case through `/trace-case`;
+that route is a bounded inspection surface for the caller-ordered child
+artifacts and fixed case questions, not proof of UI selection or causality.
 The concrete read-only sequence is documented in
 [`computer-use-acceptance.md`](computer-use-acceptance.md).
 
@@ -232,10 +238,12 @@ snapshots, but it is not a chronology model or universal sniffer. The trace
 contract remains the handoff boundary for any future source producer. The
 replication question round is now the durable reflection surface for asking
 what the repeated comparison established without turning the ledger into a
-capture store. The case package is the next reflection join: it preserves
-caller order across verified archives and ledgers, answers only its fixed
-bounded catalog, and retains `unknown` child conclusions without turning them
-into causal attribution.
+capture store. The case package is now the reflection join: it preserves caller
+order across verified archives and ledgers, answers only its fixed bounded
+catalog, and retains `unknown` child conclusions without turning them into
+causal attribution. Its `/trace-case` route makes that package inspectable by
+the read-only computer-use acceptance path; real GUI execution remains a
+separate evidence gate.
 
 ## Acceptance gates
 

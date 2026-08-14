@@ -223,6 +223,23 @@ case is a durable reflection/index boundary, not a database, universal
 capture service, cross-source causal attribution, or natural-language
 question engine.
 
+Expose the verified case through the same loopback review page when a
+computer-use driver needs a bounded inspection surface:
+
+```console
+go run ./cmd/ariadne experiment serve \
+  --trace-case .ariadne/case.json \
+  <archive-root>
+```
+
+The read-only `/trace-case` route re-verifies the embedded archives, ledgers,
+and matching question rounds before rendering only the case identity, caller
+order, safe source summaries, child identities, fixed case answers, and
+separate outcome/evidence-state fields. It fails closed with a generic
+`trace case unavailable` response for malformed or identity-inconsistent
+input; it never renders the configured path, captured values, or source
+specific arguments.
+
 The same fixture path can run a small counterfactual replication. The runner
 owns the fixed baseline/treatment variants, creates a fresh profile before each
 session, records both orders, and verifies the aggregate separately from
@@ -553,9 +570,9 @@ choose a question and retain the identities it was asking about.
 
 The local review page can receive a verified transition ledger, a saved
 reflection, an acceptance identity binding, two retained question rounds, and
-one portable trace archive, saved question round, or replicated trace ledger
-with
-`experiment serve --history <history.json> --reflection <reflection.json> --acceptance <acceptance.json> --round-first <first-round.json> --round-second <second-round.json> --trace-archive <trace-archive.json> --trace-round <trace-round.json> --trace-replication <ledger.json> <archive-root>`.
+one portable trace archive, saved question round, replicated trace ledger, or
+cross-source case with
+`experiment serve --history <history.json> --reflection <reflection.json> --acceptance <acceptance.json> --round-first <first-round.json> --round-second <second-round.json> --trace-archive <trace-archive.json> --trace-round <trace-round.json> --trace-replication <ledger.json> --trace-case <case.json> <archive-root>`.
 It renders caller-ordered bounded transitions and re-asks the saved reflection's
 fixed question against the current archive, showing only safe comparison counts,
 identities, per-directory bounded state changes, and the repeated-change
@@ -587,6 +604,12 @@ aggregate, the fixed outcome/support/consistency questions, both explicit order
 counts, reset assertions, pair identities, and safe difference/unknown counts.
 It never renders configured paths, payloads, URLs, or captured values, and
 remains GET-only.
+When `--trace-case` is supplied, `/trace-case` shows the verified case identity,
+caller-ordered child archive/ledger summaries, safe reviewed source boundaries,
+the fixed case questions, and separate outcome/evidence-state fields. Caller
+order is not chronology, and the route does not establish cross-source
+causality. It is also GET-only and fails closed without disclosing the input
+path or detailed verification error.
 
 Stable-ID Android sessions also record a SHA-256 identity for the successful
 UI hierarchy used to resolve the manifest-declared control. The raw hierarchy
