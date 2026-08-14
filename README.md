@@ -393,19 +393,30 @@ separately. The commitment is only an identity binding: the study does not
 store the contrast value, execute resets, capture browsers, infer causality, or
 claim universal tracking.
 
-Ask the study's fixed questions directly after verifying the saved artifact:
+Ask the study's fixed questions after verifying the saved artifact, then retain
+that complete bounded answer set and one selected receipt:
 
 ```console
 go run ./cmd/ariadne trace study questions --json
 go run ./cmd/ariadne trace study ask --json .ariadne/trace-study.json study-outcome
 go run ./cmd/ariadne trace study ask all --json .ariadne/trace-study.json
+go run ./cmd/ariadne trace study ask all save --json \
+  .ariadne/trace-study.json .ariadne/trace-study-round.json
+go run ./cmd/ariadne trace study ask all verify --json \
+  --expect-sha256 <round-sha256> .ariadne/trace-study-round.json
+go run ./cmd/ariadne trace study ask receipt save --json \
+  .ariadne/trace-study-round.json study-outcome \
+  .ariadne/trace-study-receipt.json
+go run ./cmd/ariadne trace study ask receipt verify --json \
+  --expect-sha256 <receipt-sha256> .ariadne/trace-study-receipt.json
 ```
 
 These answers report the aggregate outcome, whether every run has sufficient
-support, and whether supported runs agree. `result` and `evidence_state` are
-separate fields. Study-specific answer rounds and receipts are not persisted
-yet; the portable study itself embeds the already-verified ledger/question
-round identities.
+support, and whether supported runs agree. `result`, aggregate `outcome`, and
+`evidence_state` remain separate. The saved round contains only the fixed
+answers and the study SHA-256; the selected receipt embeds that bounded round
+and binds it to both the study and round identities. Both artifacts can be
+verified offline without reopening source paths or captured values.
 
 Retain caller-ordered standalone trace snapshots from any reviewed adapter in
 one portable archive, then ask the fixed source-neutral questions without
@@ -625,7 +636,7 @@ The local review page can receive a verified transition ledger, a saved
 reflection, an acceptance identity binding, two retained question rounds, and
 one portable trace archive, saved question round, replicated trace ledger, or
 cross-source case with
-`experiment serve --history <history.json> --reflection <reflection.json> --acceptance <acceptance.json> --round-first <first-round.json> --round-second <second-round.json> --trace-archive <trace-archive.json> --trace-round <trace-round.json> --trace-replication <ledger.json> --trace-case <case.json> --trace-study <study.json> <archive-root>`.
+`experiment serve --history <history.json> --reflection <reflection.json> --acceptance <acceptance.json> --round-first <first-round.json> --round-second <second-round.json> --trace-archive <trace-archive.json> --trace-round <trace-round.json> --trace-replication <ledger.json> --trace-case <case.json> --trace-study <study.json> --trace-study-round <round.json> --trace-study-receipt <receipt.json> <archive-root>`.
 It renders caller-ordered bounded transitions and re-asks the saved reflection's
 fixed question against the current archive, showing only safe comparison counts,
 identities, per-directory bounded state changes, and the repeated-change
@@ -668,9 +679,12 @@ commitment and caller order, aggregate counts, the three fixed study answers,
 and the identity of every embedded ledger and question round. It keeps
 question `result`, aggregate `outcome`, and `evidence_state` separate, is
 GET-only, and fails closed as `trace study unavailable` without disclosing
-the configured path or detailed verification error. It does not persist
-study-specific answer rounds or receipts yet.
-
+the configured path or detailed verification error. Supplying
+`--trace-study-round` makes the route re-verify the saved round against the
+study; supplying `--trace-study-receipt` additionally verifies the selected
+receipt against both identities. `?question_id=<fixed-study-question-id>`
+selects one bounded receipt for the rendered review when no saved receipt is
+provided. These artifacts contain no paths, payloads, URLs, or captured values.
 Stable-ID Android sessions also record a SHA-256 identity for the successful
 UI hierarchy used to resolve the manifest-declared control. The raw hierarchy
 XML is never retained in session metadata; this identity is control provenance

@@ -264,3 +264,252 @@ func TestWriteTraceStudyAnswer(t *testing.T) {
 		t.Fatal("writeTraceStudyAnswer() accepted a failing writer")
 	}
 }
+
+func TestRunTraceStudyDurableQuestionCommands(t *testing.T) {
+	roundSummary := trace.ReplicationStudyQuestionRoundVerificationSummary{
+		SchemaVersion: 1,
+		StudySHA256:   strings.Repeat("a", 64),
+		Questions:     3,
+		RoundSHA256:   strings.Repeat("b", 64),
+	}
+	answer := trace.StudyQuestionAnswer{
+		SchemaVersion: 1,
+		QuestionID:    trace.StudyQuestionOutcome,
+		Question:      "What aggregate outcome did the independent runs produce?",
+		Result:        string(trace.ReplicatedChange),
+		EvidenceState: "observed",
+		Outcome:       trace.ReplicatedChange,
+		StudySHA256:   roundSummary.StudySHA256,
+		Runs:          2,
+		Pairs:         4,
+		SupportedRuns: 2,
+		Reason:        "every supported replicated run contains a safe category difference",
+	}
+	receipt := trace.ReplicationStudyQuestionReceipt{
+		StudyQuestionAnswer: answer,
+		RoundSHA256:         roundSummary.RoundSHA256,
+	}
+	receiptSummary := trace.ReplicationStudyQuestionReceiptVerificationSummary{
+		SchemaVersion: 1,
+		QuestionID:    answer.QuestionID,
+		Question:      answer.Question,
+		Result:        answer.Result,
+		EvidenceState: answer.EvidenceState,
+		StudySHA256:   answer.StudySHA256,
+		RoundSHA256:   roundSummary.RoundSHA256,
+		ReceiptSHA256: strings.Repeat("c", 64),
+		Outcome:       answer.Outcome,
+	}
+	var stdout, stderr bytes.Buffer
+	saveRound := func(studyPath, roundPath string) (trace.ReplicationStudyQuestionRoundVerificationSummary, error) {
+		if studyPath != "study.json" || roundPath != "round.json" {
+			t.Fatalf("save round paths = %q, %q", studyPath, roundPath)
+		}
+		return roundSummary, nil
+	}
+	if exitCode := runTraceStudyAskAllSave([]string{"study.json", "round.json"}, &stdout, &stderr, saveRound); exitCode != 0 || !strings.Contains(stdout.String(), "question round saved") {
+		t.Fatalf("save round = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	if exitCode := runTraceStudyAskAllSave([]string{"--json", "study.json", "round.json"}, &stdout, &stderr, saveRound); exitCode != 0 {
+		t.Fatalf("JSON save round = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+	var savedRound trace.ReplicationStudyQuestionRoundVerificationSummary
+	if err := json.Unmarshal(stdout.Bytes(), &savedRound); err != nil || savedRound != roundSummary {
+		t.Fatalf("saved round = %#v, err=%v", savedRound, err)
+	}
+	verifyRound := func(path string) (trace.ReplicationStudyQuestionRoundVerificationSummary, error) {
+		if path != "round.json" {
+			t.Fatalf("verify round path = %q", path)
+		}
+		return roundSummary, nil
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if exitCode := runTraceStudyAskAllVerify([]string{"--expect-sha256", roundSummary.RoundSHA256, "round.json"}, &stdout, &stderr, verifyRound); exitCode != 0 || !strings.Contains(stdout.String(), "question round verified") {
+		t.Fatalf("verify round = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	if exitCode := runTraceStudyAskAllVerify([]string{"--json", "round.json"}, &stdout, &stderr, verifyRound); exitCode != 0 {
+		t.Fatalf("JSON verify round = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+	var verifiedRound trace.ReplicationStudyQuestionRoundVerificationSummary
+	if err := json.Unmarshal(stdout.Bytes(), &verifiedRound); err != nil || verifiedRound != roundSummary {
+		t.Fatalf("verified round = %#v, err=%v", verifiedRound, err)
+	}
+	askReceipt := func(path, questionID string) (trace.ReplicationStudyQuestionReceipt, error) {
+		if path != "round.json" || questionID != trace.StudyQuestionOutcome {
+			t.Fatalf("ask receipt args = %q, %q", path, questionID)
+		}
+		return receipt, nil
+	}
+	stdout.Reset()
+	if exitCode := runTraceStudyAskReceipt([]string{"round.json", trace.StudyQuestionOutcome}, &stdout, &stderr, askReceipt); exitCode != 0 || !strings.Contains(stdout.String(), "question receipt") {
+		t.Fatalf("ask receipt = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	if exitCode := runTraceStudyAskReceipt([]string{"--json", "round.json", trace.StudyQuestionOutcome}, &stdout, &stderr, askReceipt); exitCode != 0 {
+		t.Fatalf("JSON ask receipt = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+	var askedReceipt trace.ReplicationStudyQuestionReceipt
+	if err := json.Unmarshal(stdout.Bytes(), &askedReceipt); err != nil || askedReceipt.QuestionID != receipt.QuestionID || askedReceipt.RoundSHA256 != receipt.RoundSHA256 {
+		t.Fatalf("asked receipt = %#v, err=%v", askedReceipt, err)
+	}
+	saveReceipt := func(roundPath, questionID, receiptPath string) (trace.ReplicationStudyQuestionReceiptVerificationSummary, error) {
+		if roundPath != "round.json" || questionID != trace.StudyQuestionOutcome || receiptPath != "receipt.json" {
+			t.Fatalf("save receipt args = %q, %q, %q", roundPath, questionID, receiptPath)
+		}
+		return receiptSummary, nil
+	}
+	stdout.Reset()
+	if exitCode := runTraceStudyAskReceiptSave([]string{"round.json", trace.StudyQuestionOutcome, "receipt.json"}, &stdout, &stderr, saveReceipt); exitCode != 0 || !strings.Contains(stdout.String(), "receipt saved") {
+		t.Fatalf("save receipt = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	if exitCode := runTraceStudyAskReceiptSave([]string{"--json", "round.json", trace.StudyQuestionOutcome, "receipt.json"}, &stdout, &stderr, saveReceipt); exitCode != 0 {
+		t.Fatalf("JSON save receipt = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+	var savedReceipt trace.ReplicationStudyQuestionReceiptVerificationSummary
+	if err := json.Unmarshal(stdout.Bytes(), &savedReceipt); err != nil || savedReceipt != receiptSummary {
+		t.Fatalf("saved receipt = %#v, err=%v", savedReceipt, err)
+	}
+	verifyReceipt := func(path string) (trace.ReplicationStudyQuestionReceiptVerificationSummary, error) {
+		if path != "receipt.json" {
+			t.Fatalf("verify receipt path = %q", path)
+		}
+		return receiptSummary, nil
+	}
+	stdout.Reset()
+	if exitCode := runTraceStudyAskReceiptVerify([]string{"--expect-sha256", receiptSummary.ReceiptSHA256, "receipt.json"}, &stdout, &stderr, verifyReceipt); exitCode != 0 || !strings.Contains(stdout.String(), "receipt verified") {
+		t.Fatalf("verify receipt = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	if exitCode := runTraceStudyAskReceiptVerify([]string{"--json", "receipt.json"}, &stdout, &stderr, verifyReceipt); exitCode != 0 {
+		t.Fatalf("JSON verify receipt = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+	var verifiedReceipt trace.ReplicationStudyQuestionReceiptVerificationSummary
+	if err := json.Unmarshal(stdout.Bytes(), &verifiedReceipt); err != nil || verifiedReceipt != receiptSummary {
+		t.Fatalf("verified receipt = %#v, err=%v", verifiedReceipt, err)
+	}
+
+	for _, test := range []struct {
+		name string
+		call func(*bytes.Buffer, *bytes.Buffer) int
+	}{
+		{name: "round save usage", call: func(out, errOut *bytes.Buffer) int {
+			return runTraceStudyAskAllSave([]string{"study.json"}, out, errOut, saveRound)
+		}},
+		{name: "round save error", call: func(out, errOut *bytes.Buffer) int {
+			return runTraceStudyAskAllSave([]string{"study.json", "round.json"}, out, errOut, func(string, string) (trace.ReplicationStudyQuestionRoundVerificationSummary, error) {
+				return trace.ReplicationStudyQuestionRoundVerificationSummary{}, errors.New("round save failed safely")
+			})
+		}},
+		{name: "round verify usage", call: func(out, errOut *bytes.Buffer) int {
+			return runTraceStudyAskAllVerify(nil, out, errOut, verifyRound)
+		}},
+		{name: "round verify invalid expected", call: func(out, errOut *bytes.Buffer) int {
+			return runTraceStudyAskAllVerify([]string{"--expect-sha256=bad", "round.json"}, out, errOut, verifyRound)
+		}},
+		{name: "round verify error", call: func(out, errOut *bytes.Buffer) int {
+			return runTraceStudyAskAllVerify([]string{"round.json"}, out, errOut, func(string) (trace.ReplicationStudyQuestionRoundVerificationSummary, error) {
+				return trace.ReplicationStudyQuestionRoundVerificationSummary{}, errors.New("round verify failed safely")
+			})
+		}},
+		{name: "round verify mismatch", call: func(out, errOut *bytes.Buffer) int {
+			return runTraceStudyAskAllVerify([]string{"--expect-sha256=" + strings.Repeat("d", 64), "round.json"}, out, errOut, verifyRound)
+		}},
+		{name: "receipt usage", call: func(out, errOut *bytes.Buffer) int {
+			return runTraceStudyAskReceipt([]string{"round.json"}, out, errOut, askReceipt)
+		}},
+		{name: "receipt error", call: func(out, errOut *bytes.Buffer) int {
+			return runTraceStudyAskReceipt([]string{"round.json", trace.StudyQuestionOutcome}, out, errOut, func(string, string) (trace.ReplicationStudyQuestionReceipt, error) {
+				return trace.ReplicationStudyQuestionReceipt{}, errors.New("receipt ask failed safely")
+			})
+		}},
+		{name: "receipt save usage", call: func(out, errOut *bytes.Buffer) int {
+			return runTraceStudyAskReceiptSave([]string{"round.json", trace.StudyQuestionOutcome}, out, errOut, saveReceipt)
+		}},
+		{name: "receipt save error", call: func(out, errOut *bytes.Buffer) int {
+			return runTraceStudyAskReceiptSave([]string{"round.json", trace.StudyQuestionOutcome, "receipt.json"}, out, errOut, func(string, string, string) (trace.ReplicationStudyQuestionReceiptVerificationSummary, error) {
+				return trace.ReplicationStudyQuestionReceiptVerificationSummary{}, errors.New("receipt save failed safely")
+			})
+		}},
+		{name: "receipt verify usage", call: func(out, errOut *bytes.Buffer) int {
+			return runTraceStudyAskReceiptVerify(nil, out, errOut, verifyReceipt)
+		}},
+		{name: "receipt verify invalid expected", call: func(out, errOut *bytes.Buffer) int {
+			return runTraceStudyAskReceiptVerify([]string{"--expect-sha256=bad", "receipt.json"}, out, errOut, verifyReceipt)
+		}},
+		{name: "receipt verify error", call: func(out, errOut *bytes.Buffer) int {
+			return runTraceStudyAskReceiptVerify([]string{"receipt.json"}, out, errOut, func(string) (trace.ReplicationStudyQuestionReceiptVerificationSummary, error) {
+				return trace.ReplicationStudyQuestionReceiptVerificationSummary{}, errors.New("receipt verify failed safely")
+			})
+		}},
+		{name: "receipt verify mismatch", call: func(out, errOut *bytes.Buffer) int {
+			return runTraceStudyAskReceiptVerify([]string{"--expect-sha256=" + strings.Repeat("e", 64), "receipt.json"}, out, errOut, verifyReceipt)
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var out, errOut bytes.Buffer
+			if exitCode := test.call(&out, &errOut); exitCode == 0 || errOut.Len() == 0 {
+				t.Fatalf("call = %d, stdout=%q, stderr=%q", exitCode, out.String(), errOut.String())
+			}
+		})
+	}
+	for _, test := range []struct {
+		name string
+		call func(io.Writer, *bytes.Buffer) int
+	}{
+		{name: "round save human write", call: func(out io.Writer, errOut *bytes.Buffer) int {
+			return runTraceStudyAskAllSave([]string{"study.json", "round.json"}, out, errOut, saveRound)
+		}},
+		{name: "round save JSON write", call: func(out io.Writer, errOut *bytes.Buffer) int {
+			return runTraceStudyAskAllSave([]string{"--json", "study.json", "round.json"}, out, errOut, saveRound)
+		}},
+		{name: "round verify human write", call: func(out io.Writer, errOut *bytes.Buffer) int {
+			return runTraceStudyAskAllVerify([]string{"round.json"}, out, errOut, verifyRound)
+		}},
+		{name: "round verify JSON write", call: func(out io.Writer, errOut *bytes.Buffer) int {
+			return runTraceStudyAskAllVerify([]string{"--json", "round.json"}, out, errOut, verifyRound)
+		}},
+		{name: "receipt ask human write", call: func(out io.Writer, errOut *bytes.Buffer) int {
+			return runTraceStudyAskReceipt([]string{"round.json", trace.StudyQuestionOutcome}, out, errOut, askReceipt)
+		}},
+		{name: "receipt ask JSON write", call: func(out io.Writer, errOut *bytes.Buffer) int {
+			return runTraceStudyAskReceipt([]string{"--json", "round.json", trace.StudyQuestionOutcome}, out, errOut, askReceipt)
+		}},
+		{name: "receipt save human write", call: func(out io.Writer, errOut *bytes.Buffer) int {
+			return runTraceStudyAskReceiptSave([]string{"round.json", trace.StudyQuestionOutcome, "receipt.json"}, out, errOut, saveReceipt)
+		}},
+		{name: "receipt save JSON write", call: func(out io.Writer, errOut *bytes.Buffer) int {
+			return runTraceStudyAskReceiptSave([]string{"--json", "round.json", trace.StudyQuestionOutcome, "receipt.json"}, out, errOut, saveReceipt)
+		}},
+		{name: "receipt verify human write", call: func(out io.Writer, errOut *bytes.Buffer) int {
+			return runTraceStudyAskReceiptVerify([]string{"receipt.json"}, out, errOut, verifyReceipt)
+		}},
+		{name: "receipt verify JSON write", call: func(out io.Writer, errOut *bytes.Buffer) int {
+			return runTraceStudyAskReceiptVerify([]string{"--json", "receipt.json"}, out, errOut, verifyReceipt)
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var errOut bytes.Buffer
+			if exitCode := test.call(failingWriter{}, &errOut); exitCode != 1 || !strings.Contains(errOut.String(), "write output") {
+				t.Fatalf("call = %d, stderr=%q", exitCode, errOut.String())
+			}
+		})
+	}
+}
+
+func TestWriteTraceStudyRoundAndReceipt(t *testing.T) {
+	roundSummary := trace.ReplicationStudyQuestionRoundVerificationSummary{}
+	receiptSummary := trace.ReplicationStudyQuestionReceiptVerificationSummary{}
+	if err := writeTraceStudyRoundSummary(failingWriter{}, "round", roundSummary); err == nil {
+		t.Fatal("writeTraceStudyRoundSummary() accepted a failing writer")
+	}
+	if err := writeTraceStudyReceiptSummary(failingWriter{}, "receipt", receiptSummary); err == nil {
+		t.Fatal("writeTraceStudyReceiptSummary() accepted a failing writer")
+	}
+	if err := writeTraceStudyReceipt(failingWriter{}, "receipt", trace.ReplicationStudyQuestionReceipt{}, ""); err == nil {
+		t.Fatal("writeTraceStudyReceipt() accepted a failing writer")
+	}
+}

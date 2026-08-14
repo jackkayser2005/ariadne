@@ -482,29 +482,48 @@ re-verification boundary after those producers have emitted reviewed sessions.
 
 The study exposes three fixed questions after offline verification. They ask for
 the aggregate outcome, whether every run has balanced/reset-confirmed/complete
-support with observed evidence, and whether supported runs agree:
+support with observed evidence, and whether supported runs agree. The complete
+answer set can be retained as a durable round, and one selected answer can be
+retained as a receipt:
 
 ```console
 go run ./cmd/ariadne trace study questions --json
 go run ./cmd/ariadne trace study ask --json .ariadne/trace-study.json study-outcome
 go run ./cmd/ariadne trace study ask all --json .ariadne/trace-study.json
+go run ./cmd/ariadne trace study ask all save --json \
+  .ariadne/trace-study.json .ariadne/trace-study-round.json
+go run ./cmd/ariadne trace study ask all verify --json \
+  --expect-sha256 <round-sha256> .ariadne/trace-study-round.json
+go run ./cmd/ariadne trace study ask receipt save --json \
+  .ariadne/trace-study-round.json study-outcome \
+  .ariadne/trace-study-receipt.json
+go run ./cmd/ariadne trace study ask receipt verify --json \
+  --expect-sha256 <receipt-sha256> .ariadne/trace-study-receipt.json
 ```
 
 The answer's `result`, aggregate `outcome`, and `evidence_state` remain
-separate. Study-specific answer rounds and receipts are not persisted yet; the
-study artifact already binds each embedded ledger to its matching fixed round.
+separate. The round contains only the fixed answers and the study SHA-256; the
+receipt embeds the bounded round and binds it to both the study and round
+identities. Both can be verified offline without reopening source paths or
+captured values. Identity drift fails closed.
+
 To expose the same verified identities through the local loopback server:
 
 ```console
 go run ./cmd/ariadne experiment serve \
   --trace-study .ariadne/trace-study.json \
+  --trace-study-round .ariadne/trace-study-round.json \
+  --trace-study-receipt .ariadne/trace-study-receipt.json \
   <archive-root>
 ```
 
 Open `/trace-study` from the review index. The GET-only route shows the private
 commitment identity, caller order, aggregate counts, fixed answers, and each
-ledger/question-round identity. It never renders input paths, payloads, URLs,
-or captured values, and fails closed as `trace study unavailable`.
+ledger/question-round identity. When supplied, it re-verifies the saved round
+and receipt against the study identities. A fixed `?question_id=` can select a
+bounded in-memory receipt when no saved receipt is supplied. It never renders
+input paths, payloads, URLs, or captured values, and fails closed as `trace
+study unavailable`.
 
 ## Caller-ordered trace archive questions
 

@@ -191,3 +191,200 @@ func writeTraceStudyAnswer(stdout io.Writer, answer trace.StudyQuestionAnswer) e
 	_, err := fmt.Fprintf(stdout, "trace replication study question answered\nquestion_id: %s\nquestion: %s\nresult: %s\nevidence_state: %s\noutcome: %s\nstudy_sha256: %s\nruns: %d\npairs: %d\nsupported_runs: %d\nunknown_runs: %d\nreset_confirmed_pairs: %d\nbalanced_runs: %d\ncomplete_pairs: %d\nchanged_runs: %d\nno_change_runs: %d\nmixed_runs: %d\nunknown_pairs: %d\nreason: %s\n", answer.QuestionID, answer.Question, answer.Result, answer.EvidenceState, answer.Outcome, answer.StudySHA256, answer.Runs, answer.Pairs, answer.SupportedRuns, answer.UnknownRuns, answer.ResetConfirmedPairs, answer.BalancedRuns, answer.CompletePairs, answer.ChangedRuns, answer.NoChangeRuns, answer.MixedRuns, answer.UnknownPairs, answer.Reason)
 	return err
 }
+
+type traceStudyRoundSaver func(string, string) (trace.ReplicationStudyQuestionRoundVerificationSummary, error)
+type traceStudyRoundVerifier func(string) (trace.ReplicationStudyQuestionRoundVerificationSummary, error)
+type traceStudyReceiptAsker func(string, string) (trace.ReplicationStudyQuestionReceipt, error)
+type traceStudyReceiptSaver func(string, string, string) (trace.ReplicationStudyQuestionReceiptVerificationSummary, error)
+type traceStudyReceiptVerifier func(string) (trace.ReplicationStudyQuestionReceiptVerificationSummary, error)
+
+func runTraceStudyAskAllSave(args []string, stdout, stderr io.Writer, save traceStudyRoundSaver) int {
+	flags := flag.NewFlagSet("trace study ask all save", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 2 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+	summary, err := save(flags.Arg(0), flags.Arg(1))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: trace study ask all save: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(summary); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: trace study ask all save: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if err := writeTraceStudyRoundSummary(stdout, "trace replication study question round saved", summary); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: trace study ask all save: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func runTraceStudyAskAllVerify(args []string, stdout, stderr io.Writer, verify traceStudyRoundVerifier) int {
+	flags := flag.NewFlagSet("trace study ask all verify", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	expectSHA256 := flags.String("expect-sha256", "", "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+	expectSet := false
+	flags.Visit(func(visited *flag.Flag) {
+		if visited.Name == "expect-sha256" {
+			expectSet = true
+		}
+	})
+	if expectSet && !trace.ValidSHA256(*expectSHA256) {
+		_, _ = io.WriteString(stderr, "ariadne: trace study ask all verify: expected SHA-256 must be 64 lowercase hexadecimal characters\n")
+		return 1
+	}
+	summary, err := verify(flags.Arg(0))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: trace study ask all verify: %v\n", err)
+		return 1
+	}
+	if expectSet && summary.RoundSHA256 != *expectSHA256 {
+		_, _ = io.WriteString(stderr, "ariadne: trace study ask all verify: question round SHA-256 does not match expected identity\n")
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(summary); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: trace study ask all verify: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if err := writeTraceStudyRoundSummary(stdout, "trace replication study question round verified", summary); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: trace study ask all verify: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func runTraceStudyAskReceipt(args []string, stdout, stderr io.Writer, ask traceStudyReceiptAsker) int {
+	flags := flag.NewFlagSet("trace study ask receipt", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 2 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+	receipt, err := ask(flags.Arg(0), flags.Arg(1))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: trace study ask receipt: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(receipt); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: trace study ask receipt: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if err := writeTraceStudyReceipt(stdout, "trace replication study question receipt", receipt, ""); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: trace study ask receipt: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func runTraceStudyAskReceiptSave(args []string, stdout, stderr io.Writer, save traceStudyReceiptSaver) int {
+	flags := flag.NewFlagSet("trace study ask receipt save", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 3 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+	summary, err := save(flags.Arg(0), flags.Arg(1), flags.Arg(2))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: trace study ask receipt save: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(summary); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: trace study ask receipt save: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if err := writeTraceStudyReceiptSummary(stdout, "trace replication study question receipt saved", summary); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: trace study ask receipt save: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func runTraceStudyAskReceiptVerify(args []string, stdout, stderr io.Writer, verify traceStudyReceiptVerifier) int {
+	flags := flag.NewFlagSet("trace study ask receipt verify", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	expectSHA256 := flags.String("expect-sha256", "", "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+	expectSet := false
+	flags.Visit(func(visited *flag.Flag) {
+		if visited.Name == "expect-sha256" {
+			expectSet = true
+		}
+	})
+	if expectSet && !trace.ValidSHA256(*expectSHA256) {
+		_, _ = io.WriteString(stderr, "ariadne: trace study ask receipt verify: expected SHA-256 must be 64 lowercase hexadecimal characters\n")
+		return 1
+	}
+	summary, err := verify(flags.Arg(0))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: trace study ask receipt verify: %v\n", err)
+		return 1
+	}
+	if expectSet && summary.ReceiptSHA256 != *expectSHA256 {
+		_, _ = io.WriteString(stderr, "ariadne: trace study ask receipt verify: receipt SHA-256 does not match expected identity\n")
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(summary); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: trace study ask receipt verify: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if err := writeTraceStudyReceiptSummary(stdout, "trace replication study question receipt verified", summary); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: trace study ask receipt verify: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func writeTraceStudyRoundSummary(stdout io.Writer, heading string, summary trace.ReplicationStudyQuestionRoundVerificationSummary) error {
+	_, err := fmt.Fprintf(stdout, "%s\nschema_version: %d\nstudy_sha256: %s\nquestions: %d\nround_sha256: %s\n", heading, summary.SchemaVersion, summary.StudySHA256, summary.Questions, summary.RoundSHA256)
+	return err
+}
+
+func writeTraceStudyReceiptSummary(stdout io.Writer, heading string, summary trace.ReplicationStudyQuestionReceiptVerificationSummary) error {
+	_, err := fmt.Fprintf(stdout, "%s\nschema_version: %d\nquestion_id: %s\nquestion: %s\nresult: %s\nevidence_state: %s\noutcome: %s\nstudy_sha256: %s\nround_sha256: %s\nreceipt_sha256: %s\n", heading, summary.SchemaVersion, summary.QuestionID, summary.Question, summary.Result, summary.EvidenceState, summary.Outcome, summary.StudySHA256, summary.RoundSHA256, summary.ReceiptSHA256)
+	return err
+}
+
+func writeTraceStudyReceipt(stdout io.Writer, heading string, receipt trace.ReplicationStudyQuestionReceipt, receiptSHA256 string) error {
+	if _, err := fmt.Fprintf(stdout, "%s\nschema_version: %d\nquestion_id: %s\nquestion: %s\nresult: %s\nevidence_state: %s\noutcome: %s\nstudy_sha256: %s\nround_sha256: %s\nruns: %d\npairs: %d\n", heading, receipt.SchemaVersion, receipt.QuestionID, receipt.Question, receipt.Result, receipt.EvidenceState, receipt.Outcome, receipt.StudySHA256, receipt.RoundSHA256, receipt.Runs, receipt.Pairs); err != nil {
+		return err
+	}
+	if receiptSHA256 != "" {
+		if _, err := fmt.Fprintf(stdout, "receipt_sha256: %s\n", receiptSHA256); err != nil {
+			return err
+		}
+	}
+	if receipt.Reason != "" {
+		_, err := fmt.Fprintf(stdout, "reason: %s\n", receipt.Reason)
+		return err
+	}
+	return nil
+}

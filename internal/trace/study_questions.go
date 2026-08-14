@@ -112,7 +112,7 @@ func AskAllReplicationStudyQuestions(path string) ([]StudyQuestionAnswer, error)
 
 func answerReplicationStudyQuestionFromSummary(summary StudyVerificationSummary, question StudyQuestion) StudyQuestionAnswer {
 	answer := StudyQuestionAnswer{
-		SchemaVersion:       summary.SchemaVersion,
+		SchemaVersion:       replicationStudyQuestionRoundSchemaVersion,
 		QuestionID:          question.ID,
 		Question:            question.Text,
 		EvidenceState:       summary.EvidenceState,
@@ -130,34 +130,73 @@ func answerReplicationStudyQuestionFromSummary(summary StudyVerificationSummary,
 		UnknownPairs:        summary.UnknownPairs,
 		Outcome:             summary.Outcome,
 	}
-	switch question.ID {
-	case StudyQuestionOutcome:
-		answer.Result = string(summary.Outcome)
-		answer.Reason = summary.Reason
-	case StudyQuestionSupport:
-		if summary.EvidenceState == evidence.Observed {
-			answer.Result = "supported"
-			answer.Reason = "every replicated run has balanced order, confirmed resets, and complete comparison support"
-		} else {
-			answer.Result = "unknown"
-			answer.Reason = "at least one replicated run lacks balanced order, reset, or comparison support"
-		}
-	case StudyQuestionConsistency:
-		switch summary.Outcome {
-		case ReplicatedChange, NoChangeObserved:
-			answer.Result = "consistent"
-			answer.Reason = "all supported replicated runs agree about the aggregate outcome"
-		case MixedInconsistent:
-			answer.Result = "inconsistent"
-			answer.Reason = "supported replicated runs include mixed or disagreeing outcomes"
-		default:
-			answer.Result = "unknown"
-			answer.Reason = "the study lacks enough supported runs to establish cross-run consistency"
-		}
-	}
+	answer.Result, _ = replicationStudyQuestionResult(question.ID, answer.Outcome, answer.EvidenceState)
+	answer.Reason = replicationStudyQuestionReason(answer)
 	return answer
 }
 
+func replicationStudyQuestionResult(questionID string, outcome ReplicatedOutcome, state evidence.State) (string, bool) {
+	switch questionID {
+	case StudyQuestionOutcome:
+		return string(outcome), true
+	case StudyQuestionSupport:
+		if state == evidence.Observed {
+			return "supported", true
+		}
+		return "unknown", true
+	case StudyQuestionConsistency:
+		switch outcome {
+		case ReplicatedChange, NoChangeObserved:
+			return "consistent", true
+		case MixedInconsistent:
+			return "inconsistent", true
+		case ReplicationUnknown:
+			return "unknown", true
+		default:
+			return "", false
+		}
+	default:
+		return "", false
+	}
+}
+
+func replicationStudyQuestionReason(answer StudyQuestionAnswer) string {
+	switch answer.QuestionID {
+	case StudyQuestionOutcome:
+		if answer.EvidenceState != evidence.Observed || answer.Outcome == ReplicationUnknown {
+			return "at least one replicated run lacks balanced order, reset, complete capture, or comparison support"
+		}
+		switch answer.Outcome {
+		case ReplicatedChange:
+			return "every supported replicated run contains a safe category difference"
+		case NoChangeObserved:
+			return "no supported replicated run contains a safe category difference"
+		case MixedInconsistent:
+			if answer.MixedRuns == answer.Runs {
+				return "every supported replicated run contains internally inconsistent pair outcomes"
+			}
+			return "supported replicated runs disagree about safe category change"
+		default:
+			return "at least one replicated run lacks balanced order, reset, complete capture, or comparison support"
+		}
+	case StudyQuestionSupport:
+		if answer.EvidenceState == evidence.Observed {
+			return "every replicated run has balanced order, confirmed resets, and complete comparison support"
+		}
+		return "at least one replicated run lacks balanced order, reset, complete capture, or comparison support"
+	case StudyQuestionConsistency:
+		switch answer.Outcome {
+		case ReplicatedChange, NoChangeObserved:
+			return "all supported replicated runs agree about the aggregate outcome"
+		case MixedInconsistent:
+			return "supported replicated runs include mixed or disagreeing outcomes"
+		default:
+			return "the study lacks enough supported runs to establish cross-run consistency"
+		}
+	default:
+		return ""
+	}
+}
 func replicationStudyQuestion(id string) (StudyQuestion, bool) {
 	for _, question := range ReplicationStudyQuestions() {
 		if question.ID == id {

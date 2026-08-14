@@ -4401,6 +4401,17 @@ func TestRunServeFailures(t *testing.T) {
 			t.Fatalf("runServe() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
 		}
 	})
+
+	t.Run("study artifacts require study", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runServe([]string{"--trace-study-round", "round.json", "archive-root"}, &stdout, &stderr, func(string, http.Handler) error {
+			t.Fatal("server called without trace study")
+			return nil
+		})
+		if exitCode != 2 || stdout.Len() != 0 || stderr.String() != "ariadne: experiment serve: --trace-study-round and --trace-study-receipt require --trace-study\n" {
+			t.Fatalf("runServe() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+		}
+	})
 }
 
 func TestLoopbackAddress(t *testing.T) {

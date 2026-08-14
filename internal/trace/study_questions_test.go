@@ -99,3 +99,34 @@ func TestReplicationStudyQuestionsRejectInvalidIdentityAndIDs(t *testing.T) {
 		t.Fatal("replicationStudyQuestion() accepted an invalid ID")
 	}
 }
+
+func TestReplicationStudyQuestionErrorAndClassifierBoundaries(t *testing.T) {
+	_, study, summary := validReplicationStudyForRound(t, true, true)
+	if _, err := AnswerReplicationStudyQuestion(ReplicationStudy{}, summary, StudyQuestionOutcome); err == nil {
+		t.Fatal("AnswerReplicationStudyQuestion() accepted an invalid study")
+	}
+	if _, err := AnswerAllReplicationStudyQuestions(ReplicationStudy{}, summary); err == nil {
+		t.Fatal("AnswerAllReplicationStudyQuestions() accepted an invalid study")
+	}
+	if _, err := AnswerReplicationStudyQuestionRound(study, StudyVerificationSummary{}); err == nil {
+		t.Fatal("AnswerReplicationStudyQuestionRound() accepted a mismatched summary")
+	}
+	if result, ok := replicationStudyQuestionResult("not-a-question", ReplicatedChange, evidence.Observed); ok || result != "" {
+		t.Fatalf("invalid question result = %q, %v", result, ok)
+	}
+	if result, ok := replicationStudyQuestionResult(StudyQuestionConsistency, ReplicatedOutcome("unsupported"), evidence.Observed); ok || result != "" {
+		t.Fatalf("invalid outcome result = %q, %v", result, ok)
+	}
+	if reason := replicationStudyQuestionReason(StudyQuestionAnswer{QuestionID: "not-a-question"}); reason != "" {
+		t.Fatalf("invalid question reason = %q", reason)
+	}
+	if reason := replicationStudyQuestionReason(StudyQuestionAnswer{
+		QuestionID:    StudyQuestionOutcome,
+		EvidenceState: evidence.Observed,
+		Outcome:       MixedInconsistent,
+		Runs:          2,
+		MixedRuns:     2,
+	}); reason != "every supported replicated run contains internally inconsistent pair outcomes" {
+		t.Fatalf("all-mixed reason = %q", reason)
+	}
+}

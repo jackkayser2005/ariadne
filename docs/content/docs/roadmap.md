@@ -190,8 +190,14 @@ browser source-boundary layers, and a portable trace reflection layer:
     list or answer them, and the GET-only `/trace-study` route renders the
     commitment, caller order, safe counts, aggregate/evidence-state split,
     and every embedded ledger/question-round identity without paths or
-    captured values. Study-specific answer rounds and receipts remain a
-    deliberate later slice.
+    captured values.
+18. **Durable replication-study question artifacts.** The complete fixed
+    answer set can now be saved as a raw-value-free question round, verified
+    offline by its study and canonical SHA-256 identities, and reduced to one
+    selected receipt that embeds the verified round. The loopback route can
+    re-verify those artifacts and optionally select a bounded in-memory receipt
+    by fixed question ID. Result, aggregate outcome, and evidence state stay
+    separate; identity drift fails closed.
 
 The local review page is intentionally read-only. Its compact question round
 and receipt links, including stable history and receipt identities, are a
@@ -273,7 +279,9 @@ remains a separate evidence gate.
 The portable replication study now provides the next cross-run reflection
 boundary: it joins independently identified ledgers and their fixed rounds
 under one private commitment, while retaining unknown support instead of
-promoting repeated outcomes into causal claims.
+promoting repeated outcomes into causal claims. Its fixed question round and
+selected receipt now provide the durable handoff for asking those bounded
+questions again without reopening source paths or captured values.
 
 ## Acceptance gates
 
@@ -318,9 +326,10 @@ promoting repeated outcomes into causal claims.
   aggregate, and keep unsupported outcomes separate from `evidence_state`.
   A private counterfactual commitment is an identity binding, not retained
   target data or proof of causality.
-  The fixed study questions, `trace study ask all`, and GET-only `/trace-study`
-  review route must retain the same outcome/evidence-state separation and
-  fail closed without rendering study paths, payloads, URLs, or captured data.
+  The fixed study questions, `trace study ask all`, durable round/receipt
+  save-and-verify commands, and GET-only `/trace-study` review route must retain
+  the same outcome/evidence-state separation and fail closed without rendering
+  study paths, payloads, URLs, or captured data.
 - UI changes pass deterministic handler tests; use computer-use only when a
   concrete rendered-flow check is needed and the host supports it.
 - No review page, answer, export, or log exposes captured values, secrets, or
