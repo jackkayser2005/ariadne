@@ -270,6 +270,53 @@ the verified `pair` metadata beside the structural `comparison`, so a changed
 or missing event never becomes a provenance claim and an `unknown` evidence
 state is not turned into an observed outcome.
 
+## Source-neutral replicated trace ledger
+
+Already-produced matched pairs can be retained in one portable ledger without
+adding a source-specific runner to the trace package. Each input group is a
+baseline trace, treatment trace, baseline session, and treatment session. The
+caller records whether the required reset was confirmed before that pair's
+sessions:
+
+```console
+go run ./cmd/ariadne trace replication save --json \
+  --reset-confirmed 1 --reset-confirmed 2 \
+  .ariadne/trace-replication.json \
+  <baseline-1-trace.json> <treatment-1-trace.json> \
+  <baseline-1-session.json> <treatment-1-session.json> \
+  <baseline-2-trace.json> <treatment-2-trace.json> \
+  <baseline-2-session.json> <treatment-2-session.json>
+go run ./cmd/ariadne trace replication verify --json \
+  --expect-sha256 <ledger-sha256> .ariadne/trace-replication.json
+```
+
+The ledger embeds only normalized traces and provenance-bound sessions. It
+retains each pair's explicit `baseline-treatment` or `treatment-baseline`
+order, the reset assertion, pair identity, completeness, and safe comparison
+counts. Verification recomputes the pair identities and comparisons from the
+embedded documents, requires all pairs to share reviewed source, adapter,
+procedure, and scope, and requires equal nonzero counts of both orders before
+classifying the aggregate.
+
+The aggregate outcome is one of `replicated-change`, `no-change-observed`,
+`mixed-inconsistent`, or `unknown`. It remains separate from `evidence_state`:
+an observed outcome does not make the trace capture truthful, and an unknown
+evidence state does not become `no-change-observed`. Missing reset confirmation,
+partial capture, an incomplete comparison, an unbalanced order set, or a
+malformed ledger yields the safe `unknown` outcome. The reset policy is
+`caller-confirmed-before-each-session`; that record is an assertion, not proof
+that a source was reset.
+
+Repeat `--reset-confirmed <pair-index>` once for each confirmed pair. An
+omitted pair index remains unconfirmed, so mixed reset support can be retained
+without overstating the whole ledger.
+
+This ledger is intentionally not a runner, capture adapter, chronology model,
+database, statistical model, or causal proof. Source-specific producers remain
+responsible for authorization, isolation, reset execution, redaction, and
+capture completeness. The ledger is the portable aggregation and
+re-verification boundary after those producers have emitted reviewed sessions.
+
 ## Caller-ordered trace archive questions
 
 Standalone trace sessions from any currently reviewed adapter can be retained
@@ -355,6 +402,20 @@ different evidence contracts. The page offers no free-form question box and
 the route remains GET-only, so a computer-use driver can inspect the fixed
 question round without inventing a question or causing a mutation.
 
+The same loopback server can expose a verified replicated ledger with:
+
+```console
+go run ./cmd/ariadne experiment serve \
+  --trace-replication .ariadne/trace-replication.json \
+  <archive-root>
+```
+
+Open `/trace-replication` to review the aggregate outcome, separate evidence
+state, both explicit order counts, reset assertions, pair identities, and
+safe difference/unknown counts. The route is GET-only and does not render the
+configured ledger path, source paths, URLs, payloads, or captured values.
+Malformed or tampered input produces only `trace replication unavailable`.
+
 ## Bigger-picture path
 
 The intended flow is:
@@ -368,7 +429,10 @@ The intended flow is:
 5. A caller-ordered trace archive retains normalized standalone snapshots and
    answers fixed coverage, change, and source questions across reviewed
    adapters.
-6. Existing evidence bundles retain the authoritative artifacts and bounded
+6. A source-neutral replication ledger re-verifies already-produced matched
+   pairs in both explicit orders, records caller reset assertions, and
+   classifies the aggregate without adding a runner or capture adapter.
+7. Existing evidence bundles retain the authoritative artifacts and bounded
    conclusions; the trace is a safe index for asking where a category appeared.
 
 The Experiment 001 Android producer remains the authoritative evidence-backed

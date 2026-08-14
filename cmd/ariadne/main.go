@@ -30,6 +30,8 @@ const usage = `usage:
 	ariadne trace session pair create [--json] --adapter <adapter> --procedure-sha256 <digest> [--adapter-version <n>] --order <baseline-treatment|treatment-baseline> <baseline-trace.json> <treatment-trace.json> <baseline-session.json> <treatment-session.json>
 	ariadne trace session pair verify [--json] <baseline-session.json> <baseline-trace.json> <treatment-session.json> <treatment-trace.json>
 	ariadne trace session pair compare [--json] <baseline-session.json> <baseline-trace.json> <treatment-session.json> <treatment-trace.json>
+	ariadne trace replication save [--json] [--reset-confirmed <pair-index>] <ledger.json> <baseline-trace.json> <treatment-trace.json> <baseline-session.json> <treatment-session.json> ...
+	ariadne trace replication verify [--json] [--expect-sha256 <digest>] <ledger.json>
 	ariadne trace archive create [--json] --trace <trace.json> --session <session.json> ... <archive.json>
 	ariadne trace archive verify [--json] [--expect-sha256 <digest>] <archive.json>
 	ariadne trace archive questions [--json]
@@ -78,7 +80,7 @@ const usage = `usage:
   ariadne experiment ask-archive verify [--json] [--expect-sha256 <digest>] <report.json>
   ariadne experiment questions [--json]
   ariadne experiment list [--json] <archive-root>
-  ariadne experiment serve [--addr <address>] [--history <history.json>] [--reflection <report.json>] [--export <export.json>] [--acceptance <acceptance.json>] [--round-first <round.json> --round-second <round.json>] [--trace-archive <archive.json>] [--trace-round <round.json>] <archive-root>
+	ariadne experiment serve [--addr <address>] [--history <history.json>] [--reflection <report.json>] [--export <export.json>] [--acceptance <acceptance.json>] [--round-first <round.json> --round-second <round.json>] [--trace-archive <archive.json>] [--trace-round <round.json>] [--trace-replication <ledger.json>] <archive-root>
 `
 
 const adbCheckTimeout = 10 * time.Second
@@ -152,6 +154,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 		if args[2] == "verify" {
 			return runTraceSessionVerify(args[3:], stdout, stderr, trace.VerifySession)
+		}
+	}
+	if len(args) >= 3 && args[0] == "trace" && args[1] == "replication" {
+		if args[2] == "save" {
+			return runTraceReplicationSave(args[3:], stdout, stderr, trace.SaveReplicationLedger)
+		}
+		if args[2] == "verify" {
+			return runTraceReplicationVerify(args[3:], stdout, stderr, trace.VerifyReplicationLedger)
 		}
 	}
 	if len(args) >= 2 && args[0] == "browser" && args[1] == "trace" {
@@ -2785,6 +2795,7 @@ func runServe(
 	roundSecondPath := flags.String("round-second", "", "")
 	traceArchivePath := flags.String("trace-archive", "", "")
 	traceRoundPath := flags.String("trace-round", "", "")
+	traceReplicationPath := flags.String("trace-replication", "", "")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
 		_, _ = io.WriteString(stderr, usage)
 		return 2
@@ -2805,7 +2816,7 @@ func runServe(
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment serve: write output: %v\n", err)
 		return 1
 	}
-	reviewHandler := ui.HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceArchiveRound(flags.Arg(0), *historyPath, *reflectionPath, *exportPath, *acceptancePath, *roundFirstPath, *roundSecondPath, *traceArchivePath, *traceRoundPath)
+	reviewHandler := ui.HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceReplication(flags.Arg(0), *historyPath, *reflectionPath, *exportPath, *acceptancePath, *roundFirstPath, *roundSecondPath, *traceArchivePath, *traceRoundPath, *traceReplicationPath)
 	if err := serve(*address, reviewHandler); err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment serve: %v\n", err)
 		return 1

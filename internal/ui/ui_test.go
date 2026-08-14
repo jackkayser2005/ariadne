@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/jackkayser2005/ariadne/internal/bundle"
+	"github.com/jackkayser2005/ariadne/internal/evidence"
 	"github.com/jackkayser2005/ariadne/internal/trace"
 )
 
@@ -235,6 +236,24 @@ func TestHandlerWithTraceArchiveRoundAcceptsAllOptionalSources(t *testing.T) {
 	}
 }
 
+func TestHandlerWithTraceReplicationAcceptsAllOptionalSources(t *testing.T) {
+	h := HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceReplication(
+		"archive-root",
+		"history.json",
+		"reflection.json",
+		"export.json",
+		"acceptance.json",
+		"first-round.json",
+		"second-round.json",
+		"trace-archive.json",
+		"trace-round.json",
+		"trace-replication.json",
+	)
+	if h == nil {
+		t.Fatal("HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceReplication() returned nil")
+	}
+}
+
 func TestHandlerRendersTraceArchiveReflection(t *testing.T) {
 	archive, summary := validUITraceArchive(t)
 	digest := summary.ArchiveSHA256
@@ -289,6 +308,128 @@ func TestHandlerRendersTraceArchiveReflection(t *testing.T) {
 	h.ServeHTTP(postRecorder, httptest.NewRequest(http.MethodPost, "/trace-archive", nil))
 	if postRecorder.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("POST /trace-archive status = %d, body=%q", postRecorder.Code, postRecorder.Body.String())
+	}
+}
+
+func TestHandlerRendersTraceReplicationLedger(t *testing.T) {
+	digest := strings.Repeat("a", 64)
+	ledger := trace.ReplicationLedger{
+		SchemaVersion: 1,
+		ResetPolicy:   trace.ReplicationResetPolicy,
+		Pairs: []trace.ReplicationPair{
+			{
+				Position:       1,
+				ResetConfirmed: true,
+				Pair: trace.SessionPairVerificationSummary{
+					Order:                 trace.OrderBaselineTreatment,
+					PairSHA256:            strings.Repeat("b", 64),
+					BaselineCompleteness:  trace.Complete,
+					TreatmentCompleteness: trace.Complete,
+				},
+				Comparison: trace.Comparison{Differences: []trace.EventChange{{State: evidence.Observed}}},
+			},
+			{
+				Position:       2,
+				ResetConfirmed: true,
+				Pair: trace.SessionPairVerificationSummary{
+					Order:                 trace.OrderTreatmentBaseline,
+					PairSHA256:            strings.Repeat("c", 64),
+					BaselineCompleteness:  trace.Complete,
+					TreatmentCompleteness: trace.Complete,
+				},
+				Comparison: trace.Comparison{},
+			},
+		},
+	}
+	summary := trace.ReplicationLedgerVerificationSummary{
+		SchemaVersion:          1,
+		ResetPolicy:            trace.ReplicationResetPolicy,
+		Pairs:                  2,
+		BaselineTreatmentPairs: 1,
+		TreatmentBaselinePairs: 1,
+		ResetConfirmedPairs:    2,
+		CompletePairs:          2,
+		ChangedPairs:           1,
+		NoChangePairs:          1,
+		OrderBalanced:          true,
+		Outcome:                trace.MixedInconsistent,
+		EvidenceState:          evidence.Observed,
+		Reason:                 "retained pairs disagree about safe category change",
+		LedgerSHA256:           digest,
+	}
+	h := newHandler(handler{
+		root:                 "archive-root",
+		index:                func(string) ([]bundle.ArchiveEntry, error) { return nil, nil },
+		traceReplicationPath: "private-ledger.json",
+		traceReplicationRead: func(path string) (trace.ReplicationLedger, trace.ReplicationLedgerVerificationSummary, error) {
+			if path != "private-ledger.json" {
+				t.Fatalf("ReadReplicationLedger() path = %q", path)
+			}
+			return ledger, summary, nil
+		},
+	})
+
+	indexRecorder := httptest.NewRecorder()
+	h.ServeHTTP(indexRecorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	if indexRecorder.Code != http.StatusOK || !strings.Contains(indexRecorder.Body.String(), "Open replicated trace review") {
+		t.Fatalf("index status = %d, body=%q", indexRecorder.Code, indexRecorder.Body.String())
+	}
+
+	recorder := httptest.NewRecorder()
+	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/trace-replication", nil))
+	body := recorder.Body.String()
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("trace replication status = %d, body=%q", recorder.Code, body)
+	}
+	for _, want := range []string{
+		"Replicated trace reflection",
+		"Verified replication identity",
+		"baseline &rarr; treatment",
+		"treatment &rarr; baseline",
+		"mixed-inconsistent",
+		"observed",
+		digest,
+		"pair 1",
+		"pair 2",
+		trace.OrderBaselineTreatment,
+		trace.OrderTreatmentBaseline,
+		"caller-confirmed-before-each-session",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("trace replication body missing %q: %s", want, body)
+		}
+	}
+	if strings.Contains(body, "private-ledger.json") || strings.Contains(body, "secret-value") {
+		t.Fatal("trace replication page disclosed a local input path or captured value")
+	}
+
+	postRecorder := httptest.NewRecorder()
+	h.ServeHTTP(postRecorder, httptest.NewRequest(http.MethodPost, "/trace-replication", nil))
+	if postRecorder.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("POST /trace-replication status = %d, body=%q", postRecorder.Code, postRecorder.Body.String())
+	}
+}
+
+func TestHandlerHidesTraceReplicationVerificationErrors(t *testing.T) {
+	for name, h := range map[string]handler{
+		"reader unavailable": {traceReplicationPath: "ledger.json"},
+		"reader error": {
+			traceReplicationPath: "ledger.json",
+			traceReplicationRead: func(string) (trace.ReplicationLedger, trace.ReplicationLedgerVerificationSummary, error) {
+				return trace.ReplicationLedger{}, trace.ReplicationLedgerVerificationSummary{}, errors.New("private decoder path and raw value")
+			},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			newHandler(h).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/trace-replication", nil))
+			if recorder.Code != http.StatusUnprocessableEntity || recorder.Body.String() != "trace replication unavailable\n" {
+				t.Fatalf("status = %d, body=%q", recorder.Code, recorder.Body.String())
+			}
+			if strings.Contains(recorder.Body.String(), "private") {
+				t.Fatal("trace replication page disclosed internal verification error")
+			}
+		})
 	}
 }
 
@@ -461,6 +602,45 @@ func TestHandlerRejectsTraceArchiveIdentityDrift(t *testing.T) {
 	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/trace-archive", nil))
 	if recorder.Code != http.StatusUnprocessableEntity || recorder.Body.String() != "trace archive unavailable\n" {
 		t.Fatalf("status = %d, body=%q", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestHandlerMarksUnsupportedReplicationPairUnknown(t *testing.T) {
+	ledger := trace.ReplicationLedger{
+		SchemaVersion: 1,
+		ResetPolicy:   trace.ReplicationResetPolicy,
+		Pairs: []trace.ReplicationPair{{
+			Position:       1,
+			ResetConfirmed: false,
+			Pair: trace.SessionPairVerificationSummary{
+				Order:                 trace.OrderBaselineTreatment,
+				BaselineCompleteness:  trace.Complete,
+				TreatmentCompleteness: trace.Partial,
+			},
+			Comparison: trace.Comparison{
+				Differences: []trace.EventChange{{}},
+			},
+		}},
+	}
+	h := newHandler(handler{
+		root:                 "archive-root",
+		index:                func(string) ([]bundle.ArchiveEntry, error) { return nil, nil },
+		traceReplicationPath: "ledger.json",
+		traceReplicationRead: func(string) (trace.ReplicationLedger, trace.ReplicationLedgerVerificationSummary, error) {
+			return ledger, trace.ReplicationLedgerVerificationSummary{
+				SchemaVersion: 1,
+				ResetPolicy:   trace.ReplicationResetPolicy,
+				Pairs:         1,
+				Outcome:       trace.ReplicationUnknown,
+				EvidenceState: evidence.Unknown,
+			}, nil
+		},
+	})
+	recorder := httptest.NewRecorder()
+	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/trace-replication", nil))
+	body := recorder.Body.String()
+	if recorder.Code != http.StatusOK || !strings.Contains(body, `id="trace-replication-pair-1"`) || !strings.Contains(body, `status status-unknown">unknown`) {
+		t.Fatalf("unsupported pair status = %d, body=%q", recorder.Code, body)
 	}
 }
 

@@ -17,24 +17,26 @@ import (
 )
 
 type handler struct {
-	root             string
-	index            func(string) ([]bundle.ArchiveEntry, error)
-	verify           func(string) (bundle.Summary, error)
-	questions        func() []bundle.Question
-	ask              func(string, string) (bundle.Answer, error)
-	askArchive       func(string, string) (bundle.ArchiveQuestionReport, error)
-	history          func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error)
-	acceptance       func() (bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary, error)
-	compareRounds    func() (bundle.ArchiveQuestionTransitionHistoryQuestionRoundComparison, error)
-	compareCurrent   func() (bundle.ArchiveQuestionComparison, error)
-	find             func(string, string) (bundle.Finding, error)
-	exportPath       string
-	exportAsk        func(string, string) (bundle.Answer, error)
-	exportFind       func(string, string) (bundle.Finding, error)
-	traceArchivePath string
-	traceArchiveRead func(string) (trace.Archive, trace.ArchiveVerificationSummary, error)
-	traceRoundPath   string
-	traceRoundRead   func(string) (trace.ArchiveQuestionRound, trace.ArchiveQuestionRoundVerificationSummary, error)
+	root                 string
+	index                func(string) ([]bundle.ArchiveEntry, error)
+	verify               func(string) (bundle.Summary, error)
+	questions            func() []bundle.Question
+	ask                  func(string, string) (bundle.Answer, error)
+	askArchive           func(string, string) (bundle.ArchiveQuestionReport, error)
+	history              func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error)
+	acceptance           func() (bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary, error)
+	compareRounds        func() (bundle.ArchiveQuestionTransitionHistoryQuestionRoundComparison, error)
+	compareCurrent       func() (bundle.ArchiveQuestionComparison, error)
+	find                 func(string, string) (bundle.Finding, error)
+	exportPath           string
+	exportAsk            func(string, string) (bundle.Answer, error)
+	exportFind           func(string, string) (bundle.Finding, error)
+	traceArchivePath     string
+	traceArchiveRead     func(string) (trace.Archive, trace.ArchiveVerificationSummary, error)
+	traceRoundPath       string
+	traceRoundRead       func(string) (trace.ArchiveQuestionRound, trace.ArchiveQuestionRoundVerificationSummary, error)
+	traceReplicationPath string
+	traceReplicationRead func(string) (trace.ReplicationLedger, trace.ReplicationLedgerVerificationSummary, error)
 }
 
 type archiveQuestionResult struct {
@@ -50,6 +52,18 @@ type archiveQuestionSummary struct {
 	Observed    int
 	Unknown     int
 	Unavailable int
+}
+
+type traceReplicationPairData struct {
+	Position              int
+	Order                 string
+	ResetConfirmed        bool
+	PairSHA256            string
+	BaselineCompleteness  string
+	TreatmentCompleteness string
+	Differences           int
+	Unknowns              int
+	EvidenceState         evidence.State
 }
 
 type pageData struct {
@@ -105,6 +119,9 @@ type pageData struct {
 	TraceArchiveRoundSHA256            string
 	TraceArchiveSummary                trace.ArchiveVerificationSummary
 	TraceArchiveAnswers                []trace.ArchiveAnswer
+	TraceReplicationConfigured         bool
+	TraceReplicationSummary            trace.ReplicationLedgerVerificationSummary
+	TraceReplicationPairs              []traceReplicationPairData
 }
 
 // Handler returns a read-only HTTP handler for one explicitly supplied archive root.
@@ -156,6 +173,13 @@ func HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceArchive(arc
 // returns a read-only review handler with an optional live trace archive and
 // optional saved trace question round.
 func HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceArchiveRound(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, traceArchivePath, traceRoundPath string) http.Handler {
+	return HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceReplication(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, traceArchivePath, traceRoundPath, "")
+}
+
+// HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceReplication
+// returns a read-only review handler with an optional source-neutral
+// replicated trace ledger.
+func HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceReplication(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, traceArchivePath, traceRoundPath, traceReplicationPath string) http.Handler {
 	h := archiveHandler(archiveRoot)
 	if historyPath != "" {
 		h.history = func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error) {
@@ -190,6 +214,10 @@ func HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceArchiveRoun
 		h.traceRoundPath = traceRoundPath
 		h.traceRoundRead = trace.ReadArchiveQuestionRound
 	}
+	if traceReplicationPath != "" {
+		h.traceReplicationPath = traceReplicationPath
+		h.traceReplicationRead = trace.ReadReplicationLedger
+	}
 	return newHandler(h)
 }
 
@@ -214,6 +242,7 @@ func newHandler(h handler) http.Handler {
 	mux.HandleFunc("/export-ask", h.handleExportAsk)
 	mux.HandleFunc("/export-finding", h.handleExportFinding)
 	mux.HandleFunc("/trace-archive", h.handleTraceArchive)
+	mux.HandleFunc("/trace-replication", h.handleTraceReplication)
 	mux.HandleFunc("/favicon.ico", handleFavicon)
 	return mux
 }
@@ -422,11 +451,16 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		ExportConfigured:                   h.exportAsk != nil && h.exportFind != nil,
 		TraceArchiveConfigured:             h.traceArchiveConfigured(),
 		TraceArchiveRoundSaved:             h.traceRoundPath != "",
+		TraceReplicationConfigured:         h.traceReplicationConfigured(),
 	})
 }
 
 func (h handler) traceArchiveConfigured() bool {
 	return h.traceArchivePath != "" || h.traceRoundPath != ""
+}
+
+func (h handler) traceReplicationConfigured() bool {
+	return h.traceReplicationPath != ""
 }
 
 func (h handler) readTraceArchive() (trace.ArchiveVerificationSummary, trace.ArchiveQuestionRoundVerificationSummary, []trace.ArchiveAnswer, error) {
@@ -516,6 +550,46 @@ func (h handler) handleTraceArchive(w http.ResponseWriter, r *http.Request) {
 		TraceArchiveRoundSHA256: roundSummary.RoundSHA256,
 		TraceArchiveSummary:     summary,
 		TraceArchiveAnswers:     answers,
+	})
+}
+
+func (h handler) handleTraceReplication(w http.ResponseWriter, r *http.Request) {
+	if !getOnly(w, r) {
+		return
+	}
+	if r.URL.Path != "/trace-replication" || !h.traceReplicationConfigured() {
+		http.NotFound(w, r)
+		return
+	}
+	if h.traceReplicationRead == nil {
+		http.Error(w, "trace replication unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	ledger, summary, err := h.traceReplicationRead(h.traceReplicationPath)
+	if err != nil {
+		http.Error(w, "trace replication unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	pairs := make([]traceReplicationPairData, 0, len(ledger.Pairs))
+	for _, pair := range ledger.Pairs {
+		pairs = append(pairs, traceReplicationPairData{
+			Position:              pair.Position,
+			Order:                 pair.Pair.Order,
+			ResetConfirmed:        pair.ResetConfirmed,
+			PairSHA256:            pair.Pair.PairSHA256,
+			BaselineCompleteness:  pair.Pair.BaselineCompleteness,
+			TreatmentCompleteness: pair.Pair.TreatmentCompleteness,
+			Differences:           len(pair.Comparison.Differences),
+			Unknowns:              len(pair.Comparison.Unknowns),
+			EvidenceState:         trace.ReplicationPairEvidenceState(pair),
+		})
+	}
+	render(w, pageData{
+		View:                       "trace-replication",
+		Title:                      "Trace replication review — Ariadne",
+		TraceReplicationConfigured: true,
+		TraceReplicationSummary:    summary,
+		TraceReplicationPairs:      pairs,
 	})
 }
 
@@ -883,6 +957,13 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       <a class="button" href="/trace-archive">Open trace archive review <span aria-hidden="true">&rarr;</span></a>
     </section>
     {{end}}
+    {{if .TraceReplicationConfigured}}
+    <section class="panel" id="trace-replication-orientation" aria-label="Replicated trace ledger">
+      <div class="section-head"><h2>Replicated trace ledger</h2><span class="context">verified, read only</span></div>
+      <p class="context">Review matched baseline/treatment pairs in their recorded orders. The aggregate outcome and evidence state remain separate; reset assertions do not prove source behavior.</p>
+      <a class="button" href="/trace-replication">Open replicated trace review <span aria-hidden="true">&rarr;</span></a>
+    </section>
+    {{end}}
     {{if and .ReflectionHistoryRequested (or (not .SelectedQuestion.ID) (eq .SelectedQuestion.ID .ReflectionHistory.QuestionID))}}
     <section class="panel">
       <div class="section-head"><h2>Saved reflection history</h2><span class="context">verified ledger</span></div>
@@ -1161,6 +1242,48 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       {{end}}
       </div>
       <p class="context">The outcome answers the bounded question; evidence state qualifies the support available for that answer. A result of <code>unknown</code> is not treated as no change.</p>
+    </section>
+
+  {{else if eq .View "trace-replication"}}
+    <a class="back" href="/">&larr; Review archive</a>
+    <p class="eyebrow">source-neutral replicated trace ledger &middot; verified</p>
+    <h1>Replicated trace reflection</h1>
+    <p class="lede">Review already-produced matched pairs across both explicit orders. This is a bounded aggregate of safe trace comparisons, not a runner, chronology model, or causal proof.</p>
+    <section class="panel" aria-label="Verified replicated trace ledger identity">
+      <div class="section-head"><h2>Verified replication identity</h2><span class="status status-raw-value-free">raw-value-free</span></div>
+      <dl>
+        <dt>pairs</dt><dd>{{.TraceReplicationSummary.Pairs}}</dd>
+        <dt>baseline &rarr; treatment</dt><dd>{{.TraceReplicationSummary.BaselineTreatmentPairs}}</dd>
+        <dt>treatment &rarr; baseline</dt><dd>{{.TraceReplicationSummary.TreatmentBaselinePairs}}</dd>
+        <dt>reset-confirmed pairs</dt><dd>{{.TraceReplicationSummary.ResetConfirmedPairs}}</dd>
+        <dt>complete pairs</dt><dd>{{.TraceReplicationSummary.CompletePairs}}</dd>
+        <dt>order balanced</dt><dd>{{.TraceReplicationSummary.OrderBalanced}}</dd>
+        <dt>outcome</dt><dd><span class="status status-{{.TraceReplicationSummary.Outcome}}">{{.TraceReplicationSummary.Outcome}}</span></dd>
+        <dt>evidence state</dt><dd><span class="status status-{{.TraceReplicationSummary.EvidenceState}}">{{.TraceReplicationSummary.EvidenceState}}</span></dd>
+        <dt>ledger SHA-256</dt><dd>{{.TraceReplicationSummary.LedgerSHA256}}</dd>
+      </dl>
+      <p class="context">{{.TraceReplicationSummary.Reason}} Reset policy: <code>{{.TraceReplicationSummary.ResetPolicy}}</code>. The recorded reset is a caller assertion, not proof that a source was reset.</p>
+    </section>
+    <section class="panel" aria-label="Replicated trace pairs">
+      <div class="section-head"><h2>Matched pairs</h2><span class="context">caller-recorded order</span></div>
+      <div class="question-list">
+      {{range .TraceReplicationPairs}}
+        <article class="panel" id="trace-replication-pair-{{.Position}}">
+          <div class="section-head"><h3>pair {{.Position}}</h3><span class="status status-{{if eq .EvidenceState "unknown"}}unknown{{else if .Differences}}changed{{else}}same{{end}}">{{if eq .EvidenceState "unknown"}}unknown{{else if .Differences}}changed{{else}}same{{end}}</span></div>
+          <dl>
+            <dt>order</dt><dd>{{.Order}}</dd>
+            <dt>reset confirmed</dt><dd>{{.ResetConfirmed}}</dd>
+            <dt>pair SHA-256</dt><dd>{{.PairSHA256}}</dd>
+            <dt>baseline completeness</dt><dd>{{.BaselineCompleteness}}</dd>
+            <dt>treatment completeness</dt><dd>{{.TreatmentCompleteness}}</dd>
+            <dt>differences</dt><dd>{{.Differences}}</dd>
+            <dt>unknowns</dt><dd>{{.Unknowns}}</dd>
+            <dt>evidence state</dt><dd><span class="status status-{{.EvidenceState}}">{{.EvidenceState}}</span></dd>
+          </dl>
+        </article>
+      {{end}}
+      </div>
+      <p class="context">Each pair comparison is recomputed from the embedded normalized traces during verification. No source paths, payloads, URLs, or captured values are rendered.</p>
     </section>
 
   {{else if eq .View "run"}}

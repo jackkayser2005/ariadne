@@ -109,6 +109,17 @@ source-boundary layers, and a portable trace reflection layer:
     selected raw-value-free receipt bound to both archive and round identities.
     The route can consume that saved round through `--trace-round`; when both
     live and saved inputs are supplied, identity drift fails closed.
+11. **Source-neutral replicated trace ledger.** Already-produced matched trace
+    sessions can now be embedded in a portable ledger with caller-recorded
+    reset assertions and explicit `baseline-treatment` and
+    `treatment-baseline` orders. Verification rechecks embedded session and
+    trace identities, recomputes each comparison, requires equal nonzero order
+    counts, and classifies the aggregate as `replicated-change`,
+    `no-change-observed`, `mixed-inconsistent`, or `unknown` separately from
+    `evidence_state`. The loopback review page exposes the safe aggregate and
+    pair identities through `/trace-replication`. This is an aggregation and
+    re-verification boundary, not a runner, capture adapter, chronology model,
+    or causal proof.
 
 The local review page is intentionally read-only. Its compact question round
 and receipt links, including stable history and receipt identities, are a
@@ -159,8 +170,9 @@ repeated resets and reversed session order while keeping source-specific
 capture narrow. The browser audit producer and explicit driver protocol are
 handoff slices: keep them redacted, while the deterministic comparison,
 provenance, redaction, and question engine stay small and portable. Retain
-trace question rounds and selected receipts only as bounded identities, not as
-a new capture store.
+trace question rounds and selected receipts only as bounded identities, and
+use the source-neutral replication ledger to re-verify already-produced pairs,
+not as a new capture store.
 Session provenance is the join point for later source-specific runs. A real
 browser capture driver for a user-authorized target, desktop producer, or proxy
 producer is still a separate future slice with its own authorized procedure,
@@ -182,6 +194,9 @@ contract remains the handoff boundary for any future source producer.
   answer only the fixed coverage, change, and source questions; partial or
   incompatible boundaries stay `unknown`. Saved question rounds and selected
   receipts verify independently without reopening the source archive.
+- Source-neutral replication ledgers verify embedded matched sessions and
+  comparisons, retain both explicit pair orders and reset assertions, and
+  require balanced orders before reporting a non-`unknown` aggregate.
 - UI changes pass deterministic handler tests; use computer-use only when a
   concrete rendered-flow check is needed and the host supports it.
 - No review page, answer, export, or log exposes captured values, secrets, or

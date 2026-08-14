@@ -175,6 +175,37 @@ the existing raw-value-free trace comparison and returns both objects together.
 Provenance, structural differences, and evidence states remain separate; a
 joined comparison is not a causal claim.
 
+Combine already-produced matched pairs into one portable, source-neutral
+replication ledger. Supply at least one pair in each explicit order; each group
+contains baseline trace, treatment trace, baseline session, and treatment
+session paths:
+
+```console
+go run ./cmd/ariadne trace replication save --json \
+  --reset-confirmed 1 --reset-confirmed 2 \
+  .ariadne/trace-replication.json \
+  <baseline-1-trace.json> <treatment-1-trace.json> \
+  <baseline-1-session.json> <treatment-1-session.json> \
+  <baseline-2-trace.json> <treatment-2-trace.json> \
+  <baseline-2-session.json> <treatment-2-session.json>
+go run ./cmd/ariadne trace replication verify --json \
+  .ariadne/trace-replication.json
+go run ./cmd/ariadne trace replication verify --json \
+  --expect-sha256 <ledger-sha256> .ariadne/trace-replication.json
+```
+
+The ledger embeds normalized traces and provenance-bound sessions, records the
+caller's pair order and reset assertion, and re-verifies comparisons without
+reopening source-specific inputs. Its aggregate is `replicated-change`,
+`no-change-observed`, `mixed-inconsistent`, or `unknown`; `evidence_state`
+remains a separate support judgment. Missing reset confirmation, incomplete
+capture, unequal nonzero order counts, or an unknown comparison yields
+`unknown`. This is a portable replication record, not a runner, capture
+adapter, chronology model, statistical model, or causal proof.
+
+Repeat `--reset-confirmed <pair-index>` once for each pair whose reset was
+confirmed; omitted pair indexes remain unconfirmed and are classified safely.
+
 Retain caller-ordered standalone trace snapshots from any reviewed adapter in
 one portable archive, then ask the fixed source-neutral questions without
 reopening source values:
@@ -391,8 +422,9 @@ choose a question and retain the identities it was asking about.
 
 The local review page can receive a verified transition ledger, a saved
 reflection, an acceptance identity binding, two retained question rounds, and
-one portable trace archive or saved question round with
-`experiment serve --history <history.json> --reflection <reflection.json> --acceptance <acceptance.json> --round-first <first-round.json> --round-second <second-round.json> --trace-archive <trace-archive.json> --trace-round <trace-round.json> <archive-root>`.
+one portable trace archive, saved question round, or replicated trace ledger
+with
+`experiment serve --history <history.json> --reflection <reflection.json> --acceptance <acceptance.json> --round-first <first-round.json> --round-second <second-round.json> --trace-archive <trace-archive.json> --trace-round <trace-round.json> --trace-replication <ledger.json> <archive-root>`.
 It renders caller-ordered bounded transitions and re-asks the saved reflection's
 fixed question against the current archive, showing only safe comparison counts,
 identities, per-directory bounded state changes, and the repeated-change
@@ -419,6 +451,10 @@ alongside both round and history identities. The comparison preserves caller
 order and does not infer chronology; each changed fixed-question ID links back
 to the same bounded history-question route for a repeatable re-check only when
 the supplied history identity matches one of the compared rounds.
+When `--trace-replication` is supplied, `/trace-replication` shows the verified
+aggregate, both explicit order counts, reset assertions, pair identities, and
+safe difference/unknown counts. It never renders configured paths, payloads,
+URLs, or captured values, and remains GET-only.
 
 Stable-ID Android sessions also record a SHA-256 identity for the successful
 UI hierarchy used to resolve the manifest-declared control. The raw hierarchy

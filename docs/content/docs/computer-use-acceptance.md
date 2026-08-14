@@ -52,10 +52,17 @@ Or point the same read-only route at a previously verified question round:
 go run ./cmd/ariadne experiment serve --trace-round <trace-round.json> <archive-root>
 ```
 
-This adds a link to `/trace-archive`; it does not change the bundle question
-route or merge trace identities into the evidence archive. When both flags are
-supplied, the route fails closed unless the live archive and saved question
-round identities agree.
+To review an already-verified replicated trace ledger, use the separate
+source-neutral route:
+
+```console
+go run ./cmd/ariadne experiment serve --trace-replication <trace-replication.json> <archive-root>
+```
+
+These options add links to the separate trace review routes; they do not
+change the bundle question route or merge trace identities into the evidence
+archive. When both archive flags are supplied, `/trace-archive` fails closed
+unless the live archive and saved question round identities agree.
 
 ## Driver sequence
 
@@ -99,6 +106,19 @@ round identities agree.
 The page exposes accessible labels and stable receipt panel IDs for this
 sequence. A driver may use those labels or the visible question IDs; it must
 not invent natural-language questions or infer chronology from the ledger.
+
+### Optional replicated-trace pass
+
+1. From the review index, open `Open replicated trace review`.
+2. Check the aggregate outcome and its separate `evidence state`, both explicit
+   order counts, reset-confirmed count, order-balance status, and ledger
+   SHA-256.
+3. Inspect the safe pair cards for caller-recorded order, reset assertion,
+   pair SHA-256, completeness, differences, and unknowns. Treat `unknown` as
+   missing support, not as no change.
+4. Do not retain the configured ledger path or infer that the recorded reset
+   proves a source reset. A failed verification should show only
+   `trace replication unavailable`.
 
 ## Recorded rendered-flow check
 
