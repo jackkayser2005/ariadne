@@ -43,6 +43,9 @@ const usage = `usage:
 	ariadne trace replication ask receipt verify [--json] [--expect-sha256 <digest>] <receipt.json>
 	ariadne trace study save [--json] --contrast-sha256 <digest> <study.json> <ledger-1.json> <round-1.json> ...
 	ariadne trace study verify [--json] [--expect-sha256 <digest>] <study.json>
+	ariadne trace study questions [--json]
+	ariadne trace study ask [--json] <study.json> <question-id>
+	ariadne trace study ask all [--json] <study.json>
 	ariadne trace archive create [--json] --trace <trace.json> --session <session.json> ... <archive.json>
 	ariadne trace archive verify [--json] [--expect-sha256 <digest>] <archive.json>
 	ariadne trace archive questions [--json]
@@ -102,7 +105,7 @@ const usage = `usage:
   ariadne experiment ask-archive verify [--json] [--expect-sha256 <digest>] <report.json>
   ariadne experiment questions [--json]
   ariadne experiment list [--json] <archive-root>
-	ariadne experiment serve [--addr <address>] [--history <history.json>] [--reflection <report.json>] [--export <export.json>] [--acceptance <acceptance.json>] [--round-first <round.json> --round-second <round.json>] [--trace-archive <archive.json>] [--trace-round <round.json>] [--trace-replication <ledger.json>] [--trace-case <case.json>] <archive-root>
+	ariadne experiment serve [--addr <address>] [--history <history.json>] [--reflection <report.json>] [--export <export.json>] [--acceptance <acceptance.json>] [--round-first <round.json> --round-second <round.json>] [--trace-archive <archive.json>] [--trace-round <round.json>] [--trace-replication <ledger.json>] [--trace-case <case.json>] [--trace-study <study.json>] <archive-root>
 `
 
 const adbCheckTimeout = 10 * time.Second
@@ -242,6 +245,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 		if args[2] == "verify" {
 			return runTraceStudyVerify(args[3:], stdout, stderr, trace.VerifyReplicationStudy)
+		}
+		if args[2] == "questions" {
+			return runTraceStudyQuestions(args[3:], stdout, stderr, trace.ReplicationStudyQuestions)
+		}
+		if args[2] == "ask" {
+			if len(args) >= 4 && args[3] == "all" {
+				return runTraceStudyAskAll(args[4:], stdout, stderr, trace.AskAllReplicationStudyQuestions)
+			}
+			return runTraceStudyAsk(args[3:], stdout, stderr, trace.AskReplicationStudyQuestion)
 		}
 	}
 	if len(args) >= 2 && args[0] == "browser" && args[1] == "trace" {
@@ -2936,6 +2948,7 @@ func runServe(
 	traceRoundPath := flags.String("trace-round", "", "")
 	traceReplicationPath := flags.String("trace-replication", "", "")
 	traceCasePath := flags.String("trace-case", "", "")
+	traceStudyPath := flags.String("trace-study", "", "")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
 		_, _ = io.WriteString(stderr, usage)
 		return 2
@@ -2956,7 +2969,7 @@ func runServe(
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment serve: write output: %v\n", err)
 		return 1
 	}
-	reviewHandler := ui.HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCase(flags.Arg(0), *historyPath, *reflectionPath, *exportPath, *acceptancePath, *roundFirstPath, *roundSecondPath, *traceArchivePath, *traceRoundPath, *traceReplicationPath, *traceCasePath)
+	reviewHandler := ui.HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCaseAndStudy(flags.Arg(0), *historyPath, *reflectionPath, *exportPath, *acceptancePath, *roundFirstPath, *roundSecondPath, *traceArchivePath, *traceRoundPath, *traceReplicationPath, *traceCasePath, *traceStudyPath)
 	if err := serve(*address, reviewHandler); err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment serve: %v\n", err)
 		return 1

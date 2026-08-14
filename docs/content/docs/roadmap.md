@@ -184,6 +184,15 @@ browser source-boundary layers, and a portable trace reflection layer:
     comparison boundary, not a reset runner, browser capture service,
     statistical model, or causal proof.
 
+17. **Replication study review surface.** The fixed `study-outcome`,
+    `study-support`, and `cross-run-consistency` questions now close the
+    save -> verify -> ask -> review loop for a portable study. The CLI can
+    list or answer them, and the GET-only `/trace-study` route renders the
+    commitment, caller order, safe counts, aggregate/evidence-state split,
+    and every embedded ledger/question-round identity without paths or
+    captured values. Study-specific answer rounds and receipts remain a
+    deliberate later slice.
+
 The local review page is intentionally read-only. Its compact question round
 and receipt links, including stable history and receipt identities, are a
 bounded UI-control surface for a computer-use driver;
@@ -309,6 +318,9 @@ promoting repeated outcomes into causal claims.
   aggregate, and keep unsupported outcomes separate from `evidence_state`.
   A private counterfactual commitment is an identity binding, not retained
   target data or proof of causality.
+  The fixed study questions, `trace study ask all`, and GET-only `/trace-study`
+  review route must retain the same outcome/evidence-state separation and
+  fail closed without rendering study paths, payloads, URLs, or captured data.
 - UI changes pass deterministic handler tests; use computer-use only when a
   concrete rendered-flow check is needed and the host supports it.
 - No review page, answer, export, or log exposes captured values, secrets, or

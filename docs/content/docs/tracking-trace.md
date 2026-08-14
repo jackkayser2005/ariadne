@@ -478,6 +478,34 @@ responsible for authorization, isolation, reset execution, redaction, and
 capture completeness. The ledger is the portable aggregation and
 re-verification boundary after those producers have emitted reviewed sessions.
 
+## Fixed study questions and read-only review
+
+The study exposes three fixed questions after offline verification. They ask for
+the aggregate outcome, whether every run has balanced/reset-confirmed/complete
+support with observed evidence, and whether supported runs agree:
+
+```console
+go run ./cmd/ariadne trace study questions --json
+go run ./cmd/ariadne trace study ask --json .ariadne/trace-study.json study-outcome
+go run ./cmd/ariadne trace study ask all --json .ariadne/trace-study.json
+```
+
+The answer's `result`, aggregate `outcome`, and `evidence_state` remain
+separate. Study-specific answer rounds and receipts are not persisted yet; the
+study artifact already binds each embedded ledger to its matching fixed round.
+To expose the same verified identities through the local loopback server:
+
+```console
+go run ./cmd/ariadne experiment serve \
+  --trace-study .ariadne/trace-study.json \
+  <archive-root>
+```
+
+Open `/trace-study` from the review index. The GET-only route shows the private
+commitment identity, caller order, aggregate counts, fixed answers, and each
+ledger/question-round identity. It never renders input paths, payloads, URLs,
+or captured values, and fails closed as `trace study unavailable`.
+
 ## Caller-ordered trace archive questions
 
 Standalone trace sessions from any currently reviewed adapter can be retained

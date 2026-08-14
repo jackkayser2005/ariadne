@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"strings"
 	"testing"
 
@@ -127,5 +128,139 @@ func TestRunTraceStudyCommands(t *testing.T) {
 func TestWriteTraceStudySummary(t *testing.T) {
 	if err := writeTraceStudySummary(failingWriter{}, "study", trace.StudyVerificationSummary{}); err == nil {
 		t.Fatal("writeTraceStudySummary() accepted a failing writer")
+	}
+}
+
+func TestRunTraceStudyQuestionCommands(t *testing.T) {
+	answer := trace.StudyQuestionAnswer{
+		SchemaVersion: 1,
+		QuestionID:    trace.StudyQuestionOutcome,
+		Question:      "What aggregate outcome did the independent runs produce?",
+		Result:        string(trace.ReplicatedChange),
+		EvidenceState: "observed",
+		Outcome:       trace.ReplicatedChange,
+		StudySHA256:   strings.Repeat("a", 64),
+		Runs:          2,
+		Pairs:         4,
+		SupportedRuns: 2,
+		BalancedRuns:  2,
+		CompletePairs: 4,
+		ChangedRuns:   2,
+		Reason:        "every supported replicated run contains a safe category difference",
+	}
+	var stdout, stderr bytes.Buffer
+	if exitCode := runTraceStudyQuestions(nil, &stdout, &stderr, trace.ReplicationStudyQuestions); exitCode != 0 || !strings.Contains(stdout.String(), "trace replication study question catalog") || !strings.Contains(stdout.String(), trace.StudyQuestionConsistency) || stderr.Len() != 0 {
+		t.Fatalf("questions = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	if exitCode := runTraceStudyQuestions([]string{"--json"}, &stdout, &stderr, trace.ReplicationStudyQuestions); exitCode != 0 {
+		t.Fatalf("JSON questions = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+	var catalog []trace.StudyQuestion
+	if err := json.Unmarshal(stdout.Bytes(), &catalog); err != nil || len(catalog) != 3 {
+		t.Fatalf("catalog = %#v, err=%v", catalog, err)
+	}
+
+	ask := func(path, questionID string) (trace.StudyQuestionAnswer, error) {
+		if path != "study.json" || questionID != trace.StudyQuestionOutcome {
+			t.Fatalf("ask = %q, %q", path, questionID)
+		}
+		return answer, nil
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if exitCode := runTraceStudyAsk([]string{"study.json", trace.StudyQuestionOutcome}, &stdout, &stderr, ask); exitCode != 0 || !strings.Contains(stdout.String(), "result: replicated-change") || stderr.Len() != 0 {
+		t.Fatalf("ask = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	if exitCode := runTraceStudyAsk([]string{"--json", "study.json", trace.StudyQuestionOutcome}, &stdout, &stderr, ask); exitCode != 0 {
+		t.Fatalf("JSON ask = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+	var asked trace.StudyQuestionAnswer
+	if err := json.Unmarshal(stdout.Bytes(), &asked); err != nil || asked != answer {
+		t.Fatalf("asked = %#v, err=%v", asked, err)
+	}
+
+	askAll := func(path string) ([]trace.StudyQuestionAnswer, error) {
+		if path != "study.json" {
+			t.Fatalf("ask all path = %q", path)
+		}
+		return []trace.StudyQuestionAnswer{answer}, nil
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if exitCode := runTraceStudyAskAll([]string{"study.json"}, &stdout, &stderr, askAll); exitCode != 0 || !strings.Contains(stdout.String(), "trace replication study questions answered") || stderr.Len() != 0 {
+		t.Fatalf("ask all = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	if exitCode := runTraceStudyAskAll([]string{"--json", "study.json"}, &stdout, &stderr, askAll); exitCode != 0 {
+		t.Fatalf("JSON ask all = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+	var askedAll []trace.StudyQuestionAnswer
+	if err := json.Unmarshal(stdout.Bytes(), &askedAll); err != nil || len(askedAll) != 1 || askedAll[0] != answer {
+		t.Fatalf("asked all = %#v, err=%v", askedAll, err)
+	}
+
+	for _, test := range []struct {
+		name string
+		call func(*bytes.Buffer, *bytes.Buffer) int
+	}{
+		{name: "questions usage", call: func(out, errOut *bytes.Buffer) int {
+			return runTraceStudyQuestions([]string{"extra"}, out, errOut, trace.ReplicationStudyQuestions)
+		}},
+		{name: "ask usage", call: func(out, errOut *bytes.Buffer) int { return runTraceStudyAsk([]string{"study.json"}, out, errOut, ask) }},
+		{name: "ask all usage", call: func(out, errOut *bytes.Buffer) int { return runTraceStudyAskAll(nil, out, errOut, askAll) }},
+		{name: "ask error", call: func(out, errOut *bytes.Buffer) int {
+			return runTraceStudyAsk([]string{"study.json", trace.StudyQuestionOutcome}, out, errOut, func(string, string) (trace.StudyQuestionAnswer, error) {
+				return trace.StudyQuestionAnswer{}, errors.New("ask failed safely")
+			})
+		}},
+		{name: "ask all error", call: func(out, errOut *bytes.Buffer) int {
+			return runTraceStudyAskAll([]string{"study.json"}, out, errOut, func(string) ([]trace.StudyQuestionAnswer, error) { return nil, errors.New("ask all failed safely") })
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var out, errOut bytes.Buffer
+			if exitCode := test.call(&out, &errOut); exitCode == 0 || errOut.Len() == 0 {
+				t.Fatalf("call = %d, stdout=%q, stderr=%q", exitCode, out.String(), errOut.String())
+			}
+		})
+	}
+
+	for _, test := range []struct {
+		name string
+		call func(io.Writer, *bytes.Buffer) int
+	}{
+		{name: "questions human write", call: func(out io.Writer, errOut *bytes.Buffer) int {
+			return runTraceStudyQuestions(nil, out, errOut, trace.ReplicationStudyQuestions)
+		}},
+		{name: "questions JSON write", call: func(out io.Writer, errOut *bytes.Buffer) int {
+			return runTraceStudyQuestions([]string{"--json"}, out, errOut, trace.ReplicationStudyQuestions)
+		}},
+		{name: "ask human write", call: func(out io.Writer, errOut *bytes.Buffer) int {
+			return runTraceStudyAsk([]string{"study.json", trace.StudyQuestionOutcome}, out, errOut, ask)
+		}},
+		{name: "ask JSON write", call: func(out io.Writer, errOut *bytes.Buffer) int {
+			return runTraceStudyAsk([]string{"--json", "study.json", trace.StudyQuestionOutcome}, out, errOut, ask)
+		}},
+		{name: "ask all human write", call: func(out io.Writer, errOut *bytes.Buffer) int {
+			return runTraceStudyAskAll([]string{"study.json"}, out, errOut, askAll)
+		}},
+		{name: "ask all JSON write", call: func(out io.Writer, errOut *bytes.Buffer) int {
+			return runTraceStudyAskAll([]string{"--json", "study.json"}, out, errOut, askAll)
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var errOut bytes.Buffer
+			if exitCode := test.call(failingWriter{}, &errOut); exitCode != 1 || !strings.Contains(errOut.String(), "write output") {
+				t.Fatalf("call = %d, stderr=%q", exitCode, errOut.String())
+			}
+		})
+	}
+}
+
+func TestWriteTraceStudyAnswer(t *testing.T) {
+	if err := writeTraceStudyAnswer(failingWriter{}, trace.StudyQuestionAnswer{}); err == nil {
+		t.Fatal("writeTraceStudyAnswer() accepted a failing writer")
 	}
 }

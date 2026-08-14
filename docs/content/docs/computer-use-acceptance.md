@@ -64,6 +64,13 @@ To review a verified cross-source case package, use the same read-only server:
 ```console
 go run ./cmd/ariadne experiment serve --trace-case <case.json> <archive-root>
 ```
+To review a verified portable replication study, use the separate read-only
+study route:
+
+```console
+go run ./cmd/ariadne experiment serve --trace-study <study.json> <archive-root>
+```
+
 
 These options add links to the separate trace review routes; they do not
 change the bundle question route or merge trace identities into the evidence
@@ -150,6 +157,21 @@ and bounded answers, not proof that a UI driver performed the selection.
    retain the configured case path, target identifiers, process arguments,
    URLs, or captured values. A failed verification should show only
    `trace case unavailable`.
+
+### Optional replication-study pass
+
+1. From the review index, open `Open replication study review`.
+2. Check `Verified replication study identity`, the private commitment SHA-256,
+   `caller` order basis, run/pair/support counts, aggregate outcome, separate
+   `evidence state`, and study SHA-256.
+3. Read the three fixed question IDs: `study-outcome`, `study-support`, and
+   `cross-run-consistency`. Retain each displayed `result`, aggregate
+   `outcome`, and separate `evidence_state`; treat `unknown` as missing
+   support, not as no change.
+4. Inspect each independent run's ledger and question-round SHA-256 only.
+   Do not describe caller positions as chronology or retain local paths,
+   payloads, URLs, or captured values. A failed verification should show only
+   `trace study unavailable`.
 
 This pass checks the rendered, read-only reflection surface only. It does not
 claim that a computer-use driver selected an answer, that caller order is

@@ -69,6 +69,9 @@ func TestRunUsage(t *testing.T) {
 		{"trace", "study"},
 		{"trace", "study", "save"},
 		{"trace", "study", "verify"},
+		{"trace", "study", "questions", "extra"},
+		{"trace", "study", "ask"},
+		{"trace", "study", "ask", "all"},
 		{"browser"},
 		{"browser", "unknown"},
 		{"browser", "trace"},
@@ -4321,6 +4324,23 @@ func TestRunServe(t *testing.T) {
 		)
 		if exitCode != 0 || gotHandler == nil || stderr.Len() != 0 || !strings.Contains(stdout.String(), "review UI listening") {
 			t.Fatalf("runServe() with trace case = %d, handler=%v, stdout=%q, stderr=%q", exitCode, gotHandler, stdout.String(), stderr.String())
+		}
+	})
+
+	t.Run("trace study flag", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		var gotHandler http.Handler
+		exitCode := runServe(
+			[]string{"--trace-study", "trace-study.json", "archive-root"},
+			&stdout,
+			&stderr,
+			func(_ string, handler http.Handler) error {
+				gotHandler = handler
+				return nil
+			},
+		)
+		if exitCode != 0 || gotHandler == nil || stderr.Len() != 0 || !strings.Contains(stdout.String(), "review UI listening") {
+			t.Fatalf("runServe() with trace study = %d, handler=%v, stdout=%q, stderr=%q", exitCode, gotHandler, stdout.String(), stderr.String())
 		}
 	})
 }

@@ -393,6 +393,20 @@ separately. The commitment is only an identity binding: the study does not
 store the contrast value, execute resets, capture browsers, infer causality, or
 claim universal tracking.
 
+Ask the study's fixed questions directly after verifying the saved artifact:
+
+```console
+go run ./cmd/ariadne trace study questions --json
+go run ./cmd/ariadne trace study ask --json .ariadne/trace-study.json study-outcome
+go run ./cmd/ariadne trace study ask all --json .ariadne/trace-study.json
+```
+
+These answers report the aggregate outcome, whether every run has sufficient
+support, and whether supported runs agree. `result` and `evidence_state` are
+separate fields. Study-specific answer rounds and receipts are not persisted
+yet; the portable study itself embeds the already-verified ledger/question
+round identities.
+
 Retain caller-ordered standalone trace snapshots from any reviewed adapter in
 one portable archive, then ask the fixed source-neutral questions without
 reopening source values:
@@ -611,7 +625,7 @@ The local review page can receive a verified transition ledger, a saved
 reflection, an acceptance identity binding, two retained question rounds, and
 one portable trace archive, saved question round, replicated trace ledger, or
 cross-source case with
-`experiment serve --history <history.json> --reflection <reflection.json> --acceptance <acceptance.json> --round-first <first-round.json> --round-second <second-round.json> --trace-archive <trace-archive.json> --trace-round <trace-round.json> --trace-replication <ledger.json> --trace-case <case.json> <archive-root>`.
+`experiment serve --history <history.json> --reflection <reflection.json> --acceptance <acceptance.json> --round-first <first-round.json> --round-second <second-round.json> --trace-archive <trace-archive.json> --trace-round <trace-round.json> --trace-replication <ledger.json> --trace-case <case.json> --trace-study <study.json> <archive-root>`.
 It renders caller-ordered bounded transitions and re-asks the saved reflection's
 fixed question against the current archive, showing only safe comparison counts,
 identities, per-directory bounded state changes, and the repeated-change
@@ -649,6 +663,13 @@ the fixed case questions, and separate outcome/evidence-state fields. Caller
 order is not chronology, and the route does not establish cross-source
 causality. It is also GET-only and fails closed without disclosing the input
 path or detailed verification error.
+When `--trace-study` is supplied, `/trace-study` shows the verified study
+commitment and caller order, aggregate counts, the three fixed study answers,
+and the identity of every embedded ledger and question round. It keeps
+question `result`, aggregate `outcome`, and `evidence_state` separate, is
+GET-only, and fails closed as `trace study unavailable` without disclosing
+the configured path or detailed verification error. It does not persist
+study-specific answer rounds or receipts yet.
 
 Stable-ID Android sessions also record a SHA-256 identity for the successful
 UI hierarchy used to resolve the manifest-declared control. The raw hierarchy

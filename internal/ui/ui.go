@@ -39,6 +39,8 @@ type handler struct {
 	traceReplicationRead func(string) (trace.ReplicationLedger, trace.ReplicationLedgerVerificationSummary, error)
 	traceCasePath        string
 	traceCaseRead        func(string) (trace.CasePackage, trace.CaseVerificationSummary, error)
+	traceStudyPath       string
+	traceStudyRead       func(string) (trace.ReplicationStudy, trace.StudyVerificationSummary, error)
 }
 
 type archiveQuestionResult struct {
@@ -66,6 +68,12 @@ type traceReplicationPairData struct {
 	Differences           int
 	Unknowns              int
 	EvidenceState         evidence.State
+}
+
+type traceStudyRunData struct {
+	Position            int
+	LedgerSHA256        string
+	QuestionRoundSHA256 string
 }
 
 type pageData struct {
@@ -128,6 +136,10 @@ type pageData struct {
 	TraceCaseConfigured                bool
 	TraceCaseSummary                   trace.CaseVerificationSummary
 	TraceCaseAnswers                   []trace.CaseAnswer
+	TraceStudyConfigured               bool
+	TraceStudySummary                  trace.StudyVerificationSummary
+	TraceStudyAnswers                  []trace.StudyQuestionAnswer
+	TraceStudyRuns                     []traceStudyRunData
 }
 
 // Handler returns a read-only HTTP handler for one explicitly supplied archive root.
@@ -193,6 +205,13 @@ func HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceReplication
 // returns a read-only review handler with an optional portable cross-source
 // trace case.
 func HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCase(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, traceArchivePath, traceRoundPath, traceReplicationPath, traceCasePath string) http.Handler {
+	return HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCaseAndStudy(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, traceArchivePath, traceRoundPath, traceReplicationPath, traceCasePath, "")
+}
+
+// HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCaseAndStudy
+// returns a read-only review handler with optional portable cross-source case
+// and replication-study reflection surfaces.
+func HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCaseAndStudy(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, traceArchivePath, traceRoundPath, traceReplicationPath, traceCasePath, traceStudyPath string) http.Handler {
 	h := archiveHandler(archiveRoot)
 	if historyPath != "" {
 		h.history = func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error) {
@@ -235,6 +254,10 @@ func HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCase(archiv
 		h.traceCasePath = traceCasePath
 		h.traceCaseRead = trace.ReadCase
 	}
+	if traceStudyPath != "" {
+		h.traceStudyPath = traceStudyPath
+		h.traceStudyRead = trace.ReadReplicationStudy
+	}
 	return newHandler(h)
 }
 
@@ -261,6 +284,7 @@ func newHandler(h handler) http.Handler {
 	mux.HandleFunc("/trace-archive", h.handleTraceArchive)
 	mux.HandleFunc("/trace-replication", h.handleTraceReplication)
 	mux.HandleFunc("/trace-case", h.handleTraceCase)
+	mux.HandleFunc("/trace-study", h.handleTraceStudy)
 	mux.HandleFunc("/favicon.ico", handleFavicon)
 	return mux
 }
@@ -471,6 +495,7 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		TraceArchiveRoundSaved:             h.traceRoundPath != "",
 		TraceReplicationConfigured:         h.traceReplicationConfigured(),
 		TraceCaseConfigured:                h.traceCaseConfigured(),
+		TraceStudyConfigured:               h.traceStudyConfigured(),
 	})
 }
 
@@ -484,6 +509,10 @@ func (h handler) traceReplicationConfigured() bool {
 
 func (h handler) traceCaseConfigured() bool {
 	return h.traceCasePath != ""
+}
+
+func (h handler) traceStudyConfigured() bool {
+	return h.traceStudyPath != ""
 }
 
 func (h handler) readTraceArchive() (trace.ArchiveVerificationSummary, trace.ArchiveQuestionRoundVerificationSummary, []trace.ArchiveAnswer, error) {
@@ -650,6 +679,52 @@ func (h handler) handleTraceCase(w http.ResponseWriter, r *http.Request) {
 		TraceCaseConfigured: true,
 		TraceCaseSummary:    summary,
 		TraceCaseAnswers:    answers,
+	})
+}
+
+func (h handler) handleTraceStudy(w http.ResponseWriter, r *http.Request) {
+	if !getOnly(w, r) {
+		return
+	}
+	if r.URL.Path != "/trace-study" || !h.traceStudyConfigured() {
+		http.NotFound(w, r)
+		return
+	}
+	if h.traceStudyRead == nil {
+		http.Error(w, "trace study unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	study, summary, err := h.traceStudyRead(h.traceStudyPath)
+	if err != nil {
+		http.Error(w, "trace study unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	answers, err := trace.AnswerAllReplicationStudyQuestions(study, summary)
+	if err != nil {
+		http.Error(w, "trace study unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	runs := make([]traceStudyRunData, 0, len(study.Runs))
+	for _, run := range study.Runs {
+		ledgerSHA256, ledgerErr := trace.ReplicationLedgerSHA256(run.Ledger)
+		roundSHA256, roundErr := trace.ReplicationQuestionRoundSHA256(run.QuestionRound)
+		if ledgerErr != nil || roundErr != nil {
+			http.Error(w, "trace study unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		runs = append(runs, traceStudyRunData{
+			Position:            run.Position,
+			LedgerSHA256:        ledgerSHA256,
+			QuestionRoundSHA256: roundSHA256,
+		})
+	}
+	render(w, pageData{
+		View:                 "trace-study",
+		Title:                "Replication study review — Ariadne",
+		TraceStudyConfigured: true,
+		TraceStudySummary:    summary,
+		TraceStudyAnswers:    answers,
+		TraceStudyRuns:       runs,
 	})
 }
 
@@ -1029,6 +1104,13 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       <div class="section-head"><h2>Portable trace case</h2><span class="context">verified, read only</span></div>
       <p class="context">Review caller-ordered archives and replicated ledgers through three fixed cross-source questions. Outcome and evidence state remain separate; caller order is not chronology and retained results do not establish causality.</p>
       <a class="button" href="/trace-case">Open trace case review <span aria-hidden="true">&rarr;</span></a>
+    </section>
+    {{end}}
+    {{if .TraceStudyConfigured}}
+    <section class="panel" id="trace-study-orientation" aria-label="Portable replication study">
+      <div class="section-head"><h2>Portable replication study</h2><span class="context">verified, read only</span></div>
+      <p class="context">Ask the fixed questions across independently repeated ledgers. Outcome and evidence state remain separate; caller order is not chronology and unsupported runs remain unknown.</p>
+      <a class="button" href="/trace-study">Open replication study review <span aria-hidden="true">&rarr;</span></a>
     </section>
     {{end}}
     {{if and .ReflectionHistoryRequested (or (not .SelectedQuestion.ID) (eq .SelectedQuestion.ID .ReflectionHistory.QuestionID))}}
@@ -1441,6 +1523,79 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       <p class="context">Child artifacts and their matching question rounds were re-verified before rendering. No local input paths, target identifiers, process arguments, URLs, or captured values are shown.</p>
     </section>
 
+  {{else if eq .View "trace-study"}}
+    <a class="back" href="/">&larr; Review archive</a>
+    <p class="eyebrow">portable replication study &middot; verified</p>
+    <h1>Replication study reflection</h1>
+    <p class="lede">Review fixed questions across independently repeated matched ledgers. Outcome and evidence state are separate; this page preserves caller order and does not infer chronology or causality.</p>
+    <section class="panel" aria-label="Verified replication study identity">
+      <div class="section-head"><h2>Verified replication study identity</h2><span class="status status-raw-value-free">raw-value-free</span></div>
+      <dl>
+        <dt>contrast commitment SHA-256</dt><dd>{{.TraceStudySummary.ContrastSHA256}}</dd>
+        <dt>order basis</dt><dd>{{.TraceStudySummary.OrderBasis}}</dd>
+        <dt>runs</dt><dd>{{.TraceStudySummary.Runs}}</dd>
+        <dt>pairs</dt><dd>{{.TraceStudySummary.Pairs}}</dd>
+        <dt>supported runs</dt><dd>{{.TraceStudySummary.SupportedRuns}}</dd>
+        <dt>unknown runs</dt><dd>{{.TraceStudySummary.UnknownRuns}}</dd>
+        <dt>balanced runs</dt><dd>{{.TraceStudySummary.BalancedRuns}}</dd>
+        <dt>reset-confirmed pairs</dt><dd>{{.TraceStudySummary.ResetConfirmedPairs}}</dd>
+        <dt>complete pairs</dt><dd>{{.TraceStudySummary.CompletePairs}}</dd>
+        <dt>changed runs</dt><dd>{{.TraceStudySummary.ChangedRuns}}</dd>
+        <dt>no-change runs</dt><dd>{{.TraceStudySummary.NoChangeRuns}}</dd>
+        <dt>mixed runs</dt><dd>{{.TraceStudySummary.MixedRuns}}</dd>
+        <dt>unknown pairs</dt><dd>{{.TraceStudySummary.UnknownPairs}}</dd>
+        <dt>outcome</dt><dd><span class="status status-{{.TraceStudySummary.Outcome}}">{{.TraceStudySummary.Outcome}}</span></dd>
+        <dt>evidence state</dt><dd><span class="status status-{{.TraceStudySummary.EvidenceState}}">{{.TraceStudySummary.EvidenceState}}</span></dd>
+        <dt>study SHA-256</dt><dd>{{.TraceStudySummary.StudySHA256}}</dd>
+      </dl>
+      <p class="context">{{.TraceStudySummary.Reason}} Caller order is not chronology. No source paths, payloads, URLs, or captured values are rendered.</p>
+    </section>
+    <section class="panel" aria-label="Replication study questions">
+      <div class="section-head"><h2>Fixed study questions</h2><span class="context">re-verified now</span></div>
+      <div class="question-list">
+      {{range .TraceStudyAnswers}}
+        <article class="panel question-card" id="trace-study-question-{{.QuestionID}}">
+          <div class="section-head"><h3><code>{{.QuestionID}}</code></h3><span class="status status-{{.Result}}">{{.Result}}</span></div>
+          <p class="question">{{.Question}}</p>
+          <dl>
+            <dt>result</dt><dd><span class="status status-{{.Result}}">{{.Result}}</span></dd>
+            <dt>evidence state</dt><dd><span class="status status-{{.EvidenceState}}">{{.EvidenceState}}</span></dd>
+            <dt>aggregate outcome</dt><dd>{{.Outcome}}</dd>
+            <dt>study SHA-256</dt><dd>{{.StudySHA256}}</dd>
+            <dt>runs</dt><dd>{{.Runs}}</dd>
+            <dt>pairs</dt><dd>{{.Pairs}}</dd>
+            <dt>supported runs</dt><dd>{{.SupportedRuns}}</dd>
+            <dt>unknown runs</dt><dd>{{.UnknownRuns}}</dd>
+            <dt>balanced runs</dt><dd>{{.BalancedRuns}}</dd>
+            <dt>reset-confirmed pairs</dt><dd>{{.ResetConfirmedPairs}}</dd>
+            <dt>complete pairs</dt><dd>{{.CompletePairs}}</dd>
+            <dt>changed runs</dt><dd>{{.ChangedRuns}}</dd>
+            <dt>no-change runs</dt><dd>{{.NoChangeRuns}}</dd>
+            <dt>mixed runs</dt><dd>{{.MixedRuns}}</dd>
+            <dt>unknown pairs</dt><dd>{{.UnknownPairs}}</dd>
+          </dl>
+          {{with .Reason}}<p class="context">{{.}}</p>{{end}}
+        </article>
+      {{end}}
+      </div>
+      <p class="context">The result answers the fixed study question; evidence state qualifies the support available for that answer. Unknown is not treated as no change or causal evidence.</p>
+    </section>
+    <section class="panel" aria-label="Replication study runs">
+      <div class="section-head"><h2>Independent runs</h2><span class="context">caller order</span></div>
+      <div class="question-list">
+      {{range .TraceStudyRuns}}
+        <article class="panel" id="trace-study-run-{{.Position}}">
+          <div class="section-head"><h3>run {{.Position}}</h3><span class="status">verified identities</span></div>
+          <dl>
+            <dt>position</dt><dd>{{.Position}}</dd>
+            <dt>ledger SHA-256</dt><dd>{{.LedgerSHA256}}</dd>
+            <dt>question round SHA-256</dt><dd>{{.QuestionRoundSHA256}}</dd>
+          </dl>
+        </article>
+      {{end}}
+      </div>
+      <p class="context">Each embedded ledger and matching question round was re-verified before rendering. The study does not infer chronology, expose local input paths, or render captured values.</p>
+    </section>
   {{else if eq .View "run"}}
     <a class="back" href="/">← All bundles</a>
     <p class="eyebrow">{{.Summary.ManifestName}} · verified</p>

@@ -11,6 +11,9 @@ import (
 
 type traceStudySaver func(string, []trace.StudyInput, string) (trace.StudyVerificationSummary, error)
 type traceStudyVerifier func(string) (trace.StudyVerificationSummary, error)
+type traceStudyQuestions func() []trace.StudyQuestion
+type traceStudyAsker func(string, string) (trace.StudyQuestionAnswer, error)
+type traceStudyAllAsker func(string) ([]trace.StudyQuestionAnswer, error)
 
 func runTraceStudySave(args []string, stdout, stderr io.Writer, save traceStudySaver) int {
 	flags := flag.NewFlagSet("trace study save", flag.ContinueOnError)
@@ -90,7 +93,101 @@ func runTraceStudyVerify(args []string, stdout, stderr io.Writer, verify traceSt
 	return 0
 }
 
+func runTraceStudyQuestions(args []string, stdout, stderr io.Writer, questions traceStudyQuestions) int {
+	flags := flag.NewFlagSet("trace study questions", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 0 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+	catalog := questions()
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(catalog); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: trace study questions: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if _, err := io.WriteString(stdout, "trace replication study question catalog\n"); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: trace study questions: write output: %v\n", err)
+		return 1
+	}
+	for _, question := range catalog {
+		if _, err := fmt.Fprintf(stdout, "- %s: %s\n", question.ID, question.Text); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: trace study questions: write output: %v\n", err)
+			return 1
+		}
+	}
+	return 0
+}
+
+func runTraceStudyAsk(args []string, stdout, stderr io.Writer, ask traceStudyAsker) int {
+	flags := flag.NewFlagSet("trace study ask", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 2 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+	answer, err := ask(flags.Arg(0), flags.Arg(1))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: trace study ask: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(answer); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: trace study ask: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if err := writeTraceStudyAnswer(stdout, answer); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: trace study ask: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func runTraceStudyAskAll(args []string, stdout, stderr io.Writer, askAll traceStudyAllAsker) int {
+	flags := flag.NewFlagSet("trace study ask all", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+	answers, err := askAll(flags.Arg(0))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: trace study ask all: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(answers); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: trace study ask all: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if _, err := io.WriteString(stdout, "trace replication study questions answered\n"); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: trace study ask all: write output: %v\n", err)
+		return 1
+	}
+	for _, answer := range answers {
+		if err := writeTraceStudyAnswer(stdout, answer); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: trace study ask all: write output: %v\n", err)
+			return 1
+		}
+	}
+	return 0
+}
+
 func writeTraceStudySummary(stdout io.Writer, heading string, summary trace.StudyVerificationSummary) error {
 	_, err := fmt.Fprintf(stdout, "%s\nschema_version: %d\ncontrast_sha256: %s\norder_basis: %s\nruns: %d\npairs: %d\nsupported_runs: %d\nunknown_runs: %d\nreset_confirmed_pairs: %d\nbalanced_runs: %d\ncomplete_pairs: %d\nchanged_runs: %d\nno_change_runs: %d\nmixed_runs: %d\nunknown_pairs: %d\noutcome: %s\nevidence_state: %s\nreason: %s\nstudy_sha256: %s\n", heading, summary.SchemaVersion, summary.ContrastSHA256, summary.OrderBasis, summary.Runs, summary.Pairs, summary.SupportedRuns, summary.UnknownRuns, summary.ResetConfirmedPairs, summary.BalancedRuns, summary.CompletePairs, summary.ChangedRuns, summary.NoChangeRuns, summary.MixedRuns, summary.UnknownPairs, summary.Outcome, summary.EvidenceState, summary.Reason, summary.StudySHA256)
+	return err
+}
+
+func writeTraceStudyAnswer(stdout io.Writer, answer trace.StudyQuestionAnswer) error {
+	_, err := fmt.Fprintf(stdout, "trace replication study question answered\nquestion_id: %s\nquestion: %s\nresult: %s\nevidence_state: %s\noutcome: %s\nstudy_sha256: %s\nruns: %d\npairs: %d\nsupported_runs: %d\nunknown_runs: %d\nreset_confirmed_pairs: %d\nbalanced_runs: %d\ncomplete_pairs: %d\nchanged_runs: %d\nno_change_runs: %d\nmixed_runs: %d\nunknown_pairs: %d\nreason: %s\n", answer.QuestionID, answer.Question, answer.Result, answer.EvidenceState, answer.Outcome, answer.StudySHA256, answer.Runs, answer.Pairs, answer.SupportedRuns, answer.UnknownRuns, answer.ResetConfirmedPairs, answer.BalancedRuns, answer.CompletePairs, answer.ChangedRuns, answer.NoChangeRuns, answer.MixedRuns, answer.UnknownPairs, answer.Reason)
 	return err
 }
