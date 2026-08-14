@@ -82,6 +82,17 @@ func TestDecodeProcedureAcceptsLocalFixtureProducer(t *testing.T) {
 	}
 }
 
+func TestDecodeProcedureAcceptsAuthorizedTargetProducer(t *testing.T) {
+	data := []byte(`{"schema_version":1,"procedure_id":"browser-target-v1","scope":"outbound","duration_ms":500,"max_events":8,"target_origin":"https://example.com"}`)
+	procedure, err := DecodeProcedure(data)
+	if err != nil || procedure.ProcedureID != BrowserTargetProcedureID || procedure.TargetOrigin != "https://example.com" {
+		t.Fatalf("DecodeProcedure() = %#v, err = %v", procedure, err)
+	}
+	if digest, err := ProcedureSHA256(procedure); err != nil || !portabletrace.ValidSHA256(digest) {
+		t.Fatalf("ProcedureSHA256() = %q, err = %v", digest, err)
+	}
+}
+
 func TestCaptureInvokesSelectedDriver(t *testing.T) {
 	t.Setenv("ARIADNE_BROWSER_TEST_DRIVER", "success")
 	outputPath := filepath.Join(t.TempDir(), "trace.json")
@@ -193,6 +204,27 @@ func TestDecodeProcedureRejectsMalformedAndOutOfBoundsInput(t *testing.T) {
 				t.Fatal("DecodeProcedure() accepted invalid input")
 			} else if strings.Contains(err.Error(), "private.invalid") {
 				t.Fatalf("DecodeProcedure() exposed input: %v", err)
+			}
+		})
+	}
+	target := `{"schema_version":1,"procedure_id":"browser-target-v1","scope":"outbound","duration_ms":500,"max_events":2,"target_origin":"https://example.com"}`
+	for _, test := range []struct {
+		name string
+		data string
+	}{
+		{name: "target http", data: strings.Replace(target, "https://example.com", "http://example.com", 1)},
+		{name: "target path", data: strings.Replace(target, "https://example.com", "https://example.com/path", 1)},
+		{name: "target query", data: strings.Replace(target, "https://example.com", "https://example.com?private=value", 1)},
+		{name: "target user info", data: strings.Replace(target, "https://example.com", "https://user@example.com", 1)},
+		{name: "target default port", data: strings.Replace(target, "https://example.com", "https://example.com:443", 1)},
+		{name: "target noncanonical port", data: strings.Replace(target, "https://example.com", "https://example.com:08443", 1)},
+		{name: "target host", data: strings.Replace(target, "https://example.com", "https://example..com", 1)},
+		{name: "target case", data: strings.Replace(target, "https://example.com", "https://EXAMPLE.com", 1)},
+		{name: "target on fixture", data: strings.Replace(valid, `"max_events":2`, `"max_events":2,"target_origin":"https://example.com"`, 1)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := DecodeProcedure([]byte(test.data)); err == nil {
+				t.Fatal("DecodeProcedure() accepted invalid target procedure")
 			}
 		})
 	}

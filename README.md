@@ -82,20 +82,24 @@ The capture command now provides one explicit process boundary for that driver:
 go run ./cmd/ariadne browser capture --json --procedure examples/browser-procedure.json --driver <fixed-redacting-driver> .ariadne/browser-trace.json
 ```
 
-A validated procedure contains only a catalogued procedure ID, scope, duration,
-and event limit. Ariadne sends those bytes to the selected executable on stdin,
+A validated procedure contains a catalogued procedure ID, scope, duration, and
+event limit. Ariadne sends those bytes to the selected executable on stdin,
 accepts exactly one bounded redacted audit on stdout, invokes it without a
 shell, and rejects scope mismatches, oversized output, timeouts, and unsafe
-audit members. The procedure has no URL, profile path, selector, JavaScript,
-header, payload, or `authorized` claim; authorization remains an external
-precondition. `examples/browser-procedure.json` is a safe metadata-only
-starting point, not a capture configuration.
+audit members. The metadata-only `browser-audit-v1` procedure has no target;
+authorization remains an external precondition. `examples/browser-procedure.json`
+is a safe handoff starting point, not a capture configuration.
 
-This is a driver boundary, not browser capture yet. It does not launch Chrome,
-reuse a profile, collect cookies, inspect bodies, or prove that an external
-driver was authorized. A future concrete driver must use an isolated profile,
-an explicit local test target, and its own CDP/redaction tests before it can
-be treated as a source producer.
+The repository now also includes the narrow `browser-target-v1` producer. Its
+procedure carries one canonical HTTPS origin, which is included in the
+procedure identity. The driver launches a new isolated Chromium process with a
+fresh temporary profile, allows only that host through its resolver boundary,
+blocks requests whose URL origin is not exactly the declared origin,
+observes bounded page-load network metadata, maps recognized query-key names to
+fixed fields, and discards URLs, cookies, storage, DOM, headers, bodies, and
+values. It never attaches to an existing profile, executes supplied scripts, or
+claims that the caller is authorized. Unsupported or blocked activity remains
+partial and therefore yields `unknown` during comparison.
 
 The repository now includes one deterministic local-fixture producer. It takes
 an explicit Chrome executable, creates a fresh temporary profile, serves only a
@@ -116,6 +120,27 @@ This producer is fixture evidence only. It does not accept a target URL, reuse
 a profile, read cookies/storage/bodies/DOM, or claim coverage of arbitrary
 browser sessions. Use `browser-local-fixture` as the session adapter when
 binding this trace to provenance.
+
+For one explicitly authorized HTTPS origin, use the target producer through the
+same capture boundary. Replace the reserved example origin in the procedure
+with the origin you are authorized to test; do not commit a personal target
+procedure:
+
+```console
+go run ./cmd/ariadne browser capture --json \
+  --procedure examples/browser-target-procedure.json \
+  --driver node \
+  --driver-arg cmd/browser-fixture-driver/browser_fixture_driver.mjs \
+  --driver-arg --browser \
+  --driver-arg "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" \
+  .ariadne/browser-target-trace.json
+```
+
+This is a single-origin, page-load metadata producer, not a browser history
+reader or universal network sniffer. The resulting trace can use the existing
+session, pair, replication-ledger, question-round, and receipt commands. A
+real target run still proves only the declared procedure and redaction
+boundary, not target authorization, capture truth, or causal impact.
 
 The same fixture path can run a small counterfactual replication. The runner
 owns the fixed baseline/treatment variants, creates a fresh profile before each

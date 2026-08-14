@@ -13,8 +13,8 @@ values.
 
 ## Current position
 
-The repository currently has five evidence-backed layers, two separate browser
-source-boundary layers, and a portable trace reflection layer:
+The repository currently has five evidence-backed layers, several separate
+browser source-boundary layers, and a portable trace reflection layer:
 
 1. **Investigation core.** Experiment 001 defines personas, captures network
    and storage observations, validates provenance, compares answer states, and
@@ -123,6 +123,16 @@ source-boundary layers, and a portable trace reflection layer:
     identities through `/trace-replication`. This is an aggregation and
     re-verification boundary, not a runner, capture adapter, chronology model,
     or causal proof.
+12. **Isolated authorized browser target producer.** A `browser-target-v1`
+    procedure can name one canonical HTTPS origin and bind that origin into the
+    procedure identity. The Node 22 driver launches a fresh Chromium profile,
+    allows only that hostname through its resolver boundary, blocks requests
+    whose URL origin is not exactly the declared origin, observes bounded
+    page-load network metadata, maps only fixed field labels, and discards
+    URLs, values, cookies, storage, DOM, headers, and bodies. Unsupported or
+    blocked activity remains partial and therefore `unknown`. This is a
+    single-origin producer, not a browser-history reader, existing-profile
+    observer, universal sniffer, or proof of authorization.
 
 The local review page is intentionally read-only. Its compact question round
 and receipt links, including stable history and receipt identities, are a
@@ -170,16 +180,19 @@ must remain bound to a verified history and must say
 Use the two-order replicated Android experiment and the fixed local-browser
 fixture as evidence gates. They test whether a reported change survives
 repeated resets and reversed session order while keeping source-specific
-capture narrow. The browser audit producer and explicit driver protocol are
-handoff slices: keep them redacted, while the deterministic comparison,
-provenance, redaction, and question engine stay small and portable. Retain
+capture narrow. The browser audit producer, explicit driver protocol, and
+isolated single-origin target producer are handoff slices: keep them redacted,
+while the deterministic comparison, provenance, redaction, and question engine
+stay small and portable. Retain
 trace question rounds and selected receipts only as bounded identities, and
 use the source-neutral replication ledger to re-verify already-produced pairs,
 not as a new capture store.
-Session provenance is the join point for later source-specific runs. A real
-browser capture driver for a user-authorized target, desktop producer, or proxy
-producer is still a separate future slice with its own authorized procedure,
-isolated target, and redaction tests; the local fixture is not that capability.
+Session provenance is the join point for later source-specific runs. The
+isolated browser-target producer is now one narrow user-authorized target
+slice; it still does not prove target behavior, authorization, or capture truth.
+Desktop and proxy producers remain separate future slices with their own
+authorization model, isolated target, and redaction tests; the local fixture
+and target producer are not universal browser coverage.
 The trace archive is now the portable reflection surface for those reviewed
 snapshots, but it is not a chronology model or universal sniffer. The trace
 contract remains the handoff boundary for any future source producer. The
@@ -196,6 +209,9 @@ capture store.
 - The local browser fixture producer and its two-order replication pass the
   hosted Windows Chrome workflow, including redaction and temporary-profile
   cleanup.
+- The browser-target procedure and driver pass syntax, canonical-origin,
+  isolated-profile, resolver-boundary, bounded-network, and raw-value redaction
+  checks. A local test must not substitute for authorization or target behavior.
 - Source-neutral trace archives verify their embedded standalone sessions and
   answer only the fixed coverage, change, and source questions; partial or
   incompatible boundaries stay `unknown`. Saved question rounds and selected

@@ -6,7 +6,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 
-const procedureID = "browser-local-fixture-v1";
+const fixtureProcedureID = "browser-local-fixture-v1";
+const targetProcedureID = "browser-target-v1";
 const maxInputBytes = 16 << 10;
 const maxDurationMS = 5 * 60 * 1000;
 const maxEvents = 1024;
@@ -46,6 +47,24 @@ function fixtureVariant() {
     throw new Error("fixture variant is invalid");
   }
   return variant;
+}
+
+function targetOrigin(procedure) {
+  let parsed;
+  try {
+    parsed = new URL(procedure.target_origin);
+  } catch {
+    throw new Error("target origin is invalid");
+  }
+  if (procedure.target_origin !== parsed.origin || parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.pathname !== "/" || parsed.search || parsed.hash || !/^[a-z0-9.-]+$/.test(parsed.hostname) || parsed.hostname.startsWith(".") || parsed.hostname.endsWith(".") || parsed.hostname.includes("..")) {
+    throw new Error("target origin is invalid");
+  }
+  for (const label of parsed.hostname.split(".")) {
+    if (!label || label.startsWith("-") || label.endsWith("-")) {
+      throw new Error("target origin is invalid");
+    }
+  }
+  return {origin: parsed.origin, hostname: parsed.hostname};
 }
 
 function delay(milliseconds) {
@@ -99,6 +118,7 @@ async function stopBrowser(browser) {
     });
     await new Promise((resolve) => killer.once("exit", resolve));
     await delay(1000);
+    await waitForBrowserExit(browser);
     return;
   }
   try {
@@ -108,8 +128,18 @@ async function stopBrowser(browser) {
   }
 }
 
+async function waitForBrowserExit(browser) {
+  if (browser.exitCode !== null || browser.signalCode !== null) {
+    return;
+  }
+  await Promise.race([
+    new Promise((resolve) => browser.once("exit", resolve)),
+    delay(5000),
+  ]);
+}
+
 async function removeProfile(profile) {
-  for (let attempt = 0; attempt < 40; attempt += 1) {
+  for (let attempt = 0; attempt < 120; attempt += 1) {
     try {
       await rm(profile, {recursive: true, force: true, maxRetries: 2, retryDelay: 250});
     } catch {
@@ -209,14 +239,19 @@ class DevTools {
     this.pending = new Map();
     this.listeners = new Map();
     this.socket = null;
+    this.closing = false;
+    this.lost = false;
   }
 
   async connect() {
     this.socket = new WebSocket(this.url);
     this.socket.addEventListener("message", (event) => this.message(event.data));
     this.socket.addEventListener("close", () => {
+      if (!this.closing) {
+        this.lost = true;
+      }
       for (const pending of this.pending.values()) {
-        pending.reject(new Error("browser connection closed"));
+        pending.resolve({});
       }
       this.pending.clear();
     });
@@ -233,10 +268,17 @@ class DevTools {
   }
 
   async command(method, params = {}) {
+    if (this.lost) {
+      throw new Error("browser connection closed");
+    }
     const id = this.nextID++;
     const result = new Promise((resolve, reject) => this.pending.set(id, {resolve, reject}));
     this.socket.send(JSON.stringify({id, method, params}));
-    return result;
+    const response = await result;
+    if (this.lost && !this.closing) {
+      throw new Error("browser connection closed");
+    }
+    return response;
   }
 
   message(data) {
@@ -265,18 +307,26 @@ class DevTools {
   }
 
   close() {
+    this.closing = true;
+    for (const pending of this.pending.values()) {
+      pending.resolve({});
+    }
+    this.pending.clear();
     if (this.socket && this.socket.readyState < 2) {
       this.socket.close();
     }
   }
 }
 
-function collector() {
+function collector(targetHost = "") {
   const events = new Map();
   let incomplete = false;
   let unsupported = false;
 
   function destination(parsed) {
+    if (targetHost) {
+      return parsed.hostname === targetHost ? "first-party" : "unknown";
+    }
     if (parsed.hostname === "app.localhost") {
       return "first-party";
     }
@@ -361,6 +411,9 @@ function collector() {
     socket() {
       unsupported = true;
     },
+    outside() {
+      incomplete = true;
+    },
     result() {
       return {
         incomplete: incomplete || unsupported,
@@ -374,23 +427,41 @@ function collector() {
   };
 }
 
+function targetRequestAllowed(value, origin) {
+  let parsed;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return false;
+  }
+  return (parsed.protocol === "http:" || parsed.protocol === "https:") && !parsed.username && !parsed.password && parsed.origin === origin;
+}
+
 async function capture(procedure) {
-  if (procedure?.schema_version !== 1 || procedure?.procedure_id !== procedureID || procedure.scope !== "outbound" ||
+  const isFixture = procedure?.procedure_id === fixtureProcedureID;
+  const isTarget = procedure?.procedure_id === targetProcedureID;
+  if (procedure?.schema_version !== 1 || (!isFixture && !isTarget) || procedure.scope !== "outbound" ||
       !Number.isInteger(procedure.duration_ms) || procedure.duration_ms < 100 ||
       procedure.duration_ms > maxDurationMS || !Number.isInteger(procedure.max_events) ||
       procedure.max_events < 1 || procedure.max_events > maxEvents) {
     throw new Error("procedure is not supported");
   }
+  const target = isTarget ? targetOrigin(procedure) : null;
   const deadline = Date.now() + procedure.duration_ms;
   const executable = chromePath();
-  const variant = fixtureVariant();
-  stage = "fixture";
-  const fixture = fixtureServer(variant);
-  const fixturePort = await listen(fixture.server);
-  fixture.setPort(fixturePort);
+  let fixture;
+  let fixturePort = 0;
+  if (isFixture) {
+    const variant = fixtureVariant();
+    stage = "fixture";
+    fixture = fixtureServer(variant);
+    fixturePort = await listen(fixture.server);
+    fixture.setPort(fixturePort);
+  }
   stage = "chrome";
-  const profile = await mkdtemp(join(tmpdir(), "ariadne-browser-fixture-"));
+  const profile = await mkdtemp(join(tmpdir(), isFixture ? "ariadne-browser-fixture-" : "ariadne-browser-target-"));
   const debugPort = await freePort();
+  const resolverRules = isFixture ? "MAP *.localhost 127.0.0.1, MAP * ~NOTFOUND" : `MAP * ~NOTFOUND, EXCLUDE ${target.hostname}`;
   const browser = spawn(executable, [
     "--headless=new",
     "--disable-gpu",
@@ -401,7 +472,7 @@ async function capture(procedure) {
     "--disable-crash-reporter",
     "--disable-breakpad",
     "--no-proxy-server",
-    "--host-resolver-rules=MAP *.localhost 127.0.0.1, MAP * ~NOTFOUND",
+    `--host-resolver-rules=${resolverRules}`,
     "--no-first-run",
     "--no-default-browser-check",
     `--user-data-dir=${profile}`,
@@ -417,7 +488,7 @@ async function capture(procedure) {
     devTools = new DevTools(socketURL);
     await devTools.connect();
     stage = "cdp-events";
-    const observed = collector();
+    const observed = collector(target?.hostname || "");
     let loadedResolve;
     const loaded = new Promise((resolve) => { loadedResolve = resolve; });
     devTools.on("Page.loadEventFired", () => loadedResolve());
@@ -425,14 +496,30 @@ async function capture(procedure) {
     devTools.on("Network.responseReceived", (params) => observed.response(params));
     devTools.on("Network.loadingFailed", () => observed.failed());
     devTools.on("Network.webSocketCreated", () => observed.socket());
+    if (isTarget) {
+      devTools.on("Fetch.requestPaused", (params) => {
+        const requestID = params.requestId;
+        const allowed = typeof params.request?.url === "string" && targetRequestAllowed(params.request.url, target.origin);
+        if (!allowed) {
+          observed.outside();
+        }
+        const command = allowed ? "Fetch.continueRequest" : "Fetch.failRequest";
+        const commandParams = allowed ? {requestId: requestID} : {requestId: requestID, errorReason: "BlockedByClient"};
+        void devTools.command(command, commandParams).catch(() => {});
+      });
+    }
     await devTools.command("Page.enable");
     await devTools.command("Network.enable");
+    if (isTarget) {
+      await devTools.command("Fetch.enable", {patterns: [{urlPattern: "*", requestStage: "Request"}]});
+    }
     stage = "navigate";
-    await devTools.command("Page.navigate", {url: `http://app.localhost:${fixturePort}/`});
+    const navigateURL = isFixture ? `http://app.localhost:${fixturePort}/` : `${target.origin}/`;
+    await devTools.command("Page.navigate", {url: navigateURL});
     const remaining = Math.max(1, deadline - Date.now());
     await Promise.race([loaded, delay(Math.min(1000, remaining))]);
     if (Date.now() >= deadline) {
-      throw new Error("fixture page timed out");
+      throw new Error("browser page timed out");
     }
     stage = "settle";
     await delay(Math.min(250, Math.max(0, deadline - Date.now())));
@@ -454,7 +541,9 @@ async function capture(procedure) {
     stage = "cleanup-browser";
     await stopBrowser(browser);
     stage = "cleanup-server";
-    await closeServer(fixture.server);
+    if (fixture) {
+      await closeServer(fixture.server);
+    }
     stage = "cleanup-profile";
     await removeProfile(profile);
   }
@@ -464,6 +553,6 @@ try {
   const procedure = await readProcedure();
   process.stdout.write(JSON.stringify(await capture(procedure)));
 } catch {
-  process.stderr.write(`browser fixture driver failed at ${stage}\n`);
+  process.stderr.write(`browser driver failed at ${stage}\n`);
   process.exitCode = 1;
 }

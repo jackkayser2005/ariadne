@@ -148,12 +148,11 @@ header, payload, or `authorized` field. Authorization is an external
 precondition, and the selected executable is responsible for its own isolation
 and redaction.
 
-This boundary is not a browser capture implementation. Ariadne does not launch
-Chrome, reuse a profile, inspect cookies, retain response bodies, or infer that
-the executable was authorized. The local fixture producer below provides one
-pinned, isolated driver against a local target and proves that CDP messages do
-not cross the redaction boundary; the existing already-redacted audit remains
-the handoff for other browser sources.
+This boundary alone is not a browser capture implementation. Ariadne does not
+reuse a profile, inspect cookies, retain response bodies, or infer that an
+executable was authorized. The local fixture below provides the deterministic
+CDP redaction proof; the target mode reuses that bounded collector while
+adding an exact declared-origin request boundary.
 
 ### Local fixture producer
 
@@ -181,6 +180,38 @@ invoked by the replication runner.
 
 This proves one local producer path and its cleanup/redaction behavior; it is
 not evidence about a user's browser or a general browser capture capability.
+
+### Isolated authorized HTTPS target producer
+
+The repository also includes a narrow producer for one explicitly authorized
+HTTPS origin. Replace the reserved example origin in
+`examples/browser-target-procedure.json` before use; do not commit a personal
+target procedure:
+
+```console
+go run ./cmd/ariadne browser capture --json \
+  --procedure examples/browser-target-procedure.json \
+  --driver node \
+  --driver-arg cmd/browser-fixture-driver/browser_fixture_driver.mjs \
+  --driver-arg --browser \
+  --driver-arg "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" \
+  <trace.json>
+```
+
+`browser-target-v1` carries only one canonical HTTPS origin, which is included
+in the procedure identity. The Node 22 driver launches a new Chromium process
+with a fresh temporary profile, allows only that hostname through its resolver
+boundary, blocks requests whose URL origin is not exactly the declared origin,
+observes bounded page-load network metadata, maps recognized query keys to
+fixed fields, and discards URLs, cookies, storage, DOM, headers, bodies, and
+values. Requests outside the target origin or unsupported activity make the
+trace partial; they never become an affirmative third-party claim.
+
+This producer is a single-origin, page-load metadata boundary. It is not a
+browser history reader, an existing-profile observer, a universal network
+sniffer, or proof of target authorization, capture truth, or causal impact.
+The resulting trace uses the existing session, pair, replication-ledger,
+question-round, and receipt verification paths.
 
 ### Replicated local fixture
 
@@ -458,11 +489,14 @@ The intended flow is:
    classifies the aggregate without adding a runner or capture adapter.
 7. Existing evidence bundles retain the authoritative artifacts and bounded
    conclusions; the trace is a safe index for asking where a category appeared.
+8. The isolated browser-target producer can add one explicitly authorized
+   HTTPS origin to the same portable path without attaching to a user's
+   existing profile or exposing hostnames and values.
 
 The Experiment 001 Android producer remains the authoritative evidence-backed
-edge, and the replicated runner is the evidence gate. The browser audit
-producer now supplies the next safe handoff boundary, and session provenance
-binds each trace to its reviewed procedure before sources are joined. A real
-browser capture driver, then desktop and proxy producers, remain separate
-slices requiring an authorized target, a reproducible capture procedure, and
-tests proving that the redaction boundary is safe.
+edge, and the replicated runner is the evidence gate. The browser audit and
+isolated browser-target producers now supply two safe browser boundaries, and
+session provenance binds each trace to its reviewed procedure before sources
+are joined. Desktop and proxy producers remain separate slices requiring their
+own authorization model, reproducible capture procedure, and tests proving
+that the redaction boundary is safe.

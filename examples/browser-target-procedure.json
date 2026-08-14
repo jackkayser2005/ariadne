@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "procedure_id": "browser-target-v1",
+  "scope": "outbound",
+  "duration_ms": 5000,
+  "max_events": 64,
+  "target_origin": "https://example.invalid"
+}

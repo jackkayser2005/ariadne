@@ -270,9 +270,7 @@ func makeReplicatedPair(
 		shiftSession(t, filepath.Join(runDir, "treatment", "session.json"), -30*time.Second)
 	}
 	directory := "pair-001-" + order
-	if err := os.Rename(runDir, filepath.Join(root, directory)); err != nil {
-		t.Fatal(err)
-	}
+	renameTestRun(t, runDir, filepath.Join(root, directory))
 	if _, err := Write(filepath.Join(root, directory)); err != nil {
 		t.Fatalf("Write(%s): %v", directory, err)
 	}
@@ -288,6 +286,18 @@ func makeReplicatedPair(
 		SecondSession: second,
 		Status:        adb.ReplicationStatusComplete,
 	}
+}
+
+func renameTestRun(t *testing.T, source, destination string) {
+	t.Helper()
+	var err error
+	for attempt := 0; attempt < 40; attempt++ {
+		if err = os.Rename(source, destination); err == nil {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatalf("rename %s %s: %v", source, destination, err)
 }
 
 func shiftSession(t *testing.T, path string, delta time.Duration) {

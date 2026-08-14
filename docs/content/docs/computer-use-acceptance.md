@@ -129,6 +129,13 @@ The same three answers can be retained before opening the page with
 identities offline before the rendered check; those artifacts are identities
 and bounded answers, not proof that a UI driver performed the selection.
 
+The isolated `browser-target-v1` producer is not part of this rendered
+acceptance pass. If it is used separately, keep the target procedure and
+browser run outside the review page, retain only the procedure and trace
+identities, and do not open an external target in a computer-use acceptance
+session. Its HTTPS origin is an authorization boundary, not evidence that the
+target or the capture was authorized.
+
 ## Recorded rendered-flow check
 
 On 2026-08-10, an authorized Windows Chrome smoke pass opened the loopback

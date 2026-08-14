@@ -25,6 +25,11 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Check browser drivers
+        shell: pwsh
+        run: |
+          node --check cmd/browser-fixture-driver/browser_fixture_driver.mjs
+
       - name: Capture local browser fixture
         shell: pwsh
         run: |
