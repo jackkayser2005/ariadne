@@ -173,6 +173,16 @@ browser source-boundary layers, and a portable trace reflection layer:
      This is a durable
      reflection/index boundary, not chronology inference, a database, a
      capture runner, a universal sniffer, or cross-source causal attribution.
+16. **Portable cross-run replication study.** Independent source-neutral
+    replication ledgers can now be joined under a caller-supplied private
+    counterfactual commitment, with each saved question round bound to its
+    ledger identity. Study verification rejects duplicate artifacts and
+    cross-run provenance drift, preserves caller order without chronology
+    inference, and reports `replicated-change`, `no-change-observed`,
+    `mixed-inconsistent`, or `unknown` separately from `evidence_state`.
+    Any unsupported run keeps the aggregate `unknown`; this is a reproducible
+    comparison boundary, not a reset runner, browser capture service,
+    statistical model, or causal proof.
 
 The local review page is intentionally read-only. Its compact question round
 and receipt links, including stable history and receipt identities, are a
@@ -251,6 +261,10 @@ surface is added, with `same`/`changed` semantics and separate result,
 outcome, and evidence-state fields. Its `/trace-case` route makes that package
 inspectable by the read-only computer-use acceptance path; real GUI execution
 remains a separate evidence gate.
+The portable replication study now provides the next cross-run reflection
+boundary: it joins independently identified ledgers and their fixed rounds
+under one private commitment, while retaining unknown support instead of
+promoting repeated outcomes into causal claims.
 
 ## Acceptance gates
 
@@ -289,6 +303,12 @@ remains a separate evidence gate.
 - Case-round comparisons re-verify both saved rounds and emit only bounded
   question projections; they do not treat a changed question result as a
   causal, chronological, improvement, or regression claim.
+- Cross-run replication studies re-verify every embedded ledger and matching
+  question round, reject duplicate identities and provenance drift, require
+  balanced reset-confirmed orders in every run before reporting a supported
+  aggregate, and keep unsupported outcomes separate from `evidence_state`.
+  A private counterfactual commitment is an identity binding, not retained
+  target data or proof of causality.
 - UI changes pass deterministic handler tests; use computer-use only when a
   concrete rendered-flow check is needed and the host supports it.
 - No review page, answer, export, or log exposes captured values, secrets, or

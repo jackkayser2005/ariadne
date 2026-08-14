@@ -366,6 +366,33 @@ such as `replicated-change`, `mixed-inconsistent`, or `unknown` remain separate
 from `evidence_state`. The loopback `/trace-replication` page shows the same
 three questions from the verified ledger without accepting free-form input.
 
+Combine independent ledger runs into one portable replication study when the
+same counterfactual has been repeated. Supply a private SHA-256 commitment for
+the counterfactual, then pair each ledger with its saved question round:
+
+```console
+go run ./cmd/ariadne trace study save --json \
+  --contrast-sha256 <private-contrast-sha256> \
+  .ariadne/trace-study.json \
+  .ariadne/trace-replication-1.json .ariadne/trace-replication-1-round.json \
+  .ariadne/trace-replication-2.json .ariadne/trace-replication-2-round.json
+go run ./cmd/ariadne trace study verify --json \
+  --expect-sha256 <study-sha256> .ariadne/trace-study.json
+```
+
+The study embeds only already-verified ledgers and fixed question rounds. It
+requires 2--8 distinct ledger identities, matching question-round identities,
+and shared source/adapter/version/procedure/scope provenance. A supported
+result requires a balanced, reset-confirmed pair set in every run; unsupported
+runs are retained and make the aggregate `unknown`. Its `order_basis: caller`
+preserves the supplied run order without inferring chronology. Every supported run must
+report the same outcome for `replicated-change` or `no-change-observed`; a
+supported disagreement is `mixed-inconsistent`, while any unsupported or
+unknown run makes the study `unknown`. `evidence_state` is summarized
+separately. The commitment is only an identity binding: the study does not
+store the contrast value, execute resets, capture browsers, infer causality, or
+claim universal tracking.
+
 Retain caller-ordered standalone trace snapshots from any reviewed adapter in
 one portable archive, then ask the fixed source-neutral questions without
 reopening source values:

@@ -41,6 +41,8 @@ const usage = `usage:
 	ariadne trace replication ask receipt [--json] <round.json> <question-id>
 	ariadne trace replication ask receipt save [--json] <round.json> <question-id> <receipt.json>
 	ariadne trace replication ask receipt verify [--json] [--expect-sha256 <digest>] <receipt.json>
+	ariadne trace study save [--json] --contrast-sha256 <digest> <study.json> <ledger-1.json> <round-1.json> ...
+	ariadne trace study verify [--json] [--expect-sha256 <digest>] <study.json>
 	ariadne trace archive create [--json] --trace <trace.json> --session <session.json> ... <archive.json>
 	ariadne trace archive verify [--json] [--expect-sha256 <digest>] <archive.json>
 	ariadne trace archive questions [--json]
@@ -232,6 +234,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 				return runTraceReplicationAskReceipt(args[4:], stdout, stderr, trace.AskReplicationQuestionReceipt)
 			}
 			return runTraceReplicationAsk(args[3:], stdout, stderr, trace.AskReplicationQuestion)
+		}
+	}
+	if len(args) >= 3 && args[0] == "trace" && args[1] == "study" {
+		if args[2] == "save" {
+			return runTraceStudySave(args[3:], stdout, stderr, trace.SaveReplicationStudy)
+		}
+		if args[2] == "verify" {
+			return runTraceStudyVerify(args[3:], stdout, stderr, trace.VerifyReplicationStudy)
 		}
 	}
 	if len(args) >= 2 && args[0] == "browser" && args[1] == "trace" {

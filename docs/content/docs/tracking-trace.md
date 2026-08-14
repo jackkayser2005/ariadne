@@ -437,6 +437,41 @@ ledger SHA-256; a selected receipt is bound to both the ledger and round
 identities. Their result and `evidence_state` remain separate, and offline
 verification does not reopen source paths or captured values.
 
+## Portable cross-run replication study
+
+When the same counterfactual has been repeated independently, a study joins
+the resulting ledgers without becoming a capture or scheduling service. The
+caller supplies a private SHA-256 commitment for the counterfactual and one
+saved question round for each ledger:
+
+```console
+go run ./cmd/ariadne trace study save --json \
+  --contrast-sha256 <private-contrast-sha256> \
+  .ariadne/trace-study.json \
+  .ariadne/trace-replication-1.json .ariadne/trace-replication-1-round.json \
+  .ariadne/trace-replication-2.json .ariadne/trace-replication-2-round.json
+go run ./cmd/ariadne trace study verify --json \
+  --expect-sha256 <study-sha256> .ariadne/trace-study.json
+```
+
+Study creation re-verifies every embedded ledger and question round, binds the
+round to that ledger's canonical identity, rejects duplicate ledger or round
+identities, and requires shared source, adapter, adapter version, procedure
+digest, and scope provenance. It requires 2--8 runs, keeps `order_basis:
+caller`, and does not interpret caller order as chronology. A run is supported
+only when its pair orders are balanced, all resets are confirmed, all pairs are
+complete, and no comparison support is unknown.
+
+The study outcome is `replicated-change` when every supported run observes a
+safe category difference, `no-change-observed` when every supported run
+observes no safe category difference, `mixed-inconsistent` when supported runs
+disagree, and `unknown` when any run lacks support. `evidence_state` is
+calculated independently and becomes `unknown` whenever the study cannot
+support its aggregate. The commitment binds the study to a caller's private
+counterfactual identity but stores neither that value nor target identifiers.
+The study does not execute resets, infer chronology, add statistics, capture a
+browser, or turn repeated comparison into universal causal attribution.
+
 This ledger is intentionally not a runner, capture adapter, chronology model,
 database, statistical model, or causal proof. Source-specific producers remain
 responsible for authorization, isolation, reset execution, redaction, and
