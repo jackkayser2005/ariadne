@@ -1398,7 +1398,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
           <div class="section-head"><h3><code>{{.QuestionID}}</code></h3><span class="status status-{{.Result}}">{{.Result}}</span></div>
           <p class="question">{{.Question}}</p>
           <dl>
-            <dt>outcome</dt><dd><span class="status status-{{.Result}}">{{.Result}}</span></dd>
+            <dt>result</dt><dd><span class="status status-{{.Result}}">{{.Result}}</span></dd>
             <dt>evidence state</dt><dd><span class="status status-{{.EvidenceState}}">{{.EvidenceState}}</span></dd>
             <dt>entries</dt><dd>{{.Entries}}</dd>
             <dt>archives</dt><dd>{{.Archives}}</dd>
@@ -1409,7 +1409,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
         </article>
       {{end}}
       </div>
-      <p class="context">The outcome answers the bounded question; evidence state qualifies the support available for that answer. Unknown is not treated as no change or as causal evidence.</p>
+      <p class="context">The result answers the bounded question; evidence state qualifies the support available for that answer. Unknown is not treated as no change or as causal evidence.</p>
     </section>
     <section class="panel" aria-label="Trace case entries">
       <div class="section-head"><h2>Verified case entries</h2><span class="context">caller order</span></div>

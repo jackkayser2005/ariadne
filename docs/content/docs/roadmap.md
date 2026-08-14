@@ -164,8 +164,9 @@ browser source-boundary layers, and a portable trace reflection layer:
      The case and its question round have separate canonical identities. The
      loopback review page can now expose the verified package through a
      separate GET-only `/trace-case` route, preserving caller order and
-     rendering child identities, safe source summaries, fixed answers, and
-     separate outcome/evidence-state fields. This is a durable
+     rendering child identities, safe source summaries, fixed question
+     results, replicated child outcomes, and separate evidence-state fields.
+     This is a durable
      reflection/index boundary, not chronology inference, a database, a
      capture runner, a universal sniffer, or cross-source causal attribution.
 

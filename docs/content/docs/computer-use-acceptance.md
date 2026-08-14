@@ -143,7 +143,7 @@ and bounded answers, not proof that a UI driver performed the selection.
 3. Check the safe reviewed source/adapter summaries and the caller-ordered
    child entries. Do not describe their positions as earlier or later.
 4. Read the three fixed question IDs: `case-sources`, `case-outcomes`, and
-   `case-support`. For each, retain the displayed outcome and its separate
+   `case-support`. For each, retain the displayed result and its separate
    evidence state. Treat `unknown` as missing support, not as no change or
    cross-source causality.
 5. Inspect child artifact and matching question-round identities only. Do not

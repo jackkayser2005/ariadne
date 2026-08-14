@@ -56,6 +56,8 @@ func TestHandlerRendersTraceCaseReflection(t *testing.T) {
 		trace.CaseEntryTraceArchive,
 		trace.CaseEntryTraceReplication,
 		string(trace.ReplicatedChange),
+		"<dt>result</dt>",
+		"<dt>outcome</dt>",
 		"evidence state",
 		"unknown",
 		"raw-value-free",

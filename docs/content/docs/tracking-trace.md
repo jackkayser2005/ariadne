@@ -589,11 +589,13 @@ go run ./cmd/ariadne experiment serve \
 
 Open `/trace-case` to see the case SHA-256, caller order basis, archive and
 replication counts, safe reviewed source/adapter summaries, each child
-artifact and question-round identity, and the three fixed case answers. Child
-entries remain in caller order; the page does not describe entries as earlier
-or later. Replicated child outcomes are rendered separately from their
-`evidence_state`, so `unknown` remains missing support rather than a no-change
-claim. The route re-verifies the full embedded package and recomputes answers
+artifact and question-round identity, and the three fixed case answers. The
+fixed case answers use a question `result` such as `available`, `supported`,
+or `unknown`; they are not replicated outcomes. Child entries remain in caller
+order; the page does not describe entries as earlier or later. Replicated
+child outcomes are rendered separately from their `evidence_state`, so
+`unknown` remains missing support rather than a no-change claim. The route
+re-verifies the full embedded package and recomputes answers
 before rendering, accepts only `GET`, and returns only
 `trace case unavailable` for malformed, tampered, or identity-inconsistent
 input. It never renders the configured path, source-specific arguments,

@@ -235,7 +235,9 @@ go run ./cmd/ariadne experiment serve \
 The read-only `/trace-case` route re-verifies the embedded archives, ledgers,
 and matching question rounds before rendering only the case identity, caller
 order, safe source summaries, child identities, fixed case answers, and
-separate outcome/evidence-state fields. It fails closed with a generic
+separate question `result`, replicated child `outcome`, and `evidence_state`
+fields. A case question result such as `available`, `supported`, or `unknown`
+is not itself a replicated outcome. It fails closed with a generic
 `trace case unavailable` response for malformed or identity-inconsistent
 input; it never renders the configured path, captured values, or source
 specific arguments.
