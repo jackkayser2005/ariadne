@@ -28,7 +28,7 @@ jq -e '
   (.unknowns == 0)
 ' "${verify_json}"
 
-replicated_dir=".ariadne/ci/experiment-001-replicated"
+replicated_dir=".ariadne/ci-replicated/experiment-001"
 "${ariadne}" experiment replicate \
   --device emulator-5554 \
   --package dev.ariadne.fixture \
