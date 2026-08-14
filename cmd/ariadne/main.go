@@ -51,6 +51,13 @@ const usage = `usage:
 	ariadne trace archive ask receipt [--json] <round.json> <question-id>
 	ariadne trace archive ask receipt save [--json] <round.json> <question-id> <receipt.json>
 	ariadne trace archive ask receipt verify [--json] [--expect-sha256 <digest>] <receipt.json>
+	ariadne trace case save [--json] <case.json> <trace-archive|trace-replication> <artifact.json> <question-round.json> ...
+	ariadne trace case verify [--json] [--expect-sha256 <digest>] <case.json>
+	ariadne trace case questions [--json]
+	ariadne trace case ask [--json] <case.json> <question-id>
+	ariadne trace case ask all [--json] <case.json>
+	ariadne trace case ask all save [--json] <case.json> <round.json>
+	ariadne trace case ask all verify [--json] [--expect-sha256 <digest>] <round.json>
 	ariadne browser trace [--json] <redacted-browser-audit.json> <trace.json>
 	ariadne browser capture [--json] --procedure <procedure.json> --driver <executable> [--driver-arg <arg>] <trace.json>
 	ariadne browser fixture replicate [--json] --procedure <procedure.json> --driver <executable> [--driver-arg <arg>] --pairs <n> --output <directory>
@@ -147,6 +154,29 @@ func run(args []string, stdout, stderr io.Writer) int {
 				return runTraceArchiveAskReceipt(args[4:], stdout, stderr, trace.AskArchiveQuestionReceipt)
 			}
 			return runTraceArchiveAsk(args[3:], stdout, stderr, trace.AskArchive)
+		}
+	}
+	if len(args) >= 3 && args[0] == "trace" && args[1] == "case" {
+		if args[2] == "save" {
+			return runTraceCaseSave(args[3:], stdout, stderr, trace.SaveCase)
+		}
+		if args[2] == "verify" {
+			return runTraceCaseVerify(args[3:], stdout, stderr, trace.VerifyCase)
+		}
+		if args[2] == "questions" {
+			return runTraceCaseQuestions(args[3:], stdout, stderr, trace.CaseQuestions)
+		}
+		if args[2] == "ask" {
+			if len(args) >= 4 && args[3] == "all" {
+				if len(args) >= 5 && args[4] == "save" {
+					return runTraceCaseAskAllSave(args[5:], stdout, stderr, trace.SaveCaseQuestionRound)
+				}
+				if len(args) >= 5 && args[4] == "verify" {
+					return runTraceCaseAskAllVerify(args[5:], stdout, stderr, trace.VerifyCaseQuestionRound)
+				}
+				return runTraceCaseAskAll(args[4:], stdout, stderr, trace.AskAllCaseQuestions)
+			}
+			return runTraceCaseAsk(args[3:], stdout, stderr, trace.AskCaseQuestion)
 		}
 	}
 	if len(args) >= 3 && args[0] == "trace" && args[1] == "session" {

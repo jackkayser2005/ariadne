@@ -543,6 +543,39 @@ GET-only and does not render the configured ledger path, source paths, URLs,
 payloads, or captured values.
 Malformed or tampered input produces only `trace replication unavailable`.
 
+## Portable cross-source case package
+
+Once standalone archives or replicated ledgers have their fixed question
+rounds, they can be joined into one bounded, caller-ordered package:
+
+```console
+go run ./cmd/ariadne trace case save --json \
+  .ariadne/case.json \
+  trace-archive .ariadne/trace-archive.json .ariadne/trace-archive-round.json \
+  trace-replication .ariadne/trace-replication.json .ariadne/trace-replication-round.json
+go run ./cmd/ariadne trace case verify --json .ariadne/case.json
+go run ./cmd/ariadne trace case ask all --json .ariadne/case.json
+go run ./cmd/ariadne trace case ask all save --json .ariadne/case.json .ariadne/case-round.json
+go run ./cmd/ariadne trace case ask all verify --json .ariadne/case-round.json
+```
+
+Each entry embeds either one verified `trace-archive` and its matching archive
+question round, or one verified `trace-replication` ledger and its matching
+replication question round. The case verifier recomputes every child artifact
+and round identity, rejects duplicate child identities, and answers only from
+the verified embedded summaries. The case has its own canonical SHA-256, and a
+saved case question round has a separate identity bound to it.
+
+The fixed questions ask which reviewed source/adapter boundaries are
+represented, which replicated outcomes are retained, and whether any child
+conclusion remains `unknown` or incompletely supported. Outcomes remain
+separate from `evidence_state`: a retained `unknown` outcome is a valid
+reflection result, not a malformed package. The package keeps caller order but
+does not infer chronology, and it stores no source paths, target identifiers,
+process arguments, or captured values. It is a durable reflection/index
+boundary, not a database, capture runner, universal sniffer, cross-source
+causal attribution engine, or natural-language question interface.
+
 ## Bigger-picture path
 
 The intended flow is:
@@ -567,6 +600,10 @@ The intended flow is:
 9. The loopback proxy producer can add one explicitly authorized HTTPS
    authority through an opaque, non-MITM CONNECT boundary without retaining
    hostnames, URLs, or tunneled values.
+10. The case package can join those verified archives and replicated ledgers
+    with their fixed question rounds, giving a computer-use driver one stable
+    raw-value-free object to inspect and ask about without reopening source
+    paths or inferring chronology.
 
 The Experiment 001 Android producer remains the authoritative evidence-backed
 edge, and the replicated runner is the evidence gate. The browser audit and

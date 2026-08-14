@@ -155,6 +155,16 @@ browser source-boundary layers, and a portable trace reflection layer:
      preserve an observed same outcome while reporting unknown evidence; an
      absent event remains unknown. This asserts only process/proxy reset, not
      remote-state reset, authorization, universal tracing, or causality.
+15. **Portable cross-source case package.** Verified trace archives and
+     replicated ledgers can now be embedded, in caller order, with their
+     matching fixed question rounds. The case verifier recomputes every child
+     artifact and round identity, rejects duplicate child identities, and
+     answers fixed questions about represented source boundaries, retained
+     replicated outcomes, and unknown or incompletely supported conclusions.
+     The case and its question round have separate canonical identities. This
+     is a durable reflection/index boundary, not chronology inference, a
+     database, a capture runner, a universal sniffer, or cross-source causal
+     attribution.
 
 The local review page is intentionally read-only. Its compact question round
 and receipt links, including stable history and receipt identities, are a
@@ -222,7 +232,10 @@ snapshots, but it is not a chronology model or universal sniffer. The trace
 contract remains the handoff boundary for any future source producer. The
 replication question round is now the durable reflection surface for asking
 what the repeated comparison established without turning the ledger into a
-capture store.
+capture store. The case package is the next reflection join: it preserves
+caller order across verified archives and ledgers, answers only its fixed
+bounded catalog, and retains `unknown` child conclusions without turning them
+into causal attribution.
 
 ## Acceptance gates
 
@@ -254,6 +267,10 @@ capture store.
   require balanced orders before reporting a non-`unknown` aggregate. Their
   fixed question rounds and selected receipts verify independently while
   preserving outcome and evidence-state semantics.
+- Cross-source case packages re-verify embedded archives or ledgers and their
+  matching question rounds, reject duplicate child identities, preserve caller
+  order without chronology inference, and keep retained outcomes separate from
+  `evidence_state`.
 - UI changes pass deterministic handler tests; use computer-use only when a
   concrete rendered-flow check is needed and the host supports it.
 - No review page, answer, export, or log exposes captured values, secrets, or

@@ -200,6 +200,29 @@ in partial coverage remains `unknown`. This proves only the declared process,
 proxy, and authority boundary, not remote-state reset, authorization, or
 causality.
 
+Join already verified trace history into one portable case package. The case
+embeds caller-ordered trace archives or replicated ledgers together with their
+matching fixed question rounds, so verification never reopens source paths:
+
+```console
+go run ./cmd/ariadne trace case save --json \
+  .ariadne/case.json \
+  trace-archive .ariadne/trace-archive.json .ariadne/trace-archive-round.json \
+  trace-replication .ariadne/trace-replication.json .ariadne/trace-replication-round.json
+go run ./cmd/ariadne trace case verify --json .ariadne/case.json
+go run ./cmd/ariadne trace case ask all --json .ariadne/case.json
+go run ./cmd/ariadne trace case ask all save --json .ariadne/case.json .ariadne/case-round.json
+go run ./cmd/ariadne trace case ask all verify --json .ariadne/case-round.json
+```
+
+The fixed case questions expose represented source boundaries, retained
+replicated outcomes, and whether any child conclusion remains unknown. The
+package stores no input paths, target identifiers, process arguments, or
+captured values; caller order is retained without inferring chronology. A
+case is a durable reflection/index boundary, not a database, universal
+capture service, cross-source causal attribution, or natural-language
+question engine.
+
 The same fixture path can run a small counterfactual replication. The runner
 owns the fixed baseline/treatment variants, creates a fresh profile before each
 session, records both orders, and verifies the aggregate separately from
