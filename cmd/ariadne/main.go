@@ -58,6 +58,7 @@ const usage = `usage:
 	ariadne trace case ask all [--json] <case.json>
 	ariadne trace case ask all save [--json] <case.json> <round.json>
 	ariadne trace case ask all verify [--json] [--expect-sha256 <digest>] <round.json>
+	ariadne trace case ask all compare [--json] <first-round.json> <second-round.json>
 	ariadne browser trace [--json] <redacted-browser-audit.json> <trace.json>
 	ariadne browser capture [--json] --procedure <procedure.json> --driver <executable> [--driver-arg <arg>] <trace.json>
 	ariadne browser fixture replicate [--json] --procedure <procedure.json> --driver <executable> [--driver-arg <arg>] --pairs <n> --output <directory>
@@ -173,6 +174,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 				}
 				if len(args) >= 5 && args[4] == "verify" {
 					return runTraceCaseAskAllVerify(args[5:], stdout, stderr, trace.VerifyCaseQuestionRound)
+				}
+				if len(args) >= 5 && args[4] == "compare" {
+					return runTraceCaseAskAllCompare(args[5:], stdout, stderr, trace.CompareCaseQuestionRounds)
 				}
 				return runTraceCaseAskAll(args[4:], stdout, stderr, trace.AskAllCaseQuestions)
 			}

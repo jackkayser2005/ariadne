@@ -557,6 +557,7 @@ go run ./cmd/ariadne trace case verify --json .ariadne/case.json
 go run ./cmd/ariadne trace case ask all --json .ariadne/case.json
 go run ./cmd/ariadne trace case ask all save --json .ariadne/case.json .ariadne/case-round.json
 go run ./cmd/ariadne trace case ask all verify --json .ariadne/case-round.json
+go run ./cmd/ariadne trace case ask all compare --json .ariadne/first-case-round.json .ariadne/second-case-round.json
 ```
 
 Each entry embeds either one verified `trace-archive` and its matching archive
@@ -575,6 +576,24 @@ does not infer chronology, and it stores no source paths, target identifiers,
 process arguments, or captured values. It is a durable reflection/index
 boundary, not a database, capture runner, universal sniffer, cross-source
 causal attribution engine, or natural-language question interface.
+
+To compare two retained case question rounds, use the bounded caller-ordered
+comparison:
+
+```console
+go run ./cmd/ariadne trace case ask all compare --json \
+  .ariadne/first-case-round.json .ariadne/second-case-round.json
+```
+
+Both rounds are verified before comparison. The result is `same` or `changed`
+and includes only fixed question IDs whose safe projections differ, together
+with the round/case identities and bounded change kinds. Question `result`,
+replicated child `outcome`, and `evidence_state` remain separate; a changed
+projection is not a chronology, causal, improvement, or regression claim.
+Different case identities are valid. Fixed answer reasons are integrity-checked
+and are not emitted as change kinds; round hashes identify the complete
+retained documents. Paths, target IDs, arguments, and captured values never
+enter the comparison.
 
 ### Read-only trace-case review
 

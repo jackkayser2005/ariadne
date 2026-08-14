@@ -166,6 +166,10 @@ browser source-boundary layers, and a portable trace reflection layer:
      separate GET-only `/trace-case` route, preserving caller order and
      rendering child identities, safe source summaries, fixed question
      results, replicated child outcomes, and separate evidence-state fields.
+     Two retained case question rounds can also be verified and compared in
+     caller order, reporting only bounded question projections that changed;
+     this preserves the distinction between question results, replicated
+     outcomes, evidence state, and the caller's supplied order.
      This is a durable
      reflection/index boundary, not chronology inference, a database, a
      capture runner, a universal sniffer, or cross-source causal attribution.
@@ -242,9 +246,11 @@ what the repeated comparison established without turning the ledger into a
 capture store. The case package is now the reflection join: it preserves caller
 order across verified archives and ledgers, answers only its fixed bounded
 catalog, and retains `unknown` child conclusions without turning them into
-causal attribution. Its `/trace-case` route makes that package inspectable by
-the read-only computer-use acceptance path; real GUI execution remains a
-separate evidence gate.
+causal attribution. Two retained case rounds can be compared before any UI
+surface is added, with `same`/`changed` semantics and separate result,
+outcome, and evidence-state fields. Its `/trace-case` route makes that package
+inspectable by the read-only computer-use acceptance path; real GUI execution
+remains a separate evidence gate.
 
 ## Acceptance gates
 
@@ -280,6 +286,9 @@ separate evidence gate.
   matching question rounds, reject duplicate child identities, preserve caller
   order without chronology inference, and keep retained outcomes separate from
   `evidence_state`.
+- Case-round comparisons re-verify both saved rounds and emit only bounded
+  question projections; they do not treat a changed question result as a
+  causal, chronological, improvement, or regression claim.
 - UI changes pass deterministic handler tests; use computer-use only when a
   concrete rendered-flow check is needed and the host supports it.
 - No review page, answer, export, or log exposes captured values, secrets, or

@@ -23,6 +23,7 @@ const (
 	caseQuestionRoundSchemaVersion = 1
 	maxCaseBytes                   = 4 << 20
 	maxCaseEntries                 = 8
+	maxCaseSummaryEntries          = maxArchiveEntries * maxCaseEntries
 )
 
 const (
@@ -736,25 +737,21 @@ func answerCaseFromSummary(summary CaseVerificationSummary, question CaseQuestio
 	switch question.ID {
 	case CaseQuestionSources:
 		answer.Result = "available"
-		answer.Reason = "verified source and adapter boundaries are represented without source paths or values"
 	case CaseQuestionOutcomes:
 		if summary.Replications == 0 {
 			answer.Result = "unknown"
 			answer.EvidenceState = evidence.Unknown
-			answer.Reason = "the case retains no replicated trace ledger"
 		} else {
 			answer.Result = "available"
-			answer.Reason = "replicated outcomes are retained as bounded child summaries"
 		}
 	case CaseQuestionSupport:
 		if summary.UnknownEntries == 0 {
 			answer.Result = "supported"
-			answer.Reason = "every retained child question round reports observed evidence support"
 		} else {
 			answer.Result = "unknown"
-			answer.Reason = "at least one retained child conclusion remains unknown or incompletely supported"
 		}
 	}
+	answer.Reason = caseAnswerReason(answer)
 	return answer
 }
 
@@ -805,6 +802,19 @@ func validateCaseQuestionRound(round CaseQuestionRound) error {
 			return fmt.Errorf("trace case question round answer %d: %w", index+1, err)
 		}
 	}
+	if err := validateCaseAnswerConsistency(round.Answers); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateCaseAnswerConsistency(answers []CaseAnswer) error {
+	base := answers[0]
+	for _, answer := range answers[1:] {
+		if answer.Entries != base.Entries || answer.Archives != base.Archives || answer.Replications != base.Replications || answer.UnknownEntries != base.UnknownEntries || !slices.Equal(answer.Sources, base.Sources) || !slices.Equal(answer.Outcomes, base.Outcomes) {
+			return errors.New("case question round answers disagree about shared summaries")
+		}
+	}
 	return nil
 }
 
@@ -824,10 +834,99 @@ func validateCaseAnswer(answer CaseAnswer, question CaseQuestion, caseSHA256 str
 	if len(answer.Sources) == 0 {
 		return errors.New("case answer sources are empty")
 	}
-	if answer.QuestionID == CaseQuestionOutcomes && answer.Replications == 0 && answer.Result != "unknown" {
-		return errors.New("case outcome answer result is invalid")
+	for index, source := range answer.Sources {
+		if err := validateCaseSourceSummary(source); err != nil {
+			return fmt.Errorf("case answer source %d is invalid", index+1)
+		}
+		if index > 0 && compareCaseSources(answer.Sources[index-1], source) >= 0 {
+			return errors.New("case answer sources are not in canonical order")
+		}
+	}
+	if len(answer.Outcomes) != answer.Replications {
+		return errors.New("case answer outcomes are invalid")
+	}
+	for index, outcome := range answer.Outcomes {
+		if err := validateCaseOutcomeSummary(outcome, entries); err != nil {
+			return fmt.Errorf("case answer outcome %d is invalid", index+1)
+		}
+		if index > 0 && answer.Outcomes[index-1].Position >= outcome.Position {
+			return errors.New("case answer outcomes are not in caller order")
+		}
+	}
+	expectedResult, expectedEvidence := caseAnswerExpectation(answer)
+	if answer.Result != expectedResult {
+		return errors.New("case answer result does not match metrics")
+	}
+	if answer.EvidenceState != expectedEvidence {
+		return errors.New("case answer evidence_state does not match metrics")
+	}
+	if answer.Reason != caseAnswerReason(answer) {
+		return errors.New("case answer reason is invalid")
 	}
 	return nil
+}
+
+func validateCaseSourceSummary(source CaseSourceSummary) error {
+	expectedSource, ok := adapterSource(source.Adapter)
+	if !ok || source.Source != expectedSource || source.Entries <= 0 || source.Entries > maxCaseSummaryEntries {
+		return errors.New("source summary values are invalid")
+	}
+	return nil
+}
+
+func validateCaseOutcomeSummary(outcome CaseOutcomeSummary, entries int) error {
+	if outcome.Position <= 0 || outcome.Position > entries || outcome.Pairs <= 0 || outcome.Pairs > maxReplicationPairs || outcome.UnknownPairs < 0 || outcome.UnknownPairs > outcome.Pairs {
+		return errors.New("outcome summary counts are invalid")
+	}
+	if outcome.Outcome != ReplicatedChange && outcome.Outcome != NoChangeObserved && outcome.Outcome != MixedInconsistent && outcome.Outcome != ReplicationUnknown {
+		return errors.New("outcome summary outcome is invalid")
+	}
+	if outcome.EvidenceState != evidence.Observed && outcome.EvidenceState != evidence.Unknown {
+		return errors.New("outcome summary evidence_state is invalid")
+	}
+	return nil
+}
+
+func caseAnswerExpectation(answer CaseAnswer) (string, evidence.State) {
+	evidenceState := evidence.Observed
+	if answer.UnknownEntries > 0 || (answer.QuestionID == CaseQuestionOutcomes && answer.Replications == 0) {
+		evidenceState = evidence.Unknown
+	}
+	switch answer.QuestionID {
+	case CaseQuestionSources:
+		return "available", evidenceState
+	case CaseQuestionOutcomes:
+		if answer.Replications == 0 {
+			return "unknown", evidence.Unknown
+		}
+		return "available", evidenceState
+	case CaseQuestionSupport:
+		if answer.UnknownEntries == 0 {
+			return "supported", evidenceState
+		}
+		return "unknown", evidenceState
+	default:
+		return "", evidence.Unknown
+	}
+}
+
+func caseAnswerReason(answer CaseAnswer) string {
+	switch answer.QuestionID {
+	case CaseQuestionSources:
+		return "verified source and adapter boundaries are represented without source paths or values"
+	case CaseQuestionOutcomes:
+		if answer.Replications == 0 {
+			return "the case retains no replicated trace ledger"
+		}
+		return "replicated outcomes are retained as bounded child summaries"
+	case CaseQuestionSupport:
+		if answer.UnknownEntries == 0 {
+			return "every retained child question round reports observed evidence support"
+		}
+		return "at least one retained child conclusion remains unknown or incompletely supported"
+	default:
+		return ""
+	}
 }
 
 func marshalCase(casePackage CasePackage) ([]byte, error) {

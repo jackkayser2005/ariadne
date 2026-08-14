@@ -213,6 +213,7 @@ go run ./cmd/ariadne trace case verify --json .ariadne/case.json
 go run ./cmd/ariadne trace case ask all --json .ariadne/case.json
 go run ./cmd/ariadne trace case ask all save --json .ariadne/case.json .ariadne/case-round.json
 go run ./cmd/ariadne trace case ask all verify --json .ariadne/case-round.json
+go run ./cmd/ariadne trace case ask all compare --json .ariadne/first-case-round.json .ariadne/second-case-round.json
 ```
 
 The fixed case questions expose represented source boundaries, retained
@@ -222,6 +223,15 @@ captured values; caller order is retained without inferring chronology. A
 case is a durable reflection/index boundary, not a database, universal
 capture service, cross-source causal attribution, or natural-language
 question engine.
+
+`trace case ask all compare` independently verifies both retained rounds and
+compares their fixed projections in caller order. It reports `same` or
+`changed`, the round and case identities, and only changed question IDs with
+bounded `result`, `evidence-state`, count, source, or replicated `outcome`
+change kinds. A question `result` such as `available` is not the same field as
+an embedded replicated `outcome`; different case identities are allowed, and
+the comparison does not infer chronology, causality, improvement, or
+regression.
 
 Expose the verified case through the same loopback review page when a
 computer-use driver needs a bounded inspection surface:
