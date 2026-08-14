@@ -13,8 +13,8 @@ values.
 
 ## Current position
 
-The repository currently has five evidence-backed layers and two separate
-browser source-boundary layers:
+The repository currently has five evidence-backed layers, two separate browser
+source-boundary layers, and a portable trace reflection layer:
 
 1. **Investigation core.** Experiment 001 defines personas, captures network
    and storage observations, validates provenance, compares answer states, and
@@ -96,6 +96,13 @@ browser source-boundary layers:
    `replicated-change`, `no-change-observed`, `mixed-inconsistent`, or
    `unknown`, with `evidence_state` kept separate. This is a deterministic
    smoke path, not a user-browser adapter.
+10. **Source-neutral trace archive questions.** Caller-ordered standalone
+    sessions from reviewed adapters can now be retained in one portable,
+    raw-value-free archive. Fixed questions report complete versus partial
+    coverage, safe category change across compatible adjacent snapshots, and
+    represented source adapters. Every answer is bound to the archive identity;
+    partial or incompatible boundaries remain `unknown`, and archive order is
+    not inferred chronology.
 
 The local review page is intentionally read-only. Its compact question round
 and receipt links, including stable history and receipt identities, are a
@@ -150,7 +157,9 @@ Session provenance is the join point for later source-specific runs. A real
 browser capture driver for a user-authorized target, desktop producer, or proxy
 producer is still a separate future slice with its own authorized procedure,
 isolated target, and redaction tests; the local fixture is not that capability.
-The trace contract is the handoff boundary, not a universal sniffer.
+The trace archive is now the portable reflection surface for those reviewed
+snapshots, but it is not a chronology model or universal sniffer. The trace
+contract remains the handoff boundary for any future source producer.
 
 ## Acceptance gates
 
@@ -161,6 +170,9 @@ The trace contract is the handoff boundary, not a universal sniffer.
 - The local browser fixture producer and its two-order replication pass the
   hosted Windows Chrome workflow, including redaction and temporary-profile
   cleanup.
+- Source-neutral trace archives verify their embedded standalone sessions and
+  answer only the fixed coverage, change, and source questions; partial or
+  incompatible boundaries stay `unknown`.
 - UI changes pass deterministic handler tests; use computer-use only when a
   concrete rendered-flow check is needed and the host supports it.
 - No review page, answer, export, or log exposes captured values, secrets, or

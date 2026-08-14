@@ -30,6 +30,11 @@ const usage = `usage:
 	ariadne trace session pair create [--json] --adapter <adapter> --procedure-sha256 <digest> [--adapter-version <n>] --order <baseline-treatment|treatment-baseline> <baseline-trace.json> <treatment-trace.json> <baseline-session.json> <treatment-session.json>
 	ariadne trace session pair verify [--json] <baseline-session.json> <baseline-trace.json> <treatment-session.json> <treatment-trace.json>
 	ariadne trace session pair compare [--json] <baseline-session.json> <baseline-trace.json> <treatment-session.json> <treatment-trace.json>
+	ariadne trace archive create [--json] --trace <trace.json> --session <session.json> ... <archive.json>
+	ariadne trace archive verify [--json] [--expect-sha256 <digest>] <archive.json>
+	ariadne trace archive questions [--json]
+	ariadne trace archive ask [--json] <archive.json> <question-id>
+	ariadne trace archive ask all [--json] <archive.json>
 	ariadne browser trace [--json] <redacted-browser-audit.json> <trace.json>
 	ariadne browser capture [--json] --procedure <procedure.json> --driver <executable> [--driver-arg <arg>] <trace.json>
 	ariadne browser fixture replicate [--json] --procedure <procedure.json> --driver <executable> [--driver-arg <arg>] --pairs <n> --output <directory>
@@ -92,6 +97,23 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(args) >= 2 && args[0] == "trace" && args[1] == "compare" {
 		return runTraceCompare(args[2:], stdout, stderr, trace.CompareFiles)
+	}
+	if len(args) >= 3 && args[0] == "trace" && args[1] == "archive" {
+		if args[2] == "create" {
+			return runTraceArchiveCreate(args[3:], stdout, stderr, trace.SaveArchive)
+		}
+		if args[2] == "verify" {
+			return runTraceArchiveVerify(args[3:], stdout, stderr, trace.VerifyArchive)
+		}
+		if args[2] == "questions" {
+			return runTraceArchiveQuestions(args[3:], stdout, stderr, trace.ArchiveQuestions)
+		}
+		if args[2] == "ask" {
+			if len(args) >= 4 && args[3] == "all" {
+				return runTraceArchiveAskAll(args[4:], stdout, stderr, trace.AskAllArchive)
+			}
+			return runTraceArchiveAsk(args[3:], stdout, stderr, trace.AskArchive)
+		}
 	}
 	if len(args) >= 3 && args[0] == "trace" && args[1] == "session" {
 		if len(args) >= 4 && args[2] == "pair" {

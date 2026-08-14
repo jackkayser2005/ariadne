@@ -175,6 +175,28 @@ the existing raw-value-free trace comparison and returns both objects together.
 Provenance, structural differences, and evidence states remain separate; a
 joined comparison is not a causal claim.
 
+Retain caller-ordered standalone trace snapshots from any reviewed adapter in
+one portable archive, then ask the fixed source-neutral questions without+reopening source values:
+
+```console
+go run ./cmd/ariadne trace archive create --json \
+  --trace baseline-trace.json --session baseline-session.json \
+  --trace treatment-trace.json --session treatment-session.json \
+  .ariadne/trace-archive.json
+go run ./cmd/ariadne trace archive verify --json .ariadne/trace-archive.json
+go run ./cmd/ariadne trace archive questions --json
+go run ./cmd/ariadne trace archive ask all --json .ariadne/trace-archive.json
+```
+
+The archive stores only normalized trace labels and standalone provenance
+envelopes. Its order is the caller's order, not inferred chronology. The fixed
+questions report whether every trace declared complete coverage, whether safe
+categories changed across compatible adjacent entries, and which reviewed
+source adapters are represented. Partial or incompatible boundaries remain
+`unknown`, and every archive/answer carries a canonical SHA-256 identity. This
+is a portable review index, not a chronology engine, a natural-language engine,
+or a universal capture service.
+
 The shareable export has its own canonical SHA-256 identity. Verify a received
 export structurally, and optionally require the expected identity, with
 `experiment export verify --json --expect-sha256 <export-sha256> <export.json>`.

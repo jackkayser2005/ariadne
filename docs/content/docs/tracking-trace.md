@@ -270,6 +270,42 @@ the verified `pair` metadata beside the structural `comparison`, so a changed
 or missing event never becomes a provenance claim and an `unknown` evidence
 state is not turned into an observed outcome.
 
+## Caller-ordered trace archive questions
+
+Standalone trace sessions from any currently reviewed adapter can be retained
+in one portable archive. Creation verifies each session against its trace and
+stores only the normalized trace document plus its raw-value-free provenance
+envelope; input paths are not retained. The order is explicitly the caller's
+order, not inferred chronology.
+
+```console
+go run ./cmd/ariadne trace archive create --json \
+  --trace baseline-trace.json --session baseline-session.json \
+  --trace treatment-trace.json --session treatment-session.json \
+  .ariadne/trace-archive.json
+go run ./cmd/ariadne trace archive verify --json .ariadne/trace-archive.json
+go run ./cmd/ariadne trace archive questions --json
+go run ./cmd/ariadne trace archive ask all --json .ariadne/trace-archive.json
+```
+
+The fixed archive questions are deliberately small:
+
+- `trace-coverage` reports `complete` only when every retained trace declares
+  complete coverage; otherwise it returns `unknown` with
+  `evidence_state: unknown`.
+- `trace-change` compares adjacent entries only when their reviewed source,
+  adapter, procedure, and scope match. It returns `changed`, `same`, `mixed`,
+  or `unknown`; partial boundaries remain unknown even when their visible
+  labels happen to match.
+- `trace-sources` reports the reviewed source/adapter identities represented in
+  the archive without reopening source values.
+
+The archive and every answer carry a canonical SHA-256 identity. The archive is
+a review index, not a replacement for authoritative evidence bundles, a
+chronology model, a natural-language question engine, or a universal capture
+service. Future authorized desktop or proxy producers can enter this same
+surface only after their own adapter and redaction contracts exist.
+
 ## Bigger-picture path
 
 The intended flow is:
@@ -280,7 +316,10 @@ The intended flow is:
 4. Replicated counterfactual experiments repeat the matched comparison in both
    orders before a new capture edge is added. Their aggregate outcome remains
    separate from the evidence state.
-5. Existing evidence bundles retain the authoritative artifacts and bounded
+5. A caller-ordered trace archive retains normalized standalone snapshots and
+   answers fixed coverage, change, and source questions across reviewed
+   adapters.
+6. Existing evidence bundles retain the authoritative artifacts and bounded
    conclusions; the trace is a safe index for asking where a category appeared.
 
 The Experiment 001 Android producer remains the authoritative evidence-backed
