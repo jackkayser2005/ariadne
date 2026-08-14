@@ -102,7 +102,9 @@ source-boundary layers, and a portable trace reflection layer:
     coverage, safe category change across compatible adjacent snapshots, and
     represented source adapters. Every answer is bound to the archive identity;
     partial or incompatible boundaries remain `unknown`, and archive order is
-    not inferred chronology.
+    not inferred chronology. The loopback review page can now expose the same
+    archive through a separate `/trace-archive` route, with one verified
+    in-memory question round and separate outcome/evidence-state rendering.
 
 The local review page is intentionally read-only. Its compact question round
 and receipt links, including stable history and receipt identities, are a

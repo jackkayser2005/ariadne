@@ -4252,6 +4252,23 @@ func TestRunServe(t *testing.T) {
 			t.Fatalf("runServe() with question round comparison = %d, handler=%v, stdout=%q, stderr=%q", exitCode, gotHandler, stdout.String(), stderr.String())
 		}
 	})
+
+	t.Run("trace archive flag", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		var gotHandler http.Handler
+		exitCode := runServe(
+			[]string{"--trace-archive", "trace-archive.json", "archive-root"},
+			&stdout,
+			&stderr,
+			func(_ string, handler http.Handler) error {
+				gotHandler = handler
+				return nil
+			},
+		)
+		if exitCode != 0 || gotHandler == nil || stderr.Len() != 0 || !strings.Contains(stdout.String(), "review UI listening") {
+			t.Fatalf("runServe() with trace archive = %d, handler=%v, stdout=%q, stderr=%q", exitCode, gotHandler, stdout.String(), stderr.String())
+		}
+	})
 }
 
 func TestRunServeFailures(t *testing.T) {

@@ -176,7 +176,8 @@ Provenance, structural differences, and evidence states remain separate; a
 joined comparison is not a causal claim.
 
 Retain caller-ordered standalone trace snapshots from any reviewed adapter in
-one portable archive, then ask the fixed source-neutral questions without+reopening source values:
+one portable archive, then ask the fixed source-neutral questions without
+reopening source values:
 
 ```console
 go run ./cmd/ariadne trace archive create --json \
@@ -378,9 +379,9 @@ questions, including a direct snapshot-summary question, so a UI driver can
 choose a question and retain the identities it was asking about.
 
 The local review page can receive a verified transition ledger, a saved
-reflection, an acceptance identity binding, and two retained question rounds
-with
-`experiment serve --history <history.json> --reflection <reflection.json> --acceptance <acceptance.json> --round-first <first-round.json> --round-second <second-round.json> <archive-root>`.
+reflection, an acceptance identity binding, two retained question rounds, and
+one portable trace archive with
+`experiment serve --history <history.json> --reflection <reflection.json> --acceptance <acceptance.json> --round-first <first-round.json> --round-second <second-round.json> --trace-archive <trace-archive.json> <archive-root>`.
 It renders caller-ordered bounded transitions and re-asks the saved reflection's
 fixed question against the current archive, showing only safe comparison counts,
 identities, per-directory bounded state changes, and the repeated-change
@@ -423,6 +424,14 @@ The read-only review page exposes the same canonical SHA-256 identity for the
 currently derived archive question report. It is computed in memory, contains
 no captured values, and identifies the derived report only; it is not proof of
 the underlying evidence or a trend claim.
+
+Supply `--trace-archive <trace-archive.json>` to the same loopback review page
+to open the separate `/trace-archive` reflection route. It verifies the
+portable archive once per request, answers all three fixed questions from that
+verified in-memory archive, and renders the archive identity, caller order,
+source summaries, outcome, and evidence state separately. The route is
+read-only and does not accept arbitrary question text or render local input
+paths or captured values.
 
 It can also review one portable export with
 `experiment serve --export <export.json> <archive-root>`. The export question

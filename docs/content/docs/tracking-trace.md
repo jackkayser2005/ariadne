@@ -306,6 +306,30 @@ chronology model, a natural-language question engine, or a universal capture
 service. Future authorized desktop or proxy producers can enter this same
 surface only after their own adapter and redaction contracts exist.
 
+## Read-only trace archive review
+
+The local review page can expose the archive as a separate reflection route:
+
+```console
+go run ./cmd/ariadne experiment serve \
+  --trace-archive .ariadne/trace-archive.json \
+  <archive-root>
+```
+
+Open `/trace-archive` from the loopback page. The route re-verifies one archive
+and answers all three fixed questions from that same in-memory document. It
+shows the caller-order basis, archive SHA-256, complete/partial counts,
+reviewed source adapters, and each question's outcome beside its separate
+`evidence_state`. It never renders the configured input path, raw trace labels,
+or captured values, and a tampered or malformed archive returns only the
+generic `trace archive unavailable` state.
+
+This route is intentionally not folded into `/?question_id=...`: bundle
+questions and source-neutral trace questions have different identities and
+different evidence contracts. The page offers no free-form question box and
+the route remains GET-only, so a computer-use driver can inspect the fixed
+question round without inventing a question or causing a mutation.
+
 ## Bigger-picture path
 
 The intended flow is:

@@ -9,7 +9,8 @@ This is a read-only orientation check for the local review page. It proves
 that a UI driver can choose one fixed historical question, read its bounded
 receipt, and retain the displayed identities. It is not evidence about the
 target application and must not retain screenshots or page content containing
-captured values.
+captured values. An optional trace-archive pass below follows the same rule
+for source-neutral trace reflections.
 
 ## Prepare the bounded artifacts
 
@@ -38,6 +39,16 @@ To include a comparison of two retained rounds, supply both optional paths:
 go run ./cmd/ariadne experiment serve --history <history.json> --acceptance <acceptance.json> --round-first <first-round.json> --round-second <second-round.json> <archive-root>
 ```
 
+To expose the separate source-neutral trace reflection route, add the verified
+portable archive:
+
+```console
+go run ./cmd/ariadne experiment serve --trace-archive <trace-archive.json> <archive-root>
+```
+
+This adds a link to `/trace-archive`; it does not change the bundle question
+route or merge trace identities into the evidence archive.
+
 ## Driver sequence
 
 1. Open the printed loopback URL in the authorized local browser window.
@@ -61,6 +72,20 @@ go run ./cmd/ariadne experiment serve --history <history.json> --acceptance <acc
    fixed question through the same bounded route.
 8. Retain only the question ID and the three identities. Do not submit forms,
    follow mutation controls, or copy page text beyond the bounded receipt.
+
+### Optional trace-archive pass
+
+1. From the review index, open `Open trace archive review`.
+2. Check `Verified archive identity`, the `caller` order basis, entry and
+   complete/partial counts, and the archive SHA-256.
+3. Check `Reviewed source adapters`, then read all three fixed question IDs:
+   `trace-coverage`, `trace-change`, and `trace-sources`.
+4. For each question, retain the displayed `outcome` and its separate
+   `evidence state`. Treat `unknown` as missing support, not as `same` or
+   `no-change-observed`.
+5. Do not invent a question, infer chronology from caller order, or retain
+   local archive paths or captured values. A failed verification should show
+   only `trace archive unavailable`.
 
 The page exposes accessible labels and stable receipt panel IDs for this
 sequence. A driver may use those labels or the visible question IDs; it must

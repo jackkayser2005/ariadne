@@ -73,7 +73,7 @@ const usage = `usage:
   ariadne experiment ask-archive verify [--json] [--expect-sha256 <digest>] <report.json>
   ariadne experiment questions [--json]
   ariadne experiment list [--json] <archive-root>
-  ariadne experiment serve [--addr <address>] [--history <history.json>] [--reflection <report.json>] [--export <export.json>] [--acceptance <acceptance.json>] [--round-first <round.json> --round-second <round.json>] <archive-root>
+  ariadne experiment serve [--addr <address>] [--history <history.json>] [--reflection <report.json>] [--export <export.json>] [--acceptance <acceptance.json>] [--round-first <round.json> --round-second <round.json>] [--trace-archive <archive.json>] <archive-root>
 `
 
 const adbCheckTimeout = 10 * time.Second
@@ -2763,6 +2763,7 @@ func runServe(
 	acceptancePath := flags.String("acceptance", "", "")
 	roundFirstPath := flags.String("round-first", "", "")
 	roundSecondPath := flags.String("round-second", "", "")
+	traceArchivePath := flags.String("trace-archive", "", "")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
 		_, _ = io.WriteString(stderr, usage)
 		return 2
@@ -2783,7 +2784,7 @@ func runServe(
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment serve: write output: %v\n", err)
 		return 1
 	}
-	reviewHandler := ui.HandlerWithReviewAndExportAndAcceptanceAndQuestionRounds(flags.Arg(0), *historyPath, *reflectionPath, *exportPath, *acceptancePath, *roundFirstPath, *roundSecondPath)
+	reviewHandler := ui.HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceArchive(flags.Arg(0), *historyPath, *reflectionPath, *exportPath, *acceptancePath, *roundFirstPath, *roundSecondPath, *traceArchivePath)
 	if err := serve(*address, reviewHandler); err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment serve: %v\n", err)
 		return 1

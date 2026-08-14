@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/jackkayser2005/ariadne/internal/bundle"
+	"github.com/jackkayser2005/ariadne/internal/trace"
 )
 
 func TestHandlerRendersReadOnlyReview(t *testing.T) {
@@ -214,6 +215,161 @@ func TestHandlerWithReviewAndExportConfiguresExport(t *testing.T) {
 	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
 	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "Portable redacted export") {
 		t.Fatalf("status = %d, body=%q", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestHandlerRendersTraceArchiveReflection(t *testing.T) {
+	archive, summary := validUITraceArchive(t)
+	digest := summary.ArchiveSHA256
+	h := newHandler(handler{
+		root:             "archive-root",
+		index:            func(string) ([]bundle.ArchiveEntry, error) { return nil, nil },
+		traceArchivePath: "trace-archive.json",
+		traceArchiveRead: func(path string) (trace.Archive, trace.ArchiveVerificationSummary, error) {
+			if path != "trace-archive.json" {
+				t.Fatalf("ReadArchive() path = %q", path)
+			}
+			return archive, summary, nil
+		},
+	})
+
+	indexRecorder := httptest.NewRecorder()
+	h.ServeHTTP(indexRecorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	if indexRecorder.Code != http.StatusOK || !strings.Contains(indexRecorder.Body.String(), "Open trace archive review") {
+		t.Fatalf("index status = %d, body=%q", indexRecorder.Code, indexRecorder.Body.String())
+	}
+
+	recorder := httptest.NewRecorder()
+	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/trace-archive?question_id=not-used", nil))
+	body := recorder.Body.String()
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("trace archive status = %d, body=%q", recorder.Code, body)
+	}
+	for _, want := range []string{
+		"Trace archive reflection",
+		"Verified archive identity",
+		"caller",
+		"archive SHA-256",
+		digest,
+		"browser-redacted-audit",
+		"trace-coverage",
+		"trace-change",
+		"trace-sources",
+		"outcome",
+		"evidence state",
+		"unknown",
+		"an adjacent trace boundary is incomplete or has incompatible reviewed provenance",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("trace archive body missing %q: %s", want, body)
+		}
+	}
+	if strings.Contains(body, "secret-value") || strings.Contains(body, "trace-archive.json") {
+		t.Fatal("trace archive page disclosed raw data or a local input path")
+	}
+
+	postRecorder := httptest.NewRecorder()
+	h.ServeHTTP(postRecorder, httptest.NewRequest(http.MethodPost, "/trace-archive", nil))
+	if postRecorder.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("POST /trace-archive status = %d, body=%q", postRecorder.Code, postRecorder.Body.String())
+	}
+}
+
+func TestHandlerHidesTraceArchiveVerificationErrors(t *testing.T) {
+	h := newHandler(handler{
+		root:             "archive-root",
+		index:            func(string) ([]bundle.ArchiveEntry, error) { return nil, nil },
+		traceArchivePath: "private-trace-archive.json",
+		traceArchiveRead: func(string) (trace.Archive, trace.ArchiveVerificationSummary, error) {
+			return trace.Archive{}, trace.ArchiveVerificationSummary{}, errors.New("private decoder path and raw value")
+		},
+	})
+	recorder := httptest.NewRecorder()
+	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/trace-archive", nil))
+	if recorder.Code != http.StatusUnprocessableEntity || recorder.Body.String() != "trace archive unavailable\n" {
+		t.Fatalf("status = %d, body=%q", recorder.Code, recorder.Body.String())
+	}
+	if strings.Contains(recorder.Body.String(), "private") {
+		t.Fatal("trace archive page disclosed internal verification error")
+	}
+}
+
+func TestHandlerRejectsTraceArchiveIdentityDrift(t *testing.T) {
+	archive, summary := validUITraceArchive(t)
+	summary.ArchiveSHA256 = strings.Repeat("b", 64)
+	h := newHandler(handler{
+		root:             "archive-root",
+		index:            func(string) ([]bundle.ArchiveEntry, error) { return nil, nil },
+		traceArchivePath: "trace-archive.json",
+		traceArchiveRead: func(string) (trace.Archive, trace.ArchiveVerificationSummary, error) {
+			return archive, summary, nil
+		},
+	})
+	recorder := httptest.NewRecorder()
+	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/trace-archive", nil))
+	if recorder.Code != http.StatusUnprocessableEntity || recorder.Body.String() != "trace archive unavailable\n" {
+		t.Fatalf("status = %d, body=%q", recorder.Code, recorder.Body.String())
+	}
+}
+
+func validUITraceArchive(t *testing.T) (trace.Archive, trace.ArchiveVerificationSummary) {
+	t.Helper()
+	procedure := strings.Repeat("f", 64)
+	complete := trace.Document{
+		SchemaVersion: 1,
+		Redacted:      true,
+		Scope:         "outbound",
+		Completeness:  trace.Complete,
+		Events: []trace.Event{{
+			Source:      "browser",
+			Channel:     "network",
+			Kind:        "request",
+			Destination: "analytics",
+			Fields:      []string{"region"},
+		}},
+	}
+	partial := complete
+	partial.Completeness = trace.Partial
+	entries := []trace.ArchiveEntry{}
+	for position, document := range []trace.Document{complete, partial} {
+		traceSHA256, err := trace.SHA256(document)
+		if err != nil {
+			t.Fatal(err)
+		}
+		entries = append(entries, trace.ArchiveEntry{
+			Position: position + 1,
+			Session: trace.Session{
+				SchemaVersion:   1,
+				TraceSHA256:     traceSHA256,
+				Source:          "browser",
+				Adapter:         "browser-redacted-audit",
+				AdapterVersion:  1,
+				ProcedureSHA256: procedure,
+				Scope:           document.Scope,
+				Completeness:    document.Completeness,
+				Role:            trace.RoleStandalone,
+				Order:           trace.OrderStandalone,
+			},
+			Trace: document,
+		})
+	}
+	archive := trace.Archive{SchemaVersion: 1, OrderBasis: "caller", Entries: entries}
+	digest, err := trace.ArchiveSHA256(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return archive, trace.ArchiveVerificationSummary{
+		SchemaVersion: 1,
+		OrderBasis:    "caller",
+		Entries:       2,
+		Complete:      1,
+		Partial:       1,
+		Sources: []trace.ArchiveSourceSummary{{
+			Source:  "browser",
+			Adapter: "browser-redacted-audit",
+			Entries: 2,
+		}},
+		ArchiveSHA256: digest,
 	}
 }
 

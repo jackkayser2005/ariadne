@@ -3,6 +3,7 @@ package ui
 
 import (
 	"encoding/json"
+	"errors"
 	"html/template"
 	"net/http"
 	"net/url"
@@ -12,23 +13,26 @@ import (
 
 	"github.com/jackkayser2005/ariadne/internal/bundle"
 	"github.com/jackkayser2005/ariadne/internal/evidence"
+	"github.com/jackkayser2005/ariadne/internal/trace"
 )
 
 type handler struct {
-	root           string
-	index          func(string) ([]bundle.ArchiveEntry, error)
-	verify         func(string) (bundle.Summary, error)
-	questions      func() []bundle.Question
-	ask            func(string, string) (bundle.Answer, error)
-	askArchive     func(string, string) (bundle.ArchiveQuestionReport, error)
-	history        func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error)
-	acceptance     func() (bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary, error)
-	compareRounds  func() (bundle.ArchiveQuestionTransitionHistoryQuestionRoundComparison, error)
-	compareCurrent func() (bundle.ArchiveQuestionComparison, error)
-	find           func(string, string) (bundle.Finding, error)
-	exportPath     string
-	exportAsk      func(string, string) (bundle.Answer, error)
-	exportFind     func(string, string) (bundle.Finding, error)
+	root             string
+	index            func(string) ([]bundle.ArchiveEntry, error)
+	verify           func(string) (bundle.Summary, error)
+	questions        func() []bundle.Question
+	ask              func(string, string) (bundle.Answer, error)
+	askArchive       func(string, string) (bundle.ArchiveQuestionReport, error)
+	history          func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error)
+	acceptance       func() (bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary, error)
+	compareRounds    func() (bundle.ArchiveQuestionTransitionHistoryQuestionRoundComparison, error)
+	compareCurrent   func() (bundle.ArchiveQuestionComparison, error)
+	find             func(string, string) (bundle.Finding, error)
+	exportPath       string
+	exportAsk        func(string, string) (bundle.Answer, error)
+	exportFind       func(string, string) (bundle.Finding, error)
+	traceArchivePath string
+	traceArchiveRead func(string) (trace.Archive, trace.ArchiveVerificationSummary, error)
 }
 
 type archiveQuestionResult struct {
@@ -94,6 +98,9 @@ type pageData struct {
 	SavedReflectionComparisonRequested bool
 	SavedReflectionComparisonAvailable bool
 	SavedReflectionComparison          bundle.ArchiveQuestionComparison
+	TraceArchiveConfigured             bool
+	TraceArchiveSummary                trace.ArchiveVerificationSummary
+	TraceArchiveAnswers                []trace.ArchiveAnswer
 }
 
 // Handler returns a read-only HTTP handler for one explicitly supplied archive root.
@@ -131,6 +138,13 @@ func HandlerWithReviewAndExportAndAcceptance(archiveRoot, historyPath, reflectio
 // HandlerWithReviewAndExportAndAcceptanceAndQuestionRounds returns a
 // read-only review handler with optional saved question-round comparison.
 func HandlerWithReviewAndExportAndAcceptanceAndQuestionRounds(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath string) http.Handler {
+	return HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceArchive(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, "")
+}
+
+// HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceArchive
+// returns a read-only review handler with an optional portable trace archive
+// reflection surface.
+func HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceArchive(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, traceArchivePath string) http.Handler {
 	h := archiveHandler(archiveRoot)
 	if historyPath != "" {
 		h.history = func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error) {
@@ -157,6 +171,10 @@ func HandlerWithReviewAndExportAndAcceptanceAndQuestionRounds(archiveRoot, histo
 			return bundle.CompareArchiveQuestionTransitionHistoryQuestionRounds(firstRoundPath, secondRoundPath)
 		}
 	}
+	if traceArchivePath != "" {
+		h.traceArchivePath = traceArchivePath
+		h.traceArchiveRead = trace.ReadArchive
+	}
 	return newHandler(h)
 }
 
@@ -180,6 +198,7 @@ func newHandler(h handler) http.Handler {
 	mux.HandleFunc("/finding", h.handleFinding)
 	mux.HandleFunc("/export-ask", h.handleExportAsk)
 	mux.HandleFunc("/export-finding", h.handleExportFinding)
+	mux.HandleFunc("/trace-archive", h.handleTraceArchive)
 	mux.HandleFunc("/favicon.ico", handleFavicon)
 	return mux
 }
@@ -386,6 +405,53 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		SavedReflectionComparisonAvailable: savedReflectionComparisonAvailable,
 		SavedReflectionComparison:          savedReflectionComparison,
 		ExportConfigured:                   h.exportAsk != nil && h.exportFind != nil,
+		TraceArchiveConfigured:             h.traceArchiveConfigured(),
+	})
+}
+
+func (h handler) traceArchiveConfigured() bool {
+	return h.traceArchivePath != "" && h.traceArchiveRead != nil
+}
+
+func (h handler) readTraceArchive() (trace.ArchiveVerificationSummary, []trace.ArchiveAnswer, error) {
+	if !h.traceArchiveConfigured() {
+		return trace.ArchiveVerificationSummary{}, nil, errors.New("trace archive is not configured")
+	}
+	archive, summary, err := h.traceArchiveRead(h.traceArchivePath)
+	if err != nil {
+		return trace.ArchiveVerificationSummary{}, nil, err
+	}
+	questions := trace.ArchiveQuestions()
+	answers := make([]trace.ArchiveAnswer, 0, len(questions))
+	for _, question := range questions {
+		answer, err := trace.AnswerArchive(archive, summary.ArchiveSHA256, question.ID)
+		if err != nil {
+			return trace.ArchiveVerificationSummary{}, nil, err
+		}
+		answers = append(answers, answer)
+	}
+	return summary, answers, nil
+}
+
+func (h handler) handleTraceArchive(w http.ResponseWriter, r *http.Request) {
+	if !getOnly(w, r) {
+		return
+	}
+	if r.URL.Path != "/trace-archive" || !h.traceArchiveConfigured() {
+		http.NotFound(w, r)
+		return
+	}
+	summary, answers, err := h.readTraceArchive()
+	if err != nil {
+		http.Error(w, "trace archive unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	render(w, pageData{
+		View:                   "trace-archive",
+		Title:                  "Trace archive review — Ariadne",
+		TraceArchiveConfigured: true,
+		TraceArchiveSummary:    summary,
+		TraceArchiveAnswers:    answers,
 	})
 }
 
@@ -746,6 +812,13 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       <a class="button" href="/export-ask?question_id=counterfactual-change">Ask the portable export <span aria-hidden="true">&rarr;</span></a>
     </section>
     {{end}}
+    {{if .TraceArchiveConfigured}}
+    <section class="panel" id="trace-archive-orientation" aria-label="Portable trace archive">
+      <div class="section-head"><h2>Portable trace archive</h2><span class="context">verified at open</span></div>
+      <p class="context">Review caller-ordered trace snapshots and their three fixed source-neutral questions. Outcome and evidence state remain separate; captured values are never rendered.</p>
+      <a class="button" href="/trace-archive">Open trace archive review <span aria-hidden="true">&rarr;</span></a>
+    </section>
+    {{end}}
     {{if and .ReflectionHistoryRequested (or (not .SelectedQuestion.ID) (eq .SelectedQuestion.ID .ReflectionHistory.QuestionID))}}
     <section class="panel">
       <div class="section-head"><h2>Saved reflection history</h2><span class="context">verified ledger</span></div>
@@ -980,6 +1053,50 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       {{else}}
         <p class="empty">No verified bundles are available in this archive root.</p>
       {{end}}
+
+  {{else if eq .View "trace-archive"}}
+    <a class="back" href="/">&larr; Review archive</a>
+    <p class="eyebrow">portable trace archive &middot; verified</p>
+    <h1>Trace archive reflection</h1>
+    <p class="lede">Ask the same fixed questions across a caller-ordered sequence of standalone trace snapshots. This is a review surface for safe categories, not a chronology or raw-payload viewer.</p>
+    <section class="panel" aria-label="Verified trace archive identity">
+      <div class="section-head"><h2>Verified archive identity</h2><span class="status">raw-value-free</span></div>
+      <dl>
+        <dt>order basis</dt><dd>{{.TraceArchiveSummary.OrderBasis}}</dd>
+        <dt>entries</dt><dd>{{.TraceArchiveSummary.Entries}}</dd>
+        <dt>complete</dt><dd>{{.TraceArchiveSummary.Complete}}</dd>
+        <dt>partial</dt><dd>{{.TraceArchiveSummary.Partial}}</dd>
+        <dt>archive SHA-256</dt><dd>{{.TraceArchiveSummary.ArchiveSHA256}}</dd>
+      </dl>
+      <h3>Reviewed source adapters</h3>
+      <ul aria-label="Reviewed trace sources">
+      {{range .TraceArchiveSummary.Sources}}<li>{{.Source}} / {{.Adapter}}: {{.Entries}} entries</li>{{else}}<li>none</li>{{end}}
+      </ul>
+      <p class="context">The archive identity binds this fixed question round to the verified normalized traces. It does not prove the underlying source or infer chronology.</p>
+    </section>
+    <section class="panel" aria-label="Trace archive question round">
+      <div class="section-head"><h2>Fixed trace questions</h2><span class="context">caller-ordered, read only</span></div>
+      <div class="question-list">
+      {{range .TraceArchiveAnswers}}
+        <article class="panel" id="trace-question-{{.QuestionID}}">
+          <div class="section-head"><h3><code>{{.QuestionID}}</code></h3><span class="status status-{{.Result}}">{{.Result}}</span></div>
+          <p class="question">{{.Question}}</p>
+          <dl>
+            <dt>outcome</dt><dd><span class="status status-{{.Result}}">{{.Result}}</span></dd>
+            <dt>evidence state</dt><dd><span class="status status-{{.EvidenceState}}">{{.EvidenceState}}</span></dd>
+            <dt>archive SHA-256</dt><dd>{{.ArchiveSHA256}}</dd>
+            <dt>entries</dt><dd>{{.Entries}}</dd>
+            <dt>compared</dt><dd>{{.Compared}}</dd>
+            <dt>changed</dt><dd>{{.Changed}}</dd>
+            <dt>same</dt><dd>{{.Same}}</dd>
+            <dt>unknown</dt><dd>{{.Unknown}}</dd>
+          </dl>
+          {{with .Reason}}<p class="context">{{.}}</p>{{end}}
+        </article>
+      {{end}}
+      </div>
+      <p class="context">The outcome answers the bounded question; evidence state qualifies the support available for that answer. A result of <code>unknown</code> is not treated as no change.</p>
+    </section>
 
   {{else if eq .View "run"}}
     <a class="back" href="/">← All bundles</a>
