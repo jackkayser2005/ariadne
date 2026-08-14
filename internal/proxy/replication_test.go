@@ -518,14 +518,8 @@ func TestStageExecutableBindsTheRunToItsCopiedBytes(t *testing.T) {
 	if _, _, _, err := stageExecutable("relative-program"); err == nil || !strings.Contains(err.Error(), "absolute") {
 		t.Fatalf("stageExecutable() accepted relative path: %v", err)
 	}
-	blockedTemp := filepath.Join(t.TempDir(), "temp-file")
-	if err := os.WriteFile(blockedTemp, []byte("not-a-directory"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("TMP", blockedTemp)
-	t.Setenv("TEMP", blockedTemp)
-	if _, _, _, err := stageExecutable(program); err == nil || !strings.Contains(err.Error(), "staging directory") {
-		t.Fatalf("stageExecutable() accepted blocked temp directory: %v", err)
+	if _, _, _, err := stageExecutable(t.TempDir()); err == nil || !strings.Contains(err.Error(), "unavailable") {
+		t.Fatalf("stageExecutable() accepted a directory: %v", err)
 	}
 }
 
