@@ -99,6 +99,72 @@ type Comparison struct {
 	Unknowns              []Unknown     `json:"unknowns"`
 }
 
+// ReplicatedOutcome classifies repeated counterfactual pairs independently
+// from the evidence state reported for their traces.
+type ReplicatedOutcome string
+
+const (
+	// ReplicatedChange means every complete pair observed a difference.
+	ReplicatedChange ReplicatedOutcome = "replicated-change"
+	// NoChangeObserved means every complete pair observed no difference.
+	NoChangeObserved ReplicatedOutcome = "no-change-observed"
+	// MixedInconsistent means complete pairs disagree about whether a difference occurred.
+	MixedInconsistent ReplicatedOutcome = "mixed-inconsistent"
+	// ReplicationUnknown means a reset, capture, or pair verification is incomplete.
+	ReplicationUnknown ReplicatedOutcome = "unknown"
+)
+
+// ReplicatedPairObservation is the safe result of one verified pair.
+type ReplicatedPairObservation struct {
+	Differences   int
+	Unknowns      int
+	EvidenceState evidence.State
+}
+
+// ReplicatedClassification is the source-neutral aggregate of repeated pairs.
+type ReplicatedClassification struct {
+	Outcome       ReplicatedOutcome
+	EvidenceState evidence.State
+	ChangedPairs  int
+	NoChangePairs int
+	UnknownPairs  int
+}
+
+// ClassifyReplicatedPairs preserves the distinction between an observed
+// outcome and an evidence state that cannot support one.
+func ClassifyReplicatedPairs(pairs []ReplicatedPairObservation) ReplicatedClassification {
+	result := ReplicatedClassification{EvidenceState: evidence.Observed}
+	if len(pairs) == 0 {
+		result.Outcome = ReplicationUnknown
+		result.EvidenceState = evidence.Unknown
+		return result
+	}
+	for _, pair := range pairs {
+		switch {
+		case pair.Unknowns > 0 || pair.EvidenceState == evidence.Unknown:
+			result.UnknownPairs++
+		case pair.Differences > 0:
+			result.ChangedPairs++
+		default:
+			result.NoChangePairs++
+		}
+		if pair.EvidenceState != evidence.Observed {
+			result.EvidenceState = evidence.Unknown
+		}
+	}
+	switch {
+	case result.UnknownPairs > 0:
+		result.Outcome = ReplicationUnknown
+	case result.ChangedPairs == len(pairs):
+		result.Outcome = ReplicatedChange
+	case result.NoChangePairs == len(pairs):
+		result.Outcome = NoChangeObserved
+	default:
+		result.Outcome = MixedInconsistent
+	}
+	return result
+}
+
 // Read verifies one trace file and returns its normalized document.
 func Read(path string) (Document, error) {
 	file, err := os.Open(path)

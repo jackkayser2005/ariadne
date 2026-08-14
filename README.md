@@ -117,9 +117,32 @@ a profile, read cookies/storage/bodies/DOM, or claim coverage of arbitrary
 browser sessions. Use `browser-local-fixture` as the session adapter when
 binding this trace to provenance.
 
-The same fixture path is exercised by the hosted Windows browser-fixture
-workflow, which checks the safe output and confirms that the temporary profile
-is removed.
+The same fixture path can run a small counterfactual replication. The runner
+owns the fixed baseline/treatment variants, creates a fresh profile before each
+session, records both orders, and verifies the aggregate separately from
+`evidence_state`:
+
+```console
+go run ./cmd/ariadne browser fixture replicate --json \
+  --procedure examples/browser-local-fixture-procedure.json \
+  --driver node \
+  --driver-arg cmd/browser-fixture-driver/browser_fixture_driver.mjs \
+  --driver-arg --browser \
+  --driver-arg "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" \
+  --pairs 2 \
+  --output .ariadne/browser-fixture-replicated
+go run ./cmd/ariadne browser fixture replicate verify --json .ariadne/browser-fixture-replicated
+```
+
+The safe receipt records `baseline-treatment` and `treatment-baseline` pair
+order, fresh-profile resets, and only trace/session identities. Verification
+classifies the aggregate as `replicated-change`, `no-change-observed`,
+`mixed-inconsistent`, or `unknown`. This is a deterministic fixture smoke
+path, not a user-browser adapter. The fixture intentionally reports partial
+coverage for unsupported activity, so its hosted smoke expects `unknown` and
+`evidence_state: unknown`; synthetic complete traces exercise the other
+aggregate classifications. The hosted Windows browser-fixture workflow checks
+the single capture, both replication orders, redaction, and profile cleanup.
 
 Bind a verified trace to its reviewed adapter and capture procedure without
 adding URLs, profile names, or captured values:
@@ -138,9 +161,11 @@ provenance, then writes complementary baseline/treatment envelopes. Pair order
 is explicit: use `baseline-treatment` or `treatment-baseline`. The envelope checks the trace hash,
 source, scope, and completeness, but does not prove authorization, capture
 truth, or causal impact. Pair verification additionally requires complementary
-roles, distinct trace identities, and matching adapter, procedure, scope,
-order, and canonical pair identity. Empty traces retain their declared
-completeness, but have no event source to corroborate the adapter assertion.
+roles, separate trace paths, and matching adapter, procedure, scope,
+order, and canonical pair identity. The trace paths must be separate, while
+identical normalized trace content is valid evidence for `no-change-observed`.
+Empty traces retain their declared completeness, but have no event source to
+corroborate the adapter assertion.
 The current fixed adapter catalog covers the implemented Android and browser
 producers; future desktop or proxy producers add their own reviewed labels when
 they exist.

@@ -285,10 +285,16 @@ func TestSessionPairSHA256ValidatesAndCanonicalizes(t *testing.T) {
 		{"order", SessionPairInput{Adapter: input.Adapter, AdapterVersion: 1, ProcedureSHA256: input.ProcedureSHA256, Scope: input.Scope, Order: OrderStandalone}, baselineTraceSHA256, treatmentTraceSHA256, "order"},
 		{"baseline-sha", input, "bad", treatmentTraceSHA256, "trace identity"},
 		{"treatment-sha", input, baselineTraceSHA256, "bad", "trace identity"},
-		{"same-trace", input, baselineTraceSHA256, baselineTraceSHA256, "distinct"},
+		{"same-trace", input, baselineTraceSHA256, baselineTraceSHA256, ""},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := SessionPairSHA256(test.base, test.treat, test.input)
+			if test.want == "" {
+				if err != nil {
+					t.Fatalf("SessionPairSHA256() rejected identical trace content: %v", err)
+				}
+				return
+			}
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("SessionPairSHA256() error = %v, want %q", err, test.want)
 			}

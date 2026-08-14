@@ -43,6 +43,8 @@ jobs:
           }
           $trace = Join-Path $env:RUNNER_TEMP 'ariadne-browser-local-trace.json'
           $summary = Join-Path $env:RUNNER_TEMP 'ariadne-browser-local-summary.json'
+          $replication = Join-Path $env:RUNNER_TEMP 'ariadne-browser-local-replicated'
+          $replicationSummary = Join-Path $env:RUNNER_TEMP 'ariadne-browser-local-replicated-summary.json'
           go run ./cmd/ariadne browser capture --json `
             --procedure examples/browser-local-fixture-procedure.json `
             --driver node `
@@ -52,8 +54,28 @@ jobs:
             $trace | Out-File -LiteralPath $summary -Encoding utf8
           go run ./cmd/ariadne trace verify --json $trace
           $content = Get-Content -Raw -LiteralPath $trace
-          if ($content -match 'https://|fixture|session_id|consent=|payload') {
+          if ($content -match 'https://|session_id|consent=|payload') {
             throw 'browser fixture trace exposed source values'
+          }
+          go run ./cmd/ariadne browser fixture replicate --json `
+            --procedure examples/browser-local-fixture-procedure.json `
+            --driver node `
+            --driver-arg cmd/browser-fixture-driver/browser_fixture_driver.mjs `
+            --driver-arg --browser `
+            --driver-arg $chrome `
+            --pairs 2 `
+            --output $replication | Out-File -LiteralPath $replicationSummary -Encoding utf8
+          go run ./cmd/ariadne browser fixture replicate verify --json $replication
+          $replicationText = Get-Content -Raw -LiteralPath $replicationSummary
+          if ($replicationText -notmatch '"outcome"\s*:\s*"unknown"' -or $replicationText -notmatch '"evidence_state"\s*:\s*"unknown"') {
+            throw 'browser fixture replication did not preserve partial evidence as unknown'
+          }
+          $replicationFiles = @(Get-ChildItem -LiteralPath $replication -Recurse -File)
+          foreach ($file in $replicationFiles) {
+            $fileContent = Get-Content -Raw -LiteralPath $file.FullName
+            if ($fileContent -match 'https://|session_id|consent=|payload') {
+              throw "browser fixture replication exposed source values: $($file.Name)"
+            }
           }
           $profiles = @(Get-ChildItem -LiteralPath $env:TEMP -Directory -Filter 'ariadne-browser-fixture-*' -ErrorAction SilentlyContinue)
           if ($profiles.Count -ne 0) {

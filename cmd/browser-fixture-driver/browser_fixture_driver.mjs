@@ -35,6 +35,19 @@ function browserArgument() {
   return executable;
 }
 
+function fixtureVariant() {
+  const args = process.argv.slice(2);
+  const index = args.indexOf("--fixture-variant");
+  if (index < 0) {
+    return "baseline";
+  }
+  const variant = args[index + 1];
+  if (variant !== "baseline" && variant !== "treatment") {
+    throw new Error("fixture variant is invalid");
+  }
+  return variant;
+}
+
 function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
@@ -85,7 +98,7 @@ async function stopBrowser(browser) {
       windowsHide: true,
     });
     await new Promise((resolve) => killer.once("exit", resolve));
-    await delay(500);
+    await delay(1000);
     return;
   }
   try {
@@ -96,9 +109,9 @@ async function stopBrowser(browser) {
 }
 
 async function removeProfile(profile) {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
     try {
-      await rm(profile, {recursive: true, force: true, maxRetries: 1, retryDelay: 250});
+      await rm(profile, {recursive: true, force: true, maxRetries: 2, retryDelay: 250});
     } catch {
       // Chrome may release one last profile handle after the process exits.
     }
@@ -117,25 +130,26 @@ async function freePort() {
   return port;
 }
 
-function fixturePage(port) {
+function fixturePage(port, variant) {
+  const collectFields = variant === "treatment" ? "region=fixture&session_id=fixture&account_id=fixture" : "region=fixture&session_id=fixture";
   return `<!doctype html>
 <meta charset="utf-8">
 <title>Ariadne local browser fixture</title>
 <script>
 document.cookie = "consent=fixture";
 localStorage.setItem("session_id", "fixture");
-fetch("http://analytics.localhost:${port}/collect?region=fixture&session_id=fixture", {mode: "no-cors", keepalive: true});
+fetch("http://analytics.localhost:${port}/collect?${collectFields}", {mode: "no-cors", keepalive: true});
 navigator.sendBeacon("http://analytics.localhost:${port}/beacon?consent=fixture", "fixture");
 </script>`;
 }
 
-function fixtureServer() {
+function fixtureServer(variant) {
   let portRef = 0;
   const server = createHTTPServer((request, response) => {
     const host = String(request.headers.host || "").split(":")[0].toLowerCase();
     if (host === "app.localhost" && request.url === "/") {
       response.writeHead(200, {"content-type": "text/html; charset=utf-8"});
-      response.end(fixturePage(portRef));
+      response.end(fixturePage(portRef, variant));
       return;
     }
     if (host === "analytics.localhost" && (request.url?.startsWith("/collect") || request.url?.startsWith("/beacon"))) {
@@ -369,8 +383,9 @@ async function capture(procedure) {
   }
   const deadline = Date.now() + procedure.duration_ms;
   const executable = chromePath();
+  const variant = fixtureVariant();
   stage = "fixture";
-  const fixture = fixtureServer();
+  const fixture = fixtureServer(variant);
   const fixturePort = await listen(fixture.server);
   fixture.setPort(fixturePort);
   stage = "chrome";

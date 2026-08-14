@@ -52,8 +52,10 @@ browser source-boundary layers:
    trace to a current fixed adapter, reviewed procedure identity, and optional
    counterfactual role/order without adding captured values or claiming capture
    truth. Pair creation derives a canonical identity from both verified trace
-   identities; pair verification requires complementary roles, distinct traces,
-   and matching provenance before two sessions are treated as one matched pair.
+   identities; pair verification requires complementary roles, separate trace
+   paths, and matching provenance before two sessions are treated as one
+   matched pair. Identical normalized trace content can therefore represent a
+   valid no-change pair without weakening path or provenance checks.
    A provenance-aware pair comparison now joins that verified metadata to the
    structural trace result while preserving evidence states. An empty trace
    still leaves source corroboration unavailable.
@@ -86,6 +88,14 @@ browser source-boundary layers:
    after discarding URLs and values. It proves the process boundary and cleanup
    path against one deterministic target. It is not a user-session adapter or
    universal browser capture.
+9. **Replicated local browser fixture (fixture-scoped).** The fixture runner
+   now executes matched baseline/treatment sessions in both orders, supplies
+   the fixed variant inside the driver boundary, creates a fresh profile before
+   every session, and records a raw-value-free receipt. Verification binds each
+   pair to portable trace sessions and classifies the aggregate as
+   `replicated-change`, `no-change-observed`, `mixed-inconsistent`, or
+   `unknown`, with `evidence_state` kept separate. This is a deterministic
+   smoke path, not a user-browser adapter.
 
 The local review page is intentionally read-only. Its compact question round
 and receipt links, including stable history and receipt identities, are a
@@ -130,11 +140,12 @@ must remain bound to a verified history and must say
 
 ### Months 10–12: expand only after the contract holds
 
-Use the two-order replicated Android experiment as the evidence gate. It tests
-whether a reported change survives repeated resets and reversed session order.
-The browser audit producer and explicit driver protocol are the first post-gate
-handoff slices: keep them narrow and redacted, while the deterministic
-comparison, provenance, redaction, and question engine stay small and portable.
+Use the two-order replicated Android experiment and the fixed local-browser
+fixture as evidence gates. They test whether a reported change survives
+repeated resets and reversed session order while keeping source-specific
+capture narrow. The browser audit producer and explicit driver protocol are
+handoff slices: keep them redacted, while the deterministic comparison,
+provenance, redaction, and question engine stay small and portable.
 Session provenance is the join point for later source-specific runs. A real
 browser capture driver for a user-authorized target, desktop producer, or proxy
 producer is still a separate future slice with its own authorized procedure,
@@ -147,8 +158,9 @@ The trace contract is the handoff boundary, not a universal sniffer.
   statement coverage.
 - Fixture or runner changes pass the hosted real-emulator workflow when local
   Android tooling is unavailable.
-- The local browser fixture producer passes its hosted Windows Chrome workflow,
-  including redaction and temporary-profile cleanup.
+- The local browser fixture producer and its two-order replication pass the
+  hosted Windows Chrome workflow, including redaction and temporary-profile
+  cleanup.
 - UI changes pass deterministic handler tests; use computer-use only when a
   concrete rendered-flow check is needed and the host supports it.
 - No review page, answer, export, or log exposes captured values, secrets, or

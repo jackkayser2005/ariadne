@@ -80,8 +80,11 @@ func TestCompareSessionPairRejectsInvalidInputs(t *testing.T) {
 	}
 	if _, err := SaveSessionPair(baselineTrace, treatmentTrace, baselineSession, treatmentSession, SessionPairInput{
 		Adapter: "browser-redacted-audit", AdapterVersion: 1, ProcedureSHA256: strings.Repeat("c", 64), Scope: "outbound", Order: OrderBaselineTreatment,
-	}); err == nil {
-		t.Fatal("SaveSessionPair() accepted identical traces")
+	}); err != nil {
+		t.Fatalf("SaveSessionPair() rejected identical trace content in distinct files: %v", err)
+	}
+	if _, err := CompareSessionPair(baselineSession, baselineTrace, treatmentSession, treatmentTrace); err != nil {
+		t.Fatalf("CompareSessionPair() rejected identical trace content in distinct files: %v", err)
 	}
 	if err := os.WriteFile(baselineSession, []byte("not-json"), 0o600); err != nil {
 		t.Fatal(err)

@@ -32,6 +32,8 @@ const usage = `usage:
 	ariadne trace session pair compare [--json] <baseline-session.json> <baseline-trace.json> <treatment-session.json> <treatment-trace.json>
 	ariadne browser trace [--json] <redacted-browser-audit.json> <trace.json>
 	ariadne browser capture [--json] --procedure <procedure.json> --driver <executable> [--driver-arg <arg>] <trace.json>
+	ariadne browser fixture replicate [--json] --procedure <procedure.json> --driver <executable> [--driver-arg <arg>] --pairs <n> --output <directory>
+	ariadne browser fixture replicate verify [--json] <replicated-directory>
 	ariadne experiment run [--adb <path>] --device <serial> --package <package> --output <directory> <manifest.json>
 	ariadne experiment replicate [--adb <path>] --device <serial> --package <package> --pairs <n> --output <directory> <manifest.json>
 	ariadne experiment replicate verify [--json] <replicated-directory>
@@ -72,6 +74,7 @@ const usage = `usage:
 const adbCheckTimeout = 10 * time.Second
 const experimentRunTimeout = 60 * time.Second
 const experimentReplicateTimeout = 16 * experimentRunTimeout
+const browserFixtureReplicationTimeout = 90 * time.Minute
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
@@ -116,6 +119,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runBrowserCapture(args[2:], stdout, stderr, func(procedurePath, driverPath string, driverArgs []string, outputPath string) (browser.CaptureSummary, error) {
 			return browser.Capture(procedurePath, driverPath, driverArgs, outputPath)
 		})
+	}
+	if len(args) >= 4 && args[0] == "browser" && args[1] == "fixture" && args[2] == "replicate" && args[3] == "verify" {
+		return runBrowserFixtureReplicateVerify(args[4:], stdout, stderr, browser.VerifyFixtureReplicated)
+	}
+	if len(args) >= 3 && args[0] == "browser" && args[1] == "fixture" && args[2] == "replicate" {
+		return runBrowserFixtureReplicate(args[3:], stdout, stderr, browser.RunFixtureReplicated, browser.VerifyFixtureReplicated)
 	}
 	if len(args) >= 2 && args[0] == "experiment" && args[1] == "run" {
 		return runExperiment(args[2:], stdout, stderr, adb.Check, adb.RunPair)
@@ -305,6 +314,9 @@ func runBrowserTrace(
 
 type browserCaptureRunner func(string, string, []string, string) (browser.CaptureSummary, error)
 
+type browserFixtureReplicationRunner func(context.Context, browser.FixtureReplicationInput) error
+type browserFixtureReplicationVerifier func(string) (browser.BrowserReplicationSummary, error)
+
 func runBrowserCapture(
 	args []string,
 	stdout, stderr io.Writer,
@@ -346,6 +358,114 @@ func runBrowserCapture(
 		summary.Trace.TraceSHA256,
 	); err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: browser capture: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func runBrowserFixtureReplicate(
+	args []string,
+	stdout, stderr io.Writer,
+	run browserFixtureReplicationRunner,
+	verify browserFixtureReplicationVerifier,
+) int {
+	flags := flag.NewFlagSet("browser fixture replicate", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	procedurePath := flags.String("procedure", "", "")
+	driverPath := flags.String("driver", "", "")
+	pairs := flags.Int("pairs", 0, "")
+	outputDir := flags.String("output", "", "")
+	var driverArgs []string
+	flags.Func("driver-arg", "", func(value string) error {
+		driverArgs = append(driverArgs, value)
+		return nil
+	})
+	if err := flags.Parse(args); err != nil || flags.NArg() != 0 || *procedurePath == "" || *driverPath == "" || *pairs < 1 || *outputDir == "" {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), browserFixtureReplicationTimeout)
+	defer cancel()
+	if err := run(ctx, browser.FixtureReplicationInput{
+		ProcedurePath: *procedurePath,
+		DriverPath:    *driverPath,
+		DriverArgs:    driverArgs,
+		OutputDir:     *outputDir,
+		Pairs:         *pairs,
+	}); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: browser fixture replicate: %v\n", err)
+		return 1
+	}
+	summary, err := verify(*outputDir)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: browser fixture replicate: verify output: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(summary); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: browser fixture replicate: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if _, err := fmt.Fprintf(
+		stdout,
+		"browser fixture replication complete\nprocedure_sha256: %s\npairs_per_order: %d\nruns: %d\norder: %s, %s\nreset_policy: %s\noutcome: %s\nevidence_state: %s\n",
+		summary.ProcedureSHA256,
+		summary.PairsPerOrder,
+		summary.Pairs,
+		trace.OrderBaselineTreatment,
+		trace.OrderTreatmentBaseline,
+		summary.ResetPolicy,
+		summary.Outcome,
+		summary.EvidenceState,
+	); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: browser fixture replicate: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func runBrowserFixtureReplicateVerify(
+	args []string,
+	stdout, stderr io.Writer,
+	verify browserFixtureReplicationVerifier,
+) int {
+	flags := flag.NewFlagSet("browser fixture replicate verify", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+	summary, err := verify(flags.Arg(0))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: browser fixture replicate verify: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(summary); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: browser fixture replicate verify: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if _, err := fmt.Fprintf(
+		stdout,
+		"browser fixture replication verified\nprocedure_sha256: %s\nreceipt_sha256: %s\noutcome: %s\nevidence_state: %s\npairs: %d\npairs_per_order: %d\ncompleted_pairs: %d\nchanged_pairs: %d\nno_change_pairs: %d\nunknown_pairs: %d\n",
+		summary.ProcedureSHA256,
+		summary.ReceiptSHA256,
+		summary.Outcome,
+		summary.EvidenceState,
+		summary.Pairs,
+		summary.PairsPerOrder,
+		summary.CompletedPairs,
+		summary.ChangedPairs,
+		summary.NoChangePairs,
+		summary.UnknownPairs,
+	); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: browser fixture replicate verify: write output: %v\n", err)
 		return 1
 	}
 	return 0

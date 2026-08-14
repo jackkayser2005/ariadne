@@ -164,6 +164,9 @@ func saveSessionPair(baselineTracePath, treatmentTracePath, baselineSessionPath,
 		strings.TrimSpace(baselineSessionPath) == "" || strings.TrimSpace(treatmentSessionPath) == "" {
 		return SessionPairVerificationSummary{}, errors.New("trace session pair paths are required")
 	}
+	if filepath.Clean(baselineTracePath) == filepath.Clean(treatmentTracePath) {
+		return SessionPairVerificationSummary{}, errors.New("trace session pair trace paths must be distinct")
+	}
 	if filepath.Clean(baselineSessionPath) == filepath.Clean(treatmentSessionPath) {
 		return SessionPairVerificationSummary{}, errors.New("trace session pair output paths must be distinct")
 	}
@@ -270,6 +273,9 @@ func VerifySessionPair(baselineSessionPath, baselineTracePath, treatmentSessionP
 		strings.TrimSpace(treatmentSessionPath) == "" || strings.TrimSpace(treatmentTracePath) == "" {
 		return SessionPairVerificationSummary{}, errors.New("trace session pair paths are required")
 	}
+	if filepath.Clean(baselineTracePath) == filepath.Clean(treatmentTracePath) {
+		return SessionPairVerificationSummary{}, errors.New("trace session pair trace paths must be distinct")
+	}
 	baseline, baselineSummary, err := verifySession(baselineSessionPath, baselineTracePath)
 	if err != nil {
 		return SessionPairVerificationSummary{}, fmt.Errorf("baseline session: %w", err)
@@ -280,9 +286,6 @@ func VerifySessionPair(baselineSessionPath, baselineTracePath, treatmentSessionP
 	}
 	if baseline.Role != RoleBaseline || treatment.Role != RoleTreatment {
 		return SessionPairVerificationSummary{}, errors.New("session pair roles are not complementary")
-	}
-	if baseline.TraceSHA256 == treatment.TraceSHA256 {
-		return SessionPairVerificationSummary{}, errors.New("session pair traces must be distinct")
 	}
 	if err := validateSessionPairMetadata(baseline, treatment); err != nil {
 		return SessionPairVerificationSummary{}, err
@@ -339,9 +342,6 @@ func SessionPairSHA256(baselineTraceSHA256, treatmentTraceSHA256 string, input S
 	}
 	if !ValidSHA256(baselineTraceSHA256) || !ValidSHA256(treatmentTraceSHA256) {
 		return "", errors.New("trace session trace identity is invalid")
-	}
-	if baselineTraceSHA256 == treatmentTraceSHA256 {
-		return "", errors.New("trace session pair traces must be distinct")
 	}
 	identity := struct {
 		Domain               string `json:"domain"`

@@ -14,6 +14,7 @@ import (
 	"github.com/jackkayser2005/ariadne/internal/adb"
 	"github.com/jackkayser2005/ariadne/internal/evidence"
 	"github.com/jackkayser2005/ariadne/internal/jsoncheck"
+	portabletrace "github.com/jackkayser2005/ariadne/internal/trace"
 )
 
 const (
@@ -23,17 +24,13 @@ const (
 )
 
 // ReplicatedOutcome classifies the aggregate result independently of evidence.State.
-type ReplicatedOutcome string
+type ReplicatedOutcome = portabletrace.ReplicatedOutcome
 
 const (
-	// ReplicatedChange means every complete pair in both orders observed a difference.
-	ReplicatedChange ReplicatedOutcome = "replicated-change"
-	// NoChangeObserved means every complete pair in both orders observed no difference.
-	NoChangeObserved ReplicatedOutcome = "no-change-observed"
-	// MixedInconsistent means complete pairs disagree about whether a difference occurred.
-	MixedInconsistent ReplicatedOutcome = "mixed-inconsistent"
-	// ReplicationUnknown means a reset, capture, or pair verification is incomplete.
-	ReplicationUnknown ReplicatedOutcome = "unknown"
+	ReplicatedChange   = portabletrace.ReplicatedChange
+	NoChangeObserved   = portabletrace.NoChangeObserved
+	MixedInconsistent  = portabletrace.MixedInconsistent
+	ReplicationUnknown = portabletrace.ReplicationUnknown
 )
 
 // ReplicatedPairSummary is the safe result for one ordered pair.
@@ -64,6 +61,18 @@ type ReplicatedExperimentSummary struct {
 	NoChangePairs          int                     `json:"no_change_pairs"`
 	UnknownPairs           int                     `json:"unknown_pairs"`
 	PairSummaries          []ReplicatedPairSummary `json:"pair_summaries"`
+}
+
+// ReplicatedPairObservation is retained as the bundle-facing name for the
+// source-neutral trace classification contract.
+type ReplicatedPairObservation = portabletrace.ReplicatedPairObservation
+
+// ReplicatedClassification is retained as the bundle-facing aggregate type.
+type ReplicatedClassification = portabletrace.ReplicatedClassification
+
+// ClassifyReplicatedPairs forwards to the source-neutral trace classifier.
+func ClassifyReplicatedPairs(pairs []ReplicatedPairObservation) ReplicatedClassification {
+	return portabletrace.ClassifyReplicatedPairs(pairs)
 }
 
 // VerifyReplicated verifies the safe replication receipt and each complete pair.
@@ -148,27 +157,20 @@ func VerifyReplicated(rootDir string) (ReplicatedExperimentSummary, error) {
 		CompletedPairs:         record.CompletedPairs,
 		PairSummaries:          pairSummaries,
 	}
+	observations := make([]ReplicatedPairObservation, 0, len(pairSummaries))
 	for _, pair := range pairSummaries {
-		switch pair.Outcome {
-		case replicatedPairOutcomeChanged:
-			result.ChangedPairs++
-		case replicatedPairOutcomeSame:
-			result.NoChangePairs++
-		default:
-			result.UnknownPairs++
-		}
+		observations = append(observations, ReplicatedPairObservation{
+			Differences:   pair.Differences,
+			Unknowns:      pair.Unknowns,
+			EvidenceState: pair.EvidenceState,
+		})
 	}
-	result.EvidenceState = aggregateEvidenceState(pairSummaries)
-	switch {
-	case result.UnknownPairs > 0:
-		result.Outcome = ReplicationUnknown
-	case result.ChangedPairs == totalPairs:
-		result.Outcome = ReplicatedChange
-	case result.NoChangePairs == totalPairs:
-		result.Outcome = NoChangeObserved
-	default:
-		result.Outcome = MixedInconsistent
-	}
+	classification := ClassifyReplicatedPairs(observations)
+	result.EvidenceState = classification.EvidenceState
+	result.Outcome = classification.Outcome
+	result.ChangedPairs = classification.ChangedPairs
+	result.NoChangePairs = classification.NoChangePairs
+	result.UnknownPairs = classification.UnknownPairs
 	return result, nil
 }
 

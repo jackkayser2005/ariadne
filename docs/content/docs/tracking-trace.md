@@ -176,9 +176,48 @@ catalog, and discards URLs and values before writing the audit. It does not
 read cookies, storage values, response bodies, DOM content, or arbitrary
 targets. Unsupported activity becomes partial rather than a completeness
 claim. The generated trace can be bound with adapter `browser-local-fixture`.
+Direct capture uses the fixture's baseline behavior unless the fixed driver is
+invoked by the replication runner.
 
 This proves one local producer path and its cleanup/redaction behavior; it is
 not evidence about a user's browser or a general browser capture capability.
+
+### Replicated local fixture
+
+The fixture also has a counterfactual runner that owns the two fixed variants:
+
+```console
+go run ./cmd/ariadne browser fixture replicate --json \
+  --procedure examples/browser-local-fixture-procedure.json \
+  --driver node \
+  --driver-arg cmd/browser-fixture-driver/browser_fixture_driver.mjs \
+  --driver-arg --browser \
+  --driver-arg "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" \
+  --pairs 2 \
+  --output .ariadne/browser-fixture-replicated
+go run ./cmd/ariadne browser fixture replicate verify --json \
+  .ariadne/browser-fixture-replicated
+```
+
+Each pair runs `baseline-treatment` and `treatment-baseline`. Every session
+gets a fresh ephemeral browser profile; the runner appends the fixed variant
+inside that process boundary and rejects caller-supplied variant overrides.
+The root `replication.json` receipt contains only the reviewed procedure
+identity, reset policy, pair/order metadata, and completion status. Each pair
+contains provenance-bound baseline and treatment traces/sessions. Verification
+reuses the portable session-pair check and structural comparison, then reports
+`replicated-change`, `no-change-observed`, `mixed-inconsistent`, or `unknown`
+separately from `evidence_state`. Two separate trace files may have identical
+normalized content; that is a valid `no-change-observed` result.
+
+The checked-in fixture intentionally marks unsupported or failed activity as
+partial. Its hosted smoke therefore expects the safe aggregate `unknown` and
+`evidence_state: unknown`; complete synthetic traces exercise replicated change,
+no change, and mixed outcomes without changing the live producer's coverage
+claim.
+
+This remains a deterministic local-fixture smoke path. It is not a user-session
+adapter, a universal browser sniffer, or evidence about arbitrary browser data.
 
 ## Session provenance
 
@@ -220,8 +259,9 @@ that a driver was authorized, that its capture is complete in the real world,
 or that a counterfactual result is causal. Fixed adapter labels keep this
 joinable without accepting profile names, URLs, device identifiers, or free-form
 metadata. Pair verification also requires complementary baseline/treatment
-roles, distinct trace identities, and matching adapter, procedure, scope, order,
-and canonical pair identities. An empty trace can still be valid, but its
+roles, separate trace paths, and matching adapter, procedure, scope, order, and
+canonical pair identities. Identical normalized trace content remains valid
+for a no-change pair. An empty trace can still be valid, but its
 adapter source is an assertion rather than an event-source corroboration.
 
 The pair comparison command verifies the four inputs as one complementary
