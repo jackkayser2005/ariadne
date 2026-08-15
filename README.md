@@ -418,6 +418,23 @@ answers and the study SHA-256; the selected receipt embeds that bounded round
 and binds it to both the study and round identities. Both artifacts can be
 verified offline without reopening source paths or captured values.
 
+Compare two independently retained study reflections in caller order:
+
+```console
+go run ./cmd/ariadne trace study ask all compare --json \
+  .ariadne/first-study.json .ariadne/first-study-round.json \
+  .ariadne/second-study.json .ariadne/second-study-round.json
+```
+
+Both studies and rounds are re-verified, and each round must reproduce the
+answers derived from its supplied study. Compatible studies require the same
+private counterfactual commitment and reviewed source provenance. The result
+is `same`, `changed`, or `incomparable`; changed entries expose only fixed
+question IDs and `result`, `outcome`, `evidence-state`, or `support-counts`
+change kinds. Caller order is not chronology, and this comparison does not
+infer trend, improvement, regression, causality, or authorization. Paths,
+commitments, payloads, URLs, and captured values are never returned.
+
 Retain caller-ordered standalone trace snapshots from any reviewed adapter in
 one portable archive, then ask the fixed source-neutral questions without
 reopening source values:

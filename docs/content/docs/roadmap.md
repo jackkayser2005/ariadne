@@ -199,6 +199,15 @@ browser source-boundary layers, and a portable trace reflection layer:
     by fixed question ID. Result, aggregate outcome, and evidence state stay
     separate; identity drift fails closed.
 
+19. **Cross-study reflection comparison.** Two independently retained study
+    question rounds can now be re-verified against their supplied studies and
+    compared in caller order. Compatible investigations require the same
+    private counterfactual commitment and reviewed source provenance. The
+    bounded result is `same` or `changed`; valid incompatible boundaries return
+    `incomparable`, with changed question IDs and only result, outcome,
+    evidence-state, or support-count changes. This is a reflection comparison,
+    not chronology, trend inference, authorization proof, or causal evidence.
+
 The local review page is intentionally read-only. Its compact question round
 and receipt links, including stable history and receipt identities, are a
 bounded UI-control surface for a computer-use driver;
@@ -330,6 +339,12 @@ questions again without reopening source paths or captured values.
   save-and-verify commands, and GET-only `/trace-study` review route must retain
   the same outcome/evidence-state separation and fail closed without rendering
   study paths, payloads, URLs, or captured data.
+- Study-round comparisons re-verify both supplied studies and rounds, require
+  exact round-to-study answer binding plus matching private commitment and
+  reviewed source provenance, and return `same`, `changed`, or
+  `incomparable` without exposing paths or source values. Caller order remains
+  non-chronological, and changed results remain separate from outcome and
+  `evidence_state`.
 - UI changes pass deterministic handler tests; use computer-use only when a
   concrete rendered-flow check is needed and the host supports it.
 - No review page, answer, export, or log exposes captured values, secrets, or

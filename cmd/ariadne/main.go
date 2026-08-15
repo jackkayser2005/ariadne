@@ -48,6 +48,7 @@ const usage = `usage:
 	ariadne trace study ask all [--json] <study.json>
 	ariadne trace study ask all save [--json] <study.json> <round.json>
 	ariadne trace study ask all verify [--json] [--expect-sha256 <digest>] <round.json>
+	ariadne trace study ask all compare [--json] <first-study.json> <first-round.json> <second-study.json> <second-round.json>
 	ariadne trace study ask receipt [--json] <round.json> <question-id>
 	ariadne trace study ask receipt save [--json] <round.json> <question-id> <receipt.json>
 	ariadne trace study ask receipt verify [--json] [--expect-sha256 <digest>] <receipt.json>
@@ -261,6 +262,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 				}
 				if len(args) >= 5 && args[4] == "verify" {
 					return runTraceStudyAskAllVerify(args[5:], stdout, stderr, trace.VerifyReplicationStudyQuestionRound)
+				}
+				if len(args) >= 5 && args[4] == "compare" {
+					return runTraceStudyAskAllCompare(args[5:], stdout, stderr, trace.CompareReplicationStudyQuestionRounds)
 				}
 				return runTraceStudyAskAll(args[4:], stdout, stderr, trace.AskAllReplicationStudyQuestions)
 			}
