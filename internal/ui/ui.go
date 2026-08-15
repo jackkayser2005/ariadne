@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"slices"
 	"sort"
 	"time"
 
@@ -17,30 +18,34 @@ import (
 )
 
 type handler struct {
-	root                 string
-	index                func(string) ([]bundle.ArchiveEntry, error)
-	verify               func(string) (bundle.Summary, error)
-	questions            func() []bundle.Question
-	ask                  func(string, string) (bundle.Answer, error)
-	askArchive           func(string, string) (bundle.ArchiveQuestionReport, error)
-	history              func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error)
-	acceptance           func() (bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary, error)
-	compareRounds        func() (bundle.ArchiveQuestionTransitionHistoryQuestionRoundComparison, error)
-	compareCurrent       func() (bundle.ArchiveQuestionComparison, error)
-	find                 func(string, string) (bundle.Finding, error)
-	exportPath           string
-	exportAsk            func(string, string) (bundle.Answer, error)
-	exportFind           func(string, string) (bundle.Finding, error)
-	traceArchivePath     string
-	traceArchiveRead     func(string) (trace.Archive, trace.ArchiveVerificationSummary, error)
-	traceRoundPath       string
-	traceRoundRead       func(string) (trace.ArchiveQuestionRound, trace.ArchiveQuestionRoundVerificationSummary, error)
-	traceReplicationPath string
-	traceReplicationRead func(string) (trace.ReplicationLedger, trace.ReplicationLedgerVerificationSummary, error)
-	traceCasePath        string
-	traceCaseRead        func(string) (trace.CasePackage, trace.CaseVerificationSummary, error)
-	traceStudyPath       string
-	traceStudyRead       func(string) (trace.ReplicationStudy, trace.StudyVerificationSummary, error)
+	root                  string
+	index                 func(string) ([]bundle.ArchiveEntry, error)
+	verify                func(string) (bundle.Summary, error)
+	questions             func() []bundle.Question
+	ask                   func(string, string) (bundle.Answer, error)
+	askArchive            func(string, string) (bundle.ArchiveQuestionReport, error)
+	history               func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error)
+	acceptance            func() (bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary, error)
+	compareRounds         func() (bundle.ArchiveQuestionTransitionHistoryQuestionRoundComparison, error)
+	compareCurrent        func() (bundle.ArchiveQuestionComparison, error)
+	find                  func(string, string) (bundle.Finding, error)
+	exportPath            string
+	exportAsk             func(string, string) (bundle.Answer, error)
+	exportFind            func(string, string) (bundle.Finding, error)
+	traceArchivePath      string
+	traceArchiveRead      func(string) (trace.Archive, trace.ArchiveVerificationSummary, error)
+	traceRoundPath        string
+	traceRoundRead        func(string) (trace.ArchiveQuestionRound, trace.ArchiveQuestionRoundVerificationSummary, error)
+	traceReplicationPath  string
+	traceReplicationRead  func(string) (trace.ReplicationLedger, trace.ReplicationLedgerVerificationSummary, error)
+	traceCasePath         string
+	traceCaseRead         func(string) (trace.CasePackage, trace.CaseVerificationSummary, error)
+	traceStudyPath        string
+	traceStudyRead        func(string) (trace.ReplicationStudy, trace.StudyVerificationSummary, error)
+	traceStudyRoundPath   string
+	traceStudyRoundRead   func(string) (trace.ReplicationStudyQuestionRound, trace.ReplicationStudyQuestionRoundVerificationSummary, error)
+	traceStudyReceiptPath string
+	traceStudyReceiptRead func(string) (trace.ReplicationStudyQuestionReceipt, trace.ReplicationStudyQuestionReceiptVerificationSummary, error)
 }
 
 type archiveQuestionResult struct {
@@ -140,6 +145,11 @@ type pageData struct {
 	TraceStudySummary                  trace.StudyVerificationSummary
 	TraceStudyAnswers                  []trace.StudyQuestionAnswer
 	TraceStudyRuns                     []traceStudyRunData
+	TraceStudyRoundSaved               bool
+	TraceStudyRoundSummary             trace.ReplicationStudyQuestionRoundVerificationSummary
+	TraceStudyReceiptAvailable         bool
+	TraceStudyReceiptSummary           trace.ReplicationStudyQuestionReceiptVerificationSummary
+	TraceStudySelectedQuestionID       string
 }
 
 // Handler returns a read-only HTTP handler for one explicitly supplied archive root.
@@ -211,7 +221,17 @@ func HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCase(archiv
 // HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCaseAndStudy
 // returns a read-only review handler with optional portable cross-source case
 // and replication-study reflection surfaces.
+// HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCaseAndStudy
+// returns a read-only review handler with optional portable cross-source case
+// and replication-study reflection surfaces.
 func HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCaseAndStudy(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, traceArchivePath, traceRoundPath, traceReplicationPath, traceCasePath, traceStudyPath string) http.Handler {
+	return HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCaseAndStudyArtifacts(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, traceArchivePath, traceRoundPath, traceReplicationPath, traceCasePath, traceStudyPath, "", "")
+}
+
+// HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCaseAndStudyArtifacts
+// returns a read-only review handler with optional durable study question-round
+// and selected-receipt identities.
+func HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCaseAndStudyArtifacts(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, traceArchivePath, traceRoundPath, traceReplicationPath, traceCasePath, traceStudyPath, traceStudyRoundPath, traceStudyReceiptPath string) http.Handler {
 	h := archiveHandler(archiveRoot)
 	if historyPath != "" {
 		h.history = func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error) {
@@ -257,6 +277,14 @@ func HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCaseAndStud
 	if traceStudyPath != "" {
 		h.traceStudyPath = traceStudyPath
 		h.traceStudyRead = trace.ReadReplicationStudy
+	}
+	if traceStudyRoundPath != "" {
+		h.traceStudyRoundPath = traceStudyRoundPath
+		h.traceStudyRoundRead = trace.ReadReplicationStudyQuestionRound
+	}
+	if traceStudyReceiptPath != "" {
+		h.traceStudyReceiptPath = traceStudyReceiptPath
+		h.traceStudyReceiptRead = trace.ReadReplicationStudyQuestionReceipt
 	}
 	return newHandler(h)
 }
@@ -512,7 +540,7 @@ func (h handler) traceCaseConfigured() bool {
 }
 
 func (h handler) traceStudyConfigured() bool {
-	return h.traceStudyPath != ""
+	return h.traceStudyPath != "" || h.traceStudyRoundPath != "" || h.traceStudyReceiptPath != ""
 }
 
 func (h handler) readTraceArchive() (trace.ArchiveVerificationSummary, trace.ArchiveQuestionRoundVerificationSummary, []trace.ArchiveAnswer, error) {
@@ -704,6 +732,80 @@ func (h handler) handleTraceStudy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "trace study unavailable", http.StatusUnprocessableEntity)
 		return
 	}
+	round, err := trace.AnswerReplicationStudyQuestionRound(study, summary)
+	if err != nil {
+		http.Error(w, "trace study unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	roundSHA256, err := trace.ReplicationStudyQuestionRoundSHA256(round)
+	if err != nil {
+		http.Error(w, "trace study unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	roundSummary := trace.ReplicationStudyQuestionRoundVerificationSummary{
+		SchemaVersion: round.SchemaVersion,
+		StudySHA256:   round.StudySHA256,
+		Questions:     len(round.Answers),
+		RoundSHA256:   roundSHA256,
+	}
+	if h.traceStudyRoundPath != "" {
+		if h.traceStudyRoundRead == nil {
+			http.Error(w, "trace study unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		savedRound, savedSummary, readErr := h.traceStudyRoundRead(h.traceStudyRoundPath)
+		if readErr != nil || savedSummary.StudySHA256 != summary.StudySHA256 || !slices.Equal(savedRound.Answers, answers) {
+			http.Error(w, "trace study unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		round = savedRound
+		roundSummary = savedSummary
+	}
+	receiptSummary := trace.ReplicationStudyQuestionReceiptVerificationSummary{}
+	receiptAvailable := false
+	selectedQuestionID := selectedStudyQuestionID(r.URL.Query().Get("question_id"))
+	if h.traceStudyReceiptPath != "" {
+		if h.traceStudyReceiptRead == nil {
+			http.Error(w, "trace study unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		receipt, savedReceiptSummary, readErr := h.traceStudyReceiptRead(h.traceStudyReceiptPath)
+		if readErr != nil || receipt.StudySHA256 != summary.StudySHA256 || receipt.RoundSHA256 != roundSummary.RoundSHA256 || (selectedQuestionID != "" && selectedQuestionID != receipt.QuestionID) {
+			http.Error(w, "trace study unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		selectedQuestionID = receipt.QuestionID
+		receiptSummary = savedReceiptSummary
+		receiptAvailable = true
+	} else if selectedQuestionID != "" {
+		answer, answerErr := studyAnswerFromRound(round, selectedQuestionID)
+		if answerErr != nil {
+			http.Error(w, "trace study unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		receipt := trace.ReplicationStudyQuestionReceipt{
+			StudyQuestionAnswer: answer,
+			RoundSHA256:         roundSummary.RoundSHA256,
+			Round:               round,
+		}
+		receiptSHA256, receiptErr := trace.ReplicationStudyQuestionReceiptSHA256(receipt)
+		if receiptErr != nil {
+			http.Error(w, "trace study unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		receiptSummary = trace.ReplicationStudyQuestionReceiptVerificationSummary{
+			SchemaVersion: receipt.SchemaVersion,
+			QuestionID:    receipt.QuestionID,
+			Question:      receipt.Question,
+			Result:        receipt.Result,
+			EvidenceState: receipt.EvidenceState,
+			StudySHA256:   receipt.StudySHA256,
+			RoundSHA256:   receipt.RoundSHA256,
+			ReceiptSHA256: receiptSHA256,
+			Outcome:       receipt.Outcome,
+		}
+		receiptAvailable = true
+	}
 	runs := make([]traceStudyRunData, 0, len(study.Runs))
 	for _, run := range study.Runs {
 		ledgerSHA256, ledgerErr := trace.ReplicationLedgerSHA256(run.Ledger)
@@ -719,15 +821,37 @@ func (h handler) handleTraceStudy(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	render(w, pageData{
-		View:                 "trace-study",
-		Title:                "Replication study review — Ariadne",
-		TraceStudyConfigured: true,
-		TraceStudySummary:    summary,
-		TraceStudyAnswers:    answers,
-		TraceStudyRuns:       runs,
+		View:                         "trace-study",
+		Title:                        "Replication study review — Ariadne",
+		TraceStudyConfigured:         true,
+		TraceStudySummary:            summary,
+		TraceStudyAnswers:            answers,
+		TraceStudyRuns:               runs,
+		TraceStudyRoundSaved:         h.traceStudyRoundPath != "",
+		TraceStudyRoundSummary:       roundSummary,
+		TraceStudyReceiptAvailable:   receiptAvailable,
+		TraceStudyReceiptSummary:     receiptSummary,
+		TraceStudySelectedQuestionID: selectedQuestionID,
 	})
 }
 
+func selectedStudyQuestionID(value string) string {
+	for _, question := range trace.ReplicationStudyQuestions() {
+		if question.ID == value {
+			return value
+		}
+	}
+	return ""
+}
+
+func studyAnswerFromRound(round trace.ReplicationStudyQuestionRound, questionID string) (trace.StudyQuestionAnswer, error) {
+	for _, answer := range round.Answers {
+		if answer.QuestionID == questionID {
+			return answer, nil
+		}
+	}
+	return trace.StudyQuestionAnswer{}, errors.New("study question is unavailable")
+}
 func sortArchiveQuestionResults(results []archiveQuestionResult) {
 	sort.SliceStable(results, func(i, j int) bool {
 		left, right := results[i], results[j]
@@ -1580,7 +1704,32 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       </div>
       <p class="context">The result answers the fixed study question; evidence state qualifies the support available for that answer. Unknown is not treated as no change or causal evidence.</p>
     </section>
-    <section class="panel" aria-label="Replication study runs">
+    {{if .TraceStudyRoundSaved}}
+    <section class="panel" aria-label="Saved replication study question round">
+      <div class="section-head"><h2>Durable question round</h2><span class="context">verified offline</span></div>
+      <dl>
+        <dt>study SHA-256</dt><dd>{{.TraceStudyRoundSummary.StudySHA256}}</dd>
+        <dt>questions</dt><dd>{{.TraceStudyRoundSummary.Questions}}</dd>
+        <dt>round SHA-256</dt><dd>{{.TraceStudyRoundSummary.RoundSHA256}}</dd>
+      </dl>
+      <p class="context">This round was re-verified against the configured study before rendering. It contains only fixed answers and identities, not source paths or captured values.</p>
+    </section>
+    {{end}}
+    {{if .TraceStudyReceiptAvailable}}
+    <section class="panel" aria-label="Selected replication study question receipt">
+      <div class="section-head"><h2>Selected question receipt</h2><span class="context">raw-value-free</span></div>
+      <dl>
+        <dt>question ID</dt><dd><code>{{.TraceStudyReceiptSummary.QuestionID}}</code></dd>
+        <dt>result</dt><dd><span class="status status-{{.TraceStudyReceiptSummary.Result}}">{{.TraceStudyReceiptSummary.Result}}</span></dd>
+        <dt>evidence state</dt><dd><span class="status status-{{.TraceStudyReceiptSummary.EvidenceState}}">{{.TraceStudyReceiptSummary.EvidenceState}}</span></dd>
+        <dt>aggregate outcome</dt><dd>{{.TraceStudyReceiptSummary.Outcome}}</dd>
+        <dt>study SHA-256</dt><dd>{{.TraceStudyReceiptSummary.StudySHA256}}</dd>
+        <dt>round SHA-256</dt><dd>{{.TraceStudyReceiptSummary.RoundSHA256}}</dd>
+        <dt>receipt SHA-256</dt><dd>{{.TraceStudyReceiptSummary.ReceiptSHA256}}</dd>
+      </dl>
+      <p class="context">The selected receipt answers one fixed study question. A changed result is not a chronology, causality, or improvement claim.</p>
+    </section>
+    {{end}}    <section class="panel" aria-label="Replication study runs">
       <div class="section-head"><h2>Independent runs</h2><span class="context">caller order</span></div>
       <div class="question-list">
       {{range .TraceStudyRuns}}

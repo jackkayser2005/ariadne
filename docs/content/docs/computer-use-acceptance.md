@@ -71,6 +71,23 @@ study route:
 go run ./cmd/ariadne experiment serve --trace-study <study.json> <archive-root>
 ```
 
+Before opening the study route, the complete fixed answer set and one selected
+answer can be retained and independently verified without reopening source
+paths or captured values:
+
+```console
+go run ./cmd/ariadne trace study ask all save --json <study.json> <round.json>
+go run ./cmd/ariadne trace study ask all verify --json --expect-sha256 <round-sha256> <round.json>
+go run ./cmd/ariadne trace study ask receipt save --json <round.json> <question-id> <receipt.json>
+go run ./cmd/ariadne trace study ask receipt verify --json --expect-sha256 <receipt-sha256> <receipt.json>
+```
+
+To expose those verified artifacts in the same read-only route:
+
+```console
+go run ./cmd/ariadne experiment serve --trace-study <study.json> --trace-study-round <round.json> --trace-study-receipt <receipt.json> <archive-root>
+```
+
 
 These options add links to the separate trace review routes; they do not
 change the bundle question route or merge trace identities into the evidence
@@ -168,7 +185,12 @@ and bounded answers, not proof that a UI driver performed the selection.
    `cross-run-consistency`. Retain each displayed `result`, aggregate
    `outcome`, and separate `evidence_state`; treat `unknown` as missing
    support, not as no change.
-4. Inspect each independent run's ledger and question-round SHA-256 only.
+4. If a durable round is configured, check its study SHA-256, round SHA-256,
+   answer count, and fixed-question identities. If a durable receipt is
+   configured, check its selected question ID plus study, round, and receipt
+   SHA-256 identities. A fixed `?question_id=` may select one bounded
+   in-memory receipt when no saved receipt is supplied.
+5. Inspect each independent run's ledger and question-round SHA-256 only.
    Do not describe caller positions as chronology or retain local paths,
    payloads, URLs, or captured values. A failed verification should show only
    `trace study unavailable`.
