@@ -507,6 +507,23 @@ receipt embeds the bounded round and binds it to both the study and round
 identities. Both can be verified offline without reopening source paths or
 captured values. Identity drift fails closed.
 
+To compare two retained study reflections without reopening source paths:
+
+```console
+go run ./cmd/ariadne trace study ask all compare --json \
+  .ariadne/first-study.json .ariadne/first-study-round.json \
+  .ariadne/second-study.json .ariadne/second-study-round.json
+```
+
+The command re-verifies both studies and their rounds, then requires matching
+private counterfactual commitments and reviewed source provenance. A valid
+compatible comparison is `same` or `changed`; a valid boundary mismatch is
+`incomparable`. Changed entries contain only fixed question IDs, bounded first
+and second projections, and fixed change kinds. The supplied order is retained
+as caller order, not treated as chronology or a causal direction. The command
+is a reflection comparison, not trend analysis, authorization proof, or a
+capture service.
+
 To expose the same verified identities through the local loopback server:
 
 ```console

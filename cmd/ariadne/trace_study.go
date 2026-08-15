@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/jackkayser2005/ariadne/internal/trace"
 )
@@ -14,6 +15,7 @@ type traceStudyVerifier func(string) (trace.StudyVerificationSummary, error)
 type traceStudyQuestions func() []trace.StudyQuestion
 type traceStudyAsker func(string, string) (trace.StudyQuestionAnswer, error)
 type traceStudyAllAsker func(string) ([]trace.StudyQuestionAnswer, error)
+type traceStudyRoundComparer func(string, string, string, string) (trace.ReplicationStudyQuestionRoundComparison, error)
 
 func runTraceStudySave(args []string, stdout, stderr io.Writer, save traceStudySaver) int {
 	flags := flag.NewFlagSet("trace study save", flag.ContinueOnError)
@@ -182,6 +184,44 @@ func runTraceStudyAskAll(args []string, stdout, stderr io.Writer, askAll traceSt
 	return 0
 }
 
+func runTraceStudyAskAllCompare(args []string, stdout, stderr io.Writer, compare traceStudyRoundComparer) int {
+	flags := flag.NewFlagSet("trace study ask all compare", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 4 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+	comparison, err := compare(flags.Arg(0), flags.Arg(1), flags.Arg(2), flags.Arg(3))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: trace study ask all compare: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(comparison); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: trace study ask all compare: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if err := writeTraceStudyRoundComparison(stdout, comparison); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: trace study ask all compare: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func writeTraceStudyRoundComparison(stdout io.Writer, comparison trace.ReplicationStudyQuestionRoundComparison) error {
+	if _, err := fmt.Fprintf(stdout, "trace replication study question rounds compared\nschema_version: %d\ncomparison_id: %s\ncomparison_question: %s\norder_basis: %s\nresult: %s\nincomparable_reason: %s\nfirst_round_sha256: %s\nsecond_round_sha256: %s\nfirst_study_sha256: %s\nsecond_study_sha256: %s\ncompared: %d\nchanged: %d\n", comparison.SchemaVersion, comparison.ComparisonID, comparison.ComparisonQuestion, comparison.OrderBasis, comparison.Result, comparison.IncomparableReason, comparison.FirstRoundSHA256, comparison.SecondRoundSHA256, comparison.FirstStudySHA256, comparison.SecondStudySHA256, comparison.Compared, comparison.Changed); err != nil {
+		return err
+	}
+	for _, change := range comparison.ChangedQuestions {
+		if _, err := fmt.Fprintf(stdout, "question_id: %s\nfirst_result: %s\nsecond_result: %s\nfirst_evidence_state: %s\nsecond_evidence_state: %s\nfirst_outcome: %s\nsecond_outcome: %s\nchange_kinds: %s\n", change.QuestionID, change.FirstResult, change.SecondResult, change.FirstEvidenceState, change.SecondEvidenceState, change.FirstOutcome, change.SecondOutcome, strings.Join(change.ChangeKinds, ",")); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 func writeTraceStudySummary(stdout io.Writer, heading string, summary trace.StudyVerificationSummary) error {
 	_, err := fmt.Fprintf(stdout, "%s\nschema_version: %d\ncontrast_sha256: %s\norder_basis: %s\nruns: %d\npairs: %d\nsupported_runs: %d\nunknown_runs: %d\nreset_confirmed_pairs: %d\nbalanced_runs: %d\ncomplete_pairs: %d\nchanged_runs: %d\nno_change_runs: %d\nmixed_runs: %d\nunknown_pairs: %d\noutcome: %s\nevidence_state: %s\nreason: %s\nstudy_sha256: %s\n", heading, summary.SchemaVersion, summary.ContrastSHA256, summary.OrderBasis, summary.Runs, summary.Pairs, summary.SupportedRuns, summary.UnknownRuns, summary.ResetConfirmedPairs, summary.BalancedRuns, summary.CompletePairs, summary.ChangedRuns, summary.NoChangeRuns, summary.MixedRuns, summary.UnknownPairs, summary.Outcome, summary.EvidenceState, summary.Reason, summary.StudySHA256)
 	return err
