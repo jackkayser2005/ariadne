@@ -1824,7 +1824,11 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
           </dl>
         </article>
       {{else}}
+        {{if eq .TraceStudyComparison.Result "incomparable"}}
+        <p class="empty">No fixed question projection was compared.</p>
+        {{else}}
         <p class="empty">No fixed question projection changed.</p>
+        {{end}}
       {{end}}
       </div>
       <p class="context">Question result, aggregate outcome, and evidence state are shown separately. A changed projection is not a chronology or causal claim.</p>

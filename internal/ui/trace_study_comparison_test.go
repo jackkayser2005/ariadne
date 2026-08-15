@@ -143,3 +143,22 @@ func TestHandlerTraceStudyComparisonFailsClosed(t *testing.T) {
 		})
 	}
 }
+func TestHandlerReportsIncomparableStudyComparisonAsNotCompared(t *testing.T) {
+	h := newHandler(handler{
+		traceStudyComparison: func() (trace.ReplicationStudyQuestionRoundComparison, error) {
+			return trace.ReplicationStudyQuestionRoundComparison{Result: "incomparable"}, nil
+		},
+	})
+	recorder := httptest.NewRecorder()
+	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/trace-study-comparison", nil))
+	body := recorder.Body.String()
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("incomparable status = %d, body=%q", recorder.Code, body)
+	}
+	if !strings.Contains(body, "No fixed question projection was compared.") {
+		t.Fatal("incomparable comparison did not report that no projections were compared")
+	}
+	if strings.Contains(body, "No fixed question projection changed.") {
+		t.Fatal("incomparable comparison was rendered as unchanged")
+	}
+}
