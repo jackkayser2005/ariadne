@@ -49,7 +49,7 @@ func TestRunPairWithAuthenticatedInputBoundary(t *testing.T) {
 		if len(args) > 2 && args[2] == "reverse" {
 			return nil, nil
 		}
-		if len(args) > 3 && args[3] == "am" {
+		if (len(args) > 3 && args[3] == "am") || (len(args) > 5 && args[3] == "run-as" && args[5] == "am") {
 			starts = append(starts, append([]string(nil), args...))
 			body := []byte(fmt.Sprintf(
 				`{"schema_version":1,"challenge":"%s","region":"us-east","request_id":"request-%s","variant":"standard"}`,
@@ -116,6 +116,12 @@ func TestRunPairWithAuthenticatedInputBoundary(t *testing.T) {
 	if len(inputDocuments) != 2 || cleanupCalls != 2 || len(starts) != 2 {
 		t.Fatalf("input documents = %d, cleanup calls = %d, starts = %d", len(inputDocuments), cleanupCalls, len(starts))
 	}
+	for _, start := range starts {
+		if !contains(start, "run-as") {
+			t.Fatalf("authenticated start did not use package-owned run-as: %v", start)
+		}
+	}
+
 	for index, start := range starts {
 		text := strings.Join(start, " ")
 		for _, secret := range []string{

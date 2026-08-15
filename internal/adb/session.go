@@ -464,11 +464,13 @@ func runSessionWithAuth(
 				}
 			}
 
-			args := []string{
-				"-s", target.Device,
-				"shell", "am", "start", "-W", "-S",
-				"-n", target.Package + "/.MainActivity",
+			args := []string{"-s", target.Device, "shell"}
+			if auth != nil {
+				args = append(args, "run-as", target.Package, "am")
+			} else {
+				args = append(args, "am")
 			}
+			args = append(args, "start", "-W", "-S", "-n", target.Package+"/.MainActivity")
 			if auth == nil {
 				keys := make([]string, 0, len(persona))
 				for key := range persona {
