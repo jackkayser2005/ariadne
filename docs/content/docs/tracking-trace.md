@@ -542,6 +542,24 @@ bounded in-memory receipt when no saved receipt is supplied. It never renders
 input paths, payloads, URLs, or captured values, and fails closed as `trace
 study unavailable`.
 
+To expose a bounded comparison of two retained study question rounds, supply both
+study/round pairs to the loopback server:
+
+```console
+go run ./cmd/ariadne experiment serve \
+  --trace-study .ariadne/first-study.json \
+  --trace-study-round .ariadne/first-study-round.json \
+  --trace-study-second .ariadne/second-study.json \
+  --trace-study-round-second .ariadne/second-study-round.json \
+  <archive-root>
+```
+
+The GET-only trace-study-comparison route re-verifies all four artifacts and
+shows only fixed caller-order identities, `same`, `changed`, or `incomparable`,
+changed question IDs, and separate result, aggregate outcome, and
+evidence-state fields. It fails closed generically and does not show configured
+paths, payloads, URLs, or captured values. Caller order is not chronology, and
+changed projections are not trend, authorization, or causal claims.
 ## Caller-ordered trace archive questions
 
 Standalone trace sessions from any currently reviewed adapter can be retained

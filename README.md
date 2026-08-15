@@ -702,6 +702,25 @@ study; supplying `--trace-study-receipt` additionally verifies the selected
 receipt against both identities. `?question_id=<fixed-study-question-id>`
 selects one bounded receipt for the rendered review when no saved receipt is
 provided. These artifacts contain no paths, payloads, URLs, or captured values.
+To expose a bounded comparison of two retained study reflections, add the
+second verified study and round:
+
+```console
+go run ./cmd/ariadne experiment serve \
+  --trace-study .ariadne/first-study.json \
+  --trace-study-round .ariadne/first-study-round.json \
+  --trace-study-second .ariadne/second-study.json \
+  --trace-study-round-second .ariadne/second-study-round.json \
+  <archive-root>
+```
+
+The GET-only trace-study-comparison route re-verifies all four artifacts
+through the authoritative comparison engine and shows only same, changed, or
+incomparable, fixed question IDs, caller-order identities, and separate
+result/outcome/evidence-state projections. It does not render paths, payloads,
+URLs, captured values, or language implying chronology, trend, improvement,
+regression, authorization, or causality.
+
 Stable-ID Android sessions also record a SHA-256 identity for the successful
 UI hierarchy used to resolve the manifest-declared control. The raw hierarchy
 XML is never retained in session metadata; this identity is control provenance

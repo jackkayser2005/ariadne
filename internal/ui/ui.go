@@ -46,6 +46,7 @@ type handler struct {
 	traceStudyRoundRead   func(string) (trace.ReplicationStudyQuestionRound, trace.ReplicationStudyQuestionRoundVerificationSummary, error)
 	traceStudyReceiptPath string
 	traceStudyReceiptRead func(string) (trace.ReplicationStudyQuestionReceipt, trace.ReplicationStudyQuestionReceiptVerificationSummary, error)
+	traceStudyComparison  func() (trace.ReplicationStudyQuestionRoundComparison, error)
 }
 
 type archiveQuestionResult struct {
@@ -149,6 +150,8 @@ type pageData struct {
 	TraceStudyRoundSummary             trace.ReplicationStudyQuestionRoundVerificationSummary
 	TraceStudyReceiptAvailable         bool
 	TraceStudyReceiptSummary           trace.ReplicationStudyQuestionReceiptVerificationSummary
+	TraceStudyComparisonConfigured     bool
+	TraceStudyComparison               trace.ReplicationStudyQuestionRoundComparison
 	TraceStudySelectedQuestionID       string
 }
 
@@ -232,6 +235,13 @@ func HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCaseAndStud
 // returns a read-only review handler with optional durable study question-round
 // and selected-receipt identities.
 func HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCaseAndStudyArtifacts(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, traceArchivePath, traceRoundPath, traceReplicationPath, traceCasePath, traceStudyPath, traceStudyRoundPath, traceStudyReceiptPath string) http.Handler {
+	return HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCaseAndStudyArtifactsAndComparison(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, traceArchivePath, traceRoundPath, traceReplicationPath, traceCasePath, traceStudyPath, traceStudyRoundPath, traceStudyReceiptPath, "", "")
+}
+
+// HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCaseAndStudyArtifactsAndComparison
+// returns a read-only review handler with an optional verified comparison
+// between two retained replication-study question rounds.
+func HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCaseAndStudyArtifactsAndComparison(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, traceArchivePath, traceRoundPath, traceReplicationPath, traceCasePath, traceStudyPath, traceStudyRoundPath, traceStudyReceiptPath, traceStudySecondPath, traceStudyRoundSecondPath string) http.Handler {
 	h := archiveHandler(archiveRoot)
 	if historyPath != "" {
 		h.history = func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error) {
@@ -286,6 +296,11 @@ func HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCaseAndStud
 		h.traceStudyReceiptPath = traceStudyReceiptPath
 		h.traceStudyReceiptRead = trace.ReadReplicationStudyQuestionReceipt
 	}
+	if traceStudyPath != "" && traceStudyRoundPath != "" && traceStudySecondPath != "" && traceStudyRoundSecondPath != "" {
+		h.traceStudyComparison = func() (trace.ReplicationStudyQuestionRoundComparison, error) {
+			return trace.CompareReplicationStudyQuestionRounds(traceStudyPath, traceStudyRoundPath, traceStudySecondPath, traceStudyRoundSecondPath)
+		}
+	}
 	return newHandler(h)
 }
 
@@ -313,6 +328,7 @@ func newHandler(h handler) http.Handler {
 	mux.HandleFunc("/trace-replication", h.handleTraceReplication)
 	mux.HandleFunc("/trace-case", h.handleTraceCase)
 	mux.HandleFunc("/trace-study", h.handleTraceStudy)
+	mux.HandleFunc("/trace-study-comparison", h.handleTraceStudyComparison)
 	mux.HandleFunc("/favicon.ico", handleFavicon)
 	return mux
 }
@@ -524,6 +540,7 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		TraceReplicationConfigured:         h.traceReplicationConfigured(),
 		TraceCaseConfigured:                h.traceCaseConfigured(),
 		TraceStudyConfigured:               h.traceStudyConfigured(),
+		TraceStudyComparisonConfigured:     h.traceStudyComparison != nil,
 	})
 }
 
@@ -832,6 +849,27 @@ func (h handler) handleTraceStudy(w http.ResponseWriter, r *http.Request) {
 		TraceStudyReceiptAvailable:   receiptAvailable,
 		TraceStudyReceiptSummary:     receiptSummary,
 		TraceStudySelectedQuestionID: selectedQuestionID,
+	})
+}
+
+func (h handler) handleTraceStudyComparison(w http.ResponseWriter, r *http.Request) {
+	if !getOnly(w, r) {
+		return
+	}
+	if r.URL.Path != "/trace-study-comparison" || h.traceStudyComparison == nil {
+		http.NotFound(w, r)
+		return
+	}
+	comparison, err := h.traceStudyComparison()
+	if err != nil {
+		http.Error(w, "trace study comparison unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	render(w, pageData{
+		View:                           "trace-study-comparison",
+		Title:                          "Replication study comparison — Ariadne",
+		TraceStudyComparisonConfigured: true,
+		TraceStudyComparison:           comparison,
 	})
 }
 
@@ -1235,6 +1273,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       <div class="section-head"><h2>Portable replication study</h2><span class="context">verified, read only</span></div>
       <p class="context">Ask the fixed questions across independently repeated ledgers. Outcome and evidence state remain separate; caller order is not chronology and unsupported runs remain unknown.</p>
       <a class="button" href="/trace-study">Open replication study review <span aria-hidden="true">&rarr;</span></a>
+      {{if .TraceStudyComparisonConfigured}}<a class="button" href="/trace-study-comparison">Open retained study comparison <span aria-hidden="true">&rarr;</span></a>{{end}}
     </section>
     {{end}}
     {{if and .ReflectionHistoryRequested (or (not .SelectedQuestion.ID) (eq .SelectedQuestion.ID .ReflectionHistory.QuestionID))}}
@@ -1744,6 +1783,55 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       {{end}}
       </div>
       <p class="context">Each embedded ledger and matching question round was re-verified before rendering. The study does not infer chronology, expose local input paths, or render captured values.</p>
+    </section>
+  {{else if eq .View "trace-study-comparison"}}
+    <a class="back" href="/">&larr; Review archive</a>
+    <p class="eyebrow">portable study reflection comparison &middot; verified</p>
+    <h1>Compare retained study reflections</h1>
+    <p class="lede">Compare two independently retained study question rounds in caller order. This page exposes bounded reflection changes only; it does not infer chronology, trend, improvement, regression, authorization, or causality.</p>
+    <section class="panel" aria-label="Verified study comparison identity">
+      <div class="section-head"><h2>Verified study comparison</h2><span class="status status-raw-value-free">raw-value-free</span></div>
+      <dl>
+        <dt>comparison question</dt><dd>{{.TraceStudyComparison.ComparisonQuestion}}</dd>
+        <dt>result</dt><dd><span class="status status-{{.TraceStudyComparison.Result}}">{{.TraceStudyComparison.Result}}</span></dd>
+        <dt>valid results</dt><dd>same, changed, or incomparable</dd>
+        <dt>comparison ID</dt><dd>{{.TraceStudyComparison.ComparisonID}}</dd>
+        <dt>order basis</dt><dd>{{.TraceStudyComparison.OrderBasis}}</dd>
+        <dt>first study SHA-256</dt><dd>{{.TraceStudyComparison.FirstStudySHA256}}</dd>
+        <dt>first round SHA-256</dt><dd>{{.TraceStudyComparison.FirstRoundSHA256}}</dd>
+        <dt>second study SHA-256</dt><dd>{{.TraceStudyComparison.SecondStudySHA256}}</dd>
+        <dt>second round SHA-256</dt><dd>{{.TraceStudyComparison.SecondRoundSHA256}}</dd>
+        <dt>compared</dt><dd>{{.TraceStudyComparison.Compared}}</dd>
+        <dt>changed</dt><dd>{{.TraceStudyComparison.Changed}}</dd>
+        {{with .TraceStudyComparison.IncomparableReason}}<dt>incomparable reason</dt><dd>{{.}}</dd>{{end}}
+      </dl>
+      <p class="context">The supplied order is caller order; it does not establish chronology. Matching commitments and reviewed provenance are compatibility checks, not target data or causal proof.</p>
+    </section>
+    <section class="panel" aria-label="Changed study questions">
+      <div class="section-head"><h2>Changed questions</h2><span class="context">fixed projection</span></div>
+      <div class="question-list">
+      {{range .TraceStudyComparison.ChangedQuestions}}
+        <article class="panel question-card" id="trace-study-comparison-question-{{.QuestionID}}">
+          <div class="section-head"><h3><code>{{.QuestionID}}</code></h3><span class="status status-changed">changed</span></div>
+          <dl>
+            <dt>first result</dt><dd>{{.FirstResult}}</dd>
+            <dt>second result</dt><dd>{{.SecondResult}}</dd>
+            <dt>first outcome</dt><dd>{{.FirstOutcome}}</dd>
+            <dt>second outcome</dt><dd>{{.SecondOutcome}}</dd>
+            <dt>first evidence state</dt><dd><span class="status status-{{.FirstEvidenceState}}">{{.FirstEvidenceState}}</span></dd>
+            <dt>second evidence state</dt><dd><span class="status status-{{.SecondEvidenceState}}">{{.SecondEvidenceState}}</span></dd>
+            <dt>change kinds</dt><dd><ul>{{range .ChangeKinds}}<li>{{.}}</li>{{else}}<li>none</li>{{end}}</ul></dd>
+          </dl>
+        </article>
+      {{else}}
+        {{if eq .TraceStudyComparison.Result "incomparable"}}
+        <p class="empty">No fixed question projection was compared.</p>
+        {{else}}
+        <p class="empty">No fixed question projection changed.</p>
+        {{end}}
+      {{end}}
+      </div>
+      <p class="context">Question result, aggregate outcome, and evidence state are shown separately. A changed projection is not a chronology or causal claim.</p>
     </section>
   {{else if eq .View "run"}}
     <a class="back" href="/">← All bundles</a>
