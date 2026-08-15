@@ -83,10 +83,13 @@ go run ./cmd/ariadne trace compare --json <baseline-trace.json> <treatment-trace
 The mapping is fixed in code. The fixture's known network request becomes
 `android / network / request / first-party`; a captured private-storage write
 becomes `android / app-storage / storage-write / first-party`. Known observation
-keys map only to `region` and `session-id`; `variant` is intentionally omitted
-because it is an experiment outcome, not a tracking category. Values, URLs,
-request-identifier values, package names, and unknown keys never enter the
-trace.
+keys map only to `region` and `session-id`; `variant` and the per-session
+authentication `challenge` are intentionally omitted because they are
+experiment protocol metadata, not tracking categories. Values, URLs,
+request-identifier values, package names, challenge values, and unknown keys
+never enter the trace. The authenticated runner validates the challenge in both
+local evidence channels before a complete session can be trusted; a missing or
+mismatched challenge remains unavailable rather than becoming a tracking claim.
 
 An incomplete treatment session emits only its verified network event and
 marks the document `partial`. Comparing it with a complete baseline therefore

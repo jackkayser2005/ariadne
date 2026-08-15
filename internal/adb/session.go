@@ -44,6 +44,10 @@ type SessionRecord struct {
 	VolatileFields         []string     `json:"volatile_fields,omitempty"`
 	TapResourceID          string       `json:"tap_resource_id,omitempty"`
 	ManifestContractSHA256 string       `json:"manifest_contract_sha256,omitempty"`
+	ChallengeCommitment    string       `json:"challenge_commitment,omitempty"`
+	Role                   string       `json:"role,omitempty"`
+	Order                  string       `json:"order,omitempty"`
+	ProcedureSHA256        string       `json:"procedure_sha256,omitempty"`
 	ADBVersion             string       `json:"adb_version"`
 	Device                 string       `json:"device"`
 	Package                string       `json:"package"`
@@ -88,14 +92,47 @@ func RunPair(
 	manifest experiment.Manifest,
 	outputDir string,
 ) error {
-	return runPairWith(
+	return runPairWithAuthenticated(
 		ctx,
 		binary,
 		target,
 		manifest,
 		outputDir,
 		runCommand,
+		runInputCommand,
+		newChallenge,
 		time.Now,
+	)
+}
+
+func runPairWithAuthenticated(
+	ctx context.Context,
+	binary string,
+	target Target,
+	manifest experiment.Manifest,
+	outputDir string,
+	run commandRunner,
+	writeInput inputCommandRunner,
+	challenge challengeGenerator,
+	now func() time.Time,
+) error {
+	return runPairWithOrderAndAuth(
+		ctx,
+		binary,
+		target,
+		manifest,
+		outputDir,
+		[]sessionSpec{
+			{kind: "baseline", persona: manifest.Baseline},
+			{kind: "treatment", persona: manifest.Treatment},
+		},
+		run,
+		&sessionAuthDependencies{
+			order:      ReplicationOrderBaselineTreatment,
+			writeInput: writeInput,
+			challenge:  challenge,
+		},
+		now,
 	)
 }
 
@@ -138,6 +175,29 @@ func runPairWithOrder(
 	run commandRunner,
 	now func() time.Time,
 ) error {
+	return runPairWithOrderAndAuth(
+		ctx,
+		binary,
+		target,
+		manifest,
+		outputDir,
+		sessions,
+		run,
+		nil,
+		now,
+	)
+}
+func runPairWithOrderAndAuth(
+	ctx context.Context,
+	binary string,
+	target Target,
+	manifest experiment.Manifest,
+	outputDir string,
+	sessions []sessionSpec,
+	run commandRunner,
+	authDependencies *sessionAuthDependencies,
+	now func() time.Time,
+) error {
 	if err := validatePairConfig(binary, target, manifest, outputDir, sessions); err != nil {
 		return err
 	}
@@ -147,9 +207,19 @@ func runPairWithOrder(
 	if err := os.Mkdir(outputDir, 0o700); err != nil {
 		return fmt.Errorf("create output directory: %w", err)
 	}
+	if authDependencies != nil && (authDependencies.writeInput == nil || authDependencies.challenge == nil) {
+		return errors.New("authenticated session dependencies are required")
+	}
+	if authDependencies != nil && !experiment.ValidResourceID(manifest.TapResourceID) {
+		return errors.New("authenticated sessions require a declared fixture control")
+	}
 
 	for _, session := range sessions {
-		if err := runSession(
+		var auth *sessionAuth
+		if authDependencies != nil {
+			auth = authDependencies.forSession()
+		}
+		if err := runSessionWithAuth(
 			ctx,
 			binary,
 			target,
@@ -159,6 +229,7 @@ func runPairWithOrder(
 			session.persona,
 			run,
 			now,
+			auth,
 		); err != nil {
 			return err
 		}
@@ -251,7 +322,7 @@ func mapsEqual(left, right experiment.Persona) bool {
 	return true
 }
 
-func runSession(
+func runSessionWithAuth(
 	ctx context.Context,
 	binary string,
 	target Target,
@@ -260,6 +331,7 @@ func runSession(
 	persona experiment.Persona,
 	run commandRunner,
 	now func() time.Time,
+	auth *sessionAuth,
 ) error {
 	sessionDir := filepath.Join(outputDir, kind)
 	if err := os.Mkdir(sessionDir, 0o700); err != nil {
@@ -292,6 +364,28 @@ func runSession(
 		AriadneRevision:        target.AriadneRevision,
 		AriadneModified:        target.AriadneModified,
 		StartedAt:              now().UTC(),
+	}
+	if auth != nil {
+		if auth.writeInput == nil || auth.challenge == nil {
+			return finishSession(sessionDir, &record, now, "start", errors.New("authenticated session dependencies are required"))
+		}
+		if auth.order != ReplicationOrderBaselineTreatment && auth.order != ReplicationOrderTreatmentBaseline {
+			return finishSession(sessionDir, &record, now, "start", errors.New("authenticated session order is invalid"))
+		}
+		challenge, err := auth.challenge()
+		if err != nil {
+			return finishSession(sessionDir, &record, now, "start", errors.New("create session challenge"))
+		}
+		if !validChallenge(challenge) {
+			return finishSession(sessionDir, &record, now, "start", errors.New("generated session challenge is invalid"))
+		}
+		auth.challengeValue = challenge
+		record.SchemaVersion = authenticatedSessionSchema
+		record.ManifestContractSHA256 = manifest.ContractDigest()
+		record.ChallengeCommitment = challengeCommitment(challenge)
+		record.Role = kind
+		record.Order = auth.order
+		record.ProcedureSHA256 = record.ManifestContractSHA256
 	}
 
 	reset, output, err := runStep(
@@ -349,20 +443,45 @@ func runSession(
 
 	if sessionErr == nil {
 		sessionErr = func() error {
-			args := []string{
-				"-s", target.Device,
-				"shell", "am", "start", "-W", "-S",
-				"-n", target.Package + "/.MainActivity",
+			if auth != nil {
+				inputData, err := encodeFixtureInput(fixtureInput{
+					SchemaVersion:   fixtureInputSchemaVersion,
+					PackageName:     target.Package,
+					Challenge:       auth.challengeValue,
+					Role:            kind,
+					Order:           auth.order,
+					ProcedureSHA256: record.ProcedureSHA256,
+					CollectorPort:   networkCollector.Port(),
+					Persona:         persona,
+				})
+				if err != nil {
+					failureStage = "start"
+					return fmt.Errorf("%s: encode fixture input: %w", kind, err)
+				}
+				if _, err := auth.writeInput(ctx, binary, inputData, fixtureInputArgs(target)...); err != nil {
+					failureStage = "start"
+					return fmt.Errorf("%s: write private fixture input: %w", kind, err)
+				}
 			}
-			keys := make([]string, 0, len(persona))
-			for key := range persona {
-				keys = append(keys, key)
+
+			args := []string{"-s", target.Device, "shell"}
+			if auth != nil {
+				args = append(args, "run-as", target.Package, "am")
+			} else {
+				args = append(args, "am")
 			}
-			sort.Strings(keys)
-			for _, key := range keys {
-				args = append(args, "--es", key, persona[key])
+			args = append(args, "start", "-W", "-S", "-n", target.Package+"/.MainActivity")
+			if auth == nil {
+				keys := make([]string, 0, len(persona))
+				for key := range persona {
+					keys = append(keys, key)
+				}
+				sort.Strings(keys)
+				for _, key := range keys {
+					args = append(args, "--es", key, persona[key])
+				}
+				args = append(args, "--ei", "collector_port", port)
 			}
-			args = append(args, "--ei", "collector_port", port)
 
 			start, _, err := runStep(ctx, run, now, "start", binary, args...)
 			record.Steps = append(record.Steps, start)
@@ -405,7 +524,6 @@ func runSession(
 				failureStage = "capture_network"
 				return fmt.Errorf("%s: capture network: %w", kind, err)
 			}
-
 			data, err := json.MarshalIndent(observation, "", "  ")
 			if err != nil {
 				record.Steps[len(record.Steps)-1].Status = "error"
@@ -429,6 +547,22 @@ func runSession(
 			}
 			record.Artifacts = append(record.Artifacts, artifact)
 
+			if auth != nil {
+				if err := validateAuthenticatedObservation(observation, auth.challengeValue); err != nil {
+					record.Steps[len(record.Steps)-1].Status = "error"
+					record.Steps[len(record.Steps)-1].ExitCode = -1
+					failureStage = "capture_network"
+					record.Steps = append(record.Steps, StepRecord{
+						Name:       "capture_storage",
+						StartedAt:  now().UTC(),
+						FinishedAt: now().UTC(),
+						Status:     "error",
+						ExitCode:   -1,
+					})
+					return fmt.Errorf("%s: validate network authentication: %w", kind, err)
+				}
+			}
+
 			captureStorage, output, err := runStep(
 				ctx,
 				run,
@@ -444,6 +578,14 @@ func runSession(
 				failureStage = "capture_storage"
 				return fmt.Errorf("%s: capture storage: %w", kind, err)
 			}
+			if auth != nil {
+				if err := validateObservationChallenge(output, auth.challengeValue); err != nil {
+					record.Steps[len(record.Steps)-1].Status = "error"
+					record.Steps[len(record.Steps)-1].ExitCode = -1
+					failureStage = "capture_storage"
+					return fmt.Errorf("%s: validate storage authentication: %w", kind, err)
+				}
+			}
 			artifact, err = writeStorageObservation(sessionDir, output)
 			if err != nil {
 				record.Steps[len(record.Steps)-1].Status = "error"
@@ -454,6 +596,22 @@ func runSession(
 			record.Artifacts = append(record.Artifacts, artifact)
 			return nil
 		}()
+	}
+
+	if auth != nil {
+		inputCleanupContext, cancelInputCleanup := context.WithTimeout(
+			context.WithoutCancel(ctx),
+			networkCleanupTimeout,
+		)
+		cleanupErr := removeFixtureInput(inputCleanupContext, run, binary, target)
+		cancelInputCleanup()
+		if cleanupErr != nil {
+			inputCleanupFailure := fmt.Errorf("%s: remove private fixture input: %w", kind, cleanupErr)
+			sessionErr = errors.Join(sessionErr, inputCleanupFailure)
+			if failureStage == "" {
+				failureStage = "cleanup_input"
+			}
+		}
 	}
 
 	cleanupContext, cancelCleanup := context.WithTimeout(
@@ -761,6 +919,7 @@ func ValidFailureStage(stage string) bool {
 		"interact",
 		"capture_network",
 		"capture_storage",
+		"cleanup_input",
 		"disconnect_network":
 		return true
 	default:

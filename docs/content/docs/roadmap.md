@@ -68,6 +68,17 @@ browser source-boundary layers, and a portable trace reflection layer:
    `evidence_state`; an aggregate classification is not a causal proof. The
    verifier also rechecks each pair's authoritative evidence outputs and
    exposes only the root receipt and pair evidence SHA-256 identities.
+**Current security slice (Android input authentication).** The runner now writes
+one bounded canonical fixture input through an app-private stdin boundary rather
+than process arguments or exported activity extras. A one-shot challenge binds
+the package, role, explicit pair order, reviewed procedure digest, and trace
+session; network and storage evidence must carry the same challenge. Session
+receipts retain only a challenge commitment, and failed or unverifiable
+boundaries remain incomplete/unknown. The next focused slice is the Android
+minimum-disclosure ladder: repeated exact/city/omitted candidates evaluated by
+the existing two-order engine, selecting only the minimum tested sufficient
+candidate whose fixed functionality criterion replicates.
+
 6. **Browser audit handoff (not evidence-backed capture).** An authorized
    browser driver can provide a bounded, already-redacted audit that Ariadne
    projects into the same

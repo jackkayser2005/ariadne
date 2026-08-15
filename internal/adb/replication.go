@@ -64,7 +64,7 @@ func RunReplicated(
 	outputDir string,
 	pairs int,
 ) error {
-	return runReplicatedWith(
+	return runReplicatedWithAuthenticated(
 		ctx,
 		binary,
 		target,
@@ -72,6 +72,8 @@ func RunReplicated(
 		outputDir,
 		pairs,
 		runCommand,
+		runInputCommand,
+		newChallenge,
 		time.Now,
 	)
 }
@@ -84,6 +86,57 @@ func runReplicatedWith(
 	outputDir string,
 	pairs int,
 	run commandRunner,
+	now func() time.Time,
+) error {
+	return runReplicatedWithMode(
+		ctx,
+		binary,
+		target,
+		manifest,
+		outputDir,
+		pairs,
+		run,
+		nil,
+		now,
+	)
+}
+
+func runReplicatedWithAuthenticated(
+	ctx context.Context,
+	binary string,
+	target Target,
+	manifest experiment.Manifest,
+	outputDir string,
+	pairs int,
+	run commandRunner,
+	writeInput inputCommandRunner,
+	challenge challengeGenerator,
+	now func() time.Time,
+) error {
+	return runReplicatedWithMode(
+		ctx,
+		binary,
+		target,
+		manifest,
+		outputDir,
+		pairs,
+		run,
+		&sessionAuthDependencies{
+			writeInput: writeInput,
+			challenge:  challenge,
+		},
+		now,
+	)
+}
+func runReplicatedWithMode(
+	ctx context.Context,
+	binary string,
+	target Target,
+	manifest experiment.Manifest,
+	outputDir string,
+	pairs int,
+	run commandRunner,
+	authDependencies *sessionAuthDependencies,
 	now func() time.Time,
 ) error {
 	if pairs < 1 || pairs > maxReplicatedPairs {
@@ -144,16 +197,37 @@ func runReplicatedWith(
 				SecondSession: order.secondSession,
 				Status:        ReplicationStatusIncomplete,
 			}
-			err := runPairWithOrder(
-				ctx,
-				binary,
-				target,
-				manifest,
-				filepath.Join(outputDir, directory),
-				orderedSessions(order.name, manifest),
-				run,
-				now,
-			)
+			var pairAuth *sessionAuthDependencies
+			if authDependencies != nil {
+				dependencies := *authDependencies
+				dependencies.order = order.name
+				pairAuth = &dependencies
+			}
+			var err error
+			if pairAuth == nil {
+				err = runPairWithOrder(
+					ctx,
+					binary,
+					target,
+					manifest,
+					filepath.Join(outputDir, directory),
+					orderedSessions(order.name, manifest),
+					run,
+					now,
+				)
+			} else {
+				err = runPairWithOrderAndAuth(
+					ctx,
+					binary,
+					target,
+					manifest,
+					filepath.Join(outputDir, directory),
+					orderedSessions(order.name, manifest),
+					run,
+					pairAuth,
+					now,
+				)
+			}
 			if err != nil {
 				record.FailurePair = pair
 				record.FailureOrder = order.name

@@ -39,6 +39,18 @@ complete pair's existing `evidence.json` and `report.md`, and returns a safe
 receipt SHA-256 plus one evidence SHA-256 per ordered pair so the aggregate can
 be bound back to the files that were checked.
 
+The Android runner now authenticates each fixture session at the experiment
+boundary. It writes a bounded canonical input document through `adb exec-in`
+stdin into the fixture's private files area; personas and collector ports are
+not passed as activity extras or process arguments. The fixture consumes and
+deletes that document once, and includes the session challenge in both local
+observations. Ariadne requires the network and storage challenges to match,
+records only a challenge commitment in `session.json`, and excludes the raw
+challenge from reports, traces, and portable exports. Missing, stale, reused,
+or mismatched challenges remain unverifiable rather than becoming a privacy
+assurance. Legacy bundles remain readable, but they do not receive invented
+authentication or outcome semantics.
+
 The detailed design and experiment log live in [`docs/`](docs/).
 The evidence-backed first-year path is tracked in
 [`docs/content/docs/roadmap.md`](docs/content/docs/roadmap.md).
