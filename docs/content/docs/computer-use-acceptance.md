@@ -89,6 +89,17 @@ go run ./cmd/ariadne experiment serve --trace-study <study.json> --trace-study-r
 ```
 
 
+To expose the same read-only surface for two retained study reflections, supply
+both study/round pairs:
+
+```console
+go run ./cmd/ariadne experiment serve \
+  --trace-study <first-study.json> \
+  --trace-study-round <first-round.json> \
+  --trace-study-second <second-study.json> \
+  --trace-study-round-second <second-round.json> \
+  <archive-root>
+```
 These options add links to the separate trace review routes; they do not
 change the bundle question route or merge trace identities into the evidence
 archive. When both archive flags are supplied, `/trace-archive` fails closed
@@ -195,6 +206,17 @@ and bounded answers, not proof that a UI driver performed the selection.
    payloads, URLs, or captured values. A failed verification should show only
    `trace study unavailable`.
 
+### Optional replication-study comparison pass
+
+1. From the review index, open `Open retained study comparison`.
+2. Check `Verified study comparison`, the comparison result, the valid-result
+   labels, caller order, both study/round identities, and compared/changed
+   counts.
+3. Inspect changed question cards only. Keep first/second `result`, aggregate
+   `outcome`, separate `evidence_state`, and fixed change kinds distinct.
+4. Do not retain configured paths, raw data, payloads, URLs, or captured values;
+   do not infer chronology, trend, authorization, or causality. A failed
+   verification should show only `trace study comparison unavailable`.
 This pass checks the rendered, read-only reflection surface only. It does not
 claim that a computer-use driver selected an answer, that caller order is
 chronology, or that retained results establish causal behavior across sources.

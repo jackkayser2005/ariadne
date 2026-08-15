@@ -208,6 +208,12 @@ browser source-boundary layers, and a portable trace reflection layer:
     evidence-state, or support-count changes. This is a reflection comparison,
     not chronology, trend inference, authorization proof, or causal evidence.
 
+20. **Cross-study reflection review surface.** The same verified comparison can
+    now be exposed through a GET-only `/trace-study-comparison` page with
+    fixed caller-order identities, separate result/outcome/evidence-state
+    projections, and generic failure behavior. This is a read-only UI
+    acceptance surface, not a capture service, chronology model, authorization
+    proof, or causal claim.
 The local review page is intentionally read-only. Its compact question round
 and receipt links, including stable history and receipt identities, are a
 bounded UI-control surface for a computer-use driver;
@@ -345,6 +351,10 @@ questions again without reopening source paths or captured values.
   `incomparable` without exposing paths or source values. Caller order remains
   non-chronological, and changed results remain separate from outcome and
   `evidence_state`.
+- The study comparison review route requires both verified study/round pairs,
+  is GET-only, renders only bounded comparison projections, escapes dynamic
+  output, and fails closed without paths, payloads, URLs, captured values, or
+  detailed errors.
 - UI changes pass deterministic handler tests; use computer-use only when a
   concrete rendered-flow check is needed and the host supports it.
 - No review page, answer, export, or log exposes captured values, secrets, or
