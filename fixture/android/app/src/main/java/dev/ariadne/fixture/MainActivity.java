@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicReference;
 
 public final class MainActivity extends Activity {
+    static final String INPUT_FILE = "ariadne-input.json";
     static final String OBSERVATION_FILE = "observation.json";
     private static final int REPORT_TIMEOUT_MILLIS = 5_000;
 
@@ -21,21 +22,37 @@ public final class MainActivity extends Activity {
     private String region;
     private String captureMode;
     private int collectorPort;
+    private String challenge;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        email = getIntent().getStringExtra("email");
-        region = getIntent().getStringExtra("region");
-        if (email == null || region == null) {
+        FixtureInput input;
+        try {
+            input = FixtureInput.read(this);
+        } catch (IOException error) {
+            setResult(RESULT_CANCELED);
+            finish();
+            return;
+        }
+        if (!getPackageName().equals(input.packageName())) {
             setResult(RESULT_CANCELED);
             finish();
             return;
         }
 
-        captureMode = getIntent().getStringExtra("capture_mode");
-        collectorPort = getIntent().getIntExtra("collector_port", 0);
+        email = input.value("email");
+        region = input.value("region");
+        challenge = input.challenge();
+        if (email == null || region == null || challenge == null) {
+            setResult(RESULT_CANCELED);
+            finish();
+            return;
+        }
+
+        captureMode = input.value("capture_mode");
+        collectorPort = input.collectorPort();
         setContentView(R.layout.activity_main);
         Button observeButton = findViewById(R.id.observe_button);
         observeButton.setOnClickListener(this::runObservation);
@@ -45,7 +62,7 @@ public final class MainActivity extends Activity {
     private void runObservation(View view) {
         view.setEnabled(false);
         try {
-            byte[] observation = observationFor(email, region);
+            byte[] observation = observationFor(email, region, challenge);
             if (ExperimentLogic.shouldWriteStorage(email, captureMode)) {
                 writeObservation(observation);
             }
@@ -59,9 +76,10 @@ public final class MainActivity extends Activity {
         finish();
     }
 
-    private byte[] observationFor(String email, String region) throws JSONException {
+    private byte[] observationFor(String email, String region, String challenge) throws JSONException {
         JSONObject observation = new JSONObject()
                 .put("schema_version", 1)
+                .put("challenge", challenge)
                 .put("region", region)
                 .put("request_id", ExperimentLogic.requestID())
                 .put("variant", ExperimentLogic.variantFor(email));

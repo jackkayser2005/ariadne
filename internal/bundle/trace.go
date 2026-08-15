@@ -150,9 +150,9 @@ func experimentTraceObservationFields(data []byte) ([]string, error) {
 	fields := make([]string, 0, 2)
 	for field := range raw {
 		switch field {
-		case "schema_version", "variant":
-			// The fixture's variant is an experiment outcome, not a tracking
-			// category, so it is intentionally absent from the trace.
+		case "schema_version", "variant", "challenge":
+			// Variant and challenge are experiment protocol metadata, not
+			// tracking categories, so they are intentionally absent from traces.
 		case "region":
 			fields = append(fields, "region")
 		case "request_id":

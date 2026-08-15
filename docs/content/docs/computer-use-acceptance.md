@@ -251,7 +251,12 @@ observed `MATCHED` with the raw-value-free receipt and stable identities
 visible. No mutation control was used. This proves the rendered route,
 accessible label, and read-only receipt flow; it does not prove the target
 application or the underlying evidence. The real Android capture workflow
-remains the authority for target-specific evidence.
+remains the authority for target-specific evidence. That workflow now delivers
+personas and the collector port through a bounded app-private one-shot input,
+not activity extras; the fixture deletes it after consumption. Its session
+challenge is checked against both local evidence channels, while only the
+commitment is retained in the session receipt. A failed challenge check is
+incomplete/unknown, never a privacy assurance.
 
 ## Acceptance record
 

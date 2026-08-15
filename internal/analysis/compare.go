@@ -3,7 +3,9 @@ package analysis
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,7 +28,22 @@ const (
 
 // Session is one normalized pair of agreeing storage and network observations.
 type Session struct {
-	Fields map[string]string
+	Fields    map[string]string
+	challenge string
+}
+
+// HasChallenge reports whether the session carried authenticated protocol metadata.
+func (session Session) HasChallenge() bool {
+	return session.challenge != ""
+}
+
+// ChallengeCommitment returns the raw-value-free commitment for the session challenge.
+func (session Session) ChallengeCommitment() string {
+	if session.challenge == "" {
+		return ""
+	}
+	digest := sha256.Sum256([]byte(session.challenge))
+	return hex.EncodeToString(digest[:])
 }
 
 // Comparison records stable, normalized, observed, and unsupported conclusions.
@@ -70,7 +87,7 @@ func Normalize(storage, network io.Reader) (Session, error) {
 	if err != nil {
 		return Session{}, err
 	}
-	if !maps.Equal(stored.Fields, reported.Fields) {
+	if stored.challenge != reported.challenge || !maps.Equal(stored.Fields, reported.Fields) {
 		return Session{}, errors.New("storage and network observations disagree")
 	}
 	return stored, nil
@@ -228,6 +245,13 @@ func decodeObservation(data []byte) (Session, error) {
 		return Session{}, errors.New("unsupported schema_version")
 	}
 	delete(raw, "schema_version")
+	challenge := ""
+	if rawChallenge, ok := raw["challenge"]; ok {
+		if err := json.Unmarshal(rawChallenge, &challenge); err != nil || !validChallenge(challenge) {
+			return Session{}, errors.New("observation challenge is invalid")
+		}
+		delete(raw, "challenge")
+	}
 	if len(raw) == 0 || len(raw) > maxFields {
 		return Session{}, fmt.Errorf("expected 1 to %d observation fields", maxFields)
 	}
@@ -247,7 +271,19 @@ func decodeObservation(data []byte) (Session, error) {
 		}
 		fields[field] = value
 	}
-	return Session{Fields: fields}, nil
+	return Session{Fields: fields, challenge: challenge}, nil
+}
+
+func validChallenge(value string) bool {
+	if len(value) != 64 {
+		return false
+	}
+	for _, character := range value {
+		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func readBounded(reader io.Reader, limit int64, name string) ([]byte, error) {
