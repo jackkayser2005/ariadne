@@ -37,7 +37,7 @@ func TestRunPairWithAuthenticatedInputBoundary(t *testing.T) {
 		}
 		currentInput = input
 		inputDocuments = append(inputDocuments, append([]byte(nil), data...))
-		if strings.Join(args, " ") != "-s emulator-5554 exec-in run-as dev.ariadne.fixture sh -c cat > files/ariadne-input.json" {
+		if strings.Join(args, " ") != "-s emulator-5554 shell -T run-as dev.ariadne.fixture sh -c 'cat > files/ariadne-input.json'" {
 			return nil, fmt.Errorf("unexpected private input command: %v", args)
 		}
 		return nil, nil

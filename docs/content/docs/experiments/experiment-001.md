@@ -108,7 +108,7 @@ only behind Android's `android.permission.DUMP`, allowing the authorized ADB
 shell to launch it while ordinary applications cannot. The runner starts it
 through `adb shell am` without persona, challenge, or collector-port extras.
 The runner first writes
-one bounded canonical input document through `adb exec-in` stdin into the
+one bounded canonical input document through non-PTY `adb shell -T` stdin into the
 app-private files area. The activity consumes and deletes that document once,
 renders the `observe_button` control, and waits for that control before writing
 `files/observation.json` and exiting. The runner resolves the exact declared

@@ -40,7 +40,7 @@ receipt SHA-256 plus one evidence SHA-256 per ordered pair so the aggregate can
 be bound back to the files that were checked.
 
 The Android runner now authenticates each fixture session at the experiment
-boundary. It writes a bounded canonical input document through `adb exec-in`
+boundary. It writes a bounded canonical input document through non-PTY `adb shell -T`
 stdin into the fixture's private files area; its debug launcher is protected
 by Android's `android.permission.DUMP`; personas and collector ports are not
 passed as activity extras or process arguments. The fixture consumes and

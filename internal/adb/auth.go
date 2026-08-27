@@ -164,8 +164,8 @@ func runInputCommand(ctx context.Context, binary string, input []byte, args ...s
 func fixtureInputArgs(target Target) []string {
 	return []string{
 		"-s", target.Device,
-		"exec-in", "run-as", target.Package, "sh", "-c",
-		"cat > " + fixtureInputPath,
+		"shell", "-T", "run-as", target.Package, "sh", "-c",
+		"'cat > " + fixtureInputPath + "'",
 	}
 }
 
