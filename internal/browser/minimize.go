@@ -108,7 +108,14 @@ func runFixtureMinimizationWith(ctx context.Context, input FixtureMinimizationIn
 // VerifyFixtureMinimization verifies the portable ladder receipt and each
 // child using the browser adapter's criterion-specific comparison.
 func VerifyFixtureMinimization(rootDir string) (minimize.LadderSummary, error) {
-	summary, _, err := minimize.VerifyLadder(rootDir, func(root string, summary minimize.LadderSummary, result minimize.LadderCandidateResult) error {
+	summary, _, err := VerifyFixtureMinimizationWithIdentity(rootDir)
+	return summary, err
+}
+
+// VerifyFixtureMinimizationWithIdentity verifies the portable ladder receipt,
+// each child, and returns the canonical receipt identity from that same read.
+func VerifyFixtureMinimizationWithIdentity(rootDir string) (minimize.LadderSummary, string, error) {
+	summary, digest, err := minimize.VerifyLadder(rootDir, func(root string, summary minimize.LadderSummary, result minimize.LadderCandidateResult) error {
 		child, err := VerifyFixtureReplicatedForFunctionality(filepath.Join(root, result.Directory))
 		if err != nil {
 			return err
@@ -129,7 +136,7 @@ func VerifyFixtureMinimization(rootDir string) (minimize.LadderSummary, error) {
 		}
 		return nil
 	})
-	return summary, err
+	return summary, digest, err
 }
 
 // VerifyFixtureReplicatedForFunctionality uses the browser fixture's fixed

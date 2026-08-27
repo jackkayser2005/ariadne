@@ -19,41 +19,42 @@ import (
 )
 
 type handler struct {
-	root                    string
-	index                   func(string) ([]bundle.ArchiveEntry, error)
-	verify                  func(string) (bundle.Summary, error)
-	questions               func() []bundle.Question
-	ask                     func(string, string) (bundle.Answer, error)
-	askArchive              func(string, string) (bundle.ArchiveQuestionReport, error)
-	history                 func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error)
-	acceptance              func() (bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary, error)
-	compareRounds           func() (bundle.ArchiveQuestionTransitionHistoryQuestionRoundComparison, error)
-	compareCurrent          func() (bundle.ArchiveQuestionComparison, error)
-	find                    func(string, string) (bundle.Finding, error)
-	exportPath              string
-	exportAsk               func(string, string) (bundle.Answer, error)
-	exportFind              func(string, string) (bundle.Finding, error)
-	traceArchivePath        string
-	traceArchiveRead        func(string) (trace.Archive, trace.ArchiveVerificationSummary, error)
-	traceRoundPath          string
-	traceRoundRead          func(string) (trace.ArchiveQuestionRound, trace.ArchiveQuestionRoundVerificationSummary, error)
-	traceReplicationPath    string
-	traceReplicationRead    func(string) (trace.ReplicationLedger, trace.ReplicationLedgerVerificationSummary, error)
-	traceCasePath           string
-	traceCaseRead           func(string) (trace.CasePackage, trace.CaseVerificationSummary, error)
-	traceStudyPath          string
-	traceStudyRead          func(string) (trace.ReplicationStudy, trace.StudyVerificationSummary, error)
-	traceStudyRoundPath     string
-	traceStudyRoundRead     func(string) (trace.ReplicationStudyQuestionRound, trace.ReplicationStudyQuestionRoundVerificationSummary, error)
-	traceStudyReceiptPath   string
-	traceStudyReceiptRead   func(string) (trace.ReplicationStudyQuestionReceipt, trace.ReplicationStudyQuestionReceiptVerificationSummary, error)
-	traceStudyComparison    func() (trace.ReplicationStudyQuestionRoundComparison, error)
-	minimizationPath        string
-	minimizationVerify      func(string) (minimize.MinimizationSummary, string, error)
-	minimizationRoundPath   string
-	minimizationRoundRead   func(string) (minimize.MinimizationQuestionRound, minimize.MinimizationQuestionRoundVerificationSummary, error)
-	minimizationReceiptPath string
-	minimizationReceiptRead func(string) (minimize.MinimizationQuestionReceipt, minimize.MinimizationQuestionReceiptVerificationSummary, error)
+	root                     string
+	index                    func(string) ([]bundle.ArchiveEntry, error)
+	verify                   func(string) (bundle.Summary, error)
+	questions                func() []bundle.Question
+	ask                      func(string, string) (bundle.Answer, error)
+	askArchive               func(string, string) (bundle.ArchiveQuestionReport, error)
+	history                  func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error)
+	acceptance               func() (bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary, error)
+	compareRounds            func() (bundle.ArchiveQuestionTransitionHistoryQuestionRoundComparison, error)
+	compareCurrent           func() (bundle.ArchiveQuestionComparison, error)
+	find                     func(string, string) (bundle.Finding, error)
+	exportPath               string
+	exportAsk                func(string, string) (bundle.Answer, error)
+	exportFind               func(string, string) (bundle.Finding, error)
+	traceArchivePath         string
+	traceArchiveRead         func(string) (trace.Archive, trace.ArchiveVerificationSummary, error)
+	traceRoundPath           string
+	traceRoundRead           func(string) (trace.ArchiveQuestionRound, trace.ArchiveQuestionRoundVerificationSummary, error)
+	traceReplicationPath     string
+	traceReplicationRead     func(string) (trace.ReplicationLedger, trace.ReplicationLedgerVerificationSummary, error)
+	traceCasePath            string
+	traceCaseRead            func(string) (trace.CasePackage, trace.CaseVerificationSummary, error)
+	traceStudyPath           string
+	traceStudyRead           func(string) (trace.ReplicationStudy, trace.StudyVerificationSummary, error)
+	traceStudyRoundPath      string
+	traceStudyRoundRead      func(string) (trace.ReplicationStudyQuestionRound, trace.ReplicationStudyQuestionRoundVerificationSummary, error)
+	traceStudyReceiptPath    string
+	traceStudyReceiptRead    func(string) (trace.ReplicationStudyQuestionReceipt, trace.ReplicationStudyQuestionReceiptVerificationSummary, error)
+	traceStudyComparison     func() (trace.ReplicationStudyQuestionRoundComparison, error)
+	minimizationPath         string
+	minimizationVerify       func(string) (minimize.MinimizationSummary, string, error)
+	minimizationLadderVerify func(string) (minimize.LadderSummary, string, error)
+	minimizationRoundPath    string
+	minimizationRoundRead    func(string) (minimize.MinimizationQuestionRound, minimize.MinimizationQuestionRoundVerificationSummary, error)
+	minimizationReceiptPath  string
+	minimizationReceiptRead  func(string) (minimize.MinimizationQuestionReceipt, minimize.MinimizationQuestionReceiptVerificationSummary, error)
 }
 
 type archiveQuestionResult struct {
@@ -1250,7 +1251,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
     {{if .MinimizationConfigured}}
     <section class="panel" id="minimization-orientation" aria-label="Minimum-disclosure experiment">
       <div class="section-head"><h2>Minimum-disclosure experiment</h2><span class="context">verified, read only</span></div>
-      <p class="context">Review a tested disclosure ladder from a verified Android experiment. Candidate IDs, replicated outcomes, evidence states, and provenance identities are shown; raw inputs never appear here.</p>
+      <p class="context">Review a tested disclosure ladder from a verified experiment or source adapter. Candidate IDs, replicated outcomes, evidence states, and provenance identities are shown; raw inputs never appear here.</p>
       <a class="button" href="/minimization">Open minimization review <span aria-hidden="true">&rarr;</span></a>
     </section>
     {{end}}
@@ -1824,6 +1825,13 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
         <dt>variable</dt><dd><code>{{.Minimization.Variable}}</code></dd>
         <dt>reference candidate</dt><dd><code>{{.Minimization.ReferenceCandidate}}</code></dd>
         <dt>functionality criterion</dt><dd><code>{{.Minimization.FunctionalityCriterion}}</code></dd>
+        {{if .Minimization.Adapter}}
+        <dt>adapter</dt><dd><code>{{.Minimization.Adapter}}</code></dd>
+        <dt>adapter version</dt><dd>{{.Minimization.AdapterVersion}}</dd>
+        <dt>procedure SHA-256</dt><dd>{{.Minimization.ProcedureSHA256}}</dd>
+        <dt>scope</dt><dd><code>{{.Minimization.Scope}}</code></dd>
+        <dt>reset policy</dt><dd><code>{{.Minimization.ResetPolicy}}</code></dd>
+        {{end}}
         <dt>pairs per order</dt><dd>{{.Minimization.PairsPerOrder}}</dd>
         <dt>aggregate evidence state</dt><dd><span class="status status-{{.Minimization.EvidenceState}}">{{.Minimization.EvidenceState}}</span></dd>
         <dt>selection state</dt><dd><span class="status status-{{.Minimization.SelectionState}}">{{.Minimization.SelectionState}}</span></dd>
@@ -1837,6 +1845,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       {{end}}
       <p class="context">Verification re-checked the canonical receipt and every candidate replication before this page was rendered. The configured local directory, personas, candidate values, manifests, and captured observations are intentionally omitted.</p>
     </section>
+{{if .Minimization.Legacy}}
     <section class="panel" aria-label="Minimization question round">
       <div class="section-head"><h2>Fixed minimization questions</h2><span class="context">{{if .Minimization.RoundSaved}}saved and verified{{else}}derived from the verified minimization receipt{{end}}</span></div>
       <div class="question-list">
@@ -1891,6 +1900,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       <p class="context">The selected receipt preserves one fixed answer and its verified round identity. It does not turn an observed result into a causal proof.</p>
     </section>
     {{end}}
+{{end}}
     <section class="panel" aria-label="Tested candidate ladder">
       <div class="section-head"><h2>Tested candidate ladder</h2><span class="context">recorded order</span></div>
       <div class="question-list">

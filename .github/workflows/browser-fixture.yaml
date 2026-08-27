@@ -105,6 +105,50 @@ jobs:
               throw "browser fixture minimization exposed source values: $($file.Name)"
             }
           }
+          $archiveRoot = Join-Path $env:RUNNER_TEMP 'ariadne-browser-review-archive'
+          New-Item -ItemType Directory -Path $archiveRoot -Force | Out-Null
+          $ariadne = Join-Path $env:RUNNER_TEMP 'ariadne.exe'
+          go build -o $ariadne ./cmd/ariadne
+          $serverOut = Join-Path $env:RUNNER_TEMP 'ariadne-browser-review.out'
+          $serverErr = Join-Path $env:RUNNER_TEMP 'ariadne-browser-review.err'
+          $server = Start-Process -FilePath $ariadne -ArgumentList @('experiment', 'serve', '--addr', '127.0.0.1:8788', '--minimization', $minimization, $archiveRoot) -RedirectStandardOutput $serverOut -RedirectStandardError $serverErr -PassThru -WindowStyle Hidden
+          try {
+            $response = $null
+            for ($attempt = 0; $attempt -lt 30; $attempt++) {
+              Start-Sleep -Seconds 1
+              try {
+                $response = Invoke-WebRequest -Uri 'http://127.0.0.1:8788/minimization' -UseBasicParsing -TimeoutSec 5
+                break
+              } catch {
+              }
+            }
+            if (-not $response) {
+              throw 'browser minimization review server did not respond'
+            }
+            if ($response.StatusCode -ne 200) {
+              throw "browser minimization review returned status $($response.StatusCode)"
+            }
+            $review = $response.Content
+            foreach ($required in @('browser-local-fixture', 'procedure SHA-256', 'account-id', 'unknown', 'raw-value-free')) {
+              if ($review -notmatch [regex]::Escape($required)) {
+                throw "browser minimization review omitted $required"
+              }
+            }
+            if ($review -match 'https://|account-value|candidate-001-omitted|chrome\.exe|Program Files') {
+              throw 'browser minimization review exposed source-specific values'
+            }
+            $post = Invoke-WebRequest -Method Post -Uri 'http://127.0.0.1:8788/minimization' -UseBasicParsing -SkipHttpErrorCheck
+            if ($post.StatusCode -ne 405 -or $post.Headers['Allow'] -ne 'GET') {
+              throw 'browser minimization review was not GET-only'
+            }
+          } finally {
+            if ($null -ne $server) {
+              $server.Refresh()
+              if (-not $server.HasExited) {
+                Stop-Process -Id $server.Id -Force
+              }
+            }
+          }
           $profiles = @(Get-ChildItem -LiteralPath $env:TEMP -Directory -Filter 'ariadne-browser-fixture-*' -ErrorAction SilentlyContinue)
           if ($profiles.Count -ne 0) {
             throw "temporary browser profiles remain: $($profiles.FullName -join ', ')"

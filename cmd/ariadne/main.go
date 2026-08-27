@@ -3232,6 +3232,7 @@ func runServe(
 		TraceStudySecondPath:      *traceStudySecondPath,
 		TraceStudyRoundSecondPath: *traceStudyRoundSecondPath,
 		MinimizationPath:          *minimizationPath,
+		MinimizationLadderVerify:  browser.VerifyFixtureMinimizationWithIdentity,
 		MinimizationRoundPath:     *minimizationRoundPath,
 		MinimizationReceiptPath:   *minimizationReceiptPath,
 		ExpectedHost:              *address,

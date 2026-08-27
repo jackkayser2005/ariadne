@@ -147,9 +147,9 @@ presence alone.
 
 ## Browser fixture minimization handoff
 
-The browser minimization slice is currently a CLI and portable-receipt
-handoff, not a computer-use capture surface. Run and verify the bounded
-fixture before opening any read-only review page:
+The browser minimization slice is a CLI plus a read-only review handoff, not a
+computer-use capture surface. Run and verify the bounded fixture before opening
+any read-only review page:
 
 ```console
 go run ./cmd/ariadne browser fixture minimize --json \
@@ -171,6 +171,15 @@ receipt identities. The receipt must not contain the synthetic value, URLs,
 driver arguments, profile paths, or captured events. A partial, failed, or
 provenance-mismatched child is `unknown`; do not use computer-use to infer
 sufficiency from an incomplete run.
+
+Expose the verified browser ladder through the existing minimization review route:
+
+```console
+go run ./cmd/ariadne experiment serve --minimization .ariadne/browser-account-minimize <archive-root>
+```
+
+Open `/minimization` from the printed loopback authority. Confirm that adapter, procedure SHA-256, scope, reset policy, candidate order, classification, counterfactual outcome, and evidence state are visible. The page must not render candidate values, local paths, URLs, driver arguments, profiles, or captured events. Browser receipts do not expose the legacy Android question cards until a source-neutral question catalog exists.
+
 ## Driver sequence
 
 1. Open the printed loopback URL in the authorized local browser window.
