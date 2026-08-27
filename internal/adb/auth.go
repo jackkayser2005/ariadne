@@ -174,8 +174,8 @@ func verifyFixtureInput(ctx context.Context, run commandRunner, binary string, t
 		ctx,
 		binary,
 		"-s", target.Device,
-		"shell", "run-as", target.Package, "sh", "-c",
-		"test -s "+fixtureInputPath,
+		"shell", "run-as", target.Package,
+		"ls", "-l", fixtureInputPath,
 	)
 	return err
 }
