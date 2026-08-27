@@ -859,7 +859,7 @@ func tapCoordinates(data []byte, resourceID string) ([2]int, error) {
 	}
 	visit(hierarchy.Nodes)
 	if count != 1 {
-		return [2]int{}, errFixtureControlNotUnique
+		return [2]int{}, fmt.Errorf("%w: matched %d controls", errFixtureControlNotUnique, count)
 	}
 	return parseBounds(match.Bounds)
 }
