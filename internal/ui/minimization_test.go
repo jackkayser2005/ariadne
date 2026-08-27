@@ -90,7 +90,7 @@ func TestHandlerRendersMinimizationUncertaintySeparately(t *testing.T) {
 	summary.SelectedCandidate = ""
 	summary.CandidateResults[0].Classification = minimize.CandidateInsufficient
 	summary.CandidateResults[0].Outcome = bundle.ReplicatedChange
-	summary.CandidateResults[0].ChangedPairs = 2
+	summary.CandidateResults[0].ChangedPairs = 4
 	summary.CandidateResults[0].NoChangePairs = 0
 	summary.CandidateResults[1].Classification = minimize.CandidateUnknown
 	summary.CandidateResults[1].Outcome = bundle.ReplicationUnknown
@@ -98,7 +98,7 @@ func TestHandlerRendersMinimizationUncertaintySeparately(t *testing.T) {
 	summary.CandidateResults[1].CompletedPairs = 0
 	summary.CandidateResults[1].ChangedPairs = 0
 	summary.CandidateResults[1].NoChangePairs = 0
-	summary.CandidateResults[1].UnknownPairs = 2
+	summary.CandidateResults[1].UnknownPairs = 4
 	h := newHandler(handler{
 		minimizationPath: "minimization",
 		minimizationVerify: func(string) (minimize.MinimizationSummary, string, error) {
@@ -231,8 +231,8 @@ func selectedMinimizationSummary() minimize.MinimizationSummary {
 		CandidateResults: []minimize.CandidateResult{
 			{
 				ID:             "city",
-				ManifestName:   "android-location-minimize-city-raw-secret-manifest",
-				Directory:      "candidate-001-city-secret-path",
+				ManifestName:   "android-location-minimize-city",
+				Directory:      "candidate-001-city",
 				Classification: minimize.CandidateSufficient,
 				Outcome:        bundle.NoChangeObserved,
 				EvidenceState:  evidence.Observed,
@@ -246,17 +246,17 @@ func selectedMinimizationSummary() minimize.MinimizationSummary {
 			},
 			{
 				ID:             "omitted",
-				ManifestName:   "android-location-minimize-omitted-raw-secret-manifest",
-				Directory:      "candidate-002-omitted-secret-path",
-				Classification: minimize.CandidateSufficient,
-				Outcome:        bundle.NoChangeObserved,
+				ManifestName:   "android-location-minimize-omitted",
+				Directory:      "candidate-002-omitted",
+				Classification: minimize.CandidateInsufficient,
+				Outcome:        bundle.ReplicatedChange,
 				EvidenceState:  evidence.Observed,
 				ReceiptSHA256:  strings.Repeat("b", 64),
 				Pairs:          4,
 				PairsPerOrder:  2,
 				CompletedPairs: 4,
-				ChangedPairs:   0,
-				NoChangePairs:  4,
+				ChangedPairs:   4,
+				NoChangePairs:  0,
 				UnknownPairs:   0,
 			},
 		},

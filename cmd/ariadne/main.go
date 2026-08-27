@@ -84,7 +84,15 @@ const usage = `usage:
 	ariadne experiment replicate verify [--json] <replicated-directory>
   ariadne experiment minimize [--json] [--adb <path>] --device <serial> --package <package> --pairs <n> --output <directory> <plan.json>
   ariadne experiment minimize verify [--json] <minimization-directory>
-	ariadne experiment trace [--json] --session <baseline|treatment> <run-directory> <trace.json>
+	ariadne experiment minimize questions [--json]
+	ariadne experiment minimize ask [--json] <minimization-directory> <question-id>
+	ariadne experiment minimize ask all [--json] <minimization-directory>
+	ariadne experiment minimize ask all save [--json] <minimization-directory> <round.json>
+	ariadne experiment minimize ask all verify [--json] [--expect-sha256 <digest>] <round.json>
+	ariadne experiment minimize ask receipt [--json] <round.json> <question-id>
+	ariadne experiment minimize ask receipt save [--json] <round.json> <question-id> <receipt.json>
+	ariadne experiment minimize ask receipt verify [--json] [--expect-sha256 <digest>] <receipt.json>
+  ariadne experiment trace [--json] --session <baseline|treatment> <run-directory> <trace.json>
   ariadne experiment report <run-directory>
   ariadne experiment export <run-directory> <export.json>
   ariadne experiment export verify [--json] [--expect-sha256 <digest>] <export.json>
@@ -115,7 +123,7 @@ const usage = `usage:
   ariadne experiment ask-archive verify [--json] [--expect-sha256 <digest>] <report.json>
   ariadne experiment questions [--json]
   ariadne experiment list [--json] <archive-root>
-	ariadne experiment serve [--addr <address>] [--history <history.json>] [--reflection <report.json>] [--export <export.json>] [--acceptance <acceptance.json>] [--round-first <round.json> --round-second <round.json>] [--trace-archive <archive.json>] [--trace-round <round.json>] [--trace-replication <ledger.json>] [--trace-case <case.json>] [--trace-study <study.json>] [--trace-study-round <round.json>] [--trace-study-receipt <receipt.json>] [--trace-study-second <study.json> --trace-study-round-second <round.json>] [--minimization <run-directory>] <archive-root>
+	ariadne experiment serve [--addr <address>] [--history <history.json>] [--reflection <report.json>] [--export <export.json>] [--acceptance <acceptance.json>] [--round-first <round.json> --round-second <round.json>] [--trace-archive <archive.json>] [--trace-round <round.json>] [--trace-replication <ledger.json>] [--trace-case <case.json>] [--trace-study <study.json>] [--trace-study-round <round.json>] [--trace-study-receipt <receipt.json>] [--trace-study-second <study.json> --trace-study-round-second <round.json>] [--minimization <run-directory>] [--minimization-round <round.json>] [--minimization-receipt <receipt.json>] <archive-root>
 `
 
 const adbCheckTimeout = 10 * time.Second
@@ -321,6 +329,30 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(args) >= 3 && args[0] == "experiment" && args[1] == "minimize" && args[2] == "verify" {
 		return runMinimizationVerify(args[3:], stdout, stderr, minimize.Verify)
+	}
+	if len(args) >= 3 && args[0] == "experiment" && args[1] == "minimize" && args[2] == "questions" {
+		return runMinimizationQuestions(args[3:], stdout, stderr, minimize.MinimizationQuestions)
+	}
+	if len(args) >= 3 && args[0] == "experiment" && args[1] == "minimize" && args[2] == "ask" {
+		if len(args) >= 4 && args[3] == "all" {
+			if len(args) >= 5 && args[4] == "save" {
+				return runMinimizationAskAllSave(args[5:], stdout, stderr, minimize.SaveMinimizationQuestionRound)
+			}
+			if len(args) >= 5 && args[4] == "verify" {
+				return runMinimizationAskAllVerify(args[5:], stdout, stderr, minimize.VerifyMinimizationQuestionRound)
+			}
+			return runMinimizationAskAll(args[4:], stdout, stderr, minimize.AskAllMinimizationQuestions)
+		}
+		if len(args) >= 4 && args[3] == "receipt" {
+			if len(args) >= 5 && args[4] == "save" {
+				return runMinimizationAskReceiptSave(args[5:], stdout, stderr, minimize.SaveMinimizationQuestionReceipt)
+			}
+			if len(args) >= 5 && args[4] == "verify" {
+				return runMinimizationAskReceiptVerify(args[5:], stdout, stderr, minimize.VerifyMinimizationQuestionReceipt)
+			}
+			return runMinimizationAskReceipt(args[4:], stdout, stderr, minimize.AskMinimizationQuestionReceipt)
+		}
+		return runMinimizationAsk(args[3:], stdout, stderr, minimize.AskMinimizationQuestion)
 	}
 	if len(args) >= 2 && args[0] == "experiment" && args[1] == "minimize" {
 		return runExperimentMinimize(args[2:], stdout, stderr, adb.Check, func(
@@ -3136,6 +3168,8 @@ func runServe(
 	traceStudySecondPath := flags.String("trace-study-second", "", "")
 	traceStudyRoundSecondPath := flags.String("trace-study-round-second", "", "")
 	minimizationPath := flags.String("minimization", "", "")
+	minimizationRoundPath := flags.String("minimization-round", "", "")
+	minimizationReceiptPath := flags.String("minimization-receipt", "", "")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
 		_, _ = io.WriteString(stderr, usage)
 		return 2
@@ -3154,6 +3188,10 @@ func runServe(
 	}
 	if (*traceStudyRoundPath != "" || *traceStudyReceiptPath != "") && *traceStudyPath == "" {
 		_, _ = io.WriteString(stderr, "ariadne: experiment serve: --trace-study-round and --trace-study-receipt require --trace-study\n")
+		return 2
+	}
+	if (*minimizationRoundPath != "" || *minimizationReceiptPath != "") && *minimizationPath == "" {
+		_, _ = io.WriteString(stderr, "ariadne: experiment serve: --minimization-round and --minimization-receipt require --minimization\n")
 		return 2
 	}
 	if (*traceStudySecondPath == "") != (*traceStudyRoundSecondPath == "") {
@@ -3186,6 +3224,8 @@ func runServe(
 		TraceStudySecondPath:      *traceStudySecondPath,
 		TraceStudyRoundSecondPath: *traceStudyRoundSecondPath,
 		MinimizationPath:          *minimizationPath,
+		MinimizationRoundPath:     *minimizationRoundPath,
+		MinimizationReceiptPath:   *minimizationReceiptPath,
 		ExpectedHost:              *address,
 	})
 	if err := serve(*address, reviewHandler); err != nil {

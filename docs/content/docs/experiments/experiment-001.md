@@ -262,6 +262,25 @@ evidence and no mixed result. The selected ID is therefore the minimum tested
 sufficient disclosure in the caller's explicit ladder order. An incomplete
 capture, failed reset, or unverifiable child prevents a privacy selection and
 leaves the minimization decision unknown.
+The verified ladder can also be retained as a fixed question reflection. The
+catalog is deliberately small: it asks what minimum tested sufficient
+disclosure the ladder established and whether every candidate has complete
+replicated support and observed evidence.
+
+~~~console
+go run ./cmd/ariadne experiment minimize questions --json
+go run ./cmd/ariadne experiment minimize ask all save --json <minimization-directory> <round.json>
+go run ./cmd/ariadne experiment minimize ask all verify --json --expect-sha256 <round-sha256> <round.json>
+go run ./cmd/ariadne experiment minimize ask receipt save --json <round.json> <question-id> <receipt.json>
+go run ./cmd/ariadne experiment minimize ask receipt verify --json --expect-sha256 <receipt-sha256> <receipt.json>
+~~~
+
+The round contains safe candidate IDs, classifications, counterfactual
+outcomes, evidence states, counts, and child receipt identities. The selected
+receipt binds one answer to the round. Neither artifact includes plan values,
+personas, device details, local paths, URLs, or captured observations. Round
+and receipt verification is structural and does not re-prove the source
+evidence.
 
 ### Common failures
 
@@ -454,7 +473,7 @@ leaves the minimization decision unknown.
   exactly the expected identity; a mismatch produces no verification output.
   A successful result proves only that the derived report satisfies Ariadne's
   structural contract; it does not re-verify or prove the underlying evidence.
-- `experiment serve [--history <history.json>] [--reflection <report.json>] [--export <export.json>] [--acceptance <acceptance.json>] [--round-first <round.json> --round-second <round.json>] [--minimization <run-directory>] <archive-root>` starts a
+- `experiment serve [--history <history.json>] [--reflection <report.json>] [--export <export.json>] [--acceptance <acceptance.json>] [--round-first <round.json> --round-second <round.json>] [--minimization <run-directory>] [--minimization-round <round.json>] [--minimization-receipt <receipt.json>] <archive-root>` starts a
   localhost-only, read-only review
   page at `http://127.0.0.1:8787/`; only loopback IP addresses are accepted, and
   it lists verified bundles and links to the same bounded questions and finding
@@ -509,6 +528,12 @@ leaves the minimization decision unknown.
   values, personas, manifests, paths, challenges, URLs, or captured
   observations. The server rejects a request whose Host differs from its exact
   configured loopback authority and sends no-store/security headers.
+With the optional minimization-round path, the page re-verifies the saved
+question round against the current minimization receipt identity and shows the
+round SHA-256. With the optional minimization-receipt path, it additionally
+checks the selected answer against the same round. Without a saved receipt,
+the fixed question links use question_id to derive the selected receipt from
+the verified in-memory round. Any identity drift remains unavailable.
 - If `ariadne_modified` is unexpectedly `true`, inspect `git status --short`
   before treating the run as reproducible from the recorded revision alone.
 - Finding lookup re-verifies the bundle first and prints only the question,

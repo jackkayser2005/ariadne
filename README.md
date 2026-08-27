@@ -78,6 +78,27 @@ disclosing sufficient candidate tested after every candidate is observed
 consistently; otherwise the selection remains unknown or reports that no
 candidate was sufficient. This is a minimum tested sufficient disclosure, not
 an absolute minimum or a universal causal claim.
+The minimization ladder also has a fixed reflection catalog. These commands
+retain the decision without reopening or copying the local input values:
+
+```console
+go run ./cmd/ariadne experiment minimize questions --json
+go run ./cmd/ariadne experiment minimize ask all --json <minimization-directory>
+go run ./cmd/ariadne experiment minimize ask all save --json <minimization-directory> <round.json>
+go run ./cmd/ariadne experiment minimize ask all verify --json --expect-sha256 <round-sha256> <round.json>
+go run ./cmd/ariadne experiment minimize ask receipt save --json <round.json> <question-id> <receipt.json>
+go run ./cmd/ariadne experiment minimize ask receipt verify --json --expect-sha256 <receipt-sha256> <receipt.json>
+```
+
+The two fixed questions ask for the minimum tested selection and whether every
+candidate has complete replicated support. Question result, counterfactual
+outcome, and evidence state remain distinct. A saved round contains the fixed
+answers plus safe candidate IDs, classifications, outcomes, evidence states,
+counts, and child receipt identities; a selected receipt additionally binds
+one answer to the round. Both artifacts use exclusive creation, bounded
+schemas, canonical SHA-256 identities, and contain no plan values, personas,
+device details, paths, URLs, or captured observations. Verification of these
+artifacts is structural and does not prove the original source evidence.
 
 The detailed design and experiment log live in [`docs/`](docs/).
 The evidence-backed first-year path is tracked in
@@ -693,7 +714,7 @@ The local review page can receive a verified transition ledger, a saved
 reflection, an acceptance identity binding, two retained question rounds, and
 one portable trace archive, saved question round, replicated trace ledger, or
 cross-source case with
-`experiment serve --history <history.json> --reflection <reflection.json> --acceptance <acceptance.json> --round-first <first-round.json> --round-second <second-round.json> --trace-archive <trace-archive.json> --trace-round <trace-round.json> --trace-replication <ledger.json> --trace-case <case.json> --trace-study <study.json> --trace-study-round <round.json> --trace-study-receipt <receipt.json> [--minimization <run-directory>] <archive-root>`.
+`experiment serve --history <history.json> --reflection <reflection.json> --acceptance <acceptance.json> --round-first <first-round.json> --round-second <second-round.json> --trace-archive <trace-archive.json> --trace-round <trace-round.json> --trace-replication <ledger.json> --trace-case <case.json> --trace-study <study.json> --trace-study-round <round.json> --trace-study-receipt <receipt.json> [--minimization <run-directory>] [--minimization-round <round.json>] [--minimization-receipt <receipt.json>] <archive-root>`.
 It renders caller-ordered bounded transitions and re-asks the saved reflection's
 fixed question against the current archive, showing only safe comparison counts,
 identities, per-directory bounded state changes, and the repeated-change
@@ -780,6 +801,13 @@ observations. A selected result is labeled **minimum tested sufficient
 disclosure**. Mixed, incomplete, or unknown evidence leaves the selection
 unestablished. The loopback server requires the canonical configured loopback authority
 and sends no-store/security headers; it remains GET-only.
+When `--minimization-round <round.json>` is supplied with
+`--minimization <run-directory>`, the page rechecks the saved fixed-question
+round against the current minimization identity and renders its durable
+question-round SHA-256. When `--minimization-receipt <receipt.json>` is also
+supplied, it rechecks the selected receipt against both identities. Without a
+saved receipt, `?question_id=<fixed-question-id>` shows the same selected
+receipt projection in memory. Any identity drift is a generic unavailable state.
 Stable-ID Android sessions also record a SHA-256 identity for the successful
 UI hierarchy used to resolve the manifest-declared control. The raw hierarchy
 XML is never retained in session metadata; this identity is control provenance

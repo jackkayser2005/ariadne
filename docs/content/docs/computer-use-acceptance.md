@@ -126,6 +126,24 @@ unestablished. The page is a read-only projection: it never renders plan
 values, personas, manifests, local paths, URLs, challenges, or captured
 observations. Computer-use may orient to this page, but the verifier and
 its deterministic tests remain the authoritative checks.
+To retain the fixed minimization reflection and expose the durable identities:
+
+~~~console
+go run ./cmd/ariadne experiment minimize ask all save --json <minimization-directory> <round.json>
+go run ./cmd/ariadne experiment minimize ask all verify --json --expect-sha256 <round-sha256> <round.json>
+go run ./cmd/ariadne experiment minimize ask receipt save --json <round.json> <question-id> <receipt.json>
+go run ./cmd/ariadne experiment minimize ask receipt verify --json --expect-sha256 <receipt-sha256> <receipt.json>
+go run ./cmd/ariadne experiment serve --minimization <minimization-directory> --minimization-round <round.json> --minimization-receipt <receipt.json> <archive-root>
+~~~
+
+The page then shows the two fixed question cards, the saved round identity,
+and the selected receipt identity. A question result remains separate from
+its evidence state, and the candidate ladder remains the source of
+counterfactual outcomes. If the current minimization receipt, saved round,
+or selected receipt disagrees, the page returns a generic unavailable state.
+The round and receipt artifacts are raw-value-free and are verified
+structurally; computer-use must not infer a privacy assurance from their
+presence alone.
 ## Driver sequence
 
 1. Open the printed loopback URL in the authorized local browser window.

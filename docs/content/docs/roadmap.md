@@ -90,6 +90,17 @@ authority, and uses no-store/security headers. This closes the first
 observe/authenticate/reduce/replay/compare/verify slice into a usable local
 inspection surface without turning the desktop page into a capture service.
 
+**Current reflection slice (minimization questions).** The minimum-disclosure
+ladder now has a fixed question catalog for selection and support. A verified
+run can produce a portable question round, and a selected answer can be
+retained as a receipt. The round projects only candidate IDs, classifications,
+counterfactual outcomes, evidence states, counts, and child receipt
+identities; it omits local paths and input values. Round and receipt hashes
+bind the artifacts to the minimization identity, and the loopback page
+rechecks any supplied saved artifacts before rendering them. This closes the
+minimization path from verify to ask to retain to review while keeping
+question result, counterfactual outcome, and evidence state separate. It
+does not add cross-study comparison or universal tracing.
 6. **Browser audit handoff (not evidence-backed capture).** An authorized
    browser driver can provide a bounded, already-redacted audit that Ariadne
    projects into the same
