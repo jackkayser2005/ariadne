@@ -2,8 +2,9 @@
 
 `dev.ariadne.fixture` is the authorized target for Experiment 001. The runner
 writes one bounded, canonical `ariadne-input.json` document through `adb
-exec-in` stdin into the app-private files area, then starts the non-exported
-`MainActivity` without persona or collector-port extras. The activity consumes
+exec-in` stdin into the app-private files area, then starts the
+`android.permission.DUMP`-protected `MainActivity` through the ADB shell,
+without persona or collector-port extras. The activity consumes
 and deletes that document once, renders one `Run observation` button, and the
 runner taps that declared control before the activity writes
 `files/observation.json` and posts the same observation to

@@ -103,9 +103,11 @@ than 256 MiB.
 
 ## Authorized fixture
 
-The fixture package is `dev.ariadne.fixture`. Its non-exported `MainActivity`
-is launched by the authorized runner through the package-owned `run-as` path,
-without persona, challenge, or collector-port extras. The runner first writes
+The fixture package is `dev.ariadne.fixture`. Its `MainActivity` is exported
+only behind Android's `android.permission.DUMP`, allowing the authorized ADB
+shell to launch it while ordinary applications cannot. The runner starts it
+through `adb shell am` without persona, challenge, or collector-port extras.
+The runner first writes
 one bounded canonical input document through `adb exec-in` stdin into the
 app-private files area. The activity consumes and deletes that document once,
 renders the `observe_button` control, and waits for that control before writing
@@ -490,8 +492,9 @@ go run ./cmd/ariadne experiment run --device emulator-5554 --package dev.ariadne
 ```
 
 The output directory must not already exist. Ariadne clears the selected package
-before each session, writes the private input, starts `.MainActivity`
-without experiment extras, performs the one manifest-declared resource-ID
+before each session, writes the private input, starts the DUMP-protected
+`.MainActivity` through the authorized ADB shell without experiment extras,
+performs the one manifest-declared resource-ID
 interaction, and captures the raw session artifacts.
 
 After both sessions succeed, verify the artifacts and write the evidence

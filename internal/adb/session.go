@@ -464,25 +464,7 @@ func runSessionWithAuth(
 				}
 			}
 
-			if auth != nil {
-				if _, err := run(ctx, binary, "-s", target.Device, "shell", "am", "force-stop", target.Package); err != nil {
-					record.Steps[0].Status = "error"
-					record.Steps[0].ExitCode = commandExitCode(err)
-					failureStage = "reset"
-					return fmt.Errorf("%s: reset process: %w", kind, err)
-				}
-			}
-
-			args := []string{"-s", target.Device, "shell"}
-			if auth != nil {
-				args = append(args, "run-as", target.Package, "am")
-			} else {
-				args = append(args, "am")
-			}
-			args = append(args, "start", "-W")
-			if auth == nil {
-				args = append(args, "-S")
-			}
+			args := []string{"-s", target.Device, "shell", "am", "start", "-W", "-S"}
 			args = append(args, "-n", target.Package+"/.MainActivity")
 			if auth == nil {
 				keys := make([]string, 0, len(persona))

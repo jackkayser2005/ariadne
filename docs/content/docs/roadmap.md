@@ -70,7 +70,8 @@ browser source-boundary layers, and a portable trace reflection layer:
    exposes only the root receipt and pair evidence SHA-256 identities.
 **Current security slice (Android input authentication).** The runner now writes
 one bounded canonical fixture input through an app-private stdin boundary rather
-than process arguments or exported activity extras. A one-shot challenge binds
+than process arguments or exported activity extras. The debug fixture launcher
+is protected by Android's `android.permission.DUMP`. A one-shot challenge binds
 the package, role, explicit pair order, reviewed procedure digest, and trace
 session; network and storage evidence must carry the same challenge. Session
 receipts retain only a challenge commitment, and failed or unverifiable

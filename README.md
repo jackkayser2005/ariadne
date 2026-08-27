@@ -41,8 +41,9 @@ be bound back to the files that were checked.
 
 The Android runner now authenticates each fixture session at the experiment
 boundary. It writes a bounded canonical input document through `adb exec-in`
-stdin into the fixture's private files area; personas and collector ports are
-not passed as activity extras or process arguments. The fixture consumes and
+stdin into the fixture's private files area; its debug launcher is protected
+by Android's `android.permission.DUMP`; personas and collector ports are not
+passed as activity extras or process arguments. The fixture consumes and
 deletes that document once, and includes the session challenge in both local
 observations. Ariadne requires the network and storage challenges to match,
 records only a challenge commitment in `session.json`, and excludes the raw
