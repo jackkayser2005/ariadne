@@ -103,15 +103,20 @@ than 256 MiB.
 
 ## Authorized fixture
 
-The fixture package is `dev.ariadne.fixture`. Its exported activity accepts
-`email` and `region` string extras, renders the `observe_button` control, and
-waits for that control before writing `files/observation.json` and exiting. The
-runner resolves the exact declared resource ID from a bounded UI hierarchy and
-taps its center; it does not use coordinates from the manifest or arbitrary
-shell commands. The activity requests Android's normal `INTERNET` permission.
-It sends no request unless the runner supplies `collector_port`; when supplied,
-it posts the same JSON to IPv4 loopback. Cleartext traffic to other destinations
-is denied.
+The fixture package is `dev.ariadne.fixture`. Its `MainActivity` is exported
+only behind Android's `android.permission.DUMP`, allowing the authorized ADB
+shell to launch it while ordinary applications cannot. The runner starts it
+through `adb shell am` without persona, challenge, or collector-port extras.
+The runner first writes
+one bounded canonical input document through non-PTY `adb shell -T` stdin into the
+app-private files area. The activity consumes and deletes that document once,
+renders the `observe_button` control, and waits for that control before writing
+`files/observation.json` and exiting. The runner resolves the exact declared
+resource ID from a bounded UI hierarchy and taps its center; it does not use
+coordinates from the manifest or arbitrary shell commands. The activity
+requests Android's normal `INTERNET` permission. It sends no request unless the
+private input supplies `collector_port`; when supplied, it posts the same JSON
+to IPv4 loopback. Cleartext traffic to other destinations is denied.
 
 For the example manifest, the stored `variant` is `standard` for the baseline
 email and `personalized` for the treatment email. Ariadne does not contain this
@@ -486,10 +491,11 @@ After installing the fixture, run:
 go run ./cmd/ariadne experiment run --device emulator-5554 --package dev.ariadne.fixture --output .ariadne/runs/experiment-001 examples/experiment-001.json
 ```
 
-The output directory must not already exist. Ariadne clears the selected
-package before each session, starts `.MainActivity` with the persona fields,
-performs the one manifest-declared resource-ID interaction, and captures the
-raw session artifacts.
+The output directory must not already exist. Ariadne clears the selected package
+before each session, writes the private input, starts the DUMP-protected
+`.MainActivity` through the authorized ADB shell without experiment extras,
+performs the one manifest-declared resource-ID
+interaction, and captures the raw session artifacts.
 
 After both sessions succeed, verify the artifacts and write the evidence
 outputs:
@@ -616,8 +622,11 @@ If the baseline completes but treatment storage capture fails after treatment
 network capture succeeds, reporting preserves the five verified artifacts and
 classifies every field found in either available session as `unknown`. It does
 not compare the available network value or claim that any field changed or
-stayed stable. Other incomplete session shapes remain unsupported and stop
-report generation.
+stayed stable. If authenticated network capture fails before an observation
+arrives, the session records both capture steps as failed with no observation
+artifacts; verification accepts that bounded zero-artifact shape and reports
+`unknown` with a network-unavailable reason. Other incomplete session shapes
+remain unsupported and stop report generation.
 The authorized fixture proof is declared in
 `examples/experiment-001-storage-gap.json` and runs in the real-emulator
 workflow.

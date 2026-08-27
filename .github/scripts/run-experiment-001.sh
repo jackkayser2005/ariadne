@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+trap 'echo "experiment-001 script failed at line ${LINENO}" >&2' ERR
 
 run_dir=".ariadne/ci/experiment-001"
 ariadne="${RUNNER_TEMP}/ariadne"
@@ -608,7 +609,7 @@ for session in baseline treatment; do
     --arg tap_resource_id "${tap_resource_id}" \
     --arg contract_digest "${contract_digest}" \
     '
-    (.schema_version == 7) and
+    (.schema_version == 8) and
     (.tap_resource_id == $tap_resource_id) and
     (.manifest_contract_sha256 == $contract_digest) and
     (.status == "complete") and
@@ -814,7 +815,7 @@ jq -e \
   --arg contract_digest "${storage_gap_contract_digest}" \
   '
   (.status == "complete") and
-  (.schema_version == 7) and
+  (.schema_version == 8) and
   (.tap_resource_id == "dev.ariadne.fixture:id/observe_button") and
   (.manifest_contract_sha256 == $contract_digest) and
   any(.steps[]; .name == "interact" and .status == "ok" and .exit_code == 0 and (.ui_hierarchy_sha256 | test("^[0-9a-f]{64}$"))) and
@@ -824,7 +825,7 @@ jq -e \
   --arg contract_digest "${storage_gap_contract_digest}" \
   '
   (.status == "incomplete") and
-  (.schema_version == 7) and
+  (.schema_version == 8) and
   (.tap_resource_id == "dev.ariadne.fixture:id/observe_button") and
   (.manifest_contract_sha256 == $contract_digest) and
   any(.steps[]; .name == "interact" and .status == "ok" and .exit_code == 0 and (.ui_hierarchy_sha256 | test("^[0-9a-f]{64}$"))) and

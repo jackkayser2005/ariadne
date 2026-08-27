@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -433,6 +434,58 @@ func TestRunPairCleansNetworkMappingAfterMissingObservation(t *testing.T) {
 		!strings.Contains(text, `"status": "incomplete"`) ||
 		!strings.Contains(text, `"failure_stage": "capture_network"`) {
 		t.Fatalf("failure metadata = %s", data)
+	}
+}
+
+func TestAuthenticatedRunRecordsZeroNetworkCaptureShape(t *testing.T) {
+	outputDir := filepath.Join(t.TempDir(), "run")
+	manifest := sessionManifest()
+	manifest.SchemaVersion = 3
+	manifest.TapResourceID = "dev.ariadne.fixture:id/observe_button"
+	ui := []byte(`<hierarchy><node resource-id="dev.ariadne.fixture:id/observe_button" bounds="[100,200][300,400]" /></hierarchy>`)
+	run := func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		if args[3] == "pm" {
+			return []byte("Success"), nil
+		}
+		if args[2] == "reverse" {
+			return nil, nil
+		}
+		if args[3] == "uiautomator" {
+			return ui, nil
+		}
+		if args[3] == "cat" {
+			return ui, nil
+		}
+		if args[3] == "input" {
+			return nil, nil
+		}
+		return []byte("Status: ok"), nil
+	}
+	writeInput := func(context.Context, string, []byte, ...string) ([]byte, error) {
+		return nil, nil
+	}
+	challenge := func() (string, error) {
+		return strings.Repeat("a", 64), nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	err := runPairWithAuthenticated(ctx, "adb", sessionTarget(), manifest, outputDir, run, writeInput, challenge, sequenceClock())
+	if err == nil || !strings.Contains(err.Error(), "capture network") {
+		t.Fatalf("runPairWithAuthenticated() error = %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(outputDir, "baseline", "session.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record SessionRecord
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatal(err)
+	}
+	if record.Status != "incomplete" || record.FailureStage != "capture_network" || len(record.Steps) != 7 || len(record.Artifacts) != 0 {
+		t.Fatalf("zero-network session = %#v", record)
+	}
+	if record.Steps[4].Name != "capture_network" || record.Steps[4].Status != "error" || record.Steps[5].Name != "capture_storage" || record.Steps[5].Status != "error" {
+		t.Fatalf("zero-network steps = %#v", record.Steps)
 	}
 }
 

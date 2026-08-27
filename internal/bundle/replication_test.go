@@ -214,6 +214,47 @@ func TestVerifyReplicatedRejectsOrderContractMismatch(t *testing.T) {
 	}
 }
 
+func TestVerifyReplicatedRejectsAuthenticatedSessionOrderMismatch(t *testing.T) {
+	baselineChallenge := strings.Repeat("a", 64)
+	treatmentChallenge := strings.Repeat("b", 64)
+	baselineBody := `{"schema_version":1,"challenge":"` + baselineChallenge + `","region":"us-east","variant":"standard"}`
+	treatmentBody := `{"schema_version":1,"challenge":"` + treatmentChallenge + `","region":"us-east","variant":"personalized"}`
+	runDir := makeRun(t, runOptions{
+		sessionSchemaVersion: 8,
+		baselineStorage:      baselineBody,
+		baselineNetworkBody:  baselineBody,
+		treatmentStorage:     treatmentBody,
+		treatmentNetworkBody: treatmentBody,
+		mutateBaseline: func(record *adb.SessionRecord) {
+			record.ChallengeCommitment = challengeCommitmentForTest(baselineChallenge)
+			record.Role = "baseline"
+			record.Order = adb.ReplicationOrderBaselineTreatment
+			record.ProcedureSHA256 = record.ManifestContractSHA256
+		},
+		mutateTreatment: func(record *adb.SessionRecord) {
+			record.ChallengeCommitment = challengeCommitmentForTest(treatmentChallenge)
+			record.Role = "treatment"
+			record.Order = adb.ReplicationOrderBaselineTreatment
+			record.ProcedureSHA256 = record.ManifestContractSHA256
+		},
+	})
+	shiftSession(t, filepath.Join(runDir, "treatment", "session.json"), -30*time.Second)
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+	pair := adb.ReplicatedPairRecord{
+		Pair:          1,
+		Order:         adb.ReplicationOrderTreatmentBaseline,
+		Directory:     "pair-001-treatment-baseline",
+		FirstSession:  "treatment",
+		SecondSession: "baseline",
+		Status:        adb.ReplicationStatusComplete,
+	}
+	if _, err := verifyReplicatedPair(runDir, pair); err == nil || !strings.Contains(err.Error(), "authenticated order") {
+		t.Fatalf("verifyReplicatedPair() error = %v", err)
+	}
+}
+
 func makeReplicatedRoot(t *testing.T, sameSecond, sameAll bool) string {
 	t.Helper()
 	root := filepath.Join(t.TempDir(), "replicated")

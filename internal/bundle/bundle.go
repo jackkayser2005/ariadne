@@ -34,6 +34,7 @@ const (
 	redactedExportSchemaVersion = 1
 
 	treatmentStorageObservationUnknownReason = "treatment storage observation was not captured"
+	treatmentNetworkObservationUnknownReason = "treatment network observation was not captured"
 )
 
 var expectedSteps = []string{
@@ -573,7 +574,7 @@ func comparisonUnknownReason(comparison analysis.Comparison) string {
 
 // safeUnknownReason exposes only reasons owned by the current verifier.
 func safeUnknownReason(reason string) string {
-	if reason == treatmentStorageObservationUnknownReason {
+	if reason == treatmentStorageObservationUnknownReason || reason == treatmentNetworkObservationUnknownReason {
 		return reason
 	}
 	return ""
@@ -667,6 +668,9 @@ func buildDocument(runDir string, includeFindingIDs bool) (document, Summary, er
 	if err != nil {
 		return document{}, Summary{}, fmt.Errorf("baseline: %w", err)
 	}
+	if err := validateAuthenticatedEvidence(baseline.record, baselineNormalized, "baseline"); err != nil {
+		return document{}, Summary{}, err
+	}
 	var comparison analysis.Comparison
 	var normalizations []string
 	if sessionComplete(treatment.record) {
@@ -676,6 +680,9 @@ func buildDocument(runDir string, includeFindingIDs bool) (document, Summary, er
 		)
 		if err != nil {
 			return document{}, Summary{}, fmt.Errorf("treatment: %w", err)
+		}
+		if err := validateAuthenticatedEvidence(treatment.record, treatmentNormalized, "treatment"); err != nil {
+			return document{}, Summary{}, err
 		}
 		comparison = analysis.Compare(
 			baselineNormalized,
@@ -694,16 +701,37 @@ func buildDocument(runDir string, includeFindingIDs bool) (document, Summary, er
 			)
 		}
 	} else {
-		treatmentAvailable, err := analysis.NormalizeNetwork(bytes.NewReader(treatment.network))
-		if err != nil {
-			return document{}, Summary{}, fmt.Errorf("treatment: %w", err)
+		unknownReason := treatmentStorageObservationUnknownReason
+		var treatmentAvailable analysis.Session
+		if len(treatment.network) == 0 {
+			unknownReason = treatmentNetworkObservationUnknownReason
+			normalizations = []string{
+				"withheld semantic comparison because treatment network evidence was unavailable",
+			}
+		} else {
+			treatmentAvailable, err = analysis.NormalizeNetwork(bytes.NewReader(treatment.network))
+			if err != nil {
+				return document{}, Summary{}, fmt.Errorf("treatment: %w", err)
+			}
+			if err := validateAuthenticatedEvidence(treatment.record, treatmentAvailable, "treatment"); err != nil {
+				// An incomplete authenticated session with unavailable or unbound
+				// challenge evidence is still a readable run, but it cannot support
+				// a semantic comparison. Preserve the artifact and report unknown.
+				treatmentAvailable = analysis.Session{}
+				normalizations = []string{
+					"decoded available network body_base64",
+					"required baseline storage and network payload equality",
+					"withheld semantic comparison because authenticated challenge evidence was unavailable",
+				}
+			} else {
+				normalizations = []string{
+					"decoded available network body_base64",
+					"required baseline storage and network payload equality",
+					"withheld semantic comparison without treatment storage",
+				}
+			}
 		}
-		comparison = incompleteTreatmentComparison(baselineNormalized, treatmentAvailable)
-		normalizations = []string{
-			"decoded available network body_base64",
-			"required baseline storage and network payload equality",
-			"withheld semantic comparison without treatment storage",
-		}
+		comparison = incompleteTreatmentComparison(baselineNormalized, treatmentAvailable, unknownReason)
 	}
 
 	artifacts := []artifact{baseline.metadata}
@@ -1038,6 +1066,18 @@ func validExportField(field string) bool {
 	return experiment.ValidateVolatileFields([]string{field}) == nil
 }
 
+func validateAuthenticatedEvidence(record adb.SessionRecord, session analysis.Session, kind string) error {
+	if record.SchemaVersion < 8 {
+		return nil
+	}
+	if !session.HasChallenge() {
+		return fmt.Errorf("%s: authenticated challenge evidence is unavailable", kind)
+	}
+	if session.ChallengeCommitment() != record.ChallengeCommitment {
+		return fmt.Errorf("%s: authenticated challenge evidence is not bound to session", kind)
+	}
+	return nil
+}
 func differenceFields(differences []redactedDifference) []string {
 	fields := make([]string, 0, len(differences))
 	for _, difference := range differences {
@@ -1095,7 +1135,9 @@ func loadSession(runDir, kind string) (loadedSession, error) {
 		},
 	}
 	expectedCount := len(expected)
-	if !sessionComplete(record) {
+	if !sessionComplete(record) && record.FailureStage == "capture_network" && len(record.Artifacts) == 0 {
+		expectedCount = 0
+	} else if !sessionComplete(record) && record.FailureStage != "cleanup_input" {
 		expectedCount = 1
 	}
 	if len(record.Artifacts) != expectedCount {
@@ -1155,6 +1197,10 @@ func decodeSession(data []byte, record *adb.SessionRecord) error {
 			"volatile_fields":          {},
 			"tap_resource_id":          {},
 			"manifest_contract_sha256": {},
+			"challenge_commitment":     {},
+			"role":                     {},
+			"order":                    {},
+			"procedure_sha256":         {},
 			"adb_version":              {},
 			"device":                   {},
 			"package":                  {},
@@ -1196,7 +1242,8 @@ func validateSession(record adb.SessionRecord, kind string) error {
 		record.SchemaVersion != 4 &&
 		record.SchemaVersion != 5 &&
 		record.SchemaVersion != 6 &&
-		record.SchemaVersion != 7) ||
+		record.SchemaVersion != 7 &&
+		record.SchemaVersion != 8) ||
 		record.Kind != kind {
 		return errors.New("schema_version or kind is invalid")
 	}
@@ -1235,6 +1282,24 @@ func validateSession(record adb.SessionRecord, kind string) error {
 	if record.SchemaVersion >= 6 && !validDigest(record.ManifestContractSHA256) {
 		return errors.New("manifest_contract_sha256 is invalid")
 	}
+	if record.SchemaVersion < 8 {
+		if record.ChallengeCommitment != "" || record.Role != "" || record.Order != "" || record.ProcedureSHA256 != "" {
+			return errors.New("legacy session authentication fields are invalid")
+		}
+	} else {
+		if !validDigest(record.ChallengeCommitment) {
+			return errors.New("challenge_commitment is invalid")
+		}
+		if record.Role != kind {
+			return errors.New("session role is invalid")
+		}
+		if record.Order != adb.ReplicationOrderBaselineTreatment && record.Order != adb.ReplicationOrderTreatmentBaseline {
+			return errors.New("session order is invalid")
+		}
+		if !validDigest(record.ProcedureSHA256) || record.ProcedureSHA256 != record.ManifestContractSHA256 {
+			return errors.New("procedure_sha256 is invalid")
+		}
+	}
 	if !slices.IsSorted(record.VolatileFields) {
 		return errors.New("volatile_fields are not canonical")
 	}
@@ -1269,7 +1334,8 @@ func validateSession(record adb.SessionRecord, kind string) error {
 			if !adb.ValidFailureStage(record.FailureStage) {
 				return errors.New("incomplete session failure_stage is invalid")
 			}
-			if record.FailureStage != "capture_storage" {
+			if record.FailureStage != "capture_storage" &&
+				(record.SchemaVersion < 8 || (record.FailureStage != "capture_network" && record.FailureStage != "cleanup_input")) {
 				return fmt.Errorf("session is incomplete at %s", record.FailureStage)
 			}
 		default:
@@ -1287,7 +1353,11 @@ func validateSession(record adb.SessionRecord, kind string) error {
 	for index, expected := range steps {
 		step := record.Steps[index]
 		statusValid := step.Status == "ok" && step.ExitCode == 0
-		if !sessionComplete(record) && expected == "capture_storage" {
+		if !sessionComplete(record) && expected == "capture_storage" &&
+			(record.FailureStage == "capture_storage" || (record.SchemaVersion >= 8 && record.FailureStage == "capture_network")) {
+			statusValid = step.Status == "error" && step.ExitCode != 0
+		}
+		if !sessionComplete(record) && record.SchemaVersion >= 8 && expected == "capture_network" && record.FailureStage == "capture_network" {
 			statusValid = step.Status == "error" && step.ExitCode != 0
 		}
 		if step.Name != expected ||
@@ -1338,6 +1408,13 @@ func validatePair(baseline, treatment adb.SessionRecord) error {
 		sessionsOverlap {
 		return errors.New("baseline and treatment session metadata disagree")
 	}
+	if baseline.SchemaVersion >= 8 &&
+		(baseline.Role != "baseline" || treatment.Role != "treatment" ||
+			baseline.Order != treatment.Order ||
+			baseline.ProcedureSHA256 != treatment.ProcedureSHA256 ||
+			baseline.ChallengeCommitment == treatment.ChallengeCommitment) {
+		return errors.New("authenticated baseline and treatment metadata disagree")
+	}
 	return nil
 }
 
@@ -1345,7 +1422,10 @@ func sessionComplete(record adb.SessionRecord) bool {
 	return record.SchemaVersion == 2 || record.Status == "complete"
 }
 
-func incompleteTreatmentComparison(baseline, treatment analysis.Session) analysis.Comparison {
+func incompleteTreatmentComparison(
+	baseline, treatment analysis.Session,
+	unknownReason string,
+) analysis.Comparison {
 	fields := make(map[string]struct{}, len(baseline.Fields)+len(treatment.Fields))
 	for field := range baseline.Fields {
 		fields[field] = struct{}{}
@@ -1373,7 +1453,7 @@ func incompleteTreatmentComparison(baseline, treatment analysis.Session) analysi
 		unknowns = append(unknowns, analysis.Unknown{
 			Field:    field,
 			State:    evidence.Unknown,
-			Reason:   treatmentStorageObservationUnknownReason,
+			Reason:   unknownReason,
 			Evidence: references,
 		})
 	}
