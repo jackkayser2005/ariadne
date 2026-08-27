@@ -75,10 +75,12 @@ is protected by Android's `android.permission.DUMP`. A one-shot challenge binds
 the package, role, explicit pair order, reviewed procedure digest, and trace
 session; network and storage evidence must carry the same challenge. Session
 receipts retain only a challenge commitment, and failed or unverifiable
-boundaries remain incomplete/unknown. The next focused slice is the Android
-minimum-disclosure ladder: repeated exact/city/omitted candidates evaluated by
-the existing two-order engine, selecting only the minimum tested sufficient
-candidate whose fixed functionality criterion replicates.
+boundaries remain incomplete/unknown. The first minimum-disclosure slice now
+defines an ordered exact/city/omitted Android ladder, runs each lower-
+disclosure candidate through the existing two-order engine, and emits a
+raw-value-free receipt with separate candidate outcomes and evidence states.
+Selection is withheld for any mixed or unknown candidate and is described only
+as the minimum tested sufficient disclosure.
 
 6. **Browser audit handoff (not evidence-backed capture).** An authorized
    browser driver can provide a bounded, already-redacted audit that Ariadne

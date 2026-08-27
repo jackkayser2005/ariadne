@@ -24,7 +24,7 @@ import (
 const sessionSchemaVersion = 7
 const networkObservationTimeout = 5 * time.Second
 const networkCleanupTimeout = 5 * time.Second
-const uiHierarchySettleTimeout = 2 * time.Second
+const uiHierarchySettleTimeout = 10 * time.Second
 const uiHierarchyRetryInterval = 100 * time.Millisecond
 
 var errFixtureControlNotUnique = errors.New("fixture control was not found uniquely")

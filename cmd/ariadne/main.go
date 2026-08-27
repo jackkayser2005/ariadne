@@ -16,6 +16,7 @@ import (
 	"github.com/jackkayser2005/ariadne/internal/browser"
 	"github.com/jackkayser2005/ariadne/internal/bundle"
 	"github.com/jackkayser2005/ariadne/internal/experiment"
+	"github.com/jackkayser2005/ariadne/internal/minimize"
 	"github.com/jackkayser2005/ariadne/internal/proxy"
 	"github.com/jackkayser2005/ariadne/internal/trace"
 	"github.com/jackkayser2005/ariadne/internal/ui"
@@ -80,6 +81,8 @@ const usage = `usage:
 	ariadne experiment run [--adb <path>] --device <serial> --package <package> --output <directory> <manifest.json>
 	ariadne experiment replicate [--adb <path>] --device <serial> --package <package> --pairs <n> --output <directory> <manifest.json>
 	ariadne experiment replicate verify [--json] <replicated-directory>
+  ariadne experiment minimize [--json] [--adb <path>] --device <serial> --package <package> --pairs <n> --output <directory> <plan.json>
+  ariadne experiment minimize verify [--json] <minimization-directory>
 	ariadne experiment trace [--json] --session <baseline|treatment> <run-directory> <trace.json>
   ariadne experiment report <run-directory>
   ariadne experiment export <run-directory> <export.json>
@@ -117,6 +120,7 @@ const usage = `usage:
 const adbCheckTimeout = 10 * time.Second
 const experimentRunTimeout = 60 * time.Second
 const experimentReplicateTimeout = 16 * experimentRunTimeout
+const experimentMinimizeTimeout = 8 * experimentReplicateTimeout
 const browserFixtureReplicationTimeout = 90 * time.Minute
 
 func main() {
@@ -313,6 +317,21 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(args) >= 2 && args[0] == "experiment" && args[1] == "replicate" {
 		return runExperimentReplicate(args[2:], stdout, stderr, adb.Check, adb.RunReplicated)
+	}
+	if len(args) >= 3 && args[0] == "experiment" && args[1] == "minimize" && args[2] == "verify" {
+		return runMinimizationVerify(args[3:], stdout, stderr, minimize.Verify)
+	}
+	if len(args) >= 2 && args[0] == "experiment" && args[1] == "minimize" {
+		return runExperimentMinimize(args[2:], stdout, stderr, adb.Check, func(
+			ctx context.Context,
+			binary string,
+			target adb.Target,
+			plan minimize.MinimizationPlan,
+			output string,
+			pairs int,
+		) (minimize.MinimizationSummary, error) {
+			return minimize.Execute(ctx, binary, target, plan, output, pairs, adb.RunReplicated)
+		})
 	}
 	if len(args) >= 2 && args[0] == "experiment" && args[1] == "trace" {
 		return runExperimentTrace(args[2:], stdout, stderr, bundle.SaveExperimentTrace)
@@ -1088,8 +1107,17 @@ type replicatedRunner func(
 	string,
 	int,
 ) error
+type minimizationExecutor func(
+	context.Context,
+	string,
+	adb.Target,
+	minimize.MinimizationPlan,
+	string,
+	int,
+) (minimize.MinimizationSummary, error)
 type bundleWriter func(string) (bundle.Summary, error)
 type replicatedVerifier func(string) (bundle.ReplicatedExperimentSummary, error)
+type minimizationVerifier func(string) (minimize.MinimizationSummary, error)
 type bundleExporter func(string, string) (bundle.ExportSummary, error)
 type bundleExportVerifier func(string) (bundle.ExportVerificationSummary, error)
 type bundleFinder func(string, string) (bundle.Finding, error)
@@ -1173,6 +1201,135 @@ func runAndroidCheck(
 		return 1
 	}
 	return 0
+}
+
+func runExperimentMinimize(
+	args []string,
+	stdout, stderr io.Writer,
+	check targetChecker,
+	execute minimizationExecutor,
+) int {
+	flags := flag.NewFlagSet("experiment minimize", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	binary := flags.String("adb", "adb", "")
+	device := flags.String("device", "", "")
+	packageName := flags.String("package", "", "")
+	pairs := flags.Int("pairs", 0, "")
+	outputDir := flags.String("output", "", "")
+	if err := flags.Parse(args); err != nil ||
+		flags.NArg() != 1 ||
+		*device == "" ||
+		*packageName == "" ||
+		*pairs < 1 ||
+		*outputDir == "" {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+
+	file, err := os.Open(flags.Arg(0))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment minimize: open plan: %v\n", err)
+		return 1
+	}
+	defer file.Close()
+
+	plan, err := minimize.Decode(file)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment minimize: %v\n", err)
+		return 1
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), experimentMinimizeTimeout)
+	defer cancel()
+	target, err := check(ctx, *binary, *device, *packageName)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment minimize: %v\n", err)
+		return 1
+	}
+	target.AriadneRevision, target.AriadneModified = buildIdentity()
+	summary, err := execute(ctx, *binary, target, plan, *outputDir, *pairs)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment minimize: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(summary); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment minimize: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if err := writeMinimizationSummary(stdout, "experiment minimization complete", summary); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment minimize: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func runMinimizationVerify(
+	args []string,
+	stdout, stderr io.Writer,
+	verify minimizationVerifier,
+) int {
+	flags := flag.NewFlagSet("experiment minimize verify", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+	summary, err := verify(flags.Arg(0))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment minimize verify: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(summary); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: experiment minimize verify: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if err := writeMinimizationSummary(stdout, "minimization verified", summary); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment minimize verify: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func writeMinimizationSummary(stdout io.Writer, heading string, summary minimize.MinimizationSummary) error {
+	selected := summary.SelectedCandidate
+	if selected == "" {
+		selected = "none"
+	}
+	if _, err := fmt.Fprintf(
+		stdout,
+		"%s\nplan: %s\nvariable: %s\nselection_state: %s\nselected_candidate: %s\nevidence_state: %s\npairs_per_order: %d\ncandidates: %d\n",
+		heading,
+		summary.PlanName,
+		summary.Variable,
+		summary.SelectionState,
+		selected,
+		summary.EvidenceState,
+		summary.PairsPerOrder,
+		len(summary.CandidateResults),
+	); err != nil {
+		return err
+	}
+	for _, candidate := range summary.CandidateResults {
+		if _, err := fmt.Fprintf(
+			stdout,
+			"candidate: %s\n  classification: %s\n  outcome: %s\n  evidence_state: %s\n  pairs: %d\n",
+			candidate.ID,
+			candidate.Classification,
+			candidate.Outcome,
+			candidate.EvidenceState,
+			candidate.Pairs,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func runExperiment(

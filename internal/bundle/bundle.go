@@ -1552,6 +1552,12 @@ func readFileBounded(path string, limit int64) ([]byte, error) {
 	return data, nil
 }
 
+// ReadBoundedFile reads one regular file through the bundle's no-symlink,
+// bounded reader. Internal consumers use this when they need the same path
+// safety contract without parsing a bundle.
+func ReadBoundedFile(path string, limit int64) ([]byte, error) {
+	return readFileBounded(path, limit)
+}
 func artifactFor(path string, data []byte) artifact {
 	sum := sha256.Sum256(data)
 	return artifact{

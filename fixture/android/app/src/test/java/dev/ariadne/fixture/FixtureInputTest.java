@@ -29,6 +29,18 @@ public final class FixtureInputTest {
     }
 
     @Test
+    public void acceptsOptionalLocationPersona() throws Exception {
+        String value = validInput().replace(
+                "\"email\":\"baseline@example.invalid\",\"region\":\"us-east\"",
+                "\"email\":\"baseline@example.invalid\",\"location\":\"san-francisco\",\"region\":\"us-east\"");
+
+        FixtureInput input = FixtureInput.decode(value.getBytes(StandardCharsets.UTF_8));
+
+        assertEquals("san-francisco", input.value("location"));
+        assertEquals("us-east", input.value("region"));
+    }
+
+    @Test
     public void rejectsDuplicateKeys() {
         assertInvalid(validInput().replace(
                 "\"role\":\"baseline\"",
