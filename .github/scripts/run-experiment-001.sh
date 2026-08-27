@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-trap 'echo "experiment-001 script failed at line ${LINENO}" >&2'
+trap 'echo "experiment-001 script failed at line ${LINENO}" >&2' ERR
 
 run_dir=".ariadne/ci/experiment-001"
 ariadne="${RUNNER_TEMP}/ariadne"
