@@ -101,6 +101,20 @@ rechecks any supplied saved artifacts before rendering them. This closes the
 minimization path from verify to ask to retain to review while keeping
 question result, counterfactual outcome, and evidence state separate. It
 does not add cross-study comparison or universal tracing.
+
+**Current browser minimization slice.** The source-neutral ladder contract
+now separates candidate decisions and portable receipts from source
+execution. The local browser adapter binds the reviewed `reference` and
+`omitted` candidate IDs to a synthetic `account-id`, runs fresh-profile
+pairs in both orders, and compares only
+`all-non-disclosure-fields-equal-v1` for functionality. Ordinary trace
+comparison still reports the account-id disclosure; minimization may call
+the candidate sufficient only when non-disclosure fields remain observed and
+equal. Receipts retain safe IDs, provenance, outcomes, evidence states,
+counts, and child receipt identities, never values, URLs, driver arguments,
+profiles, or captured events. This is a fixture handoff, not universal
+tracing.
+
 6. **Browser audit handoff (not evidence-backed capture).** An authorized
    browser driver can provide a bounded, already-redacted audit that Ariadne
    projects into the same
@@ -304,6 +318,12 @@ and portable. Retain
 trace question rounds and selected receipts only as bounded identities, and
 use the source-neutral replication ledger to re-verify already-produced pairs,
 not as a new capture store.
+Browser fixture minimization is now a fixed local handoff and acceptance
+gate: it binds explicit candidate IDs, a criterion-aware functionality
+comparison, fresh profiles, both pair orders, and raw-value-free child
+receipts. It does not broaden the project to user-browser capture or a
+universal proxy.
+
 Session provenance is the join point for later source-specific runs. The
 isolated browser-target producer is now one narrow user-authorized target
 slice, and the proxy producer is one narrow user-authorized authority slice;
@@ -361,6 +381,9 @@ questions again without reopening source paths or captured values.
   require balanced orders before reporting a non-`unknown` aggregate. Their
   fixed question rounds and selected receipts verify independently while
   preserving outcome and evidence-state semantics.
+- Hosted browser fixture minimization verifies the fixed plan, explicit
+  candidate binding, criterion-aware result, raw-value-free receipt, and
+  unknown classification on partial or mismatched child evidence.
 - Cross-source case packages re-verify embedded archives or ledgers and their
   matching question rounds, reject duplicate child identities, preserve caller
   order without chronology inference, and keep retained outcomes separate from

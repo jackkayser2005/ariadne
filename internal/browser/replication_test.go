@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -187,7 +188,7 @@ func TestVerifyFixtureReplicatedRejectsTamperedReceiptAndUnsafePath(t *testing.T
 		want string
 	}{
 		{name: "unknown field", data: strings.Replace(string(receipt), "{\n", "{\n  \"extra\":true,\n", 1), want: "invalid"},
-		{name: "duplicate", data: strings.Replace(string(receipt), "\"schema_version\": 1,", "\"schema_version\": 1,\n  \"schema_version\": 1,", 1), want: "invalid"},
+		{name: "duplicate", data: strings.Replace(string(receipt), "\"schema_version\": "+strconv.Itoa(BrowserReplicationSchemaVersion)+",", "\"schema_version\": "+strconv.Itoa(BrowserReplicationSchemaVersion)+",\n  \"schema_version\": "+strconv.Itoa(BrowserReplicationSchemaVersion)+",", 1), want: "invalid"},
 		{name: "wrong status", data: strings.Replace(string(receipt), `"status": "complete"`, `"status": "incomplete"`, 1), want: "missing"},
 	} {
 		t.Run(mutation.name, func(t *testing.T) {
@@ -298,6 +299,12 @@ func TestRunFixtureReplicatedHandlesCancellationAndCaptureContract(t *testing.T)
 	}); err == nil || !strings.Contains(err.Error(), "trace") {
 		t.Fatalf("missing trace error = %v", err)
 	}
+	invalidCandidate := base
+	invalidCandidate.CandidateID = "unsafe"
+	invalidCandidate.OutputDir = filepath.Join(t.TempDir(), "invalid-candidate")
+	if err := runFixtureReplicatedWith(context.Background(), invalidCandidate, func(string, string, []string, string) (CaptureSummary, error) { return CaptureSummary{}, nil }); err == nil || !strings.Contains(err.Error(), "candidate") {
+		t.Fatalf("invalid candidate error = %v", err)
+	}
 	if err := RunFixtureReplicated(context.Background(), FixtureReplicationInput{}); err == nil || !strings.Contains(err.Error(), "paths") {
 		t.Fatalf("RunFixtureReplicated() invalid input = %v", err)
 	}
@@ -305,18 +312,27 @@ func TestRunFixtureReplicatedHandlesCancellationAndCaptureContract(t *testing.T)
 
 func TestValidateFixtureReplicationRecordRejectsMetadata(t *testing.T) {
 	root := t.TempDir()
+	pairs := []ReplicatedPairRecord{
+		{Pair: 1, Order: portabletrace.OrderBaselineTreatment, Directory: "pair-001-baseline-treatment", FirstSession: "baseline", SecondSession: "treatment", Status: BrowserReplicationStatusComplete},
+		{Pair: 1, Order: portabletrace.OrderTreatmentBaseline, Directory: "pair-001-treatment-baseline", FirstSession: "treatment", SecondSession: "baseline", Status: BrowserReplicationStatusComplete},
+	}
+	for _, pair := range pairs {
+		if err := os.Mkdir(filepath.Join(root, pair.Directory), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
 	valid := ReplicatedRunRecord{
 		SchemaVersion: BrowserReplicationSchemaVersion, Adapter: BrowserReplicationAdapter, AdapterVersion: BrowserReplicationAdapterVersion,
 		ProcedureSHA256: strings.Repeat("a", 64), Scope: "outbound", PairsPerOrder: 1,
-		ResetPolicy: BrowserReplicationResetPolicy, Status: BrowserReplicationStatusComplete, CompletedPairs: 0,
+		ResetPolicy: BrowserReplicationResetPolicy, Status: BrowserReplicationStatusComplete, CompletedPairs: 2, Pairs: pairs,
 	}
 	tests := []struct {
 		name   string
 		mutate func(*ReplicatedRunRecord)
 	}{
-		{name: "schema", mutate: func(record *ReplicatedRunRecord) { record.SchemaVersion = 2 }},
+		{name: "schema", mutate: func(record *ReplicatedRunRecord) { record.SchemaVersion = BrowserReplicationLegacySchemaVersion }},
 		{name: "adapter", mutate: func(record *ReplicatedRunRecord) { record.Adapter = "other" }},
-		{name: "version", mutate: func(record *ReplicatedRunRecord) { record.AdapterVersion = 2 }},
+		{name: "version", mutate: func(record *ReplicatedRunRecord) { record.AdapterVersion = BrowserReplicationLegacyAdapterVersion }},
 		{name: "procedure", mutate: func(record *ReplicatedRunRecord) { record.ProcedureSHA256 = "bad" }},
 		{name: "scope", mutate: func(record *ReplicatedRunRecord) { record.Scope = "storage" }},
 		{name: "pairs", mutate: func(record *ReplicatedRunRecord) { record.PairsPerOrder = 0 }},
@@ -332,6 +348,32 @@ func TestValidateFixtureReplicationRecordRejectsMetadata(t *testing.T) {
 				t.Fatal("validateFixtureReplicationRecord() accepted invalid metadata")
 			}
 		})
+	}
+	legacy := valid
+	legacy.SchemaVersion = BrowserReplicationLegacySchemaVersion
+	legacy.AdapterVersion = BrowserReplicationLegacyAdapterVersion
+	if err := validateFixtureReplicationRecord(root, legacy); err != nil {
+		t.Fatalf("validateFixtureReplicationRecord() rejected readable legacy metadata: %v", err)
+	}
+	legacyRoot := t.TempDir()
+	for _, pair := range legacy.Pairs {
+		pairRoot := filepath.Join(legacyRoot, pair.Directory)
+		baselineTrace := filepath.Join(pairRoot, "baseline", "trace.json")
+		treatmentTrace := filepath.Join(pairRoot, "treatment", "trace.json")
+		writeFixtureTrace(t, baselineTrace, "baseline", portabletrace.Complete)
+		writeFixtureTrace(t, treatmentTrace, "treatment", portabletrace.Complete)
+		if _, err := portabletrace.SaveSessionPair(baselineTrace, treatmentTrace, filepath.Join(pairRoot, "baseline", "session.json"), filepath.Join(pairRoot, "treatment", "session.json"), portabletrace.SessionPairInput{
+			Adapter: BrowserReplicationAdapter, AdapterVersion: BrowserReplicationLegacyAdapterVersion, ProcedureSHA256: legacy.ProcedureSHA256, Scope: legacy.Scope, Order: pair.Order,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writeFixtureReplicationRecord(legacyRoot, legacy); err != nil {
+		t.Fatalf("write legacy receipt: %v", err)
+	}
+	legacySummary, err := VerifyFixtureReplicated(legacyRoot)
+	if err != nil || legacySummary.Outcome != portabletrace.ReplicatedChange || legacySummary.EvidenceState != evidence.Observed {
+		t.Fatalf("legacy end-to-end verification = %#v, %v", legacySummary, err)
 	}
 	if _, err := VerifyFixtureReplicated(filepath.Join(root, "missing")); err == nil || !strings.Contains(err.Error(), "directory") {
 		t.Fatalf("missing root error = %v", err)

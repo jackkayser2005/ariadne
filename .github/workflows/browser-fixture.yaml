@@ -82,6 +82,29 @@ jobs:
               throw "browser fixture replication exposed source values: $($file.Name)"
             }
           }
+          $minimization = Join-Path $env:RUNNER_TEMP 'ariadne-browser-minimization'
+          $minimizationSummary = Join-Path $env:RUNNER_TEMP 'ariadne-browser-minimization-summary.json'
+          go run ./cmd/ariadne browser fixture minimize --json `
+            --plan examples/browser-account-minimize.json `
+            --procedure examples/browser-local-fixture-procedure.json `
+            --driver node `
+            --driver-arg cmd/browser-fixture-driver/browser_fixture_driver.mjs `
+            --driver-arg --browser `
+            --driver-arg $chrome `
+            --pairs 1 `
+            --output $minimization | Out-File -LiteralPath $minimizationSummary -Encoding utf8
+          go run ./cmd/ariadne browser fixture minimize verify --json $minimization
+          $minimizationText = Get-Content -Raw -LiteralPath $minimizationSummary
+          if ($minimizationText -notmatch '"plan_name"\s*:\s*"browser-account-minimize"' -or $minimizationText -notmatch '"candidate_results"') {
+            throw 'browser fixture minimization summary is incomplete'
+          }
+          $minimizationFiles = @(Get-ChildItem -LiteralPath $minimization -Recurse -File)
+          foreach ($file in $minimizationFiles) {
+            $fileContent = Get-Content -Raw -LiteralPath $file.FullName
+            if ($fileContent -match 'https://|session_id|account_id|consent=|payload') {
+              throw "browser fixture minimization exposed source values: $($file.Name)"
+            }
+          }
           $profiles = @(Get-ChildItem -LiteralPath $env:TEMP -Directory -Filter 'ariadne-browser-fixture-*' -ErrorAction SilentlyContinue)
           if ($profiles.Count -ne 0) {
             throw "temporary browser profiles remain: $($profiles.FullName -join ', ')"

@@ -16,7 +16,13 @@ type SessionPairComparison struct {
 // CompareSessionPair verifies a complementary session pair and compares the
 // two bound traces without exposing payloads or source-specific identifiers.
 func CompareSessionPair(baselineSessionPath, baselineTracePath, treatmentSessionPath, treatmentTracePath string) (SessionPairComparison, error) {
-	return compareSessionPair(baselineSessionPath, baselineTracePath, treatmentSessionPath, treatmentTracePath, VerifySessionPair, CompareFiles)
+	return CompareSessionPairWithCandidate(baselineSessionPath, baselineTracePath, treatmentSessionPath, treatmentTracePath, "")
+}
+
+// CompareSessionPairWithCandidate verifies and compares a pair with an
+// optional candidate binding.
+func CompareSessionPairWithCandidate(baselineSessionPath, baselineTracePath, treatmentSessionPath, treatmentTracePath, candidateID string) (SessionPairComparison, error) {
+	return compareSessionPair(baselineSessionPath, baselineTracePath, treatmentSessionPath, treatmentTracePath, candidateSessionPairVerifier(candidateID), CompareFiles)
 }
 
 func compareSessionPair(baselineSessionPath, baselineTracePath, treatmentSessionPath, treatmentTracePath string, verify sessionPairVerifier, compare traceFileComparer) (SessionPairComparison, error) {

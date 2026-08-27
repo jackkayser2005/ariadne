@@ -91,7 +91,7 @@ const (
 // CandidateResult is a raw-value-free result for one replicated candidate.
 type CandidateResult struct {
 	ID             string                   `json:"id"`
-	ManifestName   string                   `json:"manifest_name"`
+	ManifestName   string                   `json:"manifest_name,omitempty"`
 	Directory      string                   `json:"directory"`
 	Classification CandidateClassification  `json:"classification"`
 	Outcome        bundle.ReplicatedOutcome `json:"outcome"`

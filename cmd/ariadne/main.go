@@ -76,6 +76,8 @@ const usage = `usage:
 	ariadne browser capture [--json] --procedure <procedure.json> --driver <executable> [--driver-arg <arg>] <trace.json>
 	ariadne browser fixture replicate [--json] --procedure <procedure.json> --driver <executable> [--driver-arg <arg>] --pairs <n> --output <directory>
 	ariadne browser fixture replicate verify [--json] <replicated-directory>
+	ariadne browser fixture minimize [--json] --plan <plan.json> --procedure <procedure.json> --driver <executable> [--driver-arg <arg>] --pairs <n> --output <directory>
+	ariadne browser fixture minimize verify [--json] <minimization-directory>
 	ariadne proxy capture [--json] --procedure <procedure.json> --program <executable> [--program-arg <arg>] <trace.json>
 	ariadne proxy replicate [--json] --procedure <procedure.json> --program <executable> [--shared-arg <arg>] --baseline-arg <arg> --treatment-arg <arg> --pairs <n> --output <directory>
 	ariadne proxy replicate verify [--json] <replicated-directory>
@@ -311,6 +313,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(args) >= 3 && args[0] == "proxy" && args[1] == "replicate" {
 		return runProxyReplicate(args[2:], stdout, stderr, proxy.RunReplicated, proxy.VerifyReplicated)
+	}
+	if len(args) >= 4 && args[0] == "browser" && args[1] == "fixture" && args[2] == "minimize" && args[3] == "verify" {
+		return runBrowserFixtureMinimizeVerify(args[4:], stdout, stderr, browser.VerifyFixtureMinimization)
+	}
+	if len(args) >= 3 && args[0] == "browser" && args[1] == "fixture" && args[2] == "minimize" {
+		return runBrowserFixtureMinimize(args[3:], stdout, stderr, browser.RunFixtureMinimization, browser.VerifyFixtureMinimization)
 	}
 	if len(args) >= 4 && args[0] == "browser" && args[1] == "fixture" && args[2] == "replicate" && args[3] == "verify" {
 		return runBrowserFixtureReplicateVerify(args[4:], stdout, stderr, browser.VerifyFixtureReplicated)

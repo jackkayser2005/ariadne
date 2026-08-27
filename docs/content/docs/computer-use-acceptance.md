@@ -144,6 +144,33 @@ or selected receipt disagrees, the page returns a generic unavailable state.
 The round and receipt artifacts are raw-value-free and are verified
 structurally; computer-use must not infer a privacy assurance from their
 presence alone.
+
+## Browser fixture minimization handoff
+
+The browser minimization slice is currently a CLI and portable-receipt
+handoff, not a computer-use capture surface. Run and verify the bounded
+fixture before opening any read-only review page:
+
+```console
+go run ./cmd/ariadne browser fixture minimize --json \
+  --plan examples/browser-account-minimize.json \
+  --procedure examples/browser-local-fixture-procedure.json \
+  --driver node \
+  --driver-arg cmd/browser-fixture-driver/browser_fixture_driver.mjs \
+  --driver-arg --browser \
+  --driver-arg "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" \
+  --pairs 1 \
+  --output .ariadne/browser-account-minimize
+go run ./cmd/ariadne browser fixture minimize verify --json \
+  .ariadne/browser-account-minimize
+```
+
+Confirm the verified receipt contains only the fixed candidate IDs,
+criterion, pair counts, outcomes, evidence states, provenance, and child
+receipt identities. The receipt must not contain the synthetic value, URLs,
+driver arguments, profile paths, or captured events. A partial, failed, or
+provenance-mismatched child is `unknown`; do not use computer-use to infer
+sufficiency from an incomplete run.
 ## Driver sequence
 
 1. Open the printed loopback URL in the authorized local browser window.

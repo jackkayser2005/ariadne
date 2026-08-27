@@ -77,9 +77,18 @@ type SessionPairInput struct {
 	ProcedureSHA256 string
 	Scope           string
 	Order           string
+	// CandidateID binds an explicit treatment candidate to the pair identity.
+	// Empty preserves the legacy role-based pair identity.
+	CandidateID string
 }
 
 type sessionPairVerifier func(string, string, string, string) (SessionPairVerificationSummary, error)
+
+func candidateSessionPairVerifier(candidateID string) sessionPairVerifier {
+	return func(baselineSessionPath, baselineTracePath, treatmentSessionPath, treatmentTracePath string) (SessionPairVerificationSummary, error) {
+		return VerifySessionPairWithCandidate(baselineSessionPath, baselineTracePath, treatmentSessionPath, treatmentTracePath, candidateID)
+	}
+}
 
 // SessionVerificationSummary identifies a valid session and the trace it
 // binds without exposing captured values.
@@ -156,7 +165,7 @@ func SaveSession(tracePath, sessionPath string, input SessionInput) (SessionVeri
 // SaveSessionPair verifies two traces, derives their pair identity, writes
 // complementary session envelopes, and returns their safe identities.
 func SaveSessionPair(baselineTracePath, treatmentTracePath, baselineSessionPath, treatmentSessionPath string, input SessionPairInput) (SessionPairVerificationSummary, error) {
-	return saveSessionPair(baselineTracePath, treatmentTracePath, baselineSessionPath, treatmentSessionPath, input, VerifySessionPair)
+	return saveSessionPair(baselineTracePath, treatmentTracePath, baselineSessionPath, treatmentSessionPath, input, candidateSessionPairVerifier(input.CandidateID))
 }
 
 func saveSessionPair(baselineTracePath, treatmentTracePath, baselineSessionPath, treatmentSessionPath string, input SessionPairInput, verify sessionPairVerifier) (SessionPairVerificationSummary, error) {
@@ -190,6 +199,7 @@ func saveSessionPair(baselineTracePath, treatmentTracePath, baselineSessionPath,
 		ProcedureSHA256: input.ProcedureSHA256,
 		Scope:           baselineDocument.Scope,
 		Order:           input.Order,
+		CandidateID:     input.CandidateID,
 	})
 	if err != nil {
 		return SessionPairVerificationSummary{}, err
@@ -269,6 +279,12 @@ func VerifySession(sessionPath, tracePath string) (SessionVerificationSummary, e
 // VerifySessionPair verifies a baseline and treatment session, requiring
 // complementary roles and matching safe provenance metadata.
 func VerifySessionPair(baselineSessionPath, baselineTracePath, treatmentSessionPath, treatmentTracePath string) (SessionPairVerificationSummary, error) {
+	return VerifySessionPairWithCandidate(baselineSessionPath, baselineTracePath, treatmentSessionPath, treatmentTracePath, "")
+}
+
+// VerifySessionPairWithCandidate verifies a pair and requires the optional
+// candidate binding used by controlled minimization experiments.
+func VerifySessionPairWithCandidate(baselineSessionPath, baselineTracePath, treatmentSessionPath, treatmentTracePath, candidateID string) (SessionPairVerificationSummary, error) {
 	if strings.TrimSpace(baselineSessionPath) == "" || strings.TrimSpace(baselineTracePath) == "" ||
 		strings.TrimSpace(treatmentSessionPath) == "" || strings.TrimSpace(treatmentTracePath) == "" {
 		return SessionPairVerificationSummary{}, errors.New("trace session pair paths are required")
@@ -296,6 +312,7 @@ func VerifySessionPair(baselineSessionPath, baselineTracePath, treatmentSessionP
 		ProcedureSHA256: baseline.ProcedureSHA256,
 		Scope:           baseline.Scope,
 		Order:           baseline.Order,
+		CandidateID:     candidateID,
 	})
 	if err != nil {
 		return SessionPairVerificationSummary{}, err
@@ -340,8 +357,15 @@ func SessionPairSHA256(baselineTraceSHA256, treatmentTraceSHA256 string, input S
 	if input.Order != OrderBaselineTreatment && input.Order != OrderTreatmentBaseline {
 		return "", errors.New("trace session pair order is invalid")
 	}
+	if !validPairCandidate(input.CandidateID) {
+		return "", errors.New("trace session pair candidate_id is invalid")
+	}
 	if !ValidSHA256(baselineTraceSHA256) || !ValidSHA256(treatmentTraceSHA256) {
 		return "", errors.New("trace session trace identity is invalid")
+	}
+	domain := "ariadne-trace-session-pair-v1"
+	if input.CandidateID != "" {
+		domain = "ariadne-trace-session-pair-candidate-v1"
 	}
 	identity := struct {
 		Domain               string `json:"domain"`
@@ -352,10 +376,11 @@ func SessionPairSHA256(baselineTraceSHA256, treatmentTraceSHA256 string, input S
 		ProcedureSHA256      string `json:"procedure_sha256"`
 		Scope                string `json:"scope"`
 		Order                string `json:"order"`
+		CandidateID          string `json:"candidate_id,omitempty"`
 		BaselineTraceSHA256  string `json:"baseline_trace_sha256"`
 		TreatmentTraceSHA256 string `json:"treatment_trace_sha256"`
 	}{
-		Domain:               "ariadne-trace-session-pair-v1",
+		Domain:               domain,
 		SchemaVersion:        sessionSchemaVersion,
 		Source:               source,
 		Adapter:              input.Adapter,
@@ -363,6 +388,7 @@ func SessionPairSHA256(baselineTraceSHA256, treatmentTraceSHA256 string, input S
 		ProcedureSHA256:      input.ProcedureSHA256,
 		Scope:                input.Scope,
 		Order:                input.Order,
+		CandidateID:          input.CandidateID,
 		BaselineTraceSHA256:  baselineTraceSHA256,
 		TreatmentTraceSHA256: treatmentTraceSHA256,
 	}
@@ -372,6 +398,21 @@ func SessionPairSHA256(baselineTraceSHA256, treatmentTraceSHA256 string, input S
 	}
 	digest := sha256.Sum256(data)
 	return hex.EncodeToString(digest[:]), nil
+}
+
+func validPairCandidate(candidateID string) bool {
+	if candidateID == "" {
+		return true
+	}
+	if len(candidateID) > 64 || strings.TrimSpace(candidateID) != candidateID {
+		return false
+	}
+	for _, char := range candidateID {
+		if (char < 97 || char > 122) && (char < 65 || char > 90) && (char < 48 || char > 57) && char != 45 && char != 95 && char != 46 {
+			return false
+		}
+	}
+	return true
 }
 
 func validateSessionPairMetadata(baseline, treatment Session) error {

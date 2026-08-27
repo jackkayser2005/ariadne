@@ -340,6 +340,33 @@ coverage for unsupported activity, so its hosted smoke expects `unknown` and
 aggregate classifications. The hosted Windows browser-fixture workflow checks
 the single capture, both replication orders, redaction, and profile cleanup.
 
+The minimization handoff can test the fixed synthetic browser input ladder:
+
+```console
+go run ./cmd/ariadne browser fixture minimize --json \
+  --plan examples/browser-account-minimize.json \
+  --procedure examples/browser-local-fixture-procedure.json \
+  --driver node \
+  --driver-arg cmd/browser-fixture-driver/browser_fixture_driver.mjs \
+  --driver-arg --browser \
+  --driver-arg "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" \
+  --pairs 1 \
+  --output .ariadne/browser-account-minimize
+go run ./cmd/ariadne browser fixture minimize verify --json \
+  .ariadne/browser-account-minimize
+```
+
+The browser adapter binds only the safe candidates `reference` and `omitted`
+to the synthetic `account-id` input. Its fixed functionality criterion is
+`all-non-disclosure-fields-equal-v1`, so ordinary trace replication still
+reports the account-id disclosure while minimization checks that every other
+observed field remains equal. A complete result may call `omitted` the
+`minimum tested sufficient disclosure`; the receipt contains only candidate
+IDs, counts, outcomes, evidence states, provenance, and child receipt hashes.
+Values, URLs, driver arguments, profiles, and captured events are excluded.
+Missing or mismatched child evidence leaves the result `unknown`. This is a
+controlled fixture handoff, not universal browser tracing.
+
 Bind a verified trace to its reviewed adapter and capture procedure without
 adding URLs, profile names, or captured values:
 

@@ -20,11 +20,17 @@ import (
 
 const (
 	// BrowserReplicationSchemaVersion is the browser fixture receipt schema.
-	BrowserReplicationSchemaVersion = 1
+	BrowserReplicationSchemaVersion = 2
+	// BrowserReplicationLegacySchemaVersion remains readable for existing
+	// fixture receipts that did not bind an explicit candidate.
+	BrowserReplicationLegacySchemaVersion = 1
 	// BrowserReplicationAdapter identifies the fixed local browser fixture.
 	BrowserReplicationAdapter = "browser-local-fixture"
 	// BrowserReplicationAdapterVersion identifies the fixture adapter contract.
-	BrowserReplicationAdapterVersion = 1
+	BrowserReplicationAdapterVersion = 2
+	// BrowserReplicationLegacyAdapterVersion identifies the original fixture
+	// contract, which remains verifiable for existing receipts.
+	BrowserReplicationLegacyAdapterVersion = 1
 	// BrowserReplicationResetPolicy records the isolation applied to every session.
 	BrowserReplicationResetPolicy = "fresh-ephemeral-profile-before-each-session"
 	// BrowserReplicationStatusComplete records a completed receipt or pair.
@@ -33,6 +39,13 @@ const (
 	BrowserReplicationStatusIncomplete = "incomplete"
 	maxBrowserReplicationPairs         = 8
 	maxBrowserReplicationBytes         = 64 << 10
+)
+
+const (
+	// BrowserFixtureReferenceCandidate is the fully disclosed fixture input.
+	BrowserFixtureReferenceCandidate = "reference"
+	// BrowserFixtureOmittedCandidate is the first reduced fixture input.
+	BrowserFixtureOmittedCandidate = "omitted"
 )
 
 // FixtureReplicationInput describes one fixed, local browser counterfactual.
@@ -44,6 +57,9 @@ type FixtureReplicationInput struct {
 	DriverArgs    []string
 	OutputDir     string
 	Pairs         int
+	// CandidateID binds an explicit treatment candidate to every child pair.
+	// Empty preserves the legacy role-based fixture behavior.
+	CandidateID string
 }
 
 // ReplicatedRunRecord records safe execution metadata without captured values.
@@ -53,6 +69,7 @@ type ReplicatedRunRecord struct {
 	AdapterVersion  int                    `json:"adapter_version"`
 	ProcedureSHA256 string                 `json:"procedure_sha256"`
 	Scope           string                 `json:"scope"`
+	CandidateID     string                 `json:"candidate_id,omitempty"`
 	PairsPerOrder   int                    `json:"pairs_per_order"`
 	ResetPolicy     string                 `json:"reset_policy"`
 	Status          string                 `json:"status"`
@@ -90,6 +107,7 @@ type BrowserReplicationSummary struct {
 	AdapterVersion  int                             `json:"adapter_version"`
 	ProcedureSHA256 string                          `json:"procedure_sha256"`
 	Scope           string                          `json:"scope"`
+	CandidateID     string                          `json:"candidate_id,omitempty"`
 	ResetPolicy     string                          `json:"reset_policy"`
 	ReceiptSHA256   string                          `json:"receipt_sha256"`
 	Pairs           int                             `json:"pairs"`
@@ -138,6 +156,7 @@ func runFixtureReplicatedWith(ctx context.Context, input FixtureReplicationInput
 		AdapterVersion:  BrowserReplicationAdapterVersion,
 		ProcedureSHA256: procedureSHA256,
 		Scope:           procedure.Scope,
+		CandidateID:     input.CandidateID,
 		PairsPerOrder:   input.Pairs,
 		ResetPolicy:     BrowserReplicationResetPolicy,
 		Status:          BrowserReplicationStatusIncomplete,
@@ -192,6 +211,10 @@ func runFixtureReplicatedWith(ctx context.Context, input FixtureReplicationInput
 
 // VerifyFixtureReplicated verifies a browser fixture receipt and its bound pairs.
 func VerifyFixtureReplicated(rootDir string) (BrowserReplicationSummary, error) {
+	return verifyFixtureReplicatedWithFields(rootDir, nil)
+}
+
+func verifyFixtureReplicatedWithFields(rootDir string, ignoredFields map[string]struct{}) (BrowserReplicationSummary, error) {
 	record, receiptData, err := readFixtureReplicationRecord(rootDir)
 	if err != nil {
 		return BrowserReplicationSummary{}, err
@@ -211,7 +234,7 @@ func VerifyFixtureReplicated(rootDir string) (BrowserReplicationSummary, error) 
 			EvidenceState: evidence.Unknown,
 		}
 		if pair.Status == BrowserReplicationStatusComplete {
-			result, err = verifyFixturePair(rootDir, record, pair)
+			result, err = verifyFixturePairWithFields(rootDir, record, pair, ignoredFields)
 			if err != nil {
 				return BrowserReplicationSummary{}, err
 			}
@@ -243,6 +266,7 @@ func VerifyFixtureReplicated(rootDir string) (BrowserReplicationSummary, error) 
 		AdapterVersion:  record.AdapterVersion,
 		ProcedureSHA256: record.ProcedureSHA256,
 		Scope:           record.Scope,
+		CandidateID:     record.CandidateID,
 		ResetPolicy:     record.ResetPolicy,
 		ReceiptSHA256:   digestBrowserReplication(receiptData),
 		Pairs:           totalPairs,
@@ -270,6 +294,12 @@ func validateFixtureReplicationInput(input FixtureReplicationInput) (Procedure, 
 		if argument == "--fixture-variant" || strings.HasPrefix(argument, "--fixture-variant=") {
 			return Procedure{}, "", errors.New("fixture variant is controlled by the replication runner")
 		}
+		if argument == "--fixture-candidate" || strings.HasPrefix(argument, "--fixture-candidate=") {
+			return Procedure{}, "", errors.New("fixture candidate is controlled by the replication runner")
+		}
+	}
+	if input.CandidateID != "" && !validFixtureCandidate(input.CandidateID) {
+		return Procedure{}, "", errors.New("fixture candidate is invalid")
 	}
 	procedure, _, err := ReadProcedure(input.ProcedurePath)
 	if err != nil {
@@ -313,6 +343,7 @@ func runFixturePair(ctx context.Context, input FixtureReplicationInput, procedur
 			ProcedureSHA256: procedureSHA256,
 			Scope:           "outbound",
 			Order:           order,
+			CandidateID:     input.CandidateID,
 		},
 	); err != nil {
 		return fmt.Errorf("browser fixture pair: %w", err)
@@ -326,6 +357,13 @@ func runFixtureSession(ctx context.Context, input FixtureReplicationInput, proce
 	}
 	args := append([]string(nil), input.DriverArgs...)
 	args = append(args, "--fixture-variant", variant)
+	if input.CandidateID != "" {
+		candidate := BrowserFixtureReferenceCandidate
+		if variant == "treatment" {
+			candidate = input.CandidateID
+		}
+		args = append(args, "--fixture-candidate", candidate)
+	}
 	summary, err := capture(input.ProcedurePath, input.DriverPath, args, outputPath)
 	if err != nil {
 		return fmt.Errorf("browser fixture %s session: %w", variant, err)
@@ -336,9 +374,15 @@ func runFixtureSession(ctx context.Context, input FixtureReplicationInput, proce
 	return nil
 }
 
-func verifyFixturePair(rootDir string, record ReplicatedRunRecord, pair ReplicatedPairRecord) (ReplicatedPairSummary, error) {
+func verifyFixturePairWithFields(rootDir string, record ReplicatedRunRecord, pair ReplicatedPairRecord, ignoredFields map[string]struct{}) (ReplicatedPairSummary, error) {
 	paths := browserReplicationPaths(filepath.Join(rootDir, pair.Directory))
-	comparison, err := portabletrace.CompareSessionPair(paths.baselineSession, paths.baselineTrace, paths.treatmentSession, paths.treatmentTrace)
+	var comparison portabletrace.SessionPairComparison
+	var err error
+	if len(ignoredFields) == 0 {
+		comparison, err = portabletrace.CompareSessionPairWithCandidate(paths.baselineSession, paths.baselineTrace, paths.treatmentSession, paths.treatmentTrace, record.CandidateID)
+	} else {
+		comparison, err = compareFixtureSessionPairIgnoringFields(paths, ignoredFields, record.CandidateID)
+	}
 	if err != nil {
 		return ReplicatedPairSummary{}, fmt.Errorf("browser replication pair %d %s: %w", pair.Pair, pair.Order, err)
 	}
@@ -490,13 +534,16 @@ func readFixtureReplicationRecord(rootDir string) (ReplicatedRunRecord, []byte, 
 }
 
 func validateFixtureReplicationRecord(rootDir string, record ReplicatedRunRecord) error {
-	if record.SchemaVersion != BrowserReplicationSchemaVersion ||
-		record.Adapter != BrowserReplicationAdapter ||
-		record.AdapterVersion != BrowserReplicationAdapterVersion ||
+	legacy := record.SchemaVersion == BrowserReplicationLegacySchemaVersion && record.AdapterVersion == BrowserReplicationLegacyAdapterVersion && record.CandidateID == ""
+	current := record.SchemaVersion == BrowserReplicationSchemaVersion && record.AdapterVersion == BrowserReplicationAdapterVersion
+	if record.Adapter != BrowserReplicationAdapter || (!legacy && !current) ||
 		!portabletrace.ValidSHA256(record.ProcedureSHA256) || record.Scope != "outbound" ||
 		record.PairsPerOrder < 1 || record.PairsPerOrder > maxBrowserReplicationPairs ||
 		record.ResetPolicy != BrowserReplicationResetPolicy {
 		return errors.New("browser replication metadata is invalid")
+	}
+	if record.CandidateID != "" && !validFixtureCandidate(record.CandidateID) {
+		return errors.New("browser replication candidate is invalid")
 	}
 	if record.Status != BrowserReplicationStatusComplete && record.Status != BrowserReplicationStatusIncomplete {
 		return errors.New("browser replication metadata status is invalid")
