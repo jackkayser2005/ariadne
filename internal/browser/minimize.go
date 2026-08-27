@@ -116,6 +116,9 @@ func VerifyFixtureMinimization(rootDir string) (minimize.LadderSummary, error) {
 // each child, and returns the canonical receipt identity from that same read.
 func VerifyFixtureMinimizationWithIdentity(rootDir string) (minimize.LadderSummary, string, error) {
 	summary, digest, err := minimize.VerifyLadder(rootDir, func(root string, summary minimize.LadderSummary, result minimize.LadderCandidateResult) error {
+		if err := validateFixtureMinimizationSummary(summary); err != nil {
+			return err
+		}
 		child, err := VerifyFixtureReplicatedForFunctionality(filepath.Join(root, result.Directory))
 		if err != nil {
 			return err
@@ -137,6 +140,18 @@ func VerifyFixtureMinimizationWithIdentity(rootDir string) (minimize.LadderSumma
 		return nil
 	})
 	return summary, digest, err
+}
+
+func validateFixtureMinimizationSummary(summary minimize.LadderSummary) error {
+	if summary.PlanName != "browser-account-minimize" ||
+		summary.Variable != "account-id" ||
+		summary.ReferenceCandidate != BrowserFixtureReferenceCandidate ||
+		summary.FunctionalityCriterion != BrowserFunctionalityCriterion ||
+		len(summary.CandidateResults) != 1 ||
+		summary.CandidateResults[0].ID != BrowserFixtureOmittedCandidate {
+		return errors.New("browser minimization summary is outside fixed fixture plan")
+	}
+	return nil
 }
 
 // VerifyFixtureReplicatedForFunctionality uses the browser fixture's fixed

@@ -219,6 +219,60 @@ func TestVerifyFixtureMinimizationRejectsCandidateTampering(t *testing.T) {
 	}
 }
 
+func TestVerifyFixtureMinimizationRejectsFixedPlanTampering(t *testing.T) {
+	root := writeVerifiedBrowserMinimization(t)
+	receiptPath := filepath.Join(root, "minimization.json")
+	receipt, err := os.ReadFile(receiptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var summary minimize.LadderSummary
+	if err := json.Unmarshal(receipt, &summary); err != nil {
+		t.Fatal(err)
+	}
+	summary.Variable = "email"
+	tampered, err := json.MarshalIndent(summary, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(receiptPath, append(tampered, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyFixtureMinimization(root); err == nil || !strings.Contains(err.Error(), "fixed fixture plan") {
+		t.Fatalf("VerifyFixtureMinimization() error = %v", err)
+	}
+}
+
+func writeVerifiedBrowserMinimization(t *testing.T) string {
+	t.Helper()
+	procedurePath := writeProcedure(t, []byte(`{"schema_version":1,"procedure_id":"browser-local-fixture-v1","scope":"outbound","duration_ms":500,"max_events":8}`))
+	planPath := writeBrowserLadderPlan(t, testBrowserLadderPlan())
+	procedure, _, err := ReadProcedure(procedurePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	procedureSHA256, err := ProcedureSHA256(procedure)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(t.TempDir(), "browser-minimization")
+	fakeRun := func(ctx context.Context, input FixtureReplicationInput) error {
+		return runFixtureReplicatedWith(ctx, input, func(_, _ string, args []string, outputPath string) (CaptureSummary, error) {
+			candidate := argumentValue(args, "--fixture-candidate")
+			fields := []string{"region", "session-id"}
+			if candidate == BrowserFixtureReferenceCandidate {
+				fields = append(fields, "account-id")
+			}
+			return CaptureSummary{ProcedureSHA256: procedureSHA256, Trace: writeBrowserCriterionTrace(t, outputPath, fields)}, nil
+		})
+	}
+	input := FixtureMinimizationInput{PlanPath: planPath, ProcedurePath: procedurePath, DriverPath: "driver", OutputDir: root, Pairs: 1}
+	if err := runFixtureMinimizationWith(context.Background(), input, fakeRun, VerifyFixtureReplicatedForFunctionality); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
 func TestValidateFixtureMinimizationInputRejectsUnsupportedBoundary(t *testing.T) {
 	procedurePath := writeProcedure(t, []byte(`{"schema_version":1,"procedure_id":"browser-local-fixture-v1","scope":"outbound","duration_ms":500,"max_events":8}`))
 	base := FixtureMinimizationInput{PlanPath: writeBrowserLadderPlan(t, testBrowserLadderPlan()), ProcedurePath: procedurePath, DriverPath: "driver", OutputDir: filepath.Join(t.TempDir(), "out"), Pairs: 1}
