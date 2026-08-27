@@ -53,6 +53,32 @@ assurance. A missing authenticated network capture is also represented as an
 incomplete unknown, never as evidence of no change. Legacy bundles remain
 readable, but they do not receive invented authentication or outcome semantics.
 
+## Minimum-disclosure lab
+
+The first reduction workflow uses the authorized Android fixture to test a
+controlled disclosure ladder. The plan keeps candidate values in the local
+input file, uses `exact` as the fixed baseline, and evaluates each lower-disclosure
+candidate through the existing replicated runner in both execution orders:
+
+```console
+go run ./cmd/ariadne experiment minimize --device emulator-5554 --package dev.ariadne.fixture --pairs 1 --output .ariadne/runs/android-location-minimize examples/android-location-minimize.json
+go run ./cmd/ariadne experiment minimize verify --json .ariadne/runs/android-location-minimize
+```
+
+Each candidate gets a separate replicated evidence directory. The root
+`minimization.json` receipt contains candidate IDs, child receipt identities,
+counterfactual outcomes, and evidence states, but never candidate values. The
+first fixed functionality criterion is `all-non-disclosure-fields-equal-v1`:
+the declared disclosure field and the volatile `request_id` are ignored, while
+every other captured field must remain equivalent. A candidate is
+`sufficient` only for complete observed no-change results, `insufficient` for a
+replicated change, `mixed-inconsistent` for disagreement, and `unknown` when
+capture or verification is incomplete. Ariadne selects only the least-
+disclosing sufficient candidate tested after every candidate is observed
+consistently; otherwise the selection remains unknown or reports that no
+candidate was sufficient. This is a minimum tested sufficient disclosure, not
+an absolute minimum or a universal causal claim.
+
 The detailed design and experiment log live in [`docs/`](docs/).
 The evidence-backed first-year path is tracked in
 [`docs/content/docs/roadmap.md`](docs/content/docs/roadmap.md).

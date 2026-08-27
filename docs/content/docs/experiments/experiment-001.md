@@ -233,6 +233,36 @@ not a universal causal claim. The root receipt SHA-256 binds the summary to the
 recorded execution order and reset policy; it does not turn the result into a
 universal causal claim.
 
+## Minimum-disclosure lab
+
+The location ladder is the first reduction slice. Its plan is
+[`examples/android-location-minimize.json`](../../../../examples/android-location-minimize.json)
+and contains the synthetic candidate values in the local authoritative input:
+`exact`, `city`, and an explicit omitted sentinel. The fixture emits the
+candidate through a `location` observation field while retaining the stable
+functionality signal.
+
+Run it only against the explicitly selected authorized emulator:
+
+```console
+go run ./cmd/ariadne experiment minimize --device emulator-5554 --package dev.ariadne.fixture --pairs 1 --output .ariadne/runs/android-location-minimize examples/android-location-minimize.json
+go run ./cmd/ariadne experiment minimize verify --json .ariadne/runs/android-location-minimize
+```
+
+The reference candidate is not executed as a treatment; it supplies the fixed
+baseline for each lower-disclosure candidate. Every candidate runs through the
+same two-order replicated engine, and the minimization command automatically
+writes and verifies each child evidence bundle before saving
+`minimization.json`. The receipt is raw-value-free. Its candidate result keeps
+counterfactual `outcome` separate from `evidence_state` and classifies results
+as `sufficient`, `insufficient`, `mixed-inconsistent`, or `unknown`.
+
+Selection is conservative: all tested candidates must have complete observed
+evidence and no mixed result. The selected ID is therefore the minimum tested
+sufficient disclosure in the caller's explicit ladder order. An incomplete
+capture, failed reset, or unverifiable child prevents a privacy selection and
+leaves the minimization decision unknown.
+
 ### Common failures
 
 - If target preflight fails, confirm the selected serial with `adb devices` and

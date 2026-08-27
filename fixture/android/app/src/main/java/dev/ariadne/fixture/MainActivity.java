@@ -20,6 +20,7 @@ public final class MainActivity extends Activity {
 
     private String email;
     private String region;
+    private String location;
     private String captureMode;
     private int collectorPort;
     private String challenge;
@@ -44,8 +45,9 @@ public final class MainActivity extends Activity {
 
         email = input.value("email");
         region = input.value("region");
+        location = input.value("location");
         challenge = input.challenge();
-        if (email == null || region == null || challenge == null) {
+        if (email == null || (region == null && location == null) || challenge == null) {
             setResult(RESULT_CANCELED);
             finish();
             return;
@@ -62,7 +64,7 @@ public final class MainActivity extends Activity {
     private void runObservation(View view) {
         view.setEnabled(false);
         try {
-            byte[] observation = observationFor(email, region, challenge);
+            byte[] observation = observationFor(email, region, location, challenge);
             if (ExperimentLogic.shouldWriteStorage(email, captureMode)) {
                 writeObservation(observation);
             }
@@ -76,11 +78,16 @@ public final class MainActivity extends Activity {
         finish();
     }
 
-    private byte[] observationFor(String email, String region, String challenge) throws JSONException {
+    private byte[] observationFor(String email, String region, String location, String challenge) throws JSONException {
         JSONObject observation = new JSONObject()
                 .put("schema_version", 1)
-                .put("challenge", challenge)
-                .put("region", region)
+                .put("challenge", challenge);
+        if (location != null) {
+            observation.put("location", location);
+        } else {
+            observation.put("region", region);
+        }
+        observation
                 .put("request_id", ExperimentLogic.requestID())
                 .put("variant", ExperimentLogic.variantFor(email));
         return observation.toString().getBytes(StandardCharsets.UTF_8);

@@ -87,6 +87,41 @@ jq -e '
   (.pairs[1].order == "treatment-baseline" and .pairs[1].first_session == "treatment" and .pairs[1].second_session == "baseline")
 ' "${replication_json}"
 
+minimization_dir=".ariadne/ci-minimization/android-location"
+"${ariadne}" experiment minimize \
+  --device emulator-5554 \
+  --package dev.ariadne.fixture \
+  --pairs 1 \
+  --output "${minimization_dir}" \
+  examples/android-location-minimize.json
+minimization_verify_json="${RUNNER_TEMP}/ariadne-minimization-verify.json"
+"${ariadne}" experiment minimize verify --json \
+  "${minimization_dir}" >"${minimization_verify_json}"
+jq -e '
+  (keys_unsorted == ["schema_version", "plan_name", "variable", "reference_candidate", "functionality_criterion", "pairs_per_order", "evidence_state", "selection_state", "selected_candidate", "candidate_results"]) and
+  (.schema_version == 1) and
+  (.plan_name == "android-location-minimize") and
+  (.variable == "location") and
+  (.reference_candidate == "exact") and
+  (.functionality_criterion == "all-non-disclosure-fields-equal-v1") and
+  (.pairs_per_order == 1) and
+  (.evidence_state == "observed") and
+  (.selection_state == "selected") and
+  (.selected_candidate == "omitted") and
+  (.candidate_results | length == 2) and
+  ([.candidate_results[].id] == ["city", "omitted"]) and
+  (all(.candidate_results[]; .classification == "sufficient" and .outcome == "no-change-observed" and .evidence_state == "observed" and .pairs == 2 and .pairs_per_order == 1 and .completed_pairs == 2 and .changed_pairs == 0 and .no_change_pairs == 2 and .unknown_pairs == 0 and (.receipt_sha256 | test("^[0-9a-f]{64}$"))))
+' "${minimization_verify_json}"
+if grep -F -q \
+  -e "37.7749-122.4194" \
+  -e "san-francisco" \
+  -e "baseline@example.invalid" \
+  -e "request_id" \
+  "${minimization_dir}/minimization.json" \
+  "${minimization_verify_json}"; then
+  echo "minimization receipt exposed a raw candidate value" >&2
+  exit 1
+fi
 browser_trace_json="${RUNNER_TEMP}/ariadne-browser-trace.json"
 browser_trace_summary="${RUNNER_TEMP}/ariadne-browser-trace-summary.json"
 "${ariadne}" browser trace --json \

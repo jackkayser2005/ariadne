@@ -16,6 +16,11 @@ rejected. The challenge is included in local network/storage observations so
 the runner can require the two evidence channels to agree; reports, traces,
 logs, and portable receipts retain only the challenge commitment or omit it.
 
+The same authenticated boundary supports the first minimum-disclosure lab. A
+plan may add the optional `location` persona field; the fixture then emits that
+controlled value as `location` while keeping `variant` as the fixed
+functionality signal. The `omitted` candidate is represented by a fixture-safe
+sentinel, and its raw plan value is not placed in the minimization receipt.
 The fixture-only `capture_mode=treatment_network_only` control leaves baseline
 behavior unchanged but omits treatment storage after sending the treatment
 network observation. `examples/experiment-001-storage-gap.json` uses this mode
