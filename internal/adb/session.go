@@ -601,7 +601,7 @@ func runSessionWithAuth(
 					record.Steps[len(record.Steps)-1].Status = "error"
 					record.Steps[len(record.Steps)-1].ExitCode = -1
 					failureStage = "capture_storage"
-					return fmt.Errorf("%s: validate storage authentication: %w", kind, err)
+					return fmt.Errorf("%s: capture storage authentication: %w", kind, err)
 				}
 			}
 			artifact, err = writeStorageObservation(sessionDir, output)

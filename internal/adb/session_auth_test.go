@@ -230,7 +230,7 @@ func contains(values []string, wanted string) bool {
 	return false
 }
 
-func TestRunPairWithAuthenticatedEmptyStorageIsCaptureFailure(t *testing.T) {
+func TestRunPairWithAuthenticatedUnverifiableStorageIsCaptureFailure(t *testing.T) {
 	manifest := sessionManifest()
 	manifest.SchemaVersion = 3
 	manifest.TapResourceID = "dev.ariadne.fixture:id/observe_button"
@@ -274,7 +274,7 @@ func TestRunPairWithAuthenticatedEmptyStorageIsCaptureFailure(t *testing.T) {
 			return nil, nil
 		}
 		if len(args) > 2 && args[2] == "exec-out" {
-			return nil, nil
+			return []byte("cat: files/observation.json: No such file or directory\n"), nil
 		}
 		return []byte("Status: ok\n"), nil
 	}
@@ -297,7 +297,7 @@ func TestRunPairWithAuthenticatedEmptyStorageIsCaptureFailure(t *testing.T) {
 		challenge,
 		sequenceClock(),
 	)
-	if err == nil || !strings.Contains(err.Error(), "capture storage: empty observation") {
+	if err == nil || !strings.Contains(err.Error(), "capture storage authentication: challenge evidence has invalid JSON structure") {
 		t.Fatalf("runPairWithAuthenticated() error = %v", err)
 	}
 	data, err := os.ReadFile(filepath.Join(outputDir, "baseline", "session.json"))
