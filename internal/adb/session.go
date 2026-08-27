@@ -462,6 +462,10 @@ func runSessionWithAuth(
 					failureStage = "start"
 					return fmt.Errorf("%s: write private fixture input: %w", kind, err)
 				}
+				if err := verifyFixtureInput(ctx, run, binary, target); err != nil {
+					failureStage = "start"
+					return fmt.Errorf("%s: verify private fixture input: %w", kind, err)
+				}
 			}
 
 			args := []string{"-s", target.Device, "shell", "am", "start", "-W", "-S"}

@@ -169,6 +169,17 @@ func fixtureInputArgs(target Target) []string {
 	}
 }
 
+func verifyFixtureInput(ctx context.Context, run commandRunner, binary string, target Target) error {
+	_, err := run(
+		ctx,
+		binary,
+		"-s", target.Device,
+		"shell", "run-as", target.Package,
+		"test", "-s", fixtureInputPath,
+	)
+	return err
+}
+
 func removeFixtureInput(ctx context.Context, run commandRunner, binary string, target Target) error {
 	_, err := run(
 		ctx,
