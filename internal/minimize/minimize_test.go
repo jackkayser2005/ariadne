@@ -877,9 +877,17 @@ func TestVerifyChecksValidChildReplication(t *testing.T) {
 	if err := Save(root, summary); err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
-	verified, err := Verify(root)
+	verified, receiptSHA256, err := VerifyWithIdentity(root)
 	if err != nil {
-		t.Fatalf("Verify() error = %v", err)
+		t.Fatalf("VerifyWithIdentity() error = %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "minimization.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(data)
+	if receiptSHA256 != hex.EncodeToString(digest[:]) {
+		t.Fatalf("receipt SHA-256 = %q, want %q", receiptSHA256, hex.EncodeToString(digest[:]))
 	}
 	if verified.SelectedCandidate != "city" || verified.CandidateResults[0].ReceiptSHA256 != child.ReceiptSHA256 {
 		t.Fatalf("verified summary = %#v", verified)

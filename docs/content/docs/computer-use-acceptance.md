@@ -105,6 +105,27 @@ change the bundle question route or merge trace identities into the evidence
 archive. When both archive flags are supplied, `/trace-archive` fails closed
 unless the live archive and saved question round identities agree.
 
+## Minimum-disclosure review
+
+After a verified Android minimization run, expose its raw-value-free receipt in
+that same loopback server:
+
+```console
+go run ./cmd/ariadne experiment minimize verify --json <minimization-directory>
+go run ./cmd/ariadne experiment serve \
+  --minimization <minimization-directory> \
+  <archive-root>
+```
+
+Open `/minimization` from the printed loopback authority. Confirm the page
+shows the candidate IDs in recorded ladder order, the selected candidate (only
+when the selection state is `selected`), the root receipt SHA-256, and separate
+functionality classification, counterfactual outcome, and evidence-state
+fields. A mixed, incomplete, or unknown candidate must leave the selection
+unestablished. The page is a read-only projection: it never renders plan
+values, personas, manifests, local paths, URLs, challenges, or captured
+observations. Computer-use may orient to this page, but the verifier and
+its deterministic tests remain the authoritative checks.
 ## Driver sequence
 
 1. Open the printed loopback URL in the authorized local browser window.

@@ -80,7 +80,15 @@ defines an ordered exact/city/omitted Android ladder, runs each lower-
 disclosure candidate through the existing two-order engine, and emits a
 raw-value-free receipt with separate candidate outcomes and evidence states.
 Selection is withheld for any mixed or unknown candidate and is described only
-as the minimum tested sufficient disclosure.
+as the minimum tested sufficient disclosure. The loopback review server now
+accepts that verified minimization directory through `--minimization` and
+renders a separate GET-only `/minimization` view. It projects only safe
+candidate IDs, ladder order, counts, receipt identities, functionality
+classifications, replicated outcomes, and evidence states; it re-verifies the
+receipt and child replications on each request, binds the canonical configured loopback Host
+authority, and uses no-store/security headers. This closes the first
+observe/authenticate/reduce/replay/compare/verify slice into a usable local
+inspection surface without turning the desktop page into a capture service.
 
 6. **Browser audit handoff (not evidence-backed capture).** An authorized
    browser driver can provide a bounded, already-redacted audit that Ariadne
@@ -274,7 +282,7 @@ must remain bound to a verified history and must say
 
 ### Months 10–12: expand only after the contract holds
 
-Use the two-order replicated Android experiment and the fixed local-browser
+Use the two-order replicated Android experiment and its read-only minimization receipt review, together with the fixed local-browser
 fixture as evidence gates. They test whether a reported change survives
 repeated resets and reversed session order while keeping source-specific
 capture narrow. The browser audit producer, explicit driver protocol,

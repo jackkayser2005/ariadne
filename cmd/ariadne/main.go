@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"runtime/debug"
+	"strconv"
 	"time"
 
 	"github.com/jackkayser2005/ariadne/internal/adb"
@@ -114,7 +115,7 @@ const usage = `usage:
   ariadne experiment ask-archive verify [--json] [--expect-sha256 <digest>] <report.json>
   ariadne experiment questions [--json]
   ariadne experiment list [--json] <archive-root>
-	ariadne experiment serve [--addr <address>] [--history <history.json>] [--reflection <report.json>] [--export <export.json>] [--acceptance <acceptance.json>] [--round-first <round.json> --round-second <round.json>] [--trace-archive <archive.json>] [--trace-round <round.json>] [--trace-replication <ledger.json>] [--trace-case <case.json>] [--trace-study <study.json>] [--trace-study-round <round.json>] [--trace-study-receipt <receipt.json>] [--trace-study-second <study.json> --trace-study-round-second <round.json>] <archive-root>
+	ariadne experiment serve [--addr <address>] [--history <history.json>] [--reflection <report.json>] [--export <export.json>] [--acceptance <acceptance.json>] [--round-first <round.json> --round-second <round.json>] [--trace-archive <archive.json>] [--trace-round <round.json>] [--trace-replication <ledger.json>] [--trace-case <case.json>] [--trace-study <study.json>] [--trace-study-round <round.json>] [--trace-study-receipt <receipt.json>] [--trace-study-second <study.json> --trace-study-round-second <round.json>] [--minimization <run-directory>] <archive-root>
 `
 
 const adbCheckTimeout = 10 * time.Second
@@ -3134,6 +3135,7 @@ func runServe(
 	traceStudyReceiptPath := flags.String("trace-study-receipt", "", "")
 	traceStudySecondPath := flags.String("trace-study-second", "", "")
 	traceStudyRoundSecondPath := flags.String("trace-study-round-second", "", "")
+	minimizationPath := flags.String("minimization", "", "")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
 		_, _ = io.WriteString(stderr, usage)
 		return 2
@@ -3166,7 +3168,26 @@ func runServe(
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment serve: write output: %v\n", err)
 		return 1
 	}
-	reviewHandler := ui.HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCaseAndStudyArtifactsAndComparison(flags.Arg(0), *historyPath, *reflectionPath, *exportPath, *acceptancePath, *roundFirstPath, *roundSecondPath, *traceArchivePath, *traceRoundPath, *traceReplicationPath, *traceCasePath, *traceStudyPath, *traceStudyRoundPath, *traceStudyReceiptPath, *traceStudySecondPath, *traceStudyRoundSecondPath)
+	reviewHandler := ui.HandlerWithReviewOptions(ui.ReviewOptions{
+		ArchiveRoot:               flags.Arg(0),
+		HistoryPath:               *historyPath,
+		ReflectionPath:            *reflectionPath,
+		ExportPath:                *exportPath,
+		AcceptancePath:            *acceptancePath,
+		FirstRoundPath:            *roundFirstPath,
+		SecondRoundPath:           *roundSecondPath,
+		TraceArchivePath:          *traceArchivePath,
+		TraceRoundPath:            *traceRoundPath,
+		TraceReplicationPath:      *traceReplicationPath,
+		TraceCasePath:             *traceCasePath,
+		TraceStudyPath:            *traceStudyPath,
+		TraceStudyRoundPath:       *traceStudyRoundPath,
+		TraceStudyReceiptPath:     *traceStudyReceiptPath,
+		TraceStudySecondPath:      *traceStudySecondPath,
+		TraceStudyRoundSecondPath: *traceStudyRoundSecondPath,
+		MinimizationPath:          *minimizationPath,
+		ExpectedHost:              *address,
+	})
 	if err := serve(*address, reviewHandler); err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment serve: %v\n", err)
 		return 1
@@ -3175,10 +3196,14 @@ func runServe(
 }
 
 func loopbackAddress(address string) bool {
-	host, _, err := net.SplitHostPort(address)
-	if err != nil {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil || port == "" {
+		return false
+	}
+	portNumber, err := strconv.Atoi(port)
+	if err != nil || portNumber < 1 || portNumber > 65535 || strconv.Itoa(portNumber) != port {
 		return false
 	}
 	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
+	return ip != nil && ip.IsLoopback() && address == net.JoinHostPort(ip.String(), port)
 }

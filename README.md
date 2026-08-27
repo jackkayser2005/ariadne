@@ -693,7 +693,7 @@ The local review page can receive a verified transition ledger, a saved
 reflection, an acceptance identity binding, two retained question rounds, and
 one portable trace archive, saved question round, replicated trace ledger, or
 cross-source case with
-`experiment serve --history <history.json> --reflection <reflection.json> --acceptance <acceptance.json> --round-first <first-round.json> --round-second <second-round.json> --trace-archive <trace-archive.json> --trace-round <trace-round.json> --trace-replication <ledger.json> --trace-case <case.json> --trace-study <study.json> --trace-study-round <round.json> --trace-study-receipt <receipt.json> <archive-root>`.
+`experiment serve --history <history.json> --reflection <reflection.json> --acceptance <acceptance.json> --round-first <first-round.json> --round-second <second-round.json> --trace-archive <trace-archive.json> --trace-round <trace-round.json> --trace-replication <ledger.json> --trace-case <case.json> --trace-study <study.json> --trace-study-round <round.json> --trace-study-receipt <receipt.json> [--minimization <run-directory>] <archive-root>`.
 It renders caller-ordered bounded transitions and re-asks the saved reflection's
 fixed question against the current archive, showing only safe comparison counts,
 identities, per-directory bounded state changes, and the repeated-change
@@ -761,6 +761,25 @@ result/outcome/evidence-state projections. It does not render paths, payloads,
 URLs, captured values, or language implying chronology, trend, improvement,
 regression, authorization, or causality.
 
+When `--minimization <run-directory>` is supplied, the same server adds a
+`/minimization` page for a verified minimum-disclosure receipt:
+
+```console
+go run ./cmd/ariadne experiment serve \
+  --minimization .ariadne/runs/android-location-minimize \
+  <archive-root>
+```
+
+The route calls the authoritative verifier on every request, rechecks the
+canonical receipt and every child replication, and displays the root receipt
+identity, recorded candidate order, safe counts, functionality classification,
+replicated counterfactual outcome, and evidence state. The page renders only
+candidate IDs and verifier-derived metadata; it never renders the minimization
+directory, plan values, personas, manifests, URLs, challenges, or captured
+observations. A selected result is labeled **minimum tested sufficient
+disclosure**. Mixed, incomplete, or unknown evidence leaves the selection
+unestablished. The loopback server requires the canonical configured loopback authority
+and sends no-store/security headers; it remains GET-only.
 Stable-ID Android sessions also record a SHA-256 identity for the successful
 UI hierarchy used to resolve the manifest-declared control. The raw hierarchy
 XML is never retained in session metadata; this identity is control provenance
