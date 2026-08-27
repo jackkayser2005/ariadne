@@ -24,6 +24,7 @@ func TestRunPairWithAuthenticatedInputBoundary(t *testing.T) {
 	var inputDocuments [][]byte
 	var starts [][]string
 	cleanupCalls := 0
+	mkdirCalls := 0
 
 	ui := []byte(`<hierarchy><node resource-id="dev.ariadne.fixture:id/observe_button" bounds="[100,200][300,400]" /></hierarchy>`)
 
@@ -88,6 +89,13 @@ func TestRunPairWithAuthenticatedInputBoundary(t *testing.T) {
 				currentInput.Role,
 			)), nil
 		}
+		if len(args) > 3 && args[3] == "run-as" && contains(args, "mkdir") {
+			expected := "-s emulator-5554 shell run-as dev.ariadne.fixture mkdir -p files"
+			if strings.Join(args, " ") != expected {
+				return nil, fmt.Errorf("unexpected private input directory command: %v", args)
+			}
+			mkdirCalls++
+		}
 		if len(args) > 3 && args[3] == "run-as" && contains(args, "rm") {
 			cleanupCalls++
 		}
@@ -114,7 +122,7 @@ func TestRunPairWithAuthenticatedInputBoundary(t *testing.T) {
 		t.Fatalf("runPairWithAuthenticated() error = %v", err)
 	}
 
-	if len(inputDocuments) != 2 || cleanupCalls != 2 || len(starts) != 2 {
+	if len(inputDocuments) != 2 || cleanupCalls != 2 || mkdirCalls != 2 || len(starts) != 2 {
 		t.Fatalf("input documents = %d, cleanup calls = %d, starts = %d", len(inputDocuments), cleanupCalls, len(starts))
 	}
 	for _, start := range starts {

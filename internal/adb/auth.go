@@ -20,6 +20,7 @@ import (
 
 const (
 	fixtureInputSchemaVersion  = 1
+	fixtureInputDirectory      = "files"
 	fixtureInputPath           = "files/ariadne-input.json"
 	maxFixtureInputBytes       = 32 << 10
 	challengeSize              = 32
@@ -167,6 +168,17 @@ func fixtureInputArgs(target Target) []string {
 		"shell", "-T", "run-as", target.Package, "sh", "-c",
 		"'cat > " + fixtureInputPath + "'",
 	}
+}
+
+func ensureFixtureInputDirectory(ctx context.Context, run commandRunner, binary string, target Target) error {
+	_, err := run(
+		ctx,
+		binary,
+		"-s", target.Device,
+		"shell", "run-as", target.Package,
+		"mkdir", "-p", fixtureInputDirectory,
+	)
+	return err
 }
 
 func verifyFixtureInput(ctx context.Context, run commandRunner, binary string, target Target) error {

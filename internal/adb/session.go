@@ -458,6 +458,10 @@ func runSessionWithAuth(
 					failureStage = "start"
 					return fmt.Errorf("%s: encode fixture input: %w", kind, err)
 				}
+				if err := ensureFixtureInputDirectory(ctx, run, binary, target); err != nil {
+					failureStage = "start"
+					return fmt.Errorf("%s: prepare private fixture input: %w", kind, err)
+				}
 				if _, err := auth.writeInput(ctx, binary, inputData, fixtureInputArgs(target)...); err != nil {
 					failureStage = "start"
 					return fmt.Errorf("%s: write private fixture input: %w", kind, err)
