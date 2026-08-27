@@ -193,9 +193,23 @@ func compareFixtureSessionPairIgnoringFields(paths browserReplicationPathsValue,
 	if err != nil {
 		return portabletrace.SessionPairComparison{}, err
 	}
+	baselineSHA256, err := portabletrace.SHA256(baseline)
+	if err != nil {
+		return portabletrace.SessionPairComparison{}, fmt.Errorf("hash browser baseline trace: %w", err)
+	}
+	if baselineSHA256 != pair.BaselineTraceSHA256 {
+		return portabletrace.SessionPairComparison{}, errors.New("browser baseline trace identity changed during comparison")
+	}
 	treatment, err := portabletrace.Read(paths.treatmentTrace)
 	if err != nil {
 		return portabletrace.SessionPairComparison{}, err
+	}
+	treatmentSHA256, err := portabletrace.SHA256(treatment)
+	if err != nil {
+		return portabletrace.SessionPairComparison{}, fmt.Errorf("hash browser treatment trace: %w", err)
+	}
+	if treatmentSHA256 != pair.TreatmentTraceSHA256 {
+		return portabletrace.SessionPairComparison{}, errors.New("browser treatment trace identity changed during comparison")
 	}
 	comparison, err := portabletrace.Compare(removeFields(baseline, ignoredFields), removeFields(treatment, ignoredFields))
 	if err != nil {
