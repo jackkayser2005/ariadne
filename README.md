@@ -49,8 +49,9 @@ observations. Ariadne requires the network and storage challenges to match,
 records only a challenge commitment in `session.json`, and excludes the raw
 challenge from reports, traces, and portable exports. Missing, stale, reused,
 or mismatched challenges remain unverifiable rather than becoming a privacy
-assurance. Legacy bundles remain readable, but they do not receive invented
-authentication or outcome semantics.
+assurance. A missing authenticated network capture is also represented as an
+incomplete unknown, never as evidence of no change. Legacy bundles remain
+readable, but they do not receive invented authentication or outcome semantics.
 
 The detailed design and experiment log live in [`docs/`](docs/).
 The evidence-backed first-year path is tracked in

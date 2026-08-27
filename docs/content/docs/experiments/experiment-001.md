@@ -622,8 +622,11 @@ If the baseline completes but treatment storage capture fails after treatment
 network capture succeeds, reporting preserves the five verified artifacts and
 classifies every field found in either available session as `unknown`. It does
 not compare the available network value or claim that any field changed or
-stayed stable. Other incomplete session shapes remain unsupported and stop
-report generation.
+stayed stable. If authenticated network capture fails before an observation
+arrives, the session records both capture steps as failed with no observation
+artifacts; verification accepts that bounded zero-artifact shape and reports
+`unknown` with a network-unavailable reason. Other incomplete session shapes
+remain unsupported and stop report generation.
 The authorized fixture proof is declared in
 `examples/experiment-001-storage-gap.json` and runs in the real-emulator
 workflow.
