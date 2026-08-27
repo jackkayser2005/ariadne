@@ -271,6 +271,7 @@ go run ./cmd/ariadne trace case save --json \
   trace-archive .ariadne/trace-archive.json .ariadne/trace-archive-round.json \
   trace-replication .ariadne/trace-replication.json .ariadne/trace-replication-round.json
 go run ./cmd/ariadne trace case verify --json .ariadne/case.json
+go run ./cmd/ariadne trace case map --json .ariadne/case.json
 go run ./cmd/ariadne trace case ask all --json .ariadne/case.json
 go run ./cmd/ariadne trace case ask all save --json .ariadne/case.json .ariadne/case-round.json
 go run ./cmd/ariadne trace case ask all verify --json .ariadne/case-round.json
@@ -284,6 +285,13 @@ captured values; caller order is retained without inferring chronology. A
 case is a durable reflection/index boundary, not a database, universal
 capture service, cross-source causal attribution, or natural-language
 question engine.
+
+The derived `trace case map` command groups safe category labels from every
+embedded trace and reports reviewed source, adapter, channel, event kind,
+destination, and retained-trace count. Aggregate `coverage_state` becomes
+`unknown` when any contributing trace is partial; directly retained
+observations remain `observed`. The map is recomputed from the verified case
+and is not persisted as a second evidence store.
 
 `trace case ask all compare` independently verifies both retained rounds and
 compares their fixed projections in caller order. It reports `same` or
@@ -307,7 +315,9 @@ The read-only `/trace-case` route re-verifies the embedded archives, ledgers,
 and matching question rounds before rendering only the case identity, caller
 order, safe source summaries, child identities, fixed case answers, and
 separate question `result`, replicated child `outcome`, and `evidence_state`
-fields. A case question result such as `available`, `supported`, or `unknown`
+fields. It also renders the derived cross-source disclosure map using only
+reviewed category and destination labels plus retained-trace counts. A case
+question result such as `available`, `supported`, or `unknown`
 is not itself a replicated outcome. It fails closed with a generic
 `trace case unavailable` response for malformed or identity-inconsistent
 input; it never renders the configured path, captured values, or source

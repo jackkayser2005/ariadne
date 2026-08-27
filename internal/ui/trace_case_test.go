@@ -48,7 +48,7 @@ func TestHandlerRendersTraceCaseReflection(t *testing.T) {
 		"archives",
 		"replicated ledgers",
 		"unknown entries",
-		"case SHA-256",
+		"case SHA-256", "Cross-source disclosure map", "coverage state", "retained traces", "trace-case-disclosure-map", "location", "consent", "traces",
 		"browser-redacted-audit",
 		trace.CaseQuestionSources,
 		trace.CaseQuestionOutcomes,

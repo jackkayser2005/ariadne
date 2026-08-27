@@ -674,6 +674,7 @@ go run ./cmd/ariadne trace case save --json \
   trace-archive .ariadne/trace-archive.json .ariadne/trace-archive-round.json \
   trace-replication .ariadne/trace-replication.json .ariadne/trace-replication-round.json
 go run ./cmd/ariadne trace case verify --json .ariadne/case.json
+go run ./cmd/ariadne trace case map --json .ariadne/case.json
 go run ./cmd/ariadne trace case ask all --json .ariadne/case.json
 go run ./cmd/ariadne trace case ask all save --json .ariadne/case.json .ariadne/case-round.json
 go run ./cmd/ariadne trace case ask all verify --json .ariadne/case-round.json
@@ -696,6 +697,14 @@ does not infer chronology, and it stores no source paths, target identifiers,
 process arguments, or captured values. It is a durable reflection/index
 boundary, not a database, capture runner, universal sniffer, cross-source
 causal attribution engine, or natural-language question interface.
+
+The derived `trace case map` command recomputes a deterministic, raw-value-free
+projection from the verified package. It groups reviewed category labels and
+reports only source, adapter, channel, event kind, destination, and retained
+trace count. A partial contributing trace changes aggregate `coverage_state` to
+`unknown`; a directly retained observation remains `observed`. The map does not
+infer absence, correlate identities, or become a second persisted evidence
+store.
 
 To compare two retained case question rounds, use the bounded caller-ordered
 comparison:
@@ -728,19 +737,20 @@ go run ./cmd/ariadne experiment serve \
 
 Open `/trace-case` to see the case SHA-256, caller order basis, archive and
 replication counts, safe reviewed source/adapter summaries, each child
-artifact and question-round identity, and the three fixed case answers. The
-fixed case answers use a question `result` such as `available`, `supported`,
-or `unknown`; they are not replicated outcomes. Child entries remain in caller
-order; the page does not describe entries as earlier or later. Replicated
-child outcomes are rendered separately from their `evidence_state`, so
-`unknown` remains missing support rather than a no-change claim. The route
-re-verifies the full embedded package and recomputes answers
-before rendering, accepts only `GET`, and returns only
-`trace case unavailable` for malformed, tampered, or identity-inconsistent
-input. It never renders the configured path, source-specific arguments,
-target identifiers, URLs, or captured values. This is a read-only orientation
-surface, not proof that a computer-use driver selected an answer or that
-cross-source behavior is causal.
+artifact and question-round identity, and the three fixed case answers. It
+also renders the derived cross-source disclosure map with reviewed category
+and destination labels plus retained-trace counts. The fixed case answers use
+a question `result` such as `available`, `supported`, or `unknown`; they are
+not replicated outcomes. Child entries remain in caller order; the page does
+not describe entries as earlier or later. Replicated child outcomes are
+rendered separately from their `evidence_state`, so `unknown` remains missing
+support rather than a no-change claim. The route re-verifies the full embedded
+package and recomputes answers and the map before rendering, accepts only
+`GET`, and returns only `trace case unavailable` for malformed, tampered, or
+identity-inconsistent input. It never renders the configured path,
+source-specific arguments, target identifiers, URLs, or captured values. This
+is a read-only orientation surface, not proof that a computer-use driver
+selected an answer or that cross-source behavior is causal.
 
 ## Bigger-picture path
 
@@ -769,7 +779,10 @@ The intended flow is:
 10. The case package and its read-only `/trace-case` route can join those
     verified archives and replicated ledgers with their fixed question rounds,
     giving a computer-use driver one stable raw-value-free object to inspect
-    and ask about without reopening source paths or inferring chronology.
+    and ask about without reopening source paths or inferring chronology. Its
+    derived disclosure map makes reviewed category appearances and safe
+    retained-trace counts visible across those boundaries without correlating
+    identities or claiming causality.
 
 The Experiment 001 Android producer remains the authoritative evidence-backed
 edge, and the replicated runner is the evidence gate. The browser audit and
