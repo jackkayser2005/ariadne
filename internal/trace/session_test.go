@@ -251,6 +251,33 @@ func TestVerifySessionPair(t *testing.T) {
 	}
 }
 
+func TestCandidateBoundSessionPairRejectsSubstitution(t *testing.T) {
+	baselineTrace := writeTrace(t, Document{
+		SchemaVersion: 1, Redacted: true, Scope: "outbound", Completeness: Complete,
+		Events: []Event{{Source: "browser", Channel: "network", Kind: "request", Destination: "analytics", Fields: []string{"region"}}},
+	})
+	treatmentTrace := writeTrace(t, Document{
+		SchemaVersion: 1, Redacted: true, Scope: "outbound", Completeness: Complete,
+		Events: []Event{{Source: "browser", Channel: "network", Kind: "request", Destination: "analytics", Fields: []string{"account-id", "region"}}},
+	})
+	root := t.TempDir()
+	baselineSession := filepath.Join(root, "baseline-session.json")
+	treatmentSession := filepath.Join(root, "treatment-session.json")
+	input := SessionPairInput{Adapter: "browser-redacted-audit", AdapterVersion: 1, ProcedureSHA256: strings.Repeat("c", 64), Scope: "outbound", Order: OrderBaselineTreatment, CandidateID: "omitted"}
+	if _, err := SaveSessionPair(baselineTrace, treatmentTrace, baselineSession, treatmentSession, input); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifySessionPairWithCandidate(baselineSession, baselineTrace, treatmentSession, treatmentTrace, "omitted"); err != nil {
+		t.Fatalf("candidate-aware verification = %v", err)
+	}
+	if _, err := VerifySessionPairWithCandidate(baselineSession, baselineTrace, treatmentSession, treatmentTrace, "reference"); err == nil || !strings.Contains(err.Error(), "identity") {
+		t.Fatalf("candidate substitution error = %v", err)
+	}
+	if _, err := VerifySessionPair(baselineSession, baselineTrace, treatmentSession, treatmentTrace); err == nil || !strings.Contains(err.Error(), "identity") {
+		t.Fatalf("legacy verifier accepted candidate-bound pair: %v", err)
+	}
+}
+
 func TestSessionPairSHA256ValidatesAndCanonicalizes(t *testing.T) {
 	input := SessionPairInput{
 		Adapter: "browser-redacted-audit", AdapterVersion: 1, ProcedureSHA256: strings.Repeat("a", 64), Scope: "outbound", Order: OrderBaselineTreatment,
@@ -270,6 +297,21 @@ func TestSessionPairSHA256ValidatesAndCanonicalizes(t *testing.T) {
 	third, err := SessionPairSHA256(baselineTraceSHA256, treatmentTraceSHA256, changedOrder)
 	if err != nil || third == first {
 		t.Fatalf("pair order did not affect identity: %q, %q, %v", first, third, err)
+	}
+	candidateInput := input
+	candidateInput.CandidateID = "omitted"
+	candidate, err := SessionPairSHA256(baselineTraceSHA256, treatmentTraceSHA256, candidateInput)
+	if err != nil || candidate == first {
+		t.Fatalf("candidate binding did not affect identity: %q, %q, %v", first, candidate, err)
+	}
+	candidateAgain, err := SessionPairSHA256(baselineTraceSHA256, treatmentTraceSHA256, candidateInput)
+	if err != nil || candidateAgain != candidate {
+		t.Fatalf("candidate identity is not canonical: %q, %q, %v", candidate, candidateAgain, err)
+	}
+	invalidCandidate := input
+	invalidCandidate.CandidateID = "bad id"
+	if _, err := SessionPairSHA256(baselineTraceSHA256, treatmentTraceSHA256, invalidCandidate); err == nil || !strings.Contains(err.Error(), "candidate_id") {
+		t.Fatalf("invalid candidate error = %v", err)
 	}
 	for _, test := range []struct {
 		name  string

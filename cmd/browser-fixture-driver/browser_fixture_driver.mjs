@@ -49,6 +49,30 @@ function fixtureVariant() {
   return variant;
 }
 
+function fixtureCandidate() {
+  const args = process.argv.slice(2);
+  const matches = args.reduce((count, value) => count + (value === "--fixture-candidate" ? 1 : 0), 0);
+  const inline = args.filter((value) => value.startsWith("--fixture-candidate="));
+  if (matches + inline.length > 1) {
+    throw new Error("fixture candidate is duplicated");
+  }
+  if (inline.length === 1) {
+    const candidate = inline[0].slice("--fixture-candidate=".length);
+    if (candidate !== "reference" && candidate !== "omitted") {
+      throw new Error("fixture candidate is invalid");
+    }
+    return candidate;
+  }
+  if (matches === 0) {
+    return "";
+  }
+  const candidate = args[args.indexOf("--fixture-candidate") + 1];
+  if (candidate !== "reference" && candidate !== "omitted") {
+    throw new Error("fixture candidate is invalid");
+  }
+  return candidate;
+}
+
 function targetOrigin(procedure) {
   let parsed;
   try {
@@ -160,8 +184,14 @@ async function freePort() {
   return port;
 }
 
-function fixturePage(port, variant) {
-  const collectFields = variant === "treatment" ? "region=fixture&session_id=fixture&account_id=fixture" : "region=fixture&session_id=fixture";
+function fixturePage(port, variant, candidate) {
+  const collectFields = candidate === "reference"
+    ? "region=fixture&session_id=fixture&account_id=fixture"
+    : candidate === "omitted"
+      ? "region=fixture&session_id=fixture"
+      : variant === "treatment"
+        ? "region=fixture&session_id=fixture&account_id=fixture"
+        : "region=fixture&session_id=fixture";
   return `<!doctype html>
 <meta charset="utf-8">
 <title>Ariadne local browser fixture</title>
@@ -173,13 +203,13 @@ navigator.sendBeacon("http://analytics.localhost:${port}/beacon?consent=fixture"
 </script>`;
 }
 
-function fixtureServer(variant) {
+function fixtureServer(variant, candidate) {
   let portRef = 0;
   const server = createHTTPServer((request, response) => {
     const host = String(request.headers.host || "").split(":")[0].toLowerCase();
     if (host === "app.localhost" && request.url === "/") {
       response.writeHead(200, {"content-type": "text/html; charset=utf-8"});
-      response.end(fixturePage(portRef, variant));
+      response.end(fixturePage(portRef, variant, candidate));
       return;
     }
     if (host === "analytics.localhost" && (request.url?.startsWith("/collect") || request.url?.startsWith("/beacon"))) {
@@ -453,8 +483,9 @@ async function capture(procedure) {
   let fixturePort = 0;
   if (isFixture) {
     const variant = fixtureVariant();
+    const candidate = fixtureCandidate();
     stage = "fixture";
-    fixture = fixtureServer(variant);
+    fixture = fixtureServer(variant, candidate);
     fixturePort = await listen(fixture.server);
     fixture.setPort(fixturePort);
   }
