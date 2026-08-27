@@ -34,9 +34,11 @@ type ReviewOptions struct {
 	TraceStudySecondPath      string
 	TraceStudyRoundSecondPath string
 	MinimizationPath          string
-	MinimizationRoundPath     string
-	MinimizationReceiptPath   string
-	ExpectedHost              string
+	// MinimizationLadderVerify is the explicit source-adapter verifier for a shared ladder receipt.
+	MinimizationLadderVerify func(string) (minimize.LadderSummary, string, error)
+	MinimizationRoundPath    string
+	MinimizationReceiptPath  string
+	ExpectedHost             string
 }
 
 func reviewHandler(options ReviewOptions) http.Handler {
@@ -102,6 +104,7 @@ func reviewHandler(options ReviewOptions) http.Handler {
 	if options.MinimizationPath != "" {
 		h.minimizationPath = options.MinimizationPath
 		h.minimizationVerify = minimize.VerifyWithIdentity
+		h.minimizationLadderVerify = options.MinimizationLadderVerify
 	}
 	if options.MinimizationRoundPath != "" {
 		h.minimizationRoundPath = options.MinimizationRoundPath
@@ -128,10 +131,16 @@ type minimizationReviewData struct {
 	Variable               string
 	ReferenceCandidate     string
 	FunctionalityCriterion string
+	Adapter                string
+	AdapterVersion         int
+	ProcedureSHA256        string
+	Scope                  string
+	ResetPolicy            string
 	PairsPerOrder          int
 	EvidenceState          evidence.State
 	SelectionState         minimize.SelectionState
 	SelectedCandidate      string
+	Legacy                 bool
 	Candidates             []minimizationCandidateData
 	Questions              []minimize.MinimizationQuestionAnswer
 	RoundSaved             bool
@@ -157,8 +166,46 @@ type minimizationCandidateData struct {
 }
 
 func minimizationReview(summary minimize.MinimizationSummary, receiptSHA256 string) minimizationReviewData {
-	candidates := make([]minimizationCandidateData, 0, len(summary.CandidateResults))
-	for _, result := range summary.CandidateResults {
+	return minimizationReviewData{
+		SchemaVersion:          summary.SchemaVersion,
+		ReceiptSHA256:          receiptSHA256,
+		PlanName:               summary.PlanName,
+		Variable:               summary.Variable,
+		ReferenceCandidate:     summary.ReferenceCandidate,
+		FunctionalityCriterion: summary.FunctionalityCriterion,
+		PairsPerOrder:          summary.PairsPerOrder,
+		EvidenceState:          summary.EvidenceState,
+		SelectionState:         summary.SelectionState,
+		SelectedCandidate:      summary.SelectedCandidate,
+		Legacy:                 true,
+		Candidates:             minimizationCandidates(summary.CandidateResults),
+	}
+}
+
+func ladderMinimizationReview(summary minimize.LadderSummary, receiptSHA256 string) minimizationReviewData {
+	return minimizationReviewData{
+		SchemaVersion:          summary.SchemaVersion,
+		ReceiptSHA256:          receiptSHA256,
+		PlanName:               summary.PlanName,
+		Variable:               summary.Variable,
+		ReferenceCandidate:     summary.ReferenceCandidate,
+		FunctionalityCriterion: summary.FunctionalityCriterion,
+		Adapter:                summary.Adapter,
+		AdapterVersion:         summary.AdapterVersion,
+		ProcedureSHA256:        summary.ProcedureSHA256,
+		Scope:                  summary.Scope,
+		ResetPolicy:            summary.ResetPolicy,
+		PairsPerOrder:          summary.PairsPerOrder,
+		EvidenceState:          summary.EvidenceState,
+		SelectionState:         summary.SelectionState,
+		SelectedCandidate:      summary.SelectedCandidate,
+		Candidates:             minimizationCandidates(summary.CandidateResults),
+	}
+}
+
+func minimizationCandidates(results []minimize.CandidateResult) []minimizationCandidateData {
+	candidates := make([]minimizationCandidateData, 0, len(results))
+	for _, result := range results {
 		candidates = append(candidates, minimizationCandidateData{
 			ID:             result.ID,
 			Classification: result.Classification,
@@ -173,21 +220,8 @@ func minimizationReview(summary minimize.MinimizationSummary, receiptSHA256 stri
 			UnknownPairs:   result.UnknownPairs,
 		})
 	}
-	return minimizationReviewData{
-		SchemaVersion:          summary.SchemaVersion,
-		ReceiptSHA256:          receiptSHA256,
-		PlanName:               summary.PlanName,
-		Variable:               summary.Variable,
-		ReferenceCandidate:     summary.ReferenceCandidate,
-		FunctionalityCriterion: summary.FunctionalityCriterion,
-		PairsPerOrder:          summary.PairsPerOrder,
-		EvidenceState:          summary.EvidenceState,
-		SelectionState:         summary.SelectionState,
-		SelectedCandidate:      summary.SelectedCandidate,
-		Candidates:             candidates,
-	}
+	return candidates
 }
-
 func (h handler) handleMinimization(w http.ResponseWriter, r *http.Request) {
 	if !getOnly(w, r) {
 		return
@@ -196,13 +230,38 @@ func (h handler) handleMinimization(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if h.minimizationVerify == nil {
+	if h.minimizationVerify == nil && h.minimizationLadderVerify == nil {
 		http.Error(w, "minimization unavailable", http.StatusUnprocessableEntity)
 		return
 	}
-	summary, receiptSHA256, err := h.minimizationVerify(h.minimizationPath)
-	if err != nil {
-		http.Error(w, "minimization unavailable", http.StatusUnprocessableEntity)
+	var summary minimize.MinimizationSummary
+	var receiptSHA256 string
+	var verifyErr error
+	if h.minimizationVerify != nil {
+		summary, receiptSHA256, verifyErr = h.minimizationVerify(h.minimizationPath)
+	} else {
+		verifyErr = errors.New("legacy minimization verifier unavailable")
+	}
+	if verifyErr != nil {
+		if h.minimizationLadderVerify == nil {
+			http.Error(w, "minimization unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		if h.minimizationRoundPath != "" || h.minimizationReceiptPath != "" {
+			http.Error(w, "minimization unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		ladderSummary, ladderReceiptSHA256, ladderErr := h.minimizationLadderVerify(h.minimizationPath)
+		if ladderErr != nil {
+			http.Error(w, "minimization unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		render(w, pageData{
+			View:                   "minimization",
+			Title:                  "Minimization review — Ariadne",
+			MinimizationConfigured: true,
+			Minimization:           ladderMinimizationReview(ladderSummary, ladderReceiptSHA256),
+		})
 		return
 	}
 	answers, err := minimize.AnswerAllMinimizationQuestions(summary, receiptSHA256)

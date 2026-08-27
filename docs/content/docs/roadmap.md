@@ -115,6 +115,8 @@ counts, and child receipt identities, never values, URLs, driver arguments,
 profiles, or captured events. This is a fixture handoff, not universal
 tracing.
 
+The same `--minimization` flag and `/minimization` route now accept this source-neutral receipt through the browser adapter's explicit criterion-specific verifier. The review projection adds safe adapter and procedure provenance; Android-only question artifacts are not synthesized for browser receipts.
+
 6. **Browser audit handoff (not evidence-backed capture).** An authorized
    browser driver can provide a bounded, already-redacted audit that Ariadne
    projects into the same
@@ -384,6 +386,7 @@ questions again without reopening source paths or captured values.
 - Hosted browser fixture minimization verifies the fixed plan, explicit
   candidate binding, criterion-aware result, raw-value-free receipt, and
   unknown classification on partial or mismatched child evidence.
+  The same hosted slice also exercises the shared GET-only `/minimization` review projection and checks that adapter/procedure provenance is visible without paths, values, URLs, driver arguments, profiles, or captured events.
 - Cross-source case packages re-verify embedded archives or ledgers and their
   matching question rounds, reject duplicate child identities, preserve caller
   order without chronology inference, and keep retained outcomes separate from

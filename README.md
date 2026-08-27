@@ -367,6 +367,14 @@ Values, URLs, driver arguments, profiles, and captured events are excluded.
 Missing or mismatched child evidence leaves the result `unknown`. This is a
 controlled fixture handoff, not universal browser tracing.
 
+The same read-only review surface accepts this browser ladder through the existing minimization option:
+
+```console
+go run ./cmd/ariadne experiment serve --minimization .ariadne/browser-account-minimize <archive-root>
+```
+
+The `/minimization` route re-verifies the browser adapter children before rendering safe adapter, procedure, scope, reset-policy, candidate, count, classification, counterfactual-outcome, and evidence-state fields. It does not synthesize the Android-only minimization question artifacts for a browser ladder, and it remains GET-only, raw-value-free, and local-loopback-bound.
+
 Bind a verified trace to its reviewed adapter and capture procedure without
 adding URLs, profile names, or captured values:
 
