@@ -284,6 +284,10 @@ func verifyReplicatedPair(pairDir string, pair adb.ReplicatedPairRecord) (Summar
 	if err != nil {
 		return Summary{}, fmt.Errorf("replication pair %d %s: %w", pair.Pair, pair.Order, err)
 	}
+	if first.record.SchemaVersion >= 8 &&
+		(first.record.Order != pair.Order || second.record.Order != pair.Order) {
+		return Summary{}, errors.New("replication pair authenticated order disagrees with receipt")
+	}
 	if !first.record.StartedAt.Before(second.record.StartedAt) ||
 		second.record.StartedAt.Before(first.record.FinishedAt) {
 		return Summary{}, errors.New("replication pair session order is invalid")

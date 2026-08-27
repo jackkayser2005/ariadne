@@ -34,6 +34,7 @@ const (
 	redactedExportSchemaVersion = 1
 
 	treatmentStorageObservationUnknownReason = "treatment storage observation was not captured"
+	treatmentNetworkObservationUnknownReason = "treatment network observation was not captured"
 )
 
 var expectedSteps = []string{
@@ -573,7 +574,7 @@ func comparisonUnknownReason(comparison analysis.Comparison) string {
 
 // safeUnknownReason exposes only reasons owned by the current verifier.
 func safeUnknownReason(reason string) string {
-	if reason == treatmentStorageObservationUnknownReason {
+	if reason == treatmentStorageObservationUnknownReason || reason == treatmentNetworkObservationUnknownReason {
 		return reason
 	}
 	return ""
@@ -700,28 +701,37 @@ func buildDocument(runDir string, includeFindingIDs bool) (document, Summary, er
 			)
 		}
 	} else {
-		treatmentAvailable, err := analysis.NormalizeNetwork(bytes.NewReader(treatment.network))
-		if err != nil {
-			return document{}, Summary{}, fmt.Errorf("treatment: %w", err)
-		}
-		if err := validateAuthenticatedEvidence(treatment.record, treatmentAvailable, "treatment"); err != nil {
-			// An incomplete authenticated session with unavailable or unbound
-			// challenge evidence is still a readable run, but it cannot support
-			// a semantic comparison. Preserve the artifact and report unknown.
-			treatmentAvailable = analysis.Session{}
+		unknownReason := treatmentStorageObservationUnknownReason
+		var treatmentAvailable analysis.Session
+		if len(treatment.network) == 0 {
+			unknownReason = treatmentNetworkObservationUnknownReason
 			normalizations = []string{
-				"decoded available network body_base64",
-				"required baseline storage and network payload equality",
-				"withheld semantic comparison because authenticated challenge evidence was unavailable",
+				"withheld semantic comparison because treatment network evidence was unavailable",
 			}
 		} else {
-			normalizations = []string{
-				"decoded available network body_base64",
-				"required baseline storage and network payload equality",
-				"withheld semantic comparison without treatment storage",
+			treatmentAvailable, err = analysis.NormalizeNetwork(bytes.NewReader(treatment.network))
+			if err != nil {
+				return document{}, Summary{}, fmt.Errorf("treatment: %w", err)
+			}
+			if err := validateAuthenticatedEvidence(treatment.record, treatmentAvailable, "treatment"); err != nil {
+				// An incomplete authenticated session with unavailable or unbound
+				// challenge evidence is still a readable run, but it cannot support
+				// a semantic comparison. Preserve the artifact and report unknown.
+				treatmentAvailable = analysis.Session{}
+				normalizations = []string{
+					"decoded available network body_base64",
+					"required baseline storage and network payload equality",
+					"withheld semantic comparison because authenticated challenge evidence was unavailable",
+				}
+			} else {
+				normalizations = []string{
+					"decoded available network body_base64",
+					"required baseline storage and network payload equality",
+					"withheld semantic comparison without treatment storage",
+				}
 			}
 		}
-		comparison = incompleteTreatmentComparison(baselineNormalized, treatmentAvailable)
+		comparison = incompleteTreatmentComparison(baselineNormalized, treatmentAvailable, unknownReason)
 	}
 
 	artifacts := []artifact{baseline.metadata}
@@ -1125,7 +1135,9 @@ func loadSession(runDir, kind string) (loadedSession, error) {
 		},
 	}
 	expectedCount := len(expected)
-	if !sessionComplete(record) && record.FailureStage != "cleanup_input" {
+	if !sessionComplete(record) && record.FailureStage == "capture_network" && len(record.Artifacts) == 0 {
+		expectedCount = 0
+	} else if !sessionComplete(record) && record.FailureStage != "cleanup_input" {
 		expectedCount = 1
 	}
 	if len(record.Artifacts) != expectedCount {
@@ -1410,7 +1422,10 @@ func sessionComplete(record adb.SessionRecord) bool {
 	return record.SchemaVersion == 2 || record.Status == "complete"
 }
 
-func incompleteTreatmentComparison(baseline, treatment analysis.Session) analysis.Comparison {
+func incompleteTreatmentComparison(
+	baseline, treatment analysis.Session,
+	unknownReason string,
+) analysis.Comparison {
 	fields := make(map[string]struct{}, len(baseline.Fields)+len(treatment.Fields))
 	for field := range baseline.Fields {
 		fields[field] = struct{}{}
@@ -1438,7 +1453,7 @@ func incompleteTreatmentComparison(baseline, treatment analysis.Session) analysi
 		unknowns = append(unknowns, analysis.Unknown{
 			Field:    field,
 			State:    evidence.Unknown,
-			Reason:   treatmentStorageObservationUnknownReason,
+			Reason:   unknownReason,
 			Evidence: references,
 		})
 	}

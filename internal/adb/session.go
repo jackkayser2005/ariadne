@@ -517,6 +517,15 @@ func runSessionWithAuth(
 			record.Steps = append(record.Steps, captureNetwork)
 			if err != nil {
 				failureStage = "capture_network"
+				if auth != nil {
+					record.Steps = append(record.Steps, StepRecord{
+						Name:       "capture_storage",
+						StartedAt:  now().UTC(),
+						FinishedAt: now().UTC(),
+						Status:     "error",
+						ExitCode:   -1,
+					})
+				}
 				return fmt.Errorf("%s: capture network: %w", kind, err)
 			}
 			data, err := json.MarshalIndent(observation, "", "  ")
