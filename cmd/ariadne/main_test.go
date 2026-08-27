@@ -75,6 +75,7 @@ func TestRunUsage(t *testing.T) {
 		{"browser"},
 		{"browser", "unknown"},
 		{"browser", "trace"},
+		{"browser", "fixture", "minimize", "questions", "extra"},
 		{"experiment"},
 		{"experiment", "unknown"},
 		{"experiment", "export"},

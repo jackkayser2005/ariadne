@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -51,6 +52,10 @@ func TestHandlerRendersSourceNeutralLadderMinimization(t *testing.T) {
 		"outbound",
 		"fresh-ephemeral-profile-before-each-session",
 		"Minimum tested sufficient disclosure",
+		"Fixed minimization questions",
+		"minimum-tested-selection",
+		"minimization-support",
+		"supported",
 		"sufficient",
 		"no-change-observed",
 		"observed",
@@ -61,9 +66,7 @@ func TestHandlerRendersSourceNeutralLadderMinimization(t *testing.T) {
 			t.Fatalf("ladder minimization body missing %q: %s", want, body)
 		}
 	}
-	if strings.Contains(body, "Fixed minimization questions") {
-		t.Fatalf("browser ladder rendered incompatible questions or verifier details: %s", body)
-	}
+
 	for _, secret := range []string{
 		"browser-ladder-secret",
 		"candidate-001-omitted",
@@ -83,6 +86,56 @@ func TestHandlerRendersSourceNeutralLadderMinimization(t *testing.T) {
 	}
 }
 
+func TestHandlerRendersVerifiedLadderQuestionArtifacts(t *testing.T) {
+	summary := selectedBrowserLadderSummary()
+	rootDigest := strings.Repeat("d", 64)
+	artifactDir := t.TempDir()
+	roundPath := filepath.Join(artifactDir, "round.json")
+	if _, err := minimize.SaveLadderQuestionRound(summary, rootDigest, roundPath); err != nil {
+		t.Fatal(err)
+	}
+	receiptPath := filepath.Join(artifactDir, "receipt.json")
+	if _, err := minimize.SaveLadderQuestionReceipt(roundPath, minimize.MinimizationQuestionSelection, receiptPath); err != nil {
+		t.Fatal(err)
+	}
+	h := HandlerWithReviewOptions(ReviewOptions{
+		ArchiveRoot:             t.TempDir(),
+		MinimizationPath:        "browser-ladder",
+		MinimizationRoundPath:   roundPath,
+		MinimizationReceiptPath: receiptPath,
+		MinimizationLadderVerify: func(path string) (minimize.LadderSummary, string, error) {
+			if path != "browser-ladder" {
+				t.Fatalf("ladder verifier path = %q", path)
+			}
+			return summary, rootDigest, nil
+		},
+	})
+	recorder := httptest.NewRecorder()
+	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/minimization", nil))
+	body := recorder.Body.String()
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("saved ladder artifact status = %d, body=%q", recorder.Code, body)
+	}
+	for _, want := range []string{
+		"saved and verified",
+		"Selected question receipt",
+		"minimum-tested-selection",
+		rootDigest,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("saved ladder artifact body missing %q: %s", want, body)
+		}
+	}
+	for _, secret := range []string{
+		roundPath,
+		receiptPath,
+		"candidate-001-omitted",
+	} {
+		if strings.Contains(body, secret) {
+			t.Fatalf("saved ladder artifact page disclosed %q", secret)
+		}
+	}
+}
 func TestHandlerHidesSourceNeutralLadderVerificationErrors(t *testing.T) {
 	h := newHandler(handler{
 		minimizationPath: "C:\\private\\browser-ladder-secret",

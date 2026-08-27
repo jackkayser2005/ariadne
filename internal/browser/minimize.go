@@ -154,6 +154,36 @@ func validateFixtureMinimizationSummary(summary minimize.LadderSummary) error {
 	return nil
 }
 
+// AskFixtureMinimizationQuestion verifies a browser ladder at the adapter
+// boundary before answering one shared source-neutral question.
+func AskFixtureMinimizationQuestion(path, questionID string) (minimize.LadderQuestionAnswer, error) {
+	summary, receiptSHA256, err := VerifyFixtureMinimizationWithIdentity(path)
+	if err != nil {
+		return minimize.LadderQuestionAnswer{}, err
+	}
+	return minimize.AnswerLadderQuestion(summary, receiptSHA256, questionID)
+}
+
+// AskAllFixtureMinimizationQuestions verifies a browser ladder before
+// answering the complete shared source-neutral catalog.
+func AskAllFixtureMinimizationQuestions(path string) ([]minimize.LadderQuestionAnswer, error) {
+	summary, receiptSHA256, err := VerifyFixtureMinimizationWithIdentity(path)
+	if err != nil {
+		return nil, err
+	}
+	return minimize.AnswerAllLadderQuestions(summary, receiptSHA256)
+}
+
+// SaveFixtureMinimizationQuestionRound verifies a browser ladder at the
+// adapter boundary and saves its shared source-neutral question round.
+func SaveFixtureMinimizationQuestionRound(path, roundPath string) (minimize.LadderQuestionRoundVerificationSummary, error) {
+	summary, receiptSHA256, err := VerifyFixtureMinimizationWithIdentity(path)
+	if err != nil {
+		return minimize.LadderQuestionRoundVerificationSummary{}, err
+	}
+	return minimize.SaveLadderQuestionRound(summary, receiptSHA256, roundPath)
+}
+
 // VerifyFixtureReplicatedForFunctionality uses the browser fixture's fixed
 // functionality criterion. The declared account-id field is intentionally
 // excluded from the functionality comparison; its disclosure is the input

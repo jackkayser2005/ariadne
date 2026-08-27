@@ -79,3 +79,23 @@ func TestHandlerFailsClosedOnMinimizationQuestionReaderErrors(t *testing.T) {
 		t.Fatalf("round reader status = %d, body=%q", recorder.Code, recorder.Body.String())
 	}
 }
+
+func TestHandlerKeepsLegacyMinimizationBeforeLadderFallback(t *testing.T) {
+	summary := selectedMinimizationSummary()
+	ladderCalled := false
+	h := newHandler(handler{
+		minimizationPath: "run",
+		minimizationVerify: func(string) (minimize.MinimizationSummary, string, error) {
+			return summary, strings.Repeat("c", 64), nil
+		},
+		minimizationLadderVerify: func(string) (minimize.LadderSummary, string, error) {
+			ladderCalled = true
+			return minimize.LadderSummary{}, "", errors.New("ladder fallback should not run")
+		},
+	})
+	recorder := httptest.NewRecorder()
+	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/minimization", nil))
+	if recorder.Code != http.StatusOK || ladderCalled {
+		t.Fatalf("legacy minimization status = %d, ladderCalled=%t, body=%q", recorder.Code, ladderCalled, recorder.Body.String())
+	}
+}

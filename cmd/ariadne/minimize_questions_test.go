@@ -308,3 +308,17 @@ func TestRunDispatchesMinimizationQuestions(t *testing.T) {
 		t.Fatalf("run() output = %q / %q", stdout.String(), stderr.String())
 	}
 }
+
+func TestRunDispatchesBrowserMinimizationQuestions(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if exitCode := run([]string{"browser", "fixture", "minimize", "questions", "--json"}, &stdout, &stderr); exitCode != 0 {
+		t.Fatalf("run() exit code = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+	var catalog []minimize.LadderQuestion
+	if err := json.Unmarshal(stdout.Bytes(), &catalog); err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog) != len(minimize.LadderQuestions()) || stderr.Len() != 0 {
+		t.Fatalf("run() output = %q / %q", stdout.String(), stderr.String())
+	}
+}

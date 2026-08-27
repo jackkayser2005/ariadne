@@ -1845,7 +1845,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       {{end}}
       <p class="context">Verification re-checked the canonical receipt and every candidate replication before this page was rendered. The configured local directory, personas, candidate values, manifests, and captured observations are intentionally omitted.</p>
     </section>
-{{if .Minimization.Legacy}}
+{{if .Minimization.QuestionsAvailable}}
     <section class="panel" aria-label="Minimization question round">
       <div class="section-head"><h2>Fixed minimization questions</h2><span class="context">{{if .Minimization.RoundSaved}}saved and verified{{else}}derived from the verified minimization receipt{{end}}</span></div>
       <div class="question-list">

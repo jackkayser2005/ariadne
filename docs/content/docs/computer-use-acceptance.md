@@ -178,7 +178,25 @@ Expose the verified browser ladder through the existing minimization review rout
 go run ./cmd/ariadne experiment serve --minimization .ariadne/browser-account-minimize <archive-root>
 ```
 
-Open `/minimization` from the printed loopback authority. Confirm that adapter, procedure SHA-256, scope, reset policy, candidate order, classification, counterfactual outcome, and evidence state are visible. The page must not render candidate values, local paths, URLs, driver arguments, profiles, or captured events. Browser receipts do not expose the legacy Android question cards until a source-neutral question catalog exists.
+Open `/minimization` from the printed loopback authority. Confirm that adapter, procedure SHA-256, scope, reset policy, candidate order, classification, counterfactual outcome, and evidence state are visible. The page must not render candidate values, local paths, URLs, driver arguments,
+profiles, or captured events. Browser receipts use the same fixed,
+source-neutral question catalog as Android receipts. Prepare those artifacts
+after the adapter-level verify step:
+
+~~~console
+go run ./cmd/ariadne browser fixture minimize questions --json
+go run ./cmd/ariadne browser fixture minimize ask all save --json .ariadne/browser-account-minimize .ariadne/browser-account-minimize-round.json
+go run ./cmd/ariadne browser fixture minimize ask all verify --json .ariadne/browser-account-minimize-round.json
+go run ./cmd/ariadne browser fixture minimize ask receipt save --json .ariadne/browser-account-minimize-round.json minimum-tested-selection .ariadne/browser-account-minimize-receipt.json
+go run ./cmd/ariadne browser fixture minimize ask receipt verify --json .ariadne/browser-account-minimize-receipt.json
+go run ./cmd/ariadne experiment serve --minimization .ariadne/browser-account-minimize --minimization-round .ariadne/browser-account-minimize-round.json --minimization-receipt .ariadne/browser-account-minimize-receipt.json <archive-root>
+~~~
+
+The browser adapter re-verifies the ladder for current-run answers and saves.
+Round and receipt verification is intentionally offline and checks only their
+portable structure and identities. Computer-use may inspect the resulting
+cards and identities, but must not infer a privacy assurance from artifact
+presence or from a rendered question result.
 
 ## Driver sequence
 
