@@ -14,6 +14,7 @@ import (
 
 	"github.com/jackkayser2005/ariadne/internal/bundle"
 	"github.com/jackkayser2005/ariadne/internal/evidence"
+	"github.com/jackkayser2005/ariadne/internal/minimize"
 	"github.com/jackkayser2005/ariadne/internal/trace"
 )
 
@@ -47,6 +48,8 @@ type handler struct {
 	traceStudyReceiptPath string
 	traceStudyReceiptRead func(string) (trace.ReplicationStudyQuestionReceipt, trace.ReplicationStudyQuestionReceiptVerificationSummary, error)
 	traceStudyComparison  func() (trace.ReplicationStudyQuestionRoundComparison, error)
+	minimizationPath      string
+	minimizationVerify    func(string) (minimize.MinimizationSummary, string, error)
 }
 
 type archiveQuestionResult struct {
@@ -153,6 +156,8 @@ type pageData struct {
 	TraceStudyComparisonConfigured     bool
 	TraceStudyComparison               trace.ReplicationStudyQuestionRoundComparison
 	TraceStudySelectedQuestionID       string
+	MinimizationConfigured             bool
+	Minimization                       minimizationReviewData
 }
 
 // Handler returns a read-only HTTP handler for one explicitly supplied archive root.
@@ -242,68 +247,25 @@ func HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCaseAndStud
 // returns a read-only review handler with an optional verified comparison
 // between two retained replication-study question rounds.
 func HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCaseAndStudyArtifactsAndComparison(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, traceArchivePath, traceRoundPath, traceReplicationPath, traceCasePath, traceStudyPath, traceStudyRoundPath, traceStudyReceiptPath, traceStudySecondPath, traceStudyRoundSecondPath string) http.Handler {
-	h := archiveHandler(archiveRoot)
-	if historyPath != "" {
-		h.history = func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error) {
-			return bundle.ReadArchiveQuestionTransitionHistory(historyPath)
-		}
-	}
-	if reflectionPath != "" {
-		h.compareCurrent = func() (bundle.ArchiveQuestionComparison, error) {
-			return bundle.CompareArchiveQuestionReportWithArchive(reflectionPath, archiveRoot)
-		}
-	}
-	if exportPath != "" {
-		h.exportPath = exportPath
-		h.exportAsk = bundle.AskExport
-		h.exportFind = bundle.FindExport
-	}
-	if acceptancePath != "" {
-		h.acceptance = func() (bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary, error) {
-			return bundle.VerifyArchiveQuestionTransitionHistoryAcceptanceRecord(acceptancePath)
-		}
-	}
-	if firstRoundPath != "" && secondRoundPath != "" {
-		h.compareRounds = func() (bundle.ArchiveQuestionTransitionHistoryQuestionRoundComparison, error) {
-			return bundle.CompareArchiveQuestionTransitionHistoryQuestionRounds(firstRoundPath, secondRoundPath)
-		}
-	}
-	if traceArchivePath != "" {
-		h.traceArchivePath = traceArchivePath
-		h.traceArchiveRead = trace.ReadArchive
-	}
-	if traceRoundPath != "" {
-		h.traceRoundPath = traceRoundPath
-		h.traceRoundRead = trace.ReadArchiveQuestionRound
-	}
-	if traceReplicationPath != "" {
-		h.traceReplicationPath = traceReplicationPath
-		h.traceReplicationRead = trace.ReadReplicationLedger
-	}
-	if traceCasePath != "" {
-		h.traceCasePath = traceCasePath
-		h.traceCaseRead = trace.ReadCase
-	}
-	if traceStudyPath != "" {
-		h.traceStudyPath = traceStudyPath
-		h.traceStudyRead = trace.ReadReplicationStudy
-	}
-	if traceStudyRoundPath != "" {
-		h.traceStudyRoundPath = traceStudyRoundPath
-		h.traceStudyRoundRead = trace.ReadReplicationStudyQuestionRound
-	}
-	if traceStudyReceiptPath != "" {
-		h.traceStudyReceiptPath = traceStudyReceiptPath
-		h.traceStudyReceiptRead = trace.ReadReplicationStudyQuestionReceipt
-	}
-	if traceStudyPath != "" && traceStudyRoundPath != "" && traceStudySecondPath != "" && traceStudyRoundSecondPath != "" {
-		h.traceStudyComparison = func() (trace.ReplicationStudyQuestionRoundComparison, error) {
-			return trace.CompareReplicationStudyQuestionRounds(traceStudyPath, traceStudyRoundPath, traceStudySecondPath, traceStudyRoundSecondPath)
-		}
-	}
-	return newHandler(h)
+	return HandlerWithReviewOptions(ReviewOptions{
+		ArchiveRoot:               archiveRoot,
+		HistoryPath:               historyPath,
+		ReflectionPath:            reflectionPath,
+		ExportPath:                exportPath,
+		AcceptancePath:            acceptancePath,
+		FirstRoundPath:            firstRoundPath,
+		SecondRoundPath:           secondRoundPath,
+		TraceArchivePath:          traceArchivePath,
+		TraceRoundPath:            traceRoundPath,
+		TraceReplicationPath:      traceReplicationPath,
+		TraceCasePath:             traceCasePath,
+		TraceStudyPath:            traceStudyPath,
+		TraceStudyRoundPath:       traceStudyRoundPath,
+		TraceStudyReceiptPath:     traceStudyReceiptPath,
+		TraceStudySecondPath:      traceStudySecondPath,
+		TraceStudyRoundSecondPath: traceStudyRoundSecondPath,
+	})
 }
-
 func archiveHandler(archiveRoot string) handler {
 	return handler{
 		root:       archiveRoot,
@@ -317,6 +279,10 @@ func archiveHandler(archiveRoot string) handler {
 }
 
 func newHandler(h handler) http.Handler {
+	return newHandlerWithHost(h, "")
+}
+
+func newHandlerWithHost(h handler, expectedHost string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", h.handleIndex)
 	mux.HandleFunc("/run", h.handleRun)
@@ -329,10 +295,10 @@ func newHandler(h handler) http.Handler {
 	mux.HandleFunc("/trace-case", h.handleTraceCase)
 	mux.HandleFunc("/trace-study", h.handleTraceStudy)
 	mux.HandleFunc("/trace-study-comparison", h.handleTraceStudyComparison)
+	mux.HandleFunc("/minimization", h.handleMinimization)
 	mux.HandleFunc("/favicon.ico", handleFavicon)
-	return mux
+	return secureReviewHandler(mux, expectedHost)
 }
-
 func handleFavicon(w http.ResponseWriter, r *http.Request) {
 	if !getOnly(w, r) {
 		return
@@ -541,6 +507,7 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		TraceCaseConfigured:                h.traceCaseConfigured(),
 		TraceStudyConfigured:               h.traceStudyConfigured(),
 		TraceStudyComparisonConfigured:     h.traceStudyComparison != nil,
+		MinimizationConfigured:             h.minimizationPath != "",
 	})
 }
 
@@ -1170,7 +1137,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
     .question-list { display: grid; gap: 10px; margin-top: 18px; }
     .back { display: inline-block; margin-bottom: 26px; color: var(--accent); font-weight: 700; text-decoration: none; }
     .status { display: inline-block; border-radius: 999px; background: var(--accent-soft); color: var(--accent); padding: 5px 11px; font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
-    .status-unknown { background: var(--warning-soft); color: var(--warning); }
+    .status-unknown, .status-insufficient, .status-mixed-inconsistent, .status-no-sufficient-candidate { background: var(--warning-soft); color: var(--warning); }
     .status-unavailable { background: var(--line); color: var(--muted); }
     .question { max-width: 700px; margin: 20px 0 28px; font-size: 25px; letter-spacing: -.02em; }
     dl { display: grid; grid-template-columns: 150px 1fr; gap: 10px 18px; margin: 20px 0 30px; }
@@ -1274,6 +1241,13 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       <p class="context">Ask the fixed questions across independently repeated ledgers. Outcome and evidence state remain separate; caller order is not chronology and unsupported runs remain unknown.</p>
       <a class="button" href="/trace-study">Open replication study review <span aria-hidden="true">&rarr;</span></a>
       {{if .TraceStudyComparisonConfigured}}<a class="button" href="/trace-study-comparison">Open retained study comparison <span aria-hidden="true">&rarr;</span></a>{{end}}
+    </section>
+    {{end}}
+    {{if .MinimizationConfigured}}
+    <section class="panel" id="minimization-orientation" aria-label="Minimum-disclosure experiment">
+      <div class="section-head"><h2>Minimum-disclosure experiment</h2><span class="context">verified, read only</span></div>
+      <p class="context">Review a tested disclosure ladder from a verified Android experiment. Candidate IDs, replicated outcomes, evidence states, and provenance identities are shown; raw inputs never appear here.</p>
+      <a class="button" href="/minimization">Open minimization review <span aria-hidden="true">&rarr;</span></a>
     </section>
     {{end}}
     {{if and .ReflectionHistoryRequested (or (not .SelectedQuestion.ID) (eq .SelectedQuestion.ID .ReflectionHistory.QuestionID))}}
@@ -1833,6 +1807,58 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       </div>
       <p class="context">Question result, aggregate outcome, and evidence state are shown separately. A changed projection is not a chronology or causal claim.</p>
     </section>
+  {{else if eq .View "minimization"}}
+    <a class="back" href="/">&larr; Review archive</a>
+    <p class="eyebrow">minimum-disclosure experiment &middot; verified</p>
+    <h1>Review tested disclosure levels.</h1>
+    <p class="lede">This page is a read-only projection of one verified minimization receipt. The ladder preserves its recorded candidate order, while functionality classification, counterfactual outcome, and evidence state remain separate.</p>
+    <section class="panel" aria-label="Verified minimization receipt">
+      <div class="section-head"><h2>Verified minimization identity</h2><span class="status status-raw-value-free">raw-value-free</span></div>
+      <dl>
+        <dt>receipt schema</dt><dd>{{.Minimization.SchemaVersion}}</dd>
+        <dt>plan name</dt><dd>{{.Minimization.PlanName}}</dd>
+        <dt>variable</dt><dd><code>{{.Minimization.Variable}}</code></dd>
+        <dt>reference candidate</dt><dd><code>{{.Minimization.ReferenceCandidate}}</code></dd>
+        <dt>functionality criterion</dt><dd><code>{{.Minimization.FunctionalityCriterion}}</code></dd>
+        <dt>pairs per order</dt><dd>{{.Minimization.PairsPerOrder}}</dd>
+        <dt>aggregate evidence state</dt><dd><span class="status status-{{.Minimization.EvidenceState}}">{{.Minimization.EvidenceState}}</span></dd>
+        <dt>selection state</dt><dd><span class="status status-{{.Minimization.SelectionState}}">{{.Minimization.SelectionState}}</span></dd>
+        {{with .Minimization.SelectedCandidate}}<dt>selected candidate</dt><dd><code>{{.}}</code></dd>{{end}}
+        <dt>receipt SHA-256</dt><dd>{{.Minimization.ReceiptSHA256}}</dd>
+      </dl>
+      {{if eq .Minimization.SelectionState "selected"}}
+      <p class="context">Minimum tested sufficient disclosure: <code>{{.Minimization.SelectedCandidate}}</code>. This is the least-disclosing candidate established by this tested ladder, not an absolute minimum.</p>
+      {{else}}
+      <p class="context">No minimum tested sufficient disclosure was established. Mixed, unknown, or incomplete evidence is not treated as functionality equivalence.</p>
+      {{end}}
+      <p class="context">Verification re-checked the canonical receipt and every candidate replication before this page was rendered. The configured local directory, personas, candidate values, manifests, and captured observations are intentionally omitted.</p>
+    </section>
+    <section class="panel" aria-label="Tested candidate ladder">
+      <div class="section-head"><h2>Tested candidate ladder</h2><span class="context">recorded order</span></div>
+      <div class="question-list">
+      {{range .Minimization.Candidates}}
+        <article class="panel" id="minimization-candidate-{{.ID}}">
+          <div class="section-head"><h3><code>{{.ID}}</code></h3><span class="status status-{{.Classification}}">{{.Classification}}</span></div>
+          <dl>
+            <dt>candidate ID</dt><dd><code>{{.ID}}</code></dd>
+            <dt>functionality classification</dt><dd><span class="status status-{{.Classification}}">{{.Classification}}</span></dd>
+            <dt>counterfactual outcome</dt><dd><span class="status status-{{.Outcome}}">{{.Outcome}}</span></dd>
+            <dt>evidence state</dt><dd><span class="status status-{{.EvidenceState}}">{{.EvidenceState}}</span></dd>
+            <dt>pairs per order</dt><dd>{{.PairsPerOrder}}</dd>
+            <dt>total ordered runs</dt><dd>{{.Pairs}}</dd>
+            <dt>completed pairs</dt><dd>{{.CompletedPairs}}</dd>
+            <dt>changed pairs</dt><dd>{{.ChangedPairs}}</dd>
+            <dt>no-change pairs</dt><dd>{{.NoChangePairs}}</dd>
+            <dt>unknown pairs</dt><dd>{{.UnknownPairs}}</dd>
+            <dt>replication receipt SHA-256</dt><dd>{{.ReceiptSHA256}}</dd>
+          </dl>
+          <p class="context">Classification is the bounded functionality conclusion. Outcome summarizes the replicated counterfactual result. Evidence state qualifies support for both; none is a causal proof.</p>
+        </article>
+      {{end}}
+      </div>
+      <p class="context">Candidate order is preserved from the receipt. Only safe identifiers, counts, classifications, outcomes, evidence states, and hashes are rendered.</p>
+    </section>
+
   {{else if eq .View "run"}}
     <a class="back" href="/">← All bundles</a>
     <p class="eyebrow">{{.Summary.ManifestName}} · verified</p>

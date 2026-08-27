@@ -454,7 +454,7 @@ leaves the minimization decision unknown.
   exactly the expected identity; a mismatch produces no verification output.
   A successful result proves only that the derived report satisfies Ariadne's
   structural contract; it does not re-verify or prove the underlying evidence.
-- `experiment serve [--history <history.json>] [--reflection <report.json>] [--export <export.json>] [--acceptance <acceptance.json>] [--round-first <round.json> --round-second <round.json>] <archive-root>` starts a
+- `experiment serve [--history <history.json>] [--reflection <report.json>] [--export <export.json>] [--acceptance <acceptance.json>] [--round-first <round.json> --round-second <round.json>] [--minimization <run-directory>] <archive-root>` starts a
   localhost-only, read-only review
   page at `http://127.0.0.1:8787/`; only loopback IP addresses are accepted, and
   it lists verified bundles and links to the same bounded questions and finding
@@ -500,6 +500,15 @@ leaves the minimization decision unknown.
   export's fixed question and safe finding references. Those pages show the
   verified source-evidence and export identities, never comparison values or
   captured payloads. Invalid export answers remain generic unavailable states.
+  Supplying `--minimization <run-directory>` adds a separate GET-only
+  `/minimization` page. It re-verifies the canonical raw-value-free receipt and
+  every child replication on each request, then renders only safe candidate IDs,
+  counts, classifications, replicated outcomes, evidence states, and receipt
+  identities. The page preserves the explicit ladder order and calls a selected
+  result the minimum tested sufficient disclosure; it never renders candidate
+  values, personas, manifests, paths, challenges, URLs, or captured
+  observations. The server rejects a request whose Host differs from its exact
+  configured loopback authority and sends no-store/security headers.
 - If `ariadne_modified` is unexpectedly `true`, inspect `git status --short`
   before treating the run as reproducible from the recorded revision alone.
 - Finding lookup re-verifies the bundle first and prints only the question,

@@ -615,34 +615,41 @@ func Save(rootDir string, summary MinimizationSummary) error {
 // Verify checks the receipt and every child replication without reading a
 // plan or reconstructing any raw candidate values.
 func Verify(rootDir string) (MinimizationSummary, error) {
+	summary, _, err := VerifyWithIdentity(rootDir)
+	return summary, err
+}
+
+// VerifyWithIdentity verifies a minimization receipt and all of its child
+// replications, returning the canonical SHA-256 identity of the receipt bytes.
+func VerifyWithIdentity(rootDir string) (MinimizationSummary, string, error) {
 	if strings.TrimSpace(rootDir) == "" {
-		return MinimizationSummary{}, errors.New("minimization directory is required")
+		return MinimizationSummary{}, "", errors.New("minimization directory is required")
 	}
 	if err := requireDirectory(rootDir); err != nil {
-		return MinimizationSummary{}, err
+		return MinimizationSummary{}, "", err
 	}
 	data, err := bundle.ReadBoundedFile(filepath.Join(rootDir, "minimization.json"), maxSummaryBytes)
 	if err != nil {
-		return MinimizationSummary{}, fmt.Errorf("minimization receipt: %w", err)
+		return MinimizationSummary{}, "", fmt.Errorf("minimization receipt: %w", err)
 	}
 	summary, err := decodeSummary(data)
 	if err != nil {
-		return MinimizationSummary{}, err
+		return MinimizationSummary{}, "", err
 	}
 	canonical, err := json.MarshalIndent(summary, "", "  ")
 	if err != nil {
-		return MinimizationSummary{}, errors.New("minimization receipt encoding failed")
+		return MinimizationSummary{}, "", errors.New("minimization receipt encoding failed")
 	}
 	canonical = append(canonical, '\n')
 	if !bytes.Equal(data, canonical) {
-		return MinimizationSummary{}, errors.New("minimization receipt does not match its canonical form")
+		return MinimizationSummary{}, "", errors.New("minimization receipt does not match its canonical form")
 	}
 	if err := verifyChildren(rootDir, summary); err != nil {
-		return MinimizationSummary{}, err
+		return MinimizationSummary{}, "", err
 	}
-	return summary, nil
+	digest := sha256.Sum256(data)
+	return summary, hex.EncodeToString(digest[:]), nil
 }
-
 func decodeSummary(data []byte) (MinimizationSummary, error) {
 	if len(bytes.TrimSpace(data)) == 0 {
 		return MinimizationSummary{}, errors.New("minimization receipt: empty input")
