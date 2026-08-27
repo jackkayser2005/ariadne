@@ -86,6 +86,9 @@ func TestHandlerRendersSavedMinimizationQuestionArtifacts(t *testing.T) {
 			t.Fatalf("body missing %q: %s", want, body)
 		}
 	}
+	if strings.Contains(body, `href="/minimization?question_id=minimization-support"`) {
+		t.Fatal("saved receipt page exposed a link for a different question")
+	}
 	for _, secret := range []string{"private", "secret-value", "round-secret-path", "receipt-secret-path", "raw-secret-manifest"} {
 		if strings.Contains(body, secret) {
 			t.Fatalf("question page disclosed %q", secret)

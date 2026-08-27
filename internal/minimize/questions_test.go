@@ -225,6 +225,10 @@ func TestMinimizationQuestionRoundRejectsTampering(t *testing.T) {
 		{name: "candidate evidence", mutate: func(round *MinimizationQuestionRound) { round.Candidates[0].EvidenceState = evidence.Claimed }},
 		{name: "candidate outcome", mutate: func(round *MinimizationQuestionRound) { round.Candidates[0].Outcome = "other" }},
 		{name: "candidate classification", mutate: func(round *MinimizationQuestionRound) { round.Candidates[0].Classification = "other" }},
+		{name: "outcome counts", mutate: func(round *MinimizationQuestionRound) {
+			round.Candidates[0].ChangedPairs = round.Candidates[0].Pairs
+			round.Candidates[0].NoChangePairs = 0
+		}},
 		{name: "classification mismatch", mutate: func(round *MinimizationQuestionRound) { round.Candidates[0].Classification = CandidateInsufficient }},
 		{name: "answer count", mutate: func(round *MinimizationQuestionRound) { round.Answers = round.Answers[:1] }},
 		{name: "answer schema", mutate: func(round *MinimizationQuestionRound) { round.Answers[0].SchemaVersion = 2 }},

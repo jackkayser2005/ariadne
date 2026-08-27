@@ -1855,7 +1855,9 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
             <dt>unknown candidates</dt><dd>{{.UnknownCandidates}}</dd>
           </dl>
           <p class="context">{{.Reason}}</p>
+          {{if or (not $.Minimization.ReceiptSaved) (eq $.Minimization.SelectedQuestionID .QuestionID)}}
           <a class="button" href="/minimization?question_id={{query .QuestionID}}">Open selected question receipt <span aria-hidden="true">&rarr;</span></a>
+          {{end}}
         </article>
       {{end}}
       </div>

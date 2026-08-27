@@ -570,6 +570,20 @@ func validateQuestionRound(round MinimizationQuestionRound) error {
 	return nil
 }
 
+func classifyCandidateProjection(candidate MinimizationCandidateProjection) (bundle.ReplicatedOutcome, CandidateClassification) {
+	if candidate.CompletedPairs != candidate.Pairs || candidate.UnknownPairs > 0 || candidate.EvidenceState != evidence.Observed {
+		return bundle.ReplicationUnknown, CandidateUnknown
+	}
+	switch {
+	case candidate.ChangedPairs == candidate.Pairs:
+		return bundle.ReplicatedChange, CandidateInsufficient
+	case candidate.NoChangePairs == candidate.Pairs:
+		return bundle.NoChangeObserved, CandidateSufficient
+	default:
+		return bundle.MixedInconsistent, CandidateMixedInconsistent
+	}
+}
+
 func validateCandidateProjection(candidate MinimizationCandidateProjection) error {
 	if !validIdentifier(candidate.ID, maxCandidateID) {
 		return errors.New("id is invalid")
@@ -593,7 +607,11 @@ func validateCandidateProjection(candidate MinimizationCandidateProjection) erro
 	default:
 		return errors.New("classification is invalid")
 	}
-	if classify(candidate.Outcome, candidate.EvidenceState) != candidate.Classification {
+	expectedOutcome, expectedClassification := classifyCandidateProjection(candidate)
+	if candidate.Outcome != expectedOutcome {
+		return errors.New("outcome disagrees with counts")
+	}
+	if candidate.Classification != expectedClassification {
 		return errors.New("classification disagrees with outcome")
 	}
 	return nil

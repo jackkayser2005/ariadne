@@ -137,6 +137,7 @@ type minimizationReviewData struct {
 	RoundSaved             bool
 	RoundSummary           minimize.MinimizationQuestionRoundVerificationSummary
 	ReceiptAvailable       bool
+	ReceiptSaved           bool
 	ReceiptSummary         minimize.MinimizationQuestionReceiptVerificationSummary
 	SelectedQuestionID     string
 }
@@ -305,6 +306,7 @@ func (h handler) handleMinimization(w http.ResponseWriter, r *http.Request) {
 	review.RoundSaved = h.minimizationRoundPath != ""
 	review.RoundSummary = roundSummary
 	review.ReceiptAvailable = receiptAvailable
+	review.ReceiptSaved = h.minimizationReceiptPath != ""
 	review.ReceiptSummary = receiptSummary
 	review.SelectedQuestionID = selectedQuestionID
 	render(w, pageData{
