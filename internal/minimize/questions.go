@@ -117,12 +117,40 @@ type MinimizationQuestionReceiptVerificationSummary struct {
 	UnknownCandidates   int            `json:"unknown_candidates"`
 }
 
-// MinimizationQuestions returns the stable minimization question catalog.
-func MinimizationQuestions() []MinimizationQuestion {
-	return []MinimizationQuestion{
+// LadderQuestion is the source-neutral name for a fixed minimization question.
+type LadderQuestion = MinimizationQuestion
+
+// LadderCandidateProjection is the source-neutral name for a safe candidate projection.
+type LadderCandidateProjection = MinimizationCandidateProjection
+
+// LadderQuestionAnswer is the source-neutral name for a bounded question answer.
+type LadderQuestionAnswer = MinimizationQuestionAnswer
+
+// LadderQuestionRound is the source-neutral name for a portable question round.
+type LadderQuestionRound = MinimizationQuestionRound
+
+// LadderQuestionRoundVerificationSummary is the source-neutral name for a
+// question-round verification summary.
+type LadderQuestionRoundVerificationSummary = MinimizationQuestionRoundVerificationSummary
+
+// LadderQuestionReceipt is the source-neutral name for a selected question receipt.
+type LadderQuestionReceipt = MinimizationQuestionReceipt
+
+// LadderQuestionReceiptVerificationSummary is the source-neutral name for a
+// selected question-receipt verification summary.
+type LadderQuestionReceiptVerificationSummary = MinimizationQuestionReceiptVerificationSummary
+
+// LadderQuestions returns the stable source-neutral minimization question catalog.
+func LadderQuestions() []LadderQuestion {
+	return []LadderQuestion{
 		{ID: MinimizationQuestionSelection, Text: "What minimum tested sufficient disclosure, if any, did this ladder establish?"},
 		{ID: MinimizationQuestionSupport, Text: "Did every candidate have complete replicated support and observed evidence?"},
 	}
+}
+
+// MinimizationQuestions returns the stable minimization question catalog.
+func MinimizationQuestions() []MinimizationQuestion {
+	return LadderQuestions()
 }
 
 // AnswerMinimizationQuestion answers one fixed question against a verified
@@ -154,6 +182,106 @@ func AnswerAllMinimizationQuestions(summary MinimizationSummary, receiptSHA256 s
 		answers = append(answers, minimizationQuestionAnswer(summary, receiptSHA256, question))
 	}
 	return answers, nil
+}
+
+// AnswerLadderQuestion answers one fixed question against an already verified
+// source-neutral ladder summary and its canonical receipt identity.
+func AnswerLadderQuestion(summary LadderSummary, receiptSHA256, questionID string) (LadderQuestionAnswer, error) {
+	question, ok := minimizationQuestion(questionID)
+	if !ok {
+		return LadderQuestionAnswer{}, errors.New("ladder question ID is invalid")
+	}
+	if err := summary.Validate(); err != nil {
+		return LadderQuestionAnswer{}, fmt.Errorf("ladder question summary: %w", err)
+	}
+	if !validDigest(receiptSHA256) {
+		return LadderQuestionAnswer{}, errors.New("ladder question receipt identity is invalid")
+	}
+	return ladderQuestionAnswer(summary, receiptSHA256, question), nil
+}
+
+// AnswerAllLadderQuestions answers the complete fixed catalog against an
+// already verified source-neutral ladder summary.
+func AnswerAllLadderQuestions(summary LadderSummary, receiptSHA256 string) ([]LadderQuestionAnswer, error) {
+	if err := summary.Validate(); err != nil {
+		return nil, fmt.Errorf("ladder question summary: %w", err)
+	}
+	if !validDigest(receiptSHA256) {
+		return nil, errors.New("ladder question receipt identity is invalid")
+	}
+	answers := make([]LadderQuestionAnswer, 0, len(LadderQuestions()))
+	for _, question := range LadderQuestions() {
+		answers = append(answers, ladderQuestionAnswer(summary, receiptSHA256, question))
+	}
+	return answers, nil
+}
+
+// AnswerLadderQuestionRound builds the shared portable round from an already
+// verified source-neutral ladder summary and receipt identity.
+func AnswerLadderQuestionRound(summary LadderSummary, receiptSHA256 string) (LadderQuestionRound, error) {
+	answers, err := AnswerAllLadderQuestions(summary, receiptSHA256)
+	if err != nil {
+		return LadderQuestionRound{}, err
+	}
+	candidates := make([]LadderCandidateProjection, 0, len(summary.CandidateResults))
+	for _, result := range summary.CandidateResults {
+		candidates = append(candidates, candidateProjection(result))
+	}
+	round := LadderQuestionRound{
+		SchemaVersion:      QuestionRoundSchemaVersion,
+		MinimizationSHA256: receiptSHA256,
+		Candidates:         candidates,
+		Answers:            answers,
+	}
+	if err := validateQuestionRound(round); err != nil {
+		return LadderQuestionRound{}, err
+	}
+	return round, nil
+}
+
+// SaveLadderQuestionRound writes the shared portable question round after the
+// caller has source-adapter-verified the ladder summary.
+func SaveLadderQuestionRound(summary LadderSummary, receiptSHA256, roundPath string) (LadderQuestionRoundVerificationSummary, error) {
+	if strings.TrimSpace(roundPath) == "" {
+		return LadderQuestionRoundVerificationSummary{}, errors.New("ladder question round path is required")
+	}
+	round, err := AnswerLadderQuestionRound(summary, receiptSHA256)
+	if err != nil {
+		return LadderQuestionRoundVerificationSummary{}, err
+	}
+	return saveQuestionRound(round, roundPath)
+}
+
+// ReadLadderQuestionRound reads a shared question round without reopening its
+// source ladder or adapter.
+func ReadLadderQuestionRound(path string) (LadderQuestionRound, LadderQuestionRoundVerificationSummary, error) {
+	return ReadMinimizationQuestionRound(path)
+}
+
+// VerifyLadderQuestionRound verifies a shared question round structurally and
+// by its canonical identity, without reopening its source ladder.
+func VerifyLadderQuestionRound(path string) (LadderQuestionRoundVerificationSummary, error) {
+	return VerifyMinimizationQuestionRound(path)
+}
+
+// AskLadderQuestionReceipt selects one question from a shared question round.
+func AskLadderQuestionReceipt(roundPath, questionID string) (LadderQuestionReceipt, error) {
+	return AskMinimizationQuestionReceipt(roundPath, questionID)
+}
+
+// SaveLadderQuestionReceipt saves one selected question from a shared round.
+func SaveLadderQuestionReceipt(roundPath, questionID, receiptPath string) (LadderQuestionReceiptVerificationSummary, error) {
+	return SaveMinimizationQuestionReceipt(roundPath, questionID, receiptPath)
+}
+
+// ReadLadderQuestionReceipt reads one selected shared question receipt.
+func ReadLadderQuestionReceipt(path string) (LadderQuestionReceipt, LadderQuestionReceiptVerificationSummary, error) {
+	return ReadMinimizationQuestionReceipt(path)
+}
+
+// VerifyLadderQuestionReceipt verifies one selected shared question receipt.
+func VerifyLadderQuestionReceipt(path string) (LadderQuestionReceiptVerificationSummary, error) {
+	return VerifyMinimizationQuestionReceipt(path)
 }
 
 // AskMinimizationQuestion verifies a saved minimization run before answering.
@@ -218,6 +346,10 @@ func SaveMinimizationQuestionRound(minimizationPath, roundPath string) (Minimiza
 	if err != nil {
 		return MinimizationQuestionRoundVerificationSummary{}, err
 	}
+	return saveQuestionRound(round, roundPath)
+}
+
+func saveQuestionRound(round MinimizationQuestionRound, roundPath string) (MinimizationQuestionRoundVerificationSummary, error) {
 	data, err := json.Marshal(round)
 	if err != nil {
 		return MinimizationQuestionRoundVerificationSummary{}, errors.New("minimization question round encoding failed")
@@ -407,7 +539,15 @@ func MinimizationQuestionReceiptSHA256(receipt MinimizationQuestionReceipt) (str
 }
 
 func minimizationQuestionAnswer(summary MinimizationSummary, receiptSHA256 string, question MinimizationQuestion) MinimizationQuestionAnswer {
-	supported, unknown := candidateSupportCounts(summary.CandidateResults)
+	return questionAnswer(summary.CandidateResults, summary.SelectionState, summary.SelectedCandidate, receiptSHA256, question)
+}
+
+func ladderQuestionAnswer(summary LadderSummary, receiptSHA256 string, question LadderQuestion) LadderQuestionAnswer {
+	return questionAnswer(summary.CandidateResults, summary.SelectionState, summary.SelectedCandidate, receiptSHA256, question)
+}
+
+func questionAnswer(candidates []CandidateResult, selection SelectionState, selected, receiptSHA256 string, question MinimizationQuestion) MinimizationQuestionAnswer {
+	supported, unknown := candidateSupportCounts(candidates)
 	evidenceState := evidence.Unknown
 	if unknown == 0 {
 		evidenceState = evidence.Observed
@@ -418,15 +558,15 @@ func minimizationQuestionAnswer(summary MinimizationSummary, receiptSHA256 strin
 		Question:            question.Text,
 		EvidenceState:       evidenceState,
 		MinimizationSHA256:  receiptSHA256,
-		SelectionState:      summary.SelectionState,
-		SelectedCandidate:   summary.SelectedCandidate,
-		CandidateCount:      len(summary.CandidateResults),
+		SelectionState:      selection,
+		SelectedCandidate:   selected,
+		CandidateCount:      len(candidates),
 		SupportedCandidates: supported,
 		UnknownCandidates:   unknown,
 	}
 	switch question.ID {
 	case MinimizationQuestionSelection:
-		answer.Result = string(summary.SelectionState)
+		answer.Result = string(selection)
 	case MinimizationQuestionSupport:
 		answer.Result = "supported"
 		if unknown > 0 {

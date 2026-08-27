@@ -98,6 +98,29 @@ jobs:
           if ($minimizationText -notmatch '"plan_name"\s*:\s*"browser-account-minimize"' -or $minimizationText -notmatch '"candidate_results"') {
             throw 'browser fixture minimization summary is incomplete'
           }
+          $minimizationRound = Join-Path $env:RUNNER_TEMP 'ariadne-browser-minimization-round.json'
+          $minimizationRoundSummary = Join-Path $env:RUNNER_TEMP 'ariadne-browser-minimization-round-summary.json'
+          $minimizationReceipt = Join-Path $env:RUNNER_TEMP 'ariadne-browser-minimization-receipt.json'
+          $minimizationReceiptSummary = Join-Path $env:RUNNER_TEMP 'ariadne-browser-minimization-receipt-summary.json'
+          go run ./cmd/ariadne browser fixture minimize questions --json
+          go run ./cmd/ariadne browser fixture minimize ask all save --json $minimization $minimizationRound | Out-File -LiteralPath $minimizationRoundSummary -Encoding utf8
+          go run ./cmd/ariadne browser fixture minimize ask all verify --json $minimizationRound
+          $roundObject = Get-Content -Raw -LiteralPath $minimizationRoundSummary | ConvertFrom-Json
+          if ($roundObject.questions -ne 2 -or -not $roundObject.round_sha256) {
+            throw 'browser fixture minimization question round is incomplete'
+          }
+          go run ./cmd/ariadne browser fixture minimize ask receipt save --json $minimizationRound minimum-tested-selection $minimizationReceipt | Out-File -LiteralPath $minimizationReceiptSummary -Encoding utf8
+          go run ./cmd/ariadne browser fixture minimize ask receipt verify --json $minimizationReceipt
+          $receiptObject = Get-Content -Raw -LiteralPath $minimizationReceiptSummary | ConvertFrom-Json
+          if ($receiptObject.question_id -ne 'minimum-tested-selection' -or -not $receiptObject.receipt_sha256) {
+            throw 'browser fixture minimization question receipt is incomplete'
+          }
+          foreach ($artifact in @($minimizationRound, $minimizationReceipt)) {
+            $artifactContent = Get-Content -Raw -LiteralPath $artifact
+            if ($artifactContent -match 'https://|account-value|candidate-001-omitted|chrome.exe|Program Files|session_id|consent=|payload') {
+              throw "browser fixture minimization question artifact exposed source values: $artifact"
+            }
+          }
           $minimizationFiles = @(Get-ChildItem -LiteralPath $minimization -Recurse -File)
           foreach ($file in $minimizationFiles) {
             $fileContent = Get-Content -Raw -LiteralPath $file.FullName
@@ -111,7 +134,7 @@ jobs:
           go build -o $ariadne ./cmd/ariadne
           $serverOut = Join-Path $env:RUNNER_TEMP 'ariadne-browser-review.out'
           $serverErr = Join-Path $env:RUNNER_TEMP 'ariadne-browser-review.err'
-          $server = Start-Process -FilePath $ariadne -ArgumentList @('experiment', 'serve', '--addr', '127.0.0.1:8788', '--minimization', $minimization, $archiveRoot) -RedirectStandardOutput $serverOut -RedirectStandardError $serverErr -PassThru -WindowStyle Hidden
+          $server = Start-Process -FilePath $ariadne -ArgumentList @('experiment', 'serve', '--addr', '127.0.0.1:8788', '--minimization', $minimization, '--minimization-round', $minimizationRound, '--minimization-receipt', $minimizationReceipt, $archiveRoot) -RedirectStandardOutput $serverOut -RedirectStandardError $serverErr -PassThru -WindowStyle Hidden
           try {
             $response = $null
             for ($attempt = 0; $attempt -lt 30; $attempt++) {
@@ -129,7 +152,7 @@ jobs:
               throw "browser minimization review returned status $($response.StatusCode)"
             }
             $review = $response.Content
-            foreach ($required in @('browser-local-fixture', 'procedure SHA-256', 'account-id', 'unknown', 'raw-value-free')) {
+            foreach ($required in @('browser-local-fixture', 'procedure SHA-256', 'account-id', 'unknown', 'raw-value-free', 'Fixed minimization questions', 'minimum-tested-selection', 'Selected question receipt', 'saved and verified')) {
               if ($review -notmatch [regex]::Escape($required)) {
                 throw "browser minimization review omitted $required"
               }

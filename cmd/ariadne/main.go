@@ -78,6 +78,14 @@ const usage = `usage:
 	ariadne browser fixture replicate verify [--json] <replicated-directory>
 	ariadne browser fixture minimize [--json] --plan <plan.json> --procedure <procedure.json> --driver <executable> [--driver-arg <arg>] --pairs <n> --output <directory>
 	ariadne browser fixture minimize verify [--json] <minimization-directory>
+	ariadne browser fixture minimize questions [--json]
+	ariadne browser fixture minimize ask [--json] <minimization-directory> <question-id>
+	ariadne browser fixture minimize ask all [--json] <minimization-directory>
+	ariadne browser fixture minimize ask all save [--json] <minimization-directory> <round.json>
+	ariadne browser fixture minimize ask all verify [--json] [--expect-sha256 <digest>] <round.json>
+	ariadne browser fixture minimize ask receipt [--json] <round.json> <question-id>
+	ariadne browser fixture minimize ask receipt save [--json] <round.json> <question-id> <receipt.json>
+	ariadne browser fixture minimize ask receipt verify [--json] [--expect-sha256 <digest>] <receipt.json>
 	ariadne proxy capture [--json] --procedure <procedure.json> --program <executable> [--program-arg <arg>] <trace.json>
 	ariadne proxy replicate [--json] --procedure <procedure.json> --program <executable> [--shared-arg <arg>] --baseline-arg <arg> --treatment-arg <arg> --pairs <n> --output <directory>
 	ariadne proxy replicate verify [--json] <replicated-directory>
@@ -313,6 +321,30 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(args) >= 3 && args[0] == "proxy" && args[1] == "replicate" {
 		return runProxyReplicate(args[2:], stdout, stderr, proxy.RunReplicated, proxy.VerifyReplicated)
+	}
+	if len(args) >= 4 && args[0] == "browser" && args[1] == "fixture" && args[2] == "minimize" && args[3] == "questions" {
+		return runMinimizationQuestions(args[4:], stdout, stderr, minimize.LadderQuestions)
+	}
+	if len(args) >= 4 && args[0] == "browser" && args[1] == "fixture" && args[2] == "minimize" && args[3] == "ask" {
+		if len(args) >= 5 && args[4] == "all" {
+			if len(args) >= 6 && args[5] == "save" {
+				return runMinimizationAskAllSave(args[6:], stdout, stderr, browser.SaveFixtureMinimizationQuestionRound)
+			}
+			if len(args) >= 6 && args[5] == "verify" {
+				return runMinimizationAskAllVerify(args[6:], stdout, stderr, minimize.VerifyLadderQuestionRound)
+			}
+			return runMinimizationAskAll(args[5:], stdout, stderr, browser.AskAllFixtureMinimizationQuestions)
+		}
+		if len(args) >= 5 && args[4] == "receipt" {
+			if len(args) >= 6 && args[5] == "save" {
+				return runMinimizationAskReceiptSave(args[6:], stdout, stderr, minimize.SaveLadderQuestionReceipt)
+			}
+			if len(args) >= 6 && args[5] == "verify" {
+				return runMinimizationAskReceiptVerify(args[6:], stdout, stderr, minimize.VerifyLadderQuestionReceipt)
+			}
+			return runMinimizationAskReceipt(args[5:], stdout, stderr, minimize.AskLadderQuestionReceipt)
+		}
+		return runMinimizationAsk(args[4:], stdout, stderr, browser.AskFixtureMinimizationQuestion)
 	}
 	if len(args) >= 4 && args[0] == "browser" && args[1] == "fixture" && args[2] == "minimize" && args[3] == "verify" {
 		return runBrowserFixtureMinimizeVerify(args[4:], stdout, stderr, browser.VerifyFixtureMinimization)

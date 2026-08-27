@@ -115,7 +115,14 @@ counts, and child receipt identities, never values, URLs, driver arguments,
 profiles, or captured events. This is a fixture handoff, not universal
 tracing.
 
-The same `--minimization` flag and `/minimization` route now accept this source-neutral receipt through the browser adapter's explicit criterion-specific verifier. The review projection adds safe adapter and procedure provenance; Android-only question artifacts are not synthesized for browser receipts.
+The same `--minimization` flag and `/minimization` route now accept this source-neutral receipt through the browser adapter's explicit criterion-specific verifier. The review projection adds safe adapter and procedure provenance. The same
+source-neutral fixed question catalog now answers browser ladders, and the
+browser adapter verifies the ladder before producing a question answer or
+saved question round. Saved rounds and selected receipts remain shared,
+raw-value-free artifacts; offline verification checks structure and identity
+without reopening the browser source. This extends the verify -> ask -> retain
+-> review path across the first two source boundaries without adding universal
+tracing.
 
 6. **Browser audit handoff (not evidence-backed capture).** An authorized
    browser driver can provide a bounded, already-redacted audit that Ariadne

@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackkayser2005/ariadne/internal/bundle"
 	"github.com/jackkayser2005/ariadne/internal/evidence"
+	portabletrace "github.com/jackkayser2005/ariadne/internal/trace"
 )
 
 func TestMinimizationQuestionsKeepOutcomeAndEvidenceSeparate(t *testing.T) {
@@ -482,4 +483,184 @@ func cloneMinimizationQuestionRound(round MinimizationQuestionRound) Minimizatio
 	clone.Candidates = append([]MinimizationCandidateProjection(nil), round.Candidates...)
 	clone.Answers = append([]MinimizationQuestionAnswer(nil), round.Answers...)
 	return clone
+}
+func TestLadderQuestionArtifactsReuseCanonicalContract(t *testing.T) {
+	summary, err := SummarizeLadder(testLadderPlan(), testLadderProvenance(), 1, []LadderCandidateResult{
+		ladderResult("omitted", portabletrace.NoChangeObserved, evidence.Observed, 1, 0, 2, 0, 2),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	receiptSHA256 := strings.Repeat("c", 64)
+	catalog := LadderQuestions()
+	legacyCatalog := MinimizationQuestions()
+	if len(catalog) != len(legacyCatalog) {
+		t.Fatalf("catalog lengths = %d and %d", len(catalog), len(legacyCatalog))
+	}
+	for index := range catalog {
+		if catalog[index] != legacyCatalog[index] {
+			t.Fatalf("catalog item %d = %#v and %#v", index, catalog[index], legacyCatalog[index])
+		}
+	}
+
+	answer, err := AnswerLadderQuestion(summary, receiptSHA256, MinimizationQuestionSelection)
+	if err != nil {
+		t.Fatalf("AnswerLadderQuestion() error = %v", err)
+	}
+	if answer.Result != string(SelectionSelected) || answer.EvidenceState != evidence.Observed || answer.SelectedCandidate != "omitted" || answer.MinimizationSHA256 != receiptSHA256 {
+		t.Fatalf("ladder answer = %#v", answer)
+	}
+	answers, err := AnswerAllLadderQuestions(summary, receiptSHA256)
+	if err != nil || len(answers) != len(catalog) {
+		t.Fatalf("AnswerAllLadderQuestions() = %#v, %v", answers, err)
+	}
+	round, err := AnswerLadderQuestionRound(summary, receiptSHA256)
+	if err != nil {
+		t.Fatalf("AnswerLadderQuestionRound() error = %v", err)
+	}
+	if round.MinimizationSHA256 != receiptSHA256 || len(round.Candidates) != 1 || len(round.Answers) != len(catalog) {
+		t.Fatalf("ladder round = %#v", round)
+	}
+	roundPath := filepath.Join(t.TempDir(), "nested", "round.json")
+	roundSummary, err := SaveLadderQuestionRound(summary, receiptSHA256, roundPath)
+	if err != nil {
+		t.Fatalf("SaveLadderQuestionRound() error = %v", err)
+	}
+	if roundSummary.Questions != len(catalog) || roundSummary.Candidates != 1 || !validDigest(roundSummary.RoundSHA256) {
+		t.Fatalf("ladder round summary = %#v", roundSummary)
+	}
+	if _, err := SaveLadderQuestionRound(summary, receiptSHA256, roundPath); err == nil {
+		t.Fatal("SaveLadderQuestionRound() overwrote an existing round")
+	}
+	readRound, readSummary, err := ReadLadderQuestionRound(roundPath)
+	if err != nil || readSummary != roundSummary || len(readRound.Answers) != len(catalog) {
+		t.Fatalf("ReadLadderQuestionRound() = %#v, %#v, %v", readRound, readSummary, err)
+	}
+	if verified, err := VerifyLadderQuestionRound(roundPath); err != nil || verified != roundSummary {
+		t.Fatalf("VerifyLadderQuestionRound() = %#v, %v", verified, err)
+	}
+	receiptPath := filepath.Join(t.TempDir(), "receipt.json")
+	receiptSummary, err := SaveLadderQuestionReceipt(roundPath, MinimizationQuestionSelection, receiptPath)
+	if err != nil {
+		t.Fatalf("SaveLadderQuestionReceipt() error = %v", err)
+	}
+	if receiptSummary.QuestionID != MinimizationQuestionSelection || receiptSummary.RoundSHA256 != roundSummary.RoundSHA256 || !validDigest(receiptSummary.ReceiptSHA256) {
+		t.Fatalf("ladder receipt summary = %#v", receiptSummary)
+	}
+	receipt, err := AskLadderQuestionReceipt(roundPath, MinimizationQuestionSelection)
+	if err != nil || receipt.QuestionID != MinimizationQuestionSelection {
+		t.Fatalf("AskLadderQuestionReceipt() = %#v, %v", receipt, err)
+	}
+	readReceipt, readReceiptSummary, err := ReadLadderQuestionReceipt(receiptPath)
+	if err != nil || readReceiptSummary != receiptSummary || readReceipt.QuestionID != receipt.QuestionID {
+		t.Fatalf("ReadLadderQuestionReceipt() = %#v, %#v, %v", readReceipt, readReceiptSummary, err)
+	}
+	if verified, err := VerifyLadderQuestionReceipt(receiptPath); err != nil || verified != receiptSummary {
+		t.Fatalf("VerifyLadderQuestionReceipt() = %#v, %v", verified, err)
+	}
+	for _, path := range []string{roundPath, receiptPath} {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, secret := range []string{"37.7749-122.4194", "baseline@example.invalid", "https://", "fixture-value"} {
+			if strings.Contains(string(data), secret) {
+				t.Fatalf("ladder artifact %q disclosed %q", path, secret)
+			}
+		}
+	}
+}
+
+func TestLadderQuestionsPreserveOutcomeAndEvidenceStates(t *testing.T) {
+	tests := []struct {
+		name        string
+		outcome     portabletrace.ReplicatedOutcome
+		state       evidence.State
+		selection   SelectionState
+		selected    string
+		answerState evidence.State
+		pairs       int
+		changed     int
+		noChange    int
+		unknown     int
+		completed   int
+	}{
+		{name: "selected", outcome: portabletrace.NoChangeObserved, state: evidence.Observed, selection: SelectionSelected, selected: "omitted", answerState: evidence.Observed, pairs: 1, noChange: 2, completed: 2},
+		{name: "no sufficient", outcome: portabletrace.ReplicatedChange, state: evidence.Observed, selection: SelectionNoSufficient, answerState: evidence.Observed, pairs: 1, changed: 2, completed: 2},
+		{name: "mixed", outcome: portabletrace.MixedInconsistent, state: evidence.Observed, selection: SelectionUnknown, answerState: evidence.Observed, pairs: 1, changed: 1, noChange: 1, completed: 2},
+		{name: "unknown", outcome: portabletrace.ReplicationUnknown, state: evidence.Unknown, selection: SelectionUnknown, answerState: evidence.Unknown, pairs: 1, unknown: 2},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			summary, err := SummarizeLadder(testLadderPlan(), testLadderProvenance(), 1, []LadderCandidateResult{
+				ladderResult("omitted", test.outcome, test.state, test.pairs, test.changed, test.noChange, test.unknown, test.completed),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			answers, err := AnswerAllLadderQuestions(summary, strings.Repeat("c", 64))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if answers[0].SelectionState != test.selection || answers[0].SelectedCandidate != test.selected || answers[0].EvidenceState != test.answerState {
+				t.Fatalf("selection answer = %#v", answers[0])
+			}
+			round, err := AnswerLadderQuestionRound(summary, strings.Repeat("c", 64))
+			if err != nil {
+				t.Fatal(err)
+			}
+			candidate := round.Candidates[0]
+			if candidate.Outcome != test.outcome || candidate.EvidenceState != test.state {
+				t.Fatalf("candidate projection = %#v", candidate)
+			}
+		})
+	}
+}
+func TestLadderQuestionAPIsRejectInvalidInputs(t *testing.T) {
+	summary, err := SummarizeLadder(testLadderPlan(), testLadderProvenance(), 1, []LadderCandidateResult{
+		ladderResult("omitted", portabletrace.NoChangeObserved, evidence.Observed, 1, 0, 2, 0, 2),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	validReceipt := strings.Repeat("a", 64)
+	if _, err := AnswerLadderQuestion(summary, validReceipt, "not-a-question"); err == nil {
+		t.Fatal("AnswerLadderQuestion() accepted an invalid question ID")
+	}
+	if _, err := AnswerLadderQuestion(LadderSummary{}, validReceipt, MinimizationQuestionSelection); err == nil {
+		t.Fatal("AnswerLadderQuestion() accepted an invalid summary")
+	}
+	if _, err := AnswerLadderQuestion(summary, "short", MinimizationQuestionSelection); err == nil {
+		t.Fatal("AnswerLadderQuestion() accepted an invalid receipt identity")
+	}
+	if _, err := AnswerAllLadderQuestions(LadderSummary{}, validReceipt); err == nil {
+		t.Fatal("AnswerAllLadderQuestions() accepted an invalid summary")
+	}
+	if _, err := AnswerAllLadderQuestions(summary, "short"); err == nil {
+		t.Fatal("AnswerAllLadderQuestions() accepted an invalid receipt identity")
+	}
+	if _, err := AnswerLadderQuestionRound(LadderSummary{}, validReceipt); err == nil {
+		t.Fatal("AnswerLadderQuestionRound() accepted an invalid summary")
+	}
+	if _, err := SaveLadderQuestionRound(summary, validReceipt, ""); err == nil {
+		t.Fatal("SaveLadderQuestionRound() accepted an empty output path")
+	}
+	if _, _, err := ReadLadderQuestionRound(filepath.Join(t.TempDir(), "missing.json")); err == nil {
+		t.Fatal("ReadLadderQuestionRound() accepted a missing round")
+	}
+	if _, err := VerifyLadderQuestionRound(filepath.Join(t.TempDir(), "missing.json")); err == nil {
+		t.Fatal("VerifyLadderQuestionRound() accepted a missing round")
+	}
+	if _, err := AskLadderQuestionReceipt(filepath.Join(t.TempDir(), "missing.json"), MinimizationQuestionSelection); err == nil {
+		t.Fatal("AskLadderQuestionReceipt() accepted a missing round")
+	}
+	if _, err := SaveLadderQuestionReceipt(filepath.Join(t.TempDir(), "missing.json"), MinimizationQuestionSelection, ""); err == nil {
+		t.Fatal("SaveLadderQuestionReceipt() accepted an empty output path")
+	}
+	if _, _, err := ReadLadderQuestionReceipt(filepath.Join(t.TempDir(), "missing.json")); err == nil {
+		t.Fatal("ReadLadderQuestionReceipt() accepted a missing receipt")
+	}
+	if _, err := VerifyLadderQuestionReceipt(filepath.Join(t.TempDir(), "missing.json")); err == nil {
+		t.Fatal("VerifyLadderQuestionReceipt() accepted a missing receipt")
+	}
 }

@@ -108,11 +108,11 @@ func reviewHandler(options ReviewOptions) http.Handler {
 	}
 	if options.MinimizationRoundPath != "" {
 		h.minimizationRoundPath = options.MinimizationRoundPath
-		h.minimizationRoundRead = minimize.ReadMinimizationQuestionRound
+		h.minimizationRoundRead = minimize.ReadLadderQuestionRound
 	}
 	if options.MinimizationReceiptPath != "" {
 		h.minimizationReceiptPath = options.MinimizationReceiptPath
-		h.minimizationReceiptRead = minimize.ReadMinimizationQuestionReceipt
+		h.minimizationReceiptRead = minimize.ReadLadderQuestionReceipt
 	}
 	return newHandlerWithHost(h, options.ExpectedHost)
 }
@@ -140,7 +140,7 @@ type minimizationReviewData struct {
 	EvidenceState          evidence.State
 	SelectionState         minimize.SelectionState
 	SelectedCandidate      string
-	Legacy                 bool
+	QuestionsAvailable     bool
 	Candidates             []minimizationCandidateData
 	Questions              []minimize.MinimizationQuestionAnswer
 	RoundSaved             bool
@@ -177,7 +177,6 @@ func minimizationReview(summary minimize.MinimizationSummary, receiptSHA256 stri
 		EvidenceState:          summary.EvidenceState,
 		SelectionState:         summary.SelectionState,
 		SelectedCandidate:      summary.SelectedCandidate,
-		Legacy:                 true,
 		Candidates:             minimizationCandidates(summary.CandidateResults),
 	}
 }
@@ -234,50 +233,76 @@ func (h handler) handleMinimization(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "minimization unavailable", http.StatusUnprocessableEntity)
 		return
 	}
-	var summary minimize.MinimizationSummary
-	var receiptSHA256 string
-	var verifyErr error
+
 	if h.minimizationVerify != nil {
-		summary, receiptSHA256, verifyErr = h.minimizationVerify(h.minimizationPath)
-	} else {
-		verifyErr = errors.New("legacy minimization verifier unavailable")
+		summary, receiptSHA256, verifyErr := h.minimizationVerify(h.minimizationPath)
+		if verifyErr == nil {
+			answers, answerErr := minimize.AnswerAllMinimizationQuestions(summary, receiptSHA256)
+			round, roundErr := minimize.AnswerMinimizationQuestionRound(summary, receiptSHA256)
+			if answerErr != nil || roundErr != nil {
+				http.Error(w, "minimization unavailable", http.StatusUnprocessableEntity)
+				return
+			}
+			review := minimizationReview(summary, receiptSHA256)
+			review, err := h.addMinimizationQuestionArtifacts(r, review, answers, round, receiptSHA256)
+			if err != nil {
+				http.Error(w, "minimization unavailable", http.StatusUnprocessableEntity)
+				return
+			}
+			render(w, pageData{
+				View:                   "minimization",
+				Title:                  "Minimization review — Ariadne",
+				MinimizationConfigured: true,
+				Minimization:           review,
+			})
+			return
+		}
 	}
-	if verifyErr != nil {
-		if h.minimizationLadderVerify == nil {
-			http.Error(w, "minimization unavailable", http.StatusUnprocessableEntity)
-			return
-		}
-		if h.minimizationRoundPath != "" || h.minimizationReceiptPath != "" {
-			http.Error(w, "minimization unavailable", http.StatusUnprocessableEntity)
-			return
-		}
-		ladderSummary, ladderReceiptSHA256, ladderErr := h.minimizationLadderVerify(h.minimizationPath)
-		if ladderErr != nil {
-			http.Error(w, "minimization unavailable", http.StatusUnprocessableEntity)
-			return
-		}
-		render(w, pageData{
-			View:                   "minimization",
-			Title:                  "Minimization review — Ariadne",
-			MinimizationConfigured: true,
-			Minimization:           ladderMinimizationReview(ladderSummary, ladderReceiptSHA256),
-		})
+
+	if h.minimizationLadderVerify == nil {
+		http.Error(w, "minimization unavailable", http.StatusUnprocessableEntity)
 		return
 	}
-	answers, err := minimize.AnswerAllMinimizationQuestions(summary, receiptSHA256)
+
+	ladderSummary, ladderReceiptSHA256, err := h.minimizationLadderVerify(h.minimizationPath)
 	if err != nil {
 		http.Error(w, "minimization unavailable", http.StatusUnprocessableEntity)
 		return
 	}
-	round, err := minimize.AnswerMinimizationQuestionRound(summary, receiptSHA256)
+	answers, err := minimize.AnswerAllLadderQuestions(ladderSummary, ladderReceiptSHA256)
 	if err != nil {
 		http.Error(w, "minimization unavailable", http.StatusUnprocessableEntity)
 		return
 	}
+	round, err := minimize.AnswerLadderQuestionRound(ladderSummary, ladderReceiptSHA256)
+	if err != nil {
+		http.Error(w, "minimization unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	review := ladderMinimizationReview(ladderSummary, ladderReceiptSHA256)
+	review, err = h.addMinimizationQuestionArtifacts(r, review, answers, round, ladderReceiptSHA256)
+	if err != nil {
+		http.Error(w, "minimization unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	render(w, pageData{
+		View:                   "minimization",
+		Title:                  "Minimization review — Ariadne",
+		MinimizationConfigured: true,
+		Minimization:           review,
+	})
+}
+
+func (h handler) addMinimizationQuestionArtifacts(
+	r *http.Request,
+	review minimizationReviewData,
+	answers []minimize.MinimizationQuestionAnswer,
+	round minimize.MinimizationQuestionRound,
+	receiptSHA256 string,
+) (minimizationReviewData, error) {
 	roundSHA256, err := minimize.MinimizationQuestionRoundSHA256(round)
 	if err != nil {
-		http.Error(w, "minimization unavailable", http.StatusUnprocessableEntity)
-		return
+		return minimizationReviewData{}, err
 	}
 	roundSummary := minimize.MinimizationQuestionRoundVerificationSummary{
 		SchemaVersion:      round.SchemaVersion,
@@ -288,8 +313,7 @@ func (h handler) handleMinimization(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.minimizationRoundPath != "" {
 		if h.minimizationRoundRead == nil {
-			http.Error(w, "minimization unavailable", http.StatusUnprocessableEntity)
-			return
+			return minimizationReviewData{}, errors.New("minimization question round reader unavailable")
 		}
 		savedRound, savedRoundSummary, readErr := h.minimizationRoundRead(h.minimizationRoundPath)
 		if readErr != nil ||
@@ -297,8 +321,7 @@ func (h handler) handleMinimization(w http.ResponseWriter, r *http.Request) {
 			savedRoundSummary.MinimizationSHA256 != receiptSHA256 ||
 			!slices.Equal(savedRound.Answers, round.Answers) ||
 			!slices.Equal(savedRound.Candidates, round.Candidates) {
-			http.Error(w, "minimization unavailable", http.StatusUnprocessableEntity)
-			return
+			return minimizationReviewData{}, errors.New("minimization question round disagrees")
 		}
 		round = savedRound
 		roundSummary = savedRoundSummary
@@ -306,23 +329,20 @@ func (h handler) handleMinimization(w http.ResponseWriter, r *http.Request) {
 	requestedQuestionID := r.URL.Query().Get("question_id")
 	selectedQuestionID := selectedMinimizationQuestionID(requestedQuestionID)
 	if requestedQuestionID != "" && selectedQuestionID == "" {
-		http.Error(w, "minimization unavailable", http.StatusUnprocessableEntity)
-		return
+		return minimizationReviewData{}, errors.New("minimization question ID is invalid")
 	}
 	receiptSummary := minimize.MinimizationQuestionReceiptVerificationSummary{}
 	receiptAvailable := false
 	if h.minimizationReceiptPath != "" {
 		if h.minimizationReceiptRead == nil {
-			http.Error(w, "minimization unavailable", http.StatusUnprocessableEntity)
-			return
+			return minimizationReviewData{}, errors.New("minimization question receipt reader unavailable")
 		}
 		receipt, savedReceiptSummary, readErr := h.minimizationReceiptRead(h.minimizationReceiptPath)
 		if readErr != nil ||
 			receipt.MinimizationSHA256 != receiptSHA256 ||
 			receipt.RoundSHA256 != roundSummary.RoundSHA256 ||
 			(selectedQuestionID != "" && selectedQuestionID != receipt.QuestionID) {
-			http.Error(w, "minimization unavailable", http.StatusUnprocessableEntity)
-			return
+			return minimizationReviewData{}, errors.New("minimization question receipt disagrees")
 		}
 		selectedQuestionID = receipt.QuestionID
 		receiptSummary = savedReceiptSummary
@@ -330,8 +350,7 @@ func (h handler) handleMinimization(w http.ResponseWriter, r *http.Request) {
 	} else if selectedQuestionID != "" {
 		answer, answerErr := minimizationAnswerFromRound(round, selectedQuestionID)
 		if answerErr != nil {
-			http.Error(w, "minimization unavailable", http.StatusUnprocessableEntity)
-			return
+			return minimizationReviewData{}, answerErr
 		}
 		receipt := minimize.MinimizationQuestionReceipt{
 			MinimizationQuestionAnswer: answer,
@@ -340,8 +359,7 @@ func (h handler) handleMinimization(w http.ResponseWriter, r *http.Request) {
 		}
 		questionReceiptSHA256, receiptErr := minimize.MinimizationQuestionReceiptSHA256(receipt)
 		if receiptErr != nil {
-			http.Error(w, "minimization unavailable", http.StatusUnprocessableEntity)
-			return
+			return minimizationReviewData{}, receiptErr
 		}
 		receiptSummary = minimize.MinimizationQuestionReceiptVerificationSummary{
 			SchemaVersion:       receipt.SchemaVersion,
@@ -360,22 +378,16 @@ func (h handler) handleMinimization(w http.ResponseWriter, r *http.Request) {
 		}
 		receiptAvailable = true
 	}
-	review := minimizationReview(summary, receiptSHA256)
 	review.Questions = answers
+	review.QuestionsAvailable = true
 	review.RoundSaved = h.minimizationRoundPath != ""
 	review.RoundSummary = roundSummary
 	review.ReceiptAvailable = receiptAvailable
 	review.ReceiptSaved = h.minimizationReceiptPath != ""
 	review.ReceiptSummary = receiptSummary
 	review.SelectedQuestionID = selectedQuestionID
-	render(w, pageData{
-		View:                   "minimization",
-		Title:                  "Minimization review — Ariadne",
-		MinimizationConfigured: true,
-		Minimization:           review,
-	})
+	return review, nil
 }
-
 func selectedMinimizationQuestionID(value string) string {
 	for _, question := range minimize.MinimizationQuestions() {
 		if question.ID == value {

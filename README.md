@@ -373,7 +373,23 @@ The same read-only review surface accepts this browser ladder through the existi
 go run ./cmd/ariadne experiment serve --minimization .ariadne/browser-account-minimize <archive-root>
 ```
 
-The `/minimization` route re-verifies the browser adapter children before rendering safe adapter, procedure, scope, reset-policy, candidate, count, classification, counterfactual-outcome, and evidence-state fields. It does not synthesize the Android-only minimization question artifacts for a browser ladder, and it remains GET-only, raw-value-free, and local-loopback-bound.
+The `/minimization` route re-verifies the browser adapter children before rendering safe adapter, procedure, scope, reset-policy, candidate, count, classification, counterfactual-outcome, and evidence-state fields. The browser ladder now uses the shared source-neutral question catalog rather
+than synthesizing Android-specific answers. Ask or retain the bounded questions
+only after the browser adapter has re-verified the ladder:
+
+~~~console
+go run ./cmd/ariadne browser fixture minimize questions --json
+go run ./cmd/ariadne browser fixture minimize ask all --json .ariadne/browser-account-minimize
+go run ./cmd/ariadne browser fixture minimize ask all save --json .ariadne/browser-account-minimize .ariadne/browser-account-minimize-round.json
+go run ./cmd/ariadne browser fixture minimize ask all verify --json .ariadne/browser-account-minimize-round.json
+go run ./cmd/ariadne browser fixture minimize ask receipt save --json .ariadne/browser-account-minimize-round.json minimum-tested-selection .ariadne/browser-account-minimize-receipt.json
+go run ./cmd/ariadne browser fixture minimize ask receipt verify --json .ariadne/browser-account-minimize-receipt.json
+~~~
+
+The saved round and selected receipt contain only fixed answers, candidate
+projections, and identities. Their offline verification checks structure and
+canonical identities; it does not re-verify the browser source. The route
+remains GET-only, raw-value-free, and local-loopback-bound.
 
 Bind a verified trace to its reviewed adapter and capture procedure without
 adding URLs, profile names, or captured values:
