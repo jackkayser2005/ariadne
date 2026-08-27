@@ -136,6 +136,7 @@ func TestReportExistingPairsSkipsExistingEvidence(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	writeTestReplicationRecord(t, root, "android-location-minimize-city", 1, true)
 	reports := 0
 	if err := reportExistingPairs(root, 1, func(string) (bundle.Summary, error) {
 		reports++
@@ -148,6 +149,80 @@ func TestReportExistingPairsSkipsExistingEvidence(t *testing.T) {
 	}
 }
 
+func TestReportExistingPairsSkipsIncompletePair(t *testing.T) {
+	root := t.TempDir()
+	pairDir := filepath.Join(root, "pair-001-"+adb.ReplicationOrderBaselineTreatment)
+	if err := os.Mkdir(pairDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeTestReplicationRecord(t, root, "android-location-minimize-city", 1, false)
+	reports := 0
+	if err := reportExistingPairs(root, 1, func(string) (bundle.Summary, error) {
+		reports++
+		return bundle.Summary{}, nil
+	}); err != nil {
+		t.Fatalf("reportExistingPairs() error = %v", err)
+	}
+	if reports != 0 {
+		t.Fatalf("reportExistingPairs() reported %d incomplete pairs", reports)
+	}
+}
+func TestCompletedPairDirectoriesRejectsInvalidMetadata(t *testing.T) {
+	tests := []struct {
+		name string
+		data []byte
+	}{
+		{name: "missing", data: nil},
+		{name: "duplicate", data: []byte("{\"schema_version\":1,\"schema_version\":1}")},
+		{name: "malformed", data: []byte("{")},
+		{name: "trailing", data: []byte("{\"schema_version\":1} {}")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			if tt.data != nil {
+				if err := os.WriteFile(filepath.Join(root, "replication.json"), tt.data, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := completedPairDirectories(root, 1); err == nil {
+				t.Fatal("completedPairDirectories() accepted invalid metadata")
+			}
+		})
+	}
+
+	t.Run("configuration", func(t *testing.T) {
+		root := t.TempDir()
+		writeTestReplicationRecord(t, root, "android-location-minimize-city", 1, true)
+		if _, err := completedPairDirectories(root, 2); err == nil {
+			t.Fatal("completedPairDirectories() accepted mismatched pair count")
+		}
+	})
+
+	t.Run("pair metadata", func(t *testing.T) {
+		root := t.TempDir()
+		record := adb.ReplicatedRunRecord{
+			SchemaVersion: adb.ReplicatedRunSchemaVersion,
+			PairsPerOrder: 1,
+			Pairs: []adb.ReplicatedPairRecord{{
+				Pair:      1,
+				Order:     adb.ReplicationOrderBaselineTreatment,
+				Directory: "unexpected",
+				Status:    adb.ReplicationStatusComplete,
+			}},
+		}
+		data, err := json.Marshal(record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "replication.json"), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := completedPairDirectories(root, 1); err == nil {
+			t.Fatal("completedPairDirectories() accepted invalid pair metadata")
+		}
+	})
+}
 func TestReportExistingPairsRejectsSymlinks(t *testing.T) {
 	t.Run("candidate", func(t *testing.T) {
 		root := t.TempDir()
@@ -165,6 +240,7 @@ func TestReportExistingPairsRejectsSymlinks(t *testing.T) {
 	})
 	t.Run("pair", func(t *testing.T) {
 		root := t.TempDir()
+		writeTestReplicationRecord(t, root, "android-location-minimize-city", 1, true)
 		target := filepath.Join(root, "target")
 		if err := os.Mkdir(target, 0o700); err != nil {
 			t.Fatal(err)
@@ -186,6 +262,7 @@ func TestReportExistingPairsRejectsSymlinks(t *testing.T) {
 		if err := os.WriteFile(target, []byte("{}\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
+		writeTestReplicationRecord(t, root, "android-location-minimize-city", 1, true)
 		if err := os.Symlink(target, filepath.Join(pairDir, "evidence.json")); err != nil {
 			t.Skipf("symbolic links unavailable: %v", err)
 		}
@@ -312,6 +389,7 @@ func TestExecuteRunsOnlyTreatmentCandidatesAndWritesSafeReceipt(t *testing.T) {
 				}
 			}
 		}
+		writeTestReplicationRecord(t, output, manifest.Name, pairs, true)
 		return nil
 	}
 	reporter := func(string) (bundle.Summary, error) {
@@ -327,17 +405,7 @@ func TestExecuteRunsOnlyTreatmentCandidatesAndWritesSafeReceipt(t *testing.T) {
 		}
 		return childSummary(plan.Name + "-" + id), nil
 	}
-	summary, err := execute(
-		context.Background(),
-		"adb",
-		adb.Target{},
-		plan,
-		root,
-		1,
-		runner,
-		reporter,
-		verifier,
-	)
+	summary, err := execute(context.Background(), "adb", adb.Target{}, plan, root, 1, runner, reporter, verifier)
 	if err != nil {
 		t.Fatalf("execute() error = %v", err)
 	}
@@ -355,14 +423,17 @@ func TestExecuteRunsOnlyTreatmentCandidatesAndWritesSafeReceipt(t *testing.T) {
 		t.Fatalf("receipt exposed raw candidate value: %s", data)
 	}
 }
-
 func TestExecuteRecordsRunnerFailureAsUnknownWhenReceiptVerifies(t *testing.T) {
 	plan := testPlan()
 	root := filepath.Join(t.TempDir(), "minimize")
 	count := 0
-	runner := func(context.Context, string, adb.Target, experiment.Manifest, string, int) error {
+	runner := func(_ context.Context, _ string, _ adb.Target, manifest experiment.Manifest, output string, pairs int) error {
 		count++
 		if count == 1 {
+			if err := os.MkdirAll(output, 0o700); err != nil {
+				return err
+			}
+			writeTestReplicationRecord(t, output, manifest.Name, pairs, false)
 			return errors.New("private value must not escape")
 		}
 		return nil
@@ -382,7 +453,6 @@ func TestExecuteRecordsRunnerFailureAsUnknownWhenReceiptVerifies(t *testing.T) {
 		t.Fatalf("summary = %#v", summary)
 	}
 }
-
 func TestSaveRejectsOverwriteAndVerifyRejectsMissingChild(t *testing.T) {
 	root := t.TempDir()
 	summary, err := summarize(testPlan(), 1, []CandidateResult{
@@ -527,6 +597,7 @@ func TestExecuteReportsChildAndVerifierFailures(t *testing.T) {
 				return err
 			}
 		}
+		writeTestReplicationRecord(t, output, plan.Name+"-city", 1, true)
 		return nil
 	}
 	runner := func(_ context.Context, _ string, _ adb.Target, _ experiment.Manifest, output string, _ int) error {
@@ -557,13 +628,13 @@ func TestExecuteReportsChildAndVerifierFailures(t *testing.T) {
 		t.Fatal("execute() error = nil for non-directory pair")
 	}
 }
-
 func TestExecuteRejectsFailedRunnerAfterNonUnknownResult(t *testing.T) {
 	plan := testPlan()
-	runner := func(_ context.Context, _ string, _ adb.Target, _ experiment.Manifest, output string, _ int) error {
+	runner := func(_ context.Context, _ string, _ adb.Target, manifest experiment.Manifest, output string, pairs int) error {
 		if err := os.MkdirAll(output, 0o700); err != nil {
 			return err
 		}
+		writeTestReplicationRecord(t, output, manifest.Name, pairs, false)
 		return errors.New("runner failed")
 	}
 	_, err := execute(
@@ -718,6 +789,66 @@ func childUnknown(name string) bundle.ReplicatedExperimentSummary {
 	}
 }
 
+func writeTestReplicationRecord(t *testing.T, root, manifestName string, pairs int, complete bool) {
+	t.Helper()
+	status := adb.ReplicationStatusIncomplete
+	recordPairs := []adb.ReplicatedPairRecord{{
+		Pair:          1,
+		Order:         adb.ReplicationOrderBaselineTreatment,
+		Directory:     "pair-001-" + adb.ReplicationOrderBaselineTreatment,
+		FirstSession:  "baseline",
+		SecondSession: "treatment",
+		Status:        adb.ReplicationStatusIncomplete,
+	}}
+	completedPairs := 0
+	failurePair := 1
+	failureOrder := adb.ReplicationOrderBaselineTreatment
+	if complete {
+		status = adb.ReplicationStatusComplete
+		recordPairs = nil
+		for pair := 1; pair <= pairs; pair++ {
+			for _, order := range []struct {
+				name          string
+				firstSession  string
+				secondSession string
+			}{
+				{adb.ReplicationOrderBaselineTreatment, "baseline", "treatment"},
+				{adb.ReplicationOrderTreatmentBaseline, "treatment", "baseline"},
+			} {
+				recordPairs = append(recordPairs, adb.ReplicatedPairRecord{
+					Pair:          pair,
+					Order:         order.name,
+					Directory:     fmt.Sprintf("pair-%03d-%s", pair, order.name),
+					FirstSession:  order.firstSession,
+					SecondSession: order.secondSession,
+					Status:        adb.ReplicationStatusComplete,
+				})
+			}
+		}
+		completedPairs = pairs * 2
+		failurePair = 0
+		failureOrder = ""
+	}
+	record := adb.ReplicatedRunRecord{
+		SchemaVersion:    adb.ReplicatedRunSchemaVersion,
+		ManifestName:     manifestName,
+		DeclaredVariable: "location",
+		PairsPerOrder:    pairs,
+		ResetPolicy:      adb.ReplicationResetPolicy,
+		Status:           status,
+		CompletedPairs:   completedPairs,
+		FailurePair:      failurePair,
+		FailureOrder:     failureOrder,
+		Pairs:            recordPairs,
+	}
+	data, err := json.MarshalIndent(record, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "replication.json"), append(data, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
 func formatPair(pair int) string {
 	return fmt.Sprintf("%03d", pair)
 }
@@ -990,7 +1121,7 @@ func TestReceiptBoundariesRejectInvalidDirectoriesAndOversize(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(oversized, "minimization.json"), []byte(strings.Repeat("x", maxSummaryBytes+1)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Verify(oversized); err == nil || !strings.Contains(err.Error(), "exceeds size limit") {
+	if _, err := Verify(oversized); err == nil || !strings.Contains(err.Error(), "exceeds") {
 		t.Fatalf("Verify() oversized error = %v", err)
 	}
 }
@@ -1000,6 +1131,19 @@ func TestClassifyUnknownOutcome(t *testing.T) {
 	}
 }
 
+func TestVerifyRejectsReceiptSymlink(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(t.TempDir(), "receipt.json")
+	if err := os.WriteFile(target, []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(root, "minimization.json")); err != nil {
+		t.Skipf("symbolic links unavailable: %v", err)
+	}
+	if _, err := Verify(root); err == nil || !strings.Contains(err.Error(), "symbolic links are not allowed") {
+		t.Fatalf("Verify() receipt symlink error = %v", err)
+	}
+}
 func TestVerifyRejectsRootSymlink(t *testing.T) {
 	target := t.TempDir()
 	link := filepath.Join(t.TempDir(), "minimization-link")

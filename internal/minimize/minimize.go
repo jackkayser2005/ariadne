@@ -391,12 +391,20 @@ func reportExistingPairs(candidateDir string, pairs int, reporter SummaryReporte
 	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
 		return errors.New("candidate directory is not a directory")
 	}
+	completed, err := completedPairDirectories(candidateDir, pairs)
+	if err != nil {
+		return err
+	}
 	for pair := 1; pair <= pairs; pair++ {
 		for _, order := range []string{
 			adb.ReplicationOrderBaselineTreatment,
 			adb.ReplicationOrderTreatmentBaseline,
 		} {
 			pairDir := filepath.Join(candidateDir, fmt.Sprintf("pair-%03d-%s", pair, order))
+			directory := filepath.Base(pairDir)
+			if _, ok := completed[directory]; !ok {
+				continue
+			}
 			info, err := os.Lstat(pairDir)
 			if errors.Is(err, os.ErrNotExist) {
 				continue
@@ -421,7 +429,42 @@ func reportExistingPairs(candidateDir string, pairs int, reporter SummaryReporte
 	}
 	return nil
 }
-
+func completedPairDirectories(candidateDir string, pairs int) (map[string]struct{}, error) {
+	data, err := bundle.ReadBoundedFile(filepath.Join(candidateDir, "replication.json"), maxSummaryBytes)
+	if err != nil {
+		return nil, fmt.Errorf("replication metadata: %w", err)
+	}
+	if err := jsoncheck.RejectDuplicateKeys(data); err != nil {
+		return nil, fmt.Errorf("replication metadata: %w", err)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	var record adb.ReplicatedRunRecord
+	if err := decoder.Decode(&record); err != nil {
+		return nil, fmt.Errorf("replication metadata: decode: %w", err)
+	}
+	var trailing json.RawMessage
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return nil, errors.New("replication metadata: trailing data")
+	}
+	if record.SchemaVersion != adb.ReplicatedRunSchemaVersion || record.PairsPerOrder != pairs {
+		return nil, errors.New("replication metadata configuration disagrees")
+	}
+	completed := make(map[string]struct{}, len(record.Pairs))
+	for _, pair := range record.Pairs {
+		if pair.Status != adb.ReplicationStatusComplete {
+			continue
+		}
+		directory := fmt.Sprintf("pair-%03d-%s", pair.Pair, pair.Order)
+		if pair.Pair < 1 || pair.Pair > pairs ||
+			(pair.Order != adb.ReplicationOrderBaselineTreatment && pair.Order != adb.ReplicationOrderTreatmentBaseline) ||
+			pair.Directory != directory {
+			return nil, errors.New("replication pair metadata is invalid")
+		}
+		completed[directory] = struct{}{}
+	}
+	return completed, nil
+}
 func candidateDirectory(index int, id string) string {
 	return fmt.Sprintf("candidate-%03d-%s", index+1, id)
 }
@@ -578,7 +621,7 @@ func Verify(rootDir string) (MinimizationSummary, error) {
 	if err := requireDirectory(rootDir); err != nil {
 		return MinimizationSummary{}, err
 	}
-	data, err := readBoundedFile(filepath.Join(rootDir, "minimization.json"), maxSummaryBytes)
+	data, err := bundle.ReadBoundedFile(filepath.Join(rootDir, "minimization.json"), maxSummaryBytes)
 	if err != nil {
 		return MinimizationSummary{}, fmt.Errorf("minimization receipt: %w", err)
 	}
@@ -747,22 +790,6 @@ func validateSummary(summary MinimizationSummary) error {
 		return errors.New("selected_candidate is invalid for selection state")
 	}
 	return nil
-}
-
-func readBoundedFile(path string, limit int64) ([]byte, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, limit+1))
-	if err != nil {
-		return nil, err
-	}
-	if int64(len(data)) > limit {
-		return nil, errors.New("file exceeds size limit")
-	}
-	return data, nil
 }
 
 func requireDirectory(path string) error {
