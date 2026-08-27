@@ -17,6 +17,42 @@ type traceCaseAsker func(string, string) (trace.CaseAnswer, error)
 type traceCaseAllAsker func(string) ([]trace.CaseAnswer, error)
 type traceCaseRoundSaver func(string, string) (trace.CaseQuestionRoundVerificationSummary, error)
 type traceCaseRoundVerifier func(string) (trace.CaseQuestionRoundVerificationSummary, error)
+type traceCaseMapper func(string) (trace.CaseDisclosureMap, error)
+
+func mapTraceCase(path string) (trace.CaseDisclosureMap, error) {
+	casePackage, summary, err := trace.ReadCase(path)
+	if err != nil {
+		return trace.CaseDisclosureMap{}, err
+	}
+	return trace.BuildCaseDisclosureMap(casePackage, summary)
+}
+
+func runTraceCaseMap(args []string, stdout, stderr io.Writer, mapCase traceCaseMapper) int {
+	flags := flag.NewFlagSet("trace case map", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+	result, err := mapCase(flags.Arg(0))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: trace case map: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(result); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: trace case map: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if err := writeTraceCaseMap(stdout, result); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: trace case map: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
 
 func runTraceCaseSave(args []string, stdout, stderr io.Writer, save traceCaseSaver) int {
 	flags := flag.NewFlagSet("trace case save", flag.ContinueOnError)
@@ -291,4 +327,21 @@ func writeTraceCaseAnswer(stdout io.Writer, answer trace.CaseAnswer) error {
 func writeTraceCaseRoundSummary(stdout io.Writer, heading string, summary trace.CaseQuestionRoundVerificationSummary) error {
 	_, err := fmt.Fprintf(stdout, "%s\nschema_version: %d\ncase_sha256: %s\nquestions: %d\nround_sha256: %s\n", heading, summary.SchemaVersion, summary.CaseSHA256, summary.Questions, summary.RoundSHA256)
 	return err
+}
+
+func writeTraceCaseMap(stdout io.Writer, result trace.CaseDisclosureMap) error {
+	if _, err := fmt.Fprintf(stdout, "trace case disclosure map\nschema_version: %d\ncase_sha256: %s\ntraces: %d\ncoverage_state: %s\n", result.SchemaVersion, result.CaseSHA256, result.Traces, result.CoverageState); err != nil {
+		return err
+	}
+	for _, category := range result.Categories {
+		if _, err := fmt.Fprintf(stdout, "- category: %s\n", category.Category); err != nil {
+			return err
+		}
+		for _, observation := range category.Observations {
+			if _, err := fmt.Fprintf(stdout, "  source: %s\n  adapter: %s\n  channel: %s\n  kind: %s\n  destination: %s\n  trace_count: %d\n  evidence_state: %s\n", observation.Source, observation.Adapter, observation.Channel, observation.Kind, observation.Destination, observation.TraceCount, observation.EvidenceState); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

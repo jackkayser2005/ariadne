@@ -270,6 +270,15 @@ tracing.
     projections, and generic failure behavior. This is a read-only UI
     acceptance surface, not a capture service, chronology model, authorization
     proof, or causal claim.
+21. **Cross-source disclosure map.** A verified case can now derive a
+    deterministic, raw-value-free map grouped by reviewed data category. Each
+    observation retains only source/adapter/channel/kind/destination labels, a
+    retained-trace count, and `observed` evidence state. Aggregate
+    `coverage_state` becomes `unknown` when any contributing trace is partial;
+    the map never infers absence, correlates identities, or becomes a second
+    persisted evidence store. The `trace case map` command and `/trace-case`
+    projection make the practical question “where did this category appear?”
+    inspectable across reviewed boundaries.
 The local review page is intentionally read-only. Its compact question round
 and receipt links, including stable history and receipt identities, are a
 bounded UI-control surface for a computer-use driver;
@@ -351,8 +360,9 @@ catalog, and retains `unknown` child conclusions without turning them into
 causal attribution. Two retained case rounds can be compared before any UI
 surface is added, with `same`/`changed` semantics and separate result,
 outcome, and evidence-state fields. Its `/trace-case` route makes that package
-inspectable by the read-only computer-use acceptance path; real GUI execution
-remains a separate evidence gate.
+inspectable by the read-only computer-use acceptance path, and its derived
+cross-source disclosure map shows only reviewed category appearances and safe
+retained-trace counts; real GUI execution remains a separate evidence gate.
 The portable replication study now provides the next cross-run reflection
 boundary: it joins independently identified ledgers and their fixed rounds
 under one private commitment, while retaining unknown support instead of
@@ -398,6 +408,10 @@ questions again without reopening source paths or captured values.
   matching question rounds, reject duplicate child identities, preserve caller
   order without chronology inference, and keep retained outcomes separate from
   `evidence_state`.
+- Derived case disclosure maps group only reviewed safe categories and
+  destinations, count retained trace documents rather than sources, preserve
+  observed labels separately from aggregate partial-coverage `unknown`, and
+  never persist or render raw values, URLs, paths, arguments, or identities.
 - Case-round comparisons re-verify both saved rounds and emit only bounded
   question projections; they do not treat a changed question result as a
   causal, chronological, improvement, or regression claim.

@@ -150,6 +150,7 @@ type pageData struct {
 	TraceCaseConfigured                bool
 	TraceCaseSummary                   trace.CaseVerificationSummary
 	TraceCaseAnswers                   []trace.CaseAnswer
+	TraceCaseDisclosureMap             trace.CaseDisclosureMap
 	TraceStudyConfigured               bool
 	TraceStudySummary                  trace.StudyVerificationSummary
 	TraceStudyAnswers                  []trace.StudyQuestionAnswer
@@ -690,12 +691,18 @@ func (h handler) handleTraceCase(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
 		return
 	}
+	disclosureMap, err := trace.BuildCaseDisclosureMap(casePackage, summary)
+	if err != nil {
+		http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
+		return
+	}
 	render(w, pageData{
-		View:                "trace-case",
-		Title:               "Trace case review — Ariadne",
-		TraceCaseConfigured: true,
-		TraceCaseSummary:    summary,
-		TraceCaseAnswers:    answers,
+		View:                   "trace-case",
+		Title:                  "Trace case review — Ariadne",
+		TraceCaseConfigured:    true,
+		TraceCaseSummary:       summary,
+		TraceCaseAnswers:       answers,
+		TraceCaseDisclosureMap: disclosureMap,
 	})
 }
 
@@ -1634,6 +1641,29 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       {{end}}
       </div>
       <p class="context">The result answers the bounded question; evidence state qualifies the support available for that answer. Unknown is not treated as no change or as causal evidence.</p>
+    </section>
+    <section class="panel" id="trace-case-disclosure-map" aria-label="Cross-source disclosure map">
+      <div class="section-head"><h2>Cross-source disclosure map</h2><span class="context">derived from verified labels</span></div>
+      <dl>
+        <dt>retained traces</dt><dd>{{.TraceCaseDisclosureMap.Traces}}</dd>
+        <dt>coverage state</dt><dd><span class="status status-{{.TraceCaseDisclosureMap.CoverageState}}">{{.TraceCaseDisclosureMap.CoverageState}}</span></dd>
+      </dl>
+      <p class="context">Each row marks a category directly retained in a verified trace. Aggregate coverage is unknown when any contributing trace is partial; that does not turn retained labels into inferred values.</p>
+      <div class="question-list">
+      {{range .TraceCaseDisclosureMap.Categories}}
+        <article class="panel" id="trace-case-disclosure-{{.Category}}">
+          <div class="section-head"><h3><code>{{.Category}}</code></h3><span class="context">{{len .Observations}} locations</span></div>
+          <ul aria-label="Disclosure locations for {{.Category}}">
+          {{range .Observations}}
+            <li>{{.Source}} / {{.Adapter}} &middot; {{.Channel}} / {{.Kind}} &rarr; {{.Destination}} &middot; {{.TraceCount}} traces &middot; <span class="status status-{{.EvidenceState}}">{{.EvidenceState}}</span></li>
+          {{end}}
+          </ul>
+        </article>
+      {{else}}
+        <p class="empty">No reviewed categories were retained.</p>
+      {{end}}
+      </div>
+      <p class="context">This map preserves safe category and destination labels only. It does not join source identities, expose values or URLs, infer chronology, or establish causality.</p>
     </section>
     <section class="panel" aria-label="Trace case entries">
       <div class="section-head"><h2>Verified case entries</h2><span class="context">caller order</span></div>
