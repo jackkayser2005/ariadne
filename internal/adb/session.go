@@ -590,6 +590,12 @@ func runSessionWithAuth(
 				failureStage = "capture_storage"
 				return fmt.Errorf("%s: capture storage: %w", kind, err)
 			}
+			if len(bytes.TrimSpace(output)) == 0 {
+				record.Steps[len(record.Steps)-1].Status = "error"
+				record.Steps[len(record.Steps)-1].ExitCode = -1
+				failureStage = "capture_storage"
+				return fmt.Errorf("%s: capture storage: empty observation", kind)
+			}
 			if auth != nil {
 				if err := validateObservationChallenge(output, auth.challengeValue); err != nil {
 					record.Steps[len(record.Steps)-1].Status = "error"

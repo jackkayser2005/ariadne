@@ -229,3 +229,92 @@ func contains(values []string, wanted string) bool {
 	}
 	return false
 }
+
+func TestRunPairWithAuthenticatedEmptyStorageIsCaptureFailure(t *testing.T) {
+	manifest := sessionManifest()
+	manifest.SchemaVersion = 3
+	manifest.TapResourceID = "dev.ariadne.fixture:id/observe_button"
+	target := sessionTarget()
+	currentInput := fixtureInput{}
+	ui := []byte("<hierarchy><node resource-id=\"dev.ariadne.fixture:id/observe_button\" bounds=\"[100,200][300,400]\" /> </hierarchy>")
+	run := func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		if len(args) > 3 && args[3] == "pm" {
+			return []byte("Success\n"), nil
+		}
+		if len(args) > 2 && args[2] == "reverse" {
+			return nil, nil
+		}
+		if len(args) > 3 && args[3] == "am" {
+			body := []byte(fmt.Sprintf(
+				"{\"schema_version\":1,\"challenge\":\"%s\",\"region\":\"us-east\",\"request_id\":\"request-%s\",\"variant\":\"standard\"}",
+				currentInput.Challenge,
+				currentInput.Role,
+			))
+			response, err := http.Post(
+				"http://127.0.0.1:"+fmt.Sprint(currentInput.CollectorPort)+"/observe",
+				"application/json",
+				strings.NewReader(string(body)),
+			)
+			if err != nil {
+				return nil, err
+			}
+			defer response.Body.Close()
+			if response.StatusCode != http.StatusNoContent {
+				return nil, fmt.Errorf("collector status %d", response.StatusCode)
+			}
+			return []byte("Status: ok\n"), nil
+		}
+		if len(args) > 3 && args[3] == "uiautomator" {
+			return ui, nil
+		}
+		if len(args) > 3 && args[3] == "cat" {
+			return ui, nil
+		}
+		if len(args) > 3 && args[3] == "input" {
+			return nil, nil
+		}
+		if len(args) > 2 && args[2] == "exec-out" {
+			return nil, nil
+		}
+		return []byte("Status: ok\n"), nil
+	}
+	writeInput := func(_ context.Context, _ string, data []byte, _ ...string) ([]byte, error) {
+		if err := json.Unmarshal(data, &currentInput); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
+	challenge := func() (string, error) { return strings.Repeat("a", 64), nil }
+	outputDir := filepath.Join(t.TempDir(), "run")
+	err := runPairWithAuthenticated(
+		context.Background(),
+		"adb",
+		target,
+		manifest,
+		outputDir,
+		run,
+		writeInput,
+		challenge,
+		sequenceClock(),
+	)
+	if err == nil || !strings.Contains(err.Error(), "capture storage: empty observation") {
+		t.Fatalf("runPairWithAuthenticated() error = %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(outputDir, "baseline", "session.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record SessionRecord
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatal(err)
+	}
+	if record.SchemaVersion != authenticatedSessionSchema ||
+		record.Status != "incomplete" ||
+		record.FailureStage != "capture_storage" ||
+		len(record.Artifacts) != 1 {
+		t.Fatalf("empty-storage session = %#v", record)
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, "baseline", "observations", "storage.json")); !os.IsNotExist(err) {
+		t.Fatalf("empty-storage artifact exists, stat error = %v", err)
+	}
+}
