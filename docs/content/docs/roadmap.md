@@ -279,6 +279,19 @@ tracing.
     persisted evidence store. The `trace case map` command and `/trace-case`
     projection make the practical question “where did this category appear?”
     inspectable across reviewed boundaries.
+22. **Disclosure-map question rounds and receipts.** The map now has a fixed
+    `disclosure-map-coverage` question and a
+    `cross-boundary-category-overlap` question. Coverage is `complete` only with
+    complete retained traces; positive overlap is `overlap-observed` with
+    `observed` evidence even when aggregate coverage is unknown; no overlap
+    under partial coverage is `unknown`. Complete no-overlap is
+    `no-overlap-observed`. Saved rounds and selected receipts carry canonical
+    case/round/receipt identities and safe category plus source/adapter
+    boundary summaries, never values, event identifiers, URLs, paths, or
+    arguments. Offline verification checks those supplied documents' schema,
+    canonical identities, and internal binding without reopening source inputs;
+    it does not authenticate the original case unless that case is separately
+    verified.
 The local review page is intentionally read-only. Its compact question round
 and receipt links, including stable history and receipt identities, are a
 bounded UI-control surface for a computer-use driver;
@@ -362,7 +375,9 @@ surface is added, with `same`/`changed` semantics and separate result,
 outcome, and evidence-state fields. Its `/trace-case` route makes that package
 inspectable by the read-only computer-use acceptance path, and its derived
 cross-source disclosure map shows only reviewed category appearances and safe
-retained-trace counts; real GUI execution remains a separate evidence gate.
+retained-trace counts; its fixed questions and selected raw-value-free receipt
+projection make that reflection reusable without exposing source inputs. Real
+GUI execution remains a separate evidence gate.
 The portable replication study now provides the next cross-run reflection
 boundary: it joins independently identified ledgers and their fixed rounds
 under one private commitment, while retaining unknown support instead of

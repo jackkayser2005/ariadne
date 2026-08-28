@@ -675,6 +675,14 @@ go run ./cmd/ariadne trace case save --json \
   trace-replication .ariadne/trace-replication.json .ariadne/trace-replication-round.json
 go run ./cmd/ariadne trace case verify --json .ariadne/case.json
 go run ./cmd/ariadne trace case map --json .ariadne/case.json
+go run ./cmd/ariadne trace case map questions --json
+go run ./cmd/ariadne trace case map ask --json .ariadne/case.json cross-boundary-category-overlap
+go run ./cmd/ariadne trace case map ask all --json .ariadne/case.json
+go run ./cmd/ariadne trace case map ask all save --json .ariadne/case.json .ariadne/case-disclosure-round.json
+go run ./cmd/ariadne trace case map ask all verify --json .ariadne/case-disclosure-round.json
+go run ./cmd/ariadne trace case map ask receipt --json .ariadne/case-disclosure-round.json cross-boundary-category-overlap
+go run ./cmd/ariadne trace case map ask receipt save --json .ariadne/case-disclosure-round.json cross-boundary-category-overlap .ariadne/case-disclosure-receipt.json
+go run ./cmd/ariadne trace case map ask receipt verify --json .ariadne/case-disclosure-receipt.json
 go run ./cmd/ariadne trace case ask all --json .ariadne/case.json
 go run ./cmd/ariadne trace case ask all save --json .ariadne/case.json .ariadne/case-round.json
 go run ./cmd/ariadne trace case ask all verify --json .ariadne/case-round.json
@@ -705,6 +713,21 @@ trace count. A partial contributing trace changes aggregate `coverage_state` to
 `unknown`; a directly retained observation remains `observed`. The map does not
 infer absence, correlate identities, or become a second persisted evidence
 store.
+
+The nested map question catalog adds two fixed questions and durable artifacts.
+`disclosure-map-coverage` is `complete` with `observed` evidence only when every
+retained trace declared complete coverage; otherwise it is `unknown` with
+`unknown` evidence. `cross-boundary-category-overlap` is
+`overlap-observed` with `observed` evidence when a safe category appears across
+at least two reviewed source/adapter boundaries. Complete coverage with no
+overlap is `no-overlap-observed`; partial coverage with no observed overlap is
+`unknown`, not a negative claim. A saved disclosure question round contains the
+complete fixed answer set and a selected receipt embeds that verified round.
+Both are raw-value-free and retain only case/round identities, safe categories,
+and source/adapter boundary summaries. Offline verification checks only the
+supplied documents' schema, canonical identities, and internal binding; it does
+not authenticate that an originally referenced case produced them without
+verifying that case as well. Verification never reopens source paths.
 
 To compare two retained case question rounds, use the bounded caller-ordered
 comparison:
@@ -738,18 +761,23 @@ go run ./cmd/ariadne experiment serve \
 Open `/trace-case` to see the case SHA-256, caller order basis, archive and
 replication counts, safe reviewed source/adapter summaries, each child
 artifact and question-round identity, and the three fixed case answers. It
-also renders the derived cross-source disclosure map with reviewed category
-and destination labels plus retained-trace counts. The fixed case answers use
-a question `result` such as `available`, `supported`, or `unknown`; they are
-not replicated outcomes. Child entries remain in caller order; the page does
-not describe entries as earlier or later. Replicated child outcomes are
-rendered separately from their `evidence_state`, so `unknown` remains missing
-support rather than a no-change claim. The route re-verifies the full embedded
-package and recomputes answers and the map before rendering, accepts only
-`GET`, and returns only `trace case unavailable` for malformed, tampered, or
-identity-inconsistent input. It never renders the configured path,
-source-specific arguments, target identifiers, URLs, or captured values. This
-is a read-only orientation surface, not proof that a computer-use driver
+also renders the derived cross-source disclosure map and two fixed disclosure
+question cards with safe category plus source/adapter boundary summaries. A
+card links to a selected raw-value-free receipt projection using
+`disclosure_question_id`; the CLI creates durable rounds and receipts. The
+fixed case answers use a question `result` such as `available`, `supported`, or
+`unknown`; they are not replicated outcomes. Disclosure question results are
+also separate from their evidence states: observed overlap is still observed
+when aggregate coverage is unknown, while no overlap under partial coverage is
+unknown. Child entries remain in caller order; the page does not describe
+entries as earlier or later. Replicated child outcomes are rendered separately
+from their `evidence_state`, so `unknown` remains missing support rather than a
+no-change claim. The route re-verifies the full embedded package and
+recomputes answers, the map, and disclosure questions before rendering,
+accepts only `GET`, and returns only `trace case unavailable` for malformed,
+tampered, or identity-inconsistent input. It never renders the configured
+path, source-specific arguments, target identifiers, URLs, or captured values.
+This is a read-only orientation surface, not proof that a computer-use driver
 selected an answer or that cross-source behavior is causal.
 
 ## Bigger-picture path
@@ -780,9 +808,11 @@ The intended flow is:
     verified archives and replicated ledgers with their fixed question rounds,
     giving a computer-use driver one stable raw-value-free object to inspect
     and ask about without reopening source paths or inferring chronology. Its
-    derived disclosure map makes reviewed category appearances and safe
-    retained-trace counts visible across those boundaries without correlating
-    identities or claiming causality.
+    derived disclosure map and fixed disclosure questions make reviewed category
+    appearances and safe source/adapter boundary summaries visible across those
+    boundaries without correlating identities or claiming causality. Durable
+    disclosure rounds and selected receipts preserve that bounded reflection
+    without becoming a capture store.
 
 The Experiment 001 Android producer remains the authoritative evidence-backed
 edge, and the replicated runner is the evidence gate. The browser audit and
