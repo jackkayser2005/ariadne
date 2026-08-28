@@ -91,79 +91,86 @@ type traceStudyRunData struct {
 }
 
 type pageData struct {
-	View                               string
-	Title                              string
-	Directory                          string
-	Entries                            []bundle.ArchiveEntry
-	Questions                          []bundle.Question
-	SelectedQuestion                   bundle.Question
-	ArchiveAnswers                     []archiveQuestionResult
-	ArchiveSummary                     archiveQuestionSummary
-	Summary                            bundle.Summary
-	Answers                            []bundle.Answer
-	Answer                             bundle.Answer
-	Finding                            bundle.Finding
-	ExportConfigured                   bool
-	ExportAnswer                       bundle.Answer
-	ExportFinding                      bundle.Finding
-	ExportSourceEvidenceSHA256         string
-	ExportSHA256                       string
-	CurrentReflectionRequested         bool
-	CurrentReflectionAvailable         bool
-	CurrentReflectionSHA256            string
-	CurrentReflectionChecked           int
-	ReflectionHistoryRequested         bool
-	ReflectionHistoryAvailable         bool
-	ReflectionHistory                  bundle.ArchiveQuestionTransitionHistory
-	ReflectionHistorySummary           bundle.ArchiveQuestionTransitionVerificationSummary
-	ReflectionHistoryQuestions         []bundle.Question
-	ReflectionHistoryQuestionRound     bundle.ArchiveQuestionTransitionHistoryQuestionRoundAnswer
-	ReflectionQuestionRoundSHA256      string
-	ReflectionHistoryQuestionID        string
-	ReflectionHistoryAnswer            bundle.ArchiveQuestionTransitionHistoryAnswer
-	ReflectionHistoryRepeatedAnswer    bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer
-	ReflectionHistorySnapshotAnswer    bundle.ArchiveQuestionTransitionHistorySnapshotAnswer
-	ReflectionHistorySummaryAnswer     bundle.ArchiveQuestionTransitionHistorySummaryAnswer
-	ReflectionHistoryReceiptAvailable  bool
-	ReflectionHistoryReceipt           bundle.ArchiveQuestionTransitionHistoryAnswerReceipt
-	ReflectionHistoryReceiptSHA256     string
-	ReflectionHistoryReceiptJSON       string
-	AcceptanceRecordRequested          bool
-	AcceptanceRecordAvailable          bool
-	AcceptanceRecord                   bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary
-	AcceptanceRecordStatus             string
-	QuestionRoundComparisonRequested   bool
-	QuestionRoundComparisonAvailable   bool
-	QuestionRoundComparison            bundle.ArchiveQuestionTransitionHistoryQuestionRoundComparison
-	SavedReflectionComparisonRequested bool
-	SavedReflectionComparisonAvailable bool
-	SavedReflectionComparison          bundle.ArchiveQuestionComparison
-	TraceArchiveConfigured             bool
-	TraceArchiveRoundSaved             bool
-	TraceArchiveRoundSHA256            string
-	TraceArchiveSummary                trace.ArchiveVerificationSummary
-	TraceArchiveAnswers                []trace.ArchiveAnswer
-	TraceReplicationConfigured         bool
-	TraceReplicationSummary            trace.ReplicationLedgerVerificationSummary
-	TraceReplicationAnswers            []trace.ReplicationAnswer
-	TraceReplicationPairs              []traceReplicationPairData
-	TraceCaseConfigured                bool
-	TraceCaseSummary                   trace.CaseVerificationSummary
-	TraceCaseAnswers                   []trace.CaseAnswer
-	TraceCaseDisclosureMap             trace.CaseDisclosureMap
-	TraceStudyConfigured               bool
-	TraceStudySummary                  trace.StudyVerificationSummary
-	TraceStudyAnswers                  []trace.StudyQuestionAnswer
-	TraceStudyRuns                     []traceStudyRunData
-	TraceStudyRoundSaved               bool
-	TraceStudyRoundSummary             trace.ReplicationStudyQuestionRoundVerificationSummary
-	TraceStudyReceiptAvailable         bool
-	TraceStudyReceiptSummary           trace.ReplicationStudyQuestionReceiptVerificationSummary
-	TraceStudyComparisonConfigured     bool
-	TraceStudyComparison               trace.ReplicationStudyQuestionRoundComparison
-	TraceStudySelectedQuestionID       string
-	MinimizationConfigured             bool
-	Minimization                       minimizationReviewData
+	View                                   string
+	Title                                  string
+	Directory                              string
+	Entries                                []bundle.ArchiveEntry
+	Questions                              []bundle.Question
+	SelectedQuestion                       bundle.Question
+	ArchiveAnswers                         []archiveQuestionResult
+	ArchiveSummary                         archiveQuestionSummary
+	Summary                                bundle.Summary
+	Answers                                []bundle.Answer
+	Answer                                 bundle.Answer
+	Finding                                bundle.Finding
+	ExportConfigured                       bool
+	ExportAnswer                           bundle.Answer
+	ExportFinding                          bundle.Finding
+	ExportSourceEvidenceSHA256             string
+	ExportSHA256                           string
+	CurrentReflectionRequested             bool
+	CurrentReflectionAvailable             bool
+	CurrentReflectionSHA256                string
+	CurrentReflectionChecked               int
+	ReflectionHistoryRequested             bool
+	ReflectionHistoryAvailable             bool
+	ReflectionHistory                      bundle.ArchiveQuestionTransitionHistory
+	ReflectionHistorySummary               bundle.ArchiveQuestionTransitionVerificationSummary
+	ReflectionHistoryQuestions             []bundle.Question
+	ReflectionHistoryQuestionRound         bundle.ArchiveQuestionTransitionHistoryQuestionRoundAnswer
+	ReflectionQuestionRoundSHA256          string
+	ReflectionHistoryQuestionID            string
+	ReflectionHistoryAnswer                bundle.ArchiveQuestionTransitionHistoryAnswer
+	ReflectionHistoryRepeatedAnswer        bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer
+	ReflectionHistorySnapshotAnswer        bundle.ArchiveQuestionTransitionHistorySnapshotAnswer
+	ReflectionHistorySummaryAnswer         bundle.ArchiveQuestionTransitionHistorySummaryAnswer
+	ReflectionHistoryReceiptAvailable      bool
+	ReflectionHistoryReceipt               bundle.ArchiveQuestionTransitionHistoryAnswerReceipt
+	ReflectionHistoryReceiptSHA256         string
+	ReflectionHistoryReceiptJSON           string
+	AcceptanceRecordRequested              bool
+	AcceptanceRecordAvailable              bool
+	AcceptanceRecord                       bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary
+	AcceptanceRecordStatus                 string
+	QuestionRoundComparisonRequested       bool
+	QuestionRoundComparisonAvailable       bool
+	QuestionRoundComparison                bundle.ArchiveQuestionTransitionHistoryQuestionRoundComparison
+	SavedReflectionComparisonRequested     bool
+	SavedReflectionComparisonAvailable     bool
+	SavedReflectionComparison              bundle.ArchiveQuestionComparison
+	TraceArchiveConfigured                 bool
+	TraceArchiveRoundSaved                 bool
+	TraceArchiveRoundSHA256                string
+	TraceArchiveSummary                    trace.ArchiveVerificationSummary
+	TraceArchiveAnswers                    []trace.ArchiveAnswer
+	TraceReplicationConfigured             bool
+	TraceReplicationSummary                trace.ReplicationLedgerVerificationSummary
+	TraceReplicationAnswers                []trace.ReplicationAnswer
+	TraceReplicationPairs                  []traceReplicationPairData
+	TraceCaseConfigured                    bool
+	TraceCaseSummary                       trace.CaseVerificationSummary
+	TraceCaseAnswers                       []trace.CaseAnswer
+	TraceCaseDisclosureMap                 trace.CaseDisclosureMap
+	TraceCaseDisclosureQuestions           []trace.CaseDisclosureQuestionAnswer
+	TraceCaseDisclosureQuestionRoundSHA256 string
+	TraceCaseDisclosureQuestionID          string
+	TraceCaseDisclosureReceiptAvailable    bool
+	TraceCaseDisclosureReceipt             trace.CaseDisclosureQuestionReceipt
+	TraceCaseDisclosureReceiptSHA256       string
+	TraceCaseDisclosureReceiptJSON         string
+	TraceStudyConfigured                   bool
+	TraceStudySummary                      trace.StudyVerificationSummary
+	TraceStudyAnswers                      []trace.StudyQuestionAnswer
+	TraceStudyRuns                         []traceStudyRunData
+	TraceStudyRoundSaved                   bool
+	TraceStudyRoundSummary                 trace.ReplicationStudyQuestionRoundVerificationSummary
+	TraceStudyReceiptAvailable             bool
+	TraceStudyReceiptSummary               trace.ReplicationStudyQuestionReceiptVerificationSummary
+	TraceStudyComparisonConfigured         bool
+	TraceStudyComparison                   trace.ReplicationStudyQuestionRoundComparison
+	TraceStudySelectedQuestionID           string
+	MinimizationConfigured                 bool
+	Minimization                           minimizationReviewData
 }
 
 // Handler returns a read-only HTTP handler for one explicitly supplied archive root.
@@ -696,13 +703,67 @@ func (h handler) handleTraceCase(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
 		return
 	}
+	disclosureRound, err := trace.AnswerCaseDisclosureQuestionRound(casePackage, summary)
+	if err != nil {
+		http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	disclosureRoundSHA256, err := trace.CaseDisclosureQuestionRoundSHA256(disclosureRound)
+	if err != nil {
+		http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	disclosureQuestionID := r.URL.Query().Get("disclosure_question_id")
+	var disclosureReceipt trace.CaseDisclosureQuestionReceipt
+	disclosureReceiptAvailable := false
+	disclosureReceiptSHA256 := ""
+	disclosureReceiptJSON := ""
+	if disclosureQuestionID != "" {
+		var selectedAnswer trace.CaseDisclosureQuestionAnswer
+		found := false
+		for _, answer := range disclosureRound.Answers {
+			if answer.QuestionID == disclosureQuestionID {
+				selectedAnswer = answer
+				found = true
+				break
+			}
+		}
+		if !found {
+			http.Error(w, "trace disclosure question not found", http.StatusNotFound)
+			return
+		}
+		disclosureReceipt = trace.CaseDisclosureQuestionReceipt{
+			CaseDisclosureQuestionAnswer: selectedAnswer,
+			RoundSHA256:                  disclosureRoundSHA256,
+			Round:                        disclosureRound,
+		}
+		disclosureReceiptSHA256, err = trace.CaseDisclosureQuestionReceiptSHA256(disclosureReceipt)
+		if err != nil {
+			http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		disclosureReceiptJSONBytes, marshalErr := json.MarshalIndent(disclosureReceipt, "", "  ")
+		if marshalErr != nil {
+			http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		disclosureReceiptJSON = string(disclosureReceiptJSONBytes)
+		disclosureReceiptAvailable = true
+	}
 	render(w, pageData{
-		View:                   "trace-case",
-		Title:                  "Trace case review — Ariadne",
-		TraceCaseConfigured:    true,
-		TraceCaseSummary:       summary,
-		TraceCaseAnswers:       answers,
-		TraceCaseDisclosureMap: disclosureMap,
+		View:                                   "trace-case",
+		Title:                                  "Trace case review — Ariadne",
+		TraceCaseConfigured:                    true,
+		TraceCaseSummary:                       summary,
+		TraceCaseAnswers:                       answers,
+		TraceCaseDisclosureMap:                 disclosureMap,
+		TraceCaseDisclosureQuestions:           disclosureRound.Answers,
+		TraceCaseDisclosureQuestionRoundSHA256: disclosureRoundSHA256,
+		TraceCaseDisclosureQuestionID:          disclosureQuestionID,
+		TraceCaseDisclosureReceiptAvailable:    disclosureReceiptAvailable,
+		TraceCaseDisclosureReceipt:             disclosureReceipt,
+		TraceCaseDisclosureReceiptSHA256:       disclosureReceiptSHA256,
+		TraceCaseDisclosureReceiptJSON:         disclosureReceiptJSON,
 	})
 }
 
@@ -1664,6 +1725,50 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       {{end}}
       </div>
       <p class="context">This map preserves safe category and destination labels only. It does not join source identities, expose values or URLs, infer chronology, or establish causality.</p>
+    </section>
+    <section class="panel" id="trace-case-disclosure-questions" aria-label="Disclosure map questions">
+      <div class="section-head"><h2>Disclosure map questions</h2><span class="context">re-verified now</span></div>
+      <p class="context">question round SHA-256: {{.TraceCaseDisclosureQuestionRoundSHA256}}</p>
+      <p class="context">These fixed questions summarize safe category boundaries. Result and evidence state are separate; unknown means the retained evidence cannot support the stronger conclusion.</p>
+      <div class="question-list">
+      {{range .TraceCaseDisclosureQuestions}}
+        <article class="panel question-card" id="trace-case-disclosure-question-{{.QuestionID}}">
+          <div class="section-head"><h3><code>{{.QuestionID}}</code></h3><span class="status status-{{.Result}}">{{.Result}}</span></div>
+          <p class="question">{{.Question}}</p>
+          <dl>
+            <dt>result</dt><dd><span class="status status-{{.Result}}">{{.Result}}</span></dd>
+            <dt>evidence state</dt><dd><span class="status status-{{.EvidenceState}}">{{.EvidenceState}}</span></dd>
+            <dt>retained traces</dt><dd>{{.Traces}}</dd>
+            <dt>coverage state</dt><dd><span class="status status-{{.CoverageState}}">{{.CoverageState}}</span></dd>
+            <dt>overlapping categories</dt><dd>{{if .OverlappingCategories}}{{range $index, $category := .OverlappingCategories}}{{if $index}}, {{end}}{{$category}}{{end}}{{else}}none{{end}}</dd>
+          </dl>
+          {{with .Reason}}<p class="context">{{.}}</p>{{end}}
+          <h4>Reviewed boundaries by category</h4>
+          <ul>
+          {{range .Categories}}
+            <li><code>{{.Category}}</code>: {{range $index, $boundary := .Boundaries}}{{if $index}}, {{end}}{{$boundary.Source}} / {{$boundary.Adapter}}{{end}}</li>
+          {{else}}
+            <li>none</li>
+          {{end}}
+          </ul>
+          <a class="button" href="/trace-case?disclosure_question_id={{query .QuestionID}}">View raw-value-free receipt projection <span aria-hidden="true">&rarr;</span></a>
+        </article>
+      {{end}}
+      </div>
+      {{if .TraceCaseDisclosureReceiptAvailable}}
+      <article class="panel" id="trace-case-disclosure-receipt" aria-label="Selected disclosure question receipt">
+        <div class="section-head"><h3>Selected receipt: <code>{{.TraceCaseDisclosureQuestionID}}</code></h3><span class="status status-raw-value-free">raw-value-free</span></div>
+        <dl>
+          <dt>result</dt><dd><span class="status status-{{.TraceCaseDisclosureReceipt.Result}}">{{.TraceCaseDisclosureReceipt.Result}}</span></dd>
+          <dt>evidence state</dt><dd><span class="status status-{{.TraceCaseDisclosureReceipt.EvidenceState}}">{{.TraceCaseDisclosureReceipt.EvidenceState}}</span></dd>
+          <dt>case SHA-256</dt><dd>{{.TraceCaseDisclosureReceipt.CaseSHA256}}</dd>
+          <dt>question round SHA-256</dt><dd>{{.TraceCaseDisclosureReceipt.RoundSHA256}}</dd>
+          <dt>receipt SHA-256</dt><dd>{{.TraceCaseDisclosureReceiptSHA256}}</dd>
+        </dl>
+        <p class="context">This selected receipt is derived from the verified case for review. Save a durable receipt with the CLI when it must be exchanged or archived.</p>
+        <details><summary>Receipt JSON</summary><pre aria-label="Selected disclosure receipt JSON">{{.TraceCaseDisclosureReceiptJSON}}</pre></details>
+      </article>
+      {{end}}
     </section>
     <section class="panel" aria-label="Trace case entries">
       <div class="section-head"><h2>Verified case entries</h2><span class="context">caller order</span></div>

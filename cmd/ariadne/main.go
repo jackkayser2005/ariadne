@@ -67,6 +67,14 @@ const usage = `usage:
 	ariadne trace case save [--json] <case.json> <trace-archive|trace-replication> <artifact.json> <question-round.json> ...
 	ariadne trace case verify [--json] [--expect-sha256 <digest>] <case.json>
 	ariadne trace case map [--json] <case.json>
+	ariadne trace case map questions [--json]
+	ariadne trace case map ask [--json] <case.json> <question-id>
+	ariadne trace case map ask all [--json] <case.json>
+	ariadne trace case map ask all save [--json] <case.json> <round.json>
+	ariadne trace case map ask all verify [--json] [--expect-sha256 <digest>] <round.json>
+	ariadne trace case map ask receipt [--json] <round.json> <question-id>
+	ariadne trace case map ask receipt save [--json] <round.json> <question-id> <receipt.json>
+	ariadne trace case map ask receipt verify [--json] [--expect-sha256 <digest>] <receipt.json>
 	ariadne trace case questions [--json]
 	ariadne trace case ask [--json] <case.json> <question-id>
 	ariadne trace case ask all [--json] <case.json>
@@ -200,6 +208,30 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return runTraceCaseVerify(args[3:], stdout, stderr, trace.VerifyCase)
 		}
 		if args[2] == "map" {
+			if len(args) >= 4 && args[3] == "questions" {
+				return runTraceCaseMapQuestions(args[4:], stdout, stderr, trace.CaseDisclosureQuestions)
+			}
+			if len(args) >= 4 && args[3] == "ask" {
+				if len(args) >= 5 && args[4] == "all" {
+					if len(args) >= 6 && args[5] == "save" {
+						return runTraceCaseMapAskAllSave(args[6:], stdout, stderr, trace.SaveCaseDisclosureQuestionRound)
+					}
+					if len(args) >= 6 && args[5] == "verify" {
+						return runTraceCaseMapAskAllVerify(args[6:], stdout, stderr, trace.VerifyCaseDisclosureQuestionRound)
+					}
+					return runTraceCaseMapAskAll(args[5:], stdout, stderr, askAllTraceCaseDisclosureQuestions)
+				}
+				if len(args) >= 5 && args[4] == "receipt" {
+					if len(args) >= 6 && args[5] == "save" {
+						return runTraceCaseMapAskReceiptSave(args[6:], stdout, stderr, trace.SaveCaseDisclosureQuestionReceipt)
+					}
+					if len(args) >= 6 && args[5] == "verify" {
+						return runTraceCaseMapAskReceiptVerify(args[6:], stdout, stderr, trace.VerifyCaseDisclosureQuestionReceipt)
+					}
+					return runTraceCaseMapAskReceipt(args[5:], stdout, stderr, trace.AskCaseDisclosureQuestionReceipt)
+				}
+				return runTraceCaseMapAsk(args[4:], stdout, stderr, askTraceCaseDisclosureQuestion)
+			}
 			return runTraceCaseMap(args[3:], stdout, stderr, mapTraceCase)
 		}
 		if args[2] == "questions" {

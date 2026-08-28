@@ -272,6 +272,14 @@ go run ./cmd/ariadne trace case save --json \
   trace-replication .ariadne/trace-replication.json .ariadne/trace-replication-round.json
 go run ./cmd/ariadne trace case verify --json .ariadne/case.json
 go run ./cmd/ariadne trace case map --json .ariadne/case.json
+go run ./cmd/ariadne trace case map questions --json
+go run ./cmd/ariadne trace case map ask --json .ariadne/case.json cross-boundary-category-overlap
+go run ./cmd/ariadne trace case map ask all --json .ariadne/case.json
+go run ./cmd/ariadne trace case map ask all save --json .ariadne/case.json .ariadne/case-disclosure-round.json
+go run ./cmd/ariadne trace case map ask all verify --json .ariadne/case-disclosure-round.json
+go run ./cmd/ariadne trace case map ask receipt --json .ariadne/case-disclosure-round.json cross-boundary-category-overlap
+go run ./cmd/ariadne trace case map ask receipt save --json .ariadne/case-disclosure-round.json cross-boundary-category-overlap .ariadne/case-disclosure-receipt.json
+go run ./cmd/ariadne trace case map ask receipt verify --json .ariadne/case-disclosure-receipt.json
 go run ./cmd/ariadne trace case ask all --json .ariadne/case.json
 go run ./cmd/ariadne trace case ask all save --json .ariadne/case.json .ariadne/case-round.json
 go run ./cmd/ariadne trace case ask all verify --json .ariadne/case-round.json
@@ -292,6 +300,20 @@ destination, and retained-trace count. Aggregate `coverage_state` becomes
 `unknown` when any contributing trace is partial; directly retained
 observations remain `observed`. The map is recomputed from the verified case
 and is not persisted as a second evidence store.
+
+The nested `trace case map` question catalog adds two bounded reflections:
+`disclosure-map-coverage` returns `complete` with `observed` evidence only when
+every retained trace declared complete coverage, otherwise it returns `unknown`
+with `unknown` evidence. `cross-boundary-category-overlap` returns
+`overlap-observed` with `observed` evidence when a safe category appeared across
+at least two reviewed source/adapter boundaries. With complete coverage and no
+overlap it returns `no-overlap-observed`; with partial coverage and no observed
+overlap it remains `unknown`. Saved question rounds and selected receipts are
+raw-value-free, carry their case and round identities, and retain only safe
+category plus source/adapter boundary summaries. Offline round/receipt
+verification checks only the supplied documents' schema, canonical identities,
+and internal binding; it does not authenticate that an originally referenced
+case produced them without verifying that case as well.
 
 `trace case ask all compare` independently verifies both retained rounds and
 compares their fixed projections in caller order. It reports `same` or
@@ -315,9 +337,12 @@ The read-only `/trace-case` route re-verifies the embedded archives, ledgers,
 and matching question rounds before rendering only the case identity, caller
 order, safe source summaries, child identities, fixed case answers, and
 separate question `result`, replicated child `outcome`, and `evidence_state`
-fields. It also renders the derived cross-source disclosure map using only
-reviewed category and destination labels plus retained-trace counts. A case
-question result such as `available`, `supported`, or `unknown`
+fields. It also renders the derived cross-source disclosure map and its two
+fixed disclosure questions using only safe category, destination, and
+source/adapter boundary labels plus retained-trace counts. Each question card
+links to a selected raw-value-free receipt projection through
+`disclosure_question_id`; durable rounds and receipts are created with the
+CLI. A case question result such as `available`, `supported`, or `unknown`
 is not itself a replicated outcome. It fails closed with a generic
 `trace case unavailable` response for malformed or identity-inconsistent
 input; it never renders the configured path, captured values, or source
