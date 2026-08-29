@@ -676,6 +676,12 @@ go run ./cmd/ariadne trace case assemble --json \
 ```
 
 The plan paths are consumed only during assembly and never enter the output.
+Verify the published workspace as one unit before opening the review page:
+
+```console
+go run ./cmd/ariadne trace case assemble verify --json .ariadne/case-workspace
+```
+
 The destination must be new; a successful workspace contains `case.json` and
 `disclosure-round.json`, while the safe command summary reports their
 canonical identities, coverage, and fixed question results. This coordinates

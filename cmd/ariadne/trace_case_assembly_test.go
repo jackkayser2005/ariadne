@@ -37,6 +37,52 @@ func TestRunTraceCaseAssemble(t *testing.T) {
 	}
 }
 
+func TestRunTraceCaseAssembleVerify(t *testing.T) {
+	want := trace.CaseAssemblySummary{
+		SchemaVersion:         1,
+		Entries:               1,
+		CaseSHA256:            strings.Repeat("a", 64),
+		DisclosureRoundSHA256: strings.Repeat("b", 64),
+		CoverageState:         evidence.Observed,
+	}
+	verify := func(path string) (trace.CaseAssemblySummary, error) {
+		if path != "workspace" {
+			t.Fatalf("verification path = %q", path)
+		}
+		return want, nil
+	}
+	var stdout, stderr strings.Builder
+	if exitCode := runTraceCaseAssembleVerify([]string{"--json", "workspace"}, &stdout, &stderr, verify); exitCode != 0 || stderr.Len() != 0 || !strings.Contains(stdout.String(), "case_sha256") {
+		t.Fatalf("JSON verification = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if exitCode := runTraceCaseAssembleVerify([]string{"workspace"}, &stdout, &stderr, verify); exitCode != 0 || stderr.Len() != 0 || !strings.Contains(stdout.String(), "trace case assembly verified") {
+		t.Fatalf("human verification = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+	if exitCode := runTraceCaseAssembleVerify(nil, &stdout, &stderr, func(string) (trace.CaseAssemblySummary, error) {
+		t.Fatal("verifier called for invalid usage")
+		return trace.CaseAssemblySummary{}, nil
+	}); exitCode != 2 {
+		t.Fatalf("verification usage = %d", exitCode)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if exitCode := runTraceCaseAssembleVerify([]string{"workspace"}, &stdout, &stderr, func(string) (trace.CaseAssemblySummary, error) {
+		return trace.CaseAssemblySummary{}, errors.New("verification failed safely")
+	}); exitCode != 1 || !strings.Contains(stderr.String(), "verification failed safely") {
+		t.Fatalf("verification failure = %d, stderr=%q", exitCode, stderr.String())
+	}
+	if exitCode := runTraceCaseAssembleVerify([]string{"workspace"}, failingWriter{}, &strings.Builder{}, verify); exitCode != 1 {
+		t.Fatalf("human verification writer error = %d", exitCode)
+	}
+	if exitCode := runTraceCaseAssembleVerify([]string{"--json", "workspace"}, failingWriter{}, &strings.Builder{}, verify); exitCode != 1 {
+		t.Fatalf("JSON verification writer error = %d", exitCode)
+	}
+	if err := writeTraceCaseAssemblyVerificationSummary(failingWriter{}, want); err == nil {
+		t.Fatal("writeTraceCaseAssemblyVerificationSummary() accepted a failing writer")
+	}
+}
 func TestRunTraceCaseAssembleFailures(t *testing.T) {
 	cases := map[string]struct {
 		args     []string
@@ -90,6 +136,12 @@ func TestRunTraceCaseAssembleFailures(t *testing.T) {
 	}
 }
 
+func TestTraceCaseAssembleVerifyDispatch(t *testing.T) {
+	var stdout, stderr strings.Builder
+	if exitCode := run([]string{"trace", "case", "assemble", "verify", "missing-workspace"}, &stdout, &stderr); exitCode != 1 || !strings.Contains(stderr.String(), "trace case assemble verify") {
+		t.Fatalf("assembly verification dispatch = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+}
 func TestTraceCaseAssembleDispatch(t *testing.T) {
 	var stdout, stderr strings.Builder
 	if exitCode := run([]string{"trace", "case", "assemble", "--plan", "missing-plan.json", "--output", "workspace"}, &stdout, &stderr); exitCode != 1 || !strings.Contains(stderr.String(), "trace case assemble") {

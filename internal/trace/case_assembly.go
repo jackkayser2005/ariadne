@@ -164,25 +164,50 @@ func AssembleCase(planPath, outputDir string) (CaseAssemblySummary, error) {
 		return CaseAssemblySummary{}, fmt.Errorf("trace case assembly disclosure round: %w", err)
 	}
 
-	_, caseSummary, err := ReadCase(casePath)
+	summary, err := VerifyCaseAssembly(stagingDir)
 	if err != nil {
-		return CaseAssemblySummary{}, errors.New("trace case assembly generated case is unavailable")
+		return CaseAssemblySummary{}, fmt.Errorf("trace case assembly generated files: %w", err)
 	}
-	round, roundSummary, err := ReadCaseDisclosureQuestionRound(roundPath)
-	if err != nil {
-		return CaseAssemblySummary{}, errors.New("trace case assembly generated disclosure round is unavailable")
-	}
-	if roundSummary.CaseSHA256 != caseSummary.CaseSHA256 {
-		return CaseAssemblySummary{}, errors.New("trace case assembly generated identities disagree")
-	}
-	summary := caseAssemblySummary(caseSummary, round, roundSummary)
-	if err := validateCaseAssemblySummary(summary); err != nil {
-		return CaseAssemblySummary{}, err
-	}
+
 	if err := os.Rename(stagingDir, outputDir); err != nil {
 		return CaseAssemblySummary{}, errors.New("publish trace case assembly workspace")
 	}
 	committed = true
+	return summary, nil
+}
+
+// VerifyCaseAssembly verifies the fixed files in one assembled workspace and
+// confirms that its durable disclosure round is derived from its case.
+func VerifyCaseAssembly(outputDir string) (CaseAssemblySummary, error) {
+	if strings.TrimSpace(outputDir) == "" {
+		return CaseAssemblySummary{}, errors.New("trace case assembly workspace path is required")
+	}
+	outputDir = filepath.Clean(outputDir)
+	info, err := os.Stat(outputDir)
+	if err != nil || !info.IsDir() {
+		return CaseAssemblySummary{}, errors.New("trace case assembly workspace is unavailable")
+	}
+	casePackage, caseSummary, err := ReadCase(filepath.Join(outputDir, "case.json"))
+	if err != nil {
+		return CaseAssemblySummary{}, errors.New("trace case assembly case is unavailable")
+	}
+	round, roundSummary, err := ReadCaseDisclosureQuestionRound(filepath.Join(outputDir, "disclosure-round.json"))
+	if err != nil {
+		return CaseAssemblySummary{}, errors.New("trace case assembly disclosure round is unavailable")
+	}
+	if roundSummary.CaseSHA256 != caseSummary.CaseSHA256 {
+		return CaseAssemblySummary{}, errors.New("trace case assembly identities disagree")
+	}
+	expectedRound, err := AnswerCaseDisclosureQuestionRound(casePackage, caseSummary)
+	if err != nil {
+		return CaseAssemblySummary{}, errors.New("trace case assembly disclosure round cannot be derived")
+	}
+	expectedRoundSHA256, err := CaseDisclosureQuestionRoundSHA256(expectedRound)
+	if err != nil || expectedRoundSHA256 != roundSummary.RoundSHA256 {
+		return CaseAssemblySummary{}, errors.New("trace case assembly disclosure round does not match case")
+	}
+	summary := caseAssemblySummary(caseSummary, round, roundSummary)
+
 	return summary, nil
 }
 

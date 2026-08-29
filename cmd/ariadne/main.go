@@ -66,6 +66,7 @@ const usage = `usage:
 	ariadne trace archive ask receipt verify [--json] [--expect-sha256 <digest>] <receipt.json>
 	ariadne trace case save [--json] <case.json> <trace-archive|trace-replication> <artifact.json> <question-round.json> ...
 	ariadne trace case assemble [--json] --plan <case-plan.json> --output <case-workspace>
+	ariadne trace case assemble verify [--json] <case-workspace>
 	ariadne trace case verify [--json] [--expect-sha256 <digest>] <case.json>
 	ariadne trace case map [--json] <case.json>
 	ariadne trace case map questions [--json]
@@ -203,6 +204,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(args) >= 3 && args[0] == "trace" && args[1] == "case" {
 		if args[2] == "assemble" {
+			if len(args) >= 4 && args[3] == "verify" {
+				return runTraceCaseAssembleVerify(args[4:], stdout, stderr, trace.VerifyCaseAssembly)
+			}
 			return runTraceCaseAssemble(args[3:], stdout, stderr, trace.AssembleCase)
 		}
 		if args[2] == "save" {

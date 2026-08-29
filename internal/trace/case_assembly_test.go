@@ -68,6 +68,50 @@ func TestAssembleCaseCreatesVerifiedWorkspace(t *testing.T) {
 	}
 }
 
+func TestVerifyCaseAssemblyRechecksDerivedRound(t *testing.T) {
+	root := t.TempDir()
+	archivePath, archiveRoundPath := writeCaseArchive(t, root)
+	planPath := writeCaseAssemblyPlan(t, root, CaseAssemblyPlan{
+		SchemaVersion: caseAssemblyPlanSchemaVersion,
+		OrderBasis:    "caller",
+		Entries: []CaseAssemblyPlanEntry{{
+			Kind:              CaseEntryTraceArchive,
+			ArtifactPath:      archivePath,
+			QuestionRoundPath: archiveRoundPath,
+		}},
+	})
+	outputDir := filepath.Join(root, "assembled")
+	want, err := AssembleCase(planPath, outputDir)
+	if err != nil {
+		t.Fatalf("AssembleCase() error = %v", err)
+	}
+	got, err := VerifyCaseAssembly(outputDir)
+	if err != nil {
+		t.Fatalf("VerifyCaseAssembly() error = %v", err)
+	}
+	if got.CaseSHA256 != want.CaseSHA256 || got.DisclosureRoundSHA256 != want.DisclosureRoundSHA256 || got.CoverageState != want.CoverageState || len(got.Questions) != len(want.Questions) {
+		t.Fatalf("verified assembly = %#v, want %#v", got, want)
+	}
+	roundPath := filepath.Join(outputDir, "disclosure-round.json")
+	round, _, err := ReadCaseDisclosureQuestionRound(roundPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	round.Traces++
+	for index := range round.Answers {
+		round.Answers[index].Traces = round.Traces
+	}
+	data, err := json.Marshal(round)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(roundPath, append(data, 10), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyCaseAssembly(outputDir); err == nil || !strings.Contains(err.Error(), "does not match case") {
+		t.Fatalf("VerifyCaseAssembly() error = %v, want derived-round mismatch", err)
+	}
+}
 func TestAssembleCasePreservesCrossBoundaryOverlap(t *testing.T) {
 	root := t.TempDir()
 	procedure := strings.Repeat("1", 64)
@@ -127,6 +171,28 @@ func TestAssembleCasePreservesPartialUnknownSemantics(t *testing.T) {
 	}
 }
 
+func TestVerifyCaseAssemblyRejectsUnavailableWorkspace(t *testing.T) {
+	root := t.TempDir()
+	for _, path := range []string{"", filepath.Join(root, "missing")} {
+		if _, err := VerifyCaseAssembly(path); err == nil {
+			t.Fatalf("VerifyCaseAssembly(%q) accepted unavailable workspace", path)
+		}
+	}
+	filePath := filepath.Join(root, "file")
+	if err := os.WriteFile(filePath, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyCaseAssembly(filePath); err == nil {
+		t.Fatal("VerifyCaseAssembly() accepted a file as workspace")
+	}
+	emptyDir := filepath.Join(root, "empty")
+	if err := os.Mkdir(emptyDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyCaseAssembly(emptyDir); err == nil || !strings.Contains(err.Error(), "case is unavailable") {
+		t.Fatalf("VerifyCaseAssembly() error = %v, want missing case", err)
+	}
+}
 func TestAssembleCaseFailsAtomically(t *testing.T) {
 	root := t.TempDir()
 	planPath := writeCaseAssemblyPlan(t, root, validCaseAssemblyPlan())
