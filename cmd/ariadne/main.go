@@ -143,7 +143,7 @@ const usage = `usage:
   ariadne experiment ask-archive verify [--json] [--expect-sha256 <digest>] <report.json>
   ariadne experiment questions [--json]
   ariadne experiment list [--json] <archive-root>
-	ariadne experiment serve [--addr <address>] [--history <history.json>] [--reflection <report.json>] [--export <export.json>] [--acceptance <acceptance.json>] [--round-first <round.json> --round-second <round.json>] [--trace-archive <archive.json>] [--trace-round <round.json>] [--trace-replication <ledger.json>] [--trace-case <case.json>] [--trace-study <study.json>] [--trace-study-round <round.json>] [--trace-study-receipt <receipt.json>] [--trace-study-second <study.json> --trace-study-round-second <round.json>] [--minimization <run-directory>] [--minimization-round <round.json>] [--minimization-receipt <receipt.json>] <archive-root>
+	ariadne experiment serve [--addr <address>] [--history <history.json>] [--reflection <report.json>] [--export <export.json>] [--acceptance <acceptance.json>] [--round-first <round.json> --round-second <round.json>] [--trace-archive <archive.json>] [--trace-round <round.json>] [--trace-replication <ledger.json>] [--trace-case <case.json>] [--trace-case-round <round.json>] [--trace-case-receipt <receipt.json>] [--trace-study <study.json>] [--trace-study-round <round.json>] [--trace-study-receipt <receipt.json>] [--trace-study-second <study.json> --trace-study-round-second <round.json>] [--minimization <run-directory>] [--minimization-round <round.json>] [--minimization-receipt <receipt.json>] <archive-root>
 `
 
 const adbCheckTimeout = 10 * time.Second
@@ -3242,6 +3242,8 @@ func runServe(
 	traceRoundPath := flags.String("trace-round", "", "")
 	traceReplicationPath := flags.String("trace-replication", "", "")
 	traceCasePath := flags.String("trace-case", "", "")
+	traceCaseRoundPath := flags.String("trace-case-round", "", "")
+	traceCaseReceiptPath := flags.String("trace-case-receipt", "", "")
 	traceStudyPath := flags.String("trace-study", "", "")
 	traceStudyRoundPath := flags.String("trace-study-round", "", "")
 	traceStudyReceiptPath := flags.String("trace-study-receipt", "", "")
@@ -3268,6 +3270,10 @@ func runServe(
 	}
 	if (*traceStudyRoundPath != "" || *traceStudyReceiptPath != "") && *traceStudyPath == "" {
 		_, _ = io.WriteString(stderr, "ariadne: experiment serve: --trace-study-round and --trace-study-receipt require --trace-study\n")
+		return 2
+	}
+	if (*traceCaseRoundPath != "" || *traceCaseReceiptPath != "") && *traceCasePath == "" {
+		_, _ = io.WriteString(stderr, "ariadne: experiment serve: --trace-case-round and --trace-case-receipt require --trace-case\n")
 		return 2
 	}
 	if (*minimizationRoundPath != "" || *minimizationReceiptPath != "") && *minimizationPath == "" {
@@ -3298,6 +3304,8 @@ func runServe(
 		TraceRoundPath:            *traceRoundPath,
 		TraceReplicationPath:      *traceReplicationPath,
 		TraceCasePath:             *traceCasePath,
+		TraceCaseRoundPath:        *traceCaseRoundPath,
+		TraceCaseReceiptPath:      *traceCaseReceiptPath,
 		TraceStudyPath:            *traceStudyPath,
 		TraceStudyRoundPath:       *traceStudyRoundPath,
 		TraceStudyReceiptPath:     *traceStudyReceiptPath,

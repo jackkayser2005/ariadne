@@ -682,6 +682,33 @@ canonical identities, coverage, and fixed question results. This coordinates
 existing verifiers and does not add capture, authorization, chronology, or
 causal semantics.
 
+If a selected disclosure question needs a durable receipt, create it from the
+assembled round before opening the page:
+
+```console
+go run ./cmd/ariadne trace case map ask receipt save --json \
+  .ariadne/case-workspace/disclosure-round.json \
+  cross-boundary-category-overlap \
+  .ariadne/case-workspace/disclosure-receipt.json
+```
+
+To hand an assembled case to the same read-only review surface, pass the
+durable disclosure round produced beside `case.json`:
+
+```console
+go run ./cmd/ariadne experiment serve \
+  --trace-case .ariadne/case-workspace/case.json \
+  --trace-case-round .ariadne/case-workspace/disclosure-round.json \
+  --trace-case-receipt .ariadne/case-workspace/disclosure-receipt.json \
+  <archive-root>
+```
+
+The existing `/trace-case` route re-derives the fixed round from the verified
+case and accepts the saved round only when its case and canonical round
+identities match. A saved receipt must also match the case, round, and selected
+question. The page marks saved artifacts as verified without displaying their
+paths; malformed or drifting artifacts fail closed.
+
 Once standalone archives or replicated ledgers have their fixed question
 rounds, they can be joined into one bounded, caller-ordered package:
 

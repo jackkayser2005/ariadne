@@ -41,6 +41,10 @@ type handler struct {
 	traceReplicationRead     func(string) (trace.ReplicationLedger, trace.ReplicationLedgerVerificationSummary, error)
 	traceCasePath            string
 	traceCaseRead            func(string) (trace.CasePackage, trace.CaseVerificationSummary, error)
+	traceCaseRoundPath       string
+	traceCaseRoundRead       func(string) (trace.CaseDisclosureQuestionRound, trace.CaseDisclosureQuestionRoundVerificationSummary, error)
+	traceCaseReceiptPath     string
+	traceCaseReceiptRead     func(string) (trace.CaseDisclosureQuestionReceipt, trace.CaseDisclosureQuestionReceiptVerificationSummary, error)
 	traceStudyPath           string
 	traceStudyRead           func(string) (trace.ReplicationStudy, trace.StudyVerificationSummary, error)
 	traceStudyRoundPath      string
@@ -152,9 +156,11 @@ type pageData struct {
 	TraceCaseAnswers                       []trace.CaseAnswer
 	TraceCaseDisclosureMap                 trace.CaseDisclosureMap
 	TraceCaseDisclosureQuestions           []trace.CaseDisclosureQuestionAnswer
+	TraceCaseDisclosureQuestionRoundSaved  bool
 	TraceCaseDisclosureQuestionRoundSHA256 string
 	TraceCaseDisclosureQuestionID          string
 	TraceCaseDisclosureReceiptAvailable    bool
+	TraceCaseDisclosureReceiptSaved        bool
 	TraceCaseDisclosureReceipt             trace.CaseDisclosureQuestionReceipt
 	TraceCaseDisclosureReceiptSHA256       string
 	TraceCaseDisclosureReceiptJSON         string
@@ -713,12 +719,50 @@ func (h handler) handleTraceCase(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
 		return
 	}
+	disclosureRoundSaved := false
+	if h.traceCaseRoundPath != "" {
+		if h.traceCaseRoundRead == nil {
+			http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		savedRound, savedRoundSummary, readErr := h.traceCaseRoundRead(h.traceCaseRoundPath)
+		if readErr != nil || savedRoundSummary.CaseSHA256 != summary.CaseSHA256 || savedRoundSummary.RoundSHA256 != disclosureRoundSHA256 {
+			http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		disclosureRound = savedRound
+		disclosureRoundSHA256 = savedRoundSummary.RoundSHA256
+		disclosureRoundSaved = true
+	}
 	disclosureQuestionID := r.URL.Query().Get("disclosure_question_id")
 	var disclosureReceipt trace.CaseDisclosureQuestionReceipt
 	disclosureReceiptAvailable := false
+	disclosureReceiptSaved := false
 	disclosureReceiptSHA256 := ""
 	disclosureReceiptJSON := ""
-	if disclosureQuestionID != "" {
+	if h.traceCaseReceiptPath != "" {
+		if h.traceCaseReceiptRead == nil {
+			http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		savedReceipt, savedReceiptSummary, readErr := h.traceCaseReceiptRead(h.traceCaseReceiptPath)
+		if readErr != nil || savedReceipt.CaseSHA256 != summary.CaseSHA256 || savedReceipt.RoundSHA256 != disclosureRoundSHA256 || (disclosureQuestionID != "" && disclosureQuestionID != savedReceipt.QuestionID) {
+			http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		disclosureQuestionID = savedReceipt.QuestionID
+		disclosureReceipt = savedReceipt
+		disclosureReceiptSHA256 = savedReceiptSummary.ReceiptSHA256
+		disclosureReceiptJSONBytes, marshalErr := json.MarshalIndent(disclosureReceipt, "", "  ")
+		if marshalErr != nil {
+			http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		disclosureReceiptJSON = string(disclosureReceiptJSONBytes)
+		disclosureReceiptAvailable = true
+		disclosureReceiptSaved = true
+	}
+	if disclosureQuestionID != "" && !disclosureReceiptSaved {
 		var selectedAnswer trace.CaseDisclosureQuestionAnswer
 		found := false
 		for _, answer := range disclosureRound.Answers {
@@ -758,9 +802,11 @@ func (h handler) handleTraceCase(w http.ResponseWriter, r *http.Request) {
 		TraceCaseAnswers:                       answers,
 		TraceCaseDisclosureMap:                 disclosureMap,
 		TraceCaseDisclosureQuestions:           disclosureRound.Answers,
+		TraceCaseDisclosureQuestionRoundSaved:  disclosureRoundSaved,
 		TraceCaseDisclosureQuestionRoundSHA256: disclosureRoundSHA256,
 		TraceCaseDisclosureQuestionID:          disclosureQuestionID,
 		TraceCaseDisclosureReceiptAvailable:    disclosureReceiptAvailable,
+		TraceCaseDisclosureReceiptSaved:        disclosureReceiptSaved,
 		TraceCaseDisclosureReceipt:             disclosureReceipt,
 		TraceCaseDisclosureReceiptSHA256:       disclosureReceiptSHA256,
 		TraceCaseDisclosureReceiptJSON:         disclosureReceiptJSON,
@@ -1729,6 +1775,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
     <section class="panel" id="trace-case-disclosure-questions" aria-label="Disclosure map questions">
       <div class="section-head"><h2>Disclosure map questions</h2><span class="context">re-verified now</span></div>
       <p class="context">question round SHA-256: {{.TraceCaseDisclosureQuestionRoundSHA256}}</p>
+      {{if .TraceCaseDisclosureQuestionRoundSaved}}<p class="context">saved question round: verified against the current case</p>{{else}}<p class="context">question round: derived from the verified case</p>{{end}}
       <p class="context">These fixed questions summarize safe category boundaries. Result and evidence state are separate; unknown means the retained evidence cannot support the stronger conclusion.</p>
       <div class="question-list">
       {{range .TraceCaseDisclosureQuestions}}
@@ -1757,7 +1804,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       </div>
       {{if .TraceCaseDisclosureReceiptAvailable}}
       <article class="panel" id="trace-case-disclosure-receipt" aria-label="Selected disclosure question receipt">
-        <div class="section-head"><h3>Selected receipt: <code>{{.TraceCaseDisclosureQuestionID}}</code></h3><span class="status status-raw-value-free">raw-value-free</span></div>
+        <div class="section-head"><h3>Selected receipt: <code>{{.TraceCaseDisclosureQuestionID}}</code></h3><span class="status status-raw-value-free">raw-value-free</span>{{if .TraceCaseDisclosureReceiptSaved}}<span class="status status-observed">saved and verified</span>{{end}}</div>
         <dl>
           <dt>result</dt><dd><span class="status status-{{.TraceCaseDisclosureReceipt.Result}}">{{.TraceCaseDisclosureReceipt.Result}}</span></dd>
           <dt>evidence state</dt><dd><span class="status status-{{.TraceCaseDisclosureReceipt.EvidenceState}}">{{.TraceCaseDisclosureReceipt.EvidenceState}}</span></dd>

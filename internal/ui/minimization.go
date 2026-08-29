@@ -28,6 +28,8 @@ type ReviewOptions struct {
 	TraceRoundPath            string
 	TraceReplicationPath      string
 	TraceCasePath             string
+	TraceCaseRoundPath        string
+	TraceCaseReceiptPath      string
 	TraceStudyPath            string
 	TraceStudyRoundPath       string
 	TraceStudyReceiptPath     string
@@ -83,6 +85,14 @@ func reviewHandler(options ReviewOptions) http.Handler {
 	if options.TraceCasePath != "" {
 		h.traceCasePath = options.TraceCasePath
 		h.traceCaseRead = trace.ReadCase
+	}
+	if options.TraceCaseRoundPath != "" {
+		h.traceCaseRoundPath = options.TraceCaseRoundPath
+		h.traceCaseRoundRead = trace.ReadCaseDisclosureQuestionRound
+	}
+	if options.TraceCaseReceiptPath != "" {
+		h.traceCaseReceiptPath = options.TraceCaseReceiptPath
+		h.traceCaseReceiptRead = trace.ReadCaseDisclosureQuestionReceipt
 	}
 	if options.TraceStudyPath != "" {
 		h.traceStudyPath = options.TraceStudyPath

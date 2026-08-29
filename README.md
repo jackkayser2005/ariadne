@@ -316,6 +316,34 @@ case is a durable reflection/index boundary, not a database, universal
 capture service, cross-source causal attribution, or natural-language
 question engine.
 
+If a selected disclosure question needs a durable receipt, create it from the
+assembled round before opening the page:
+
+```console
+go run ./cmd/ariadne trace case map ask receipt save --json \
+  .ariadne/case-workspace/disclosure-round.json \
+  cross-boundary-category-overlap \
+  .ariadne/case-workspace/disclosure-receipt.json
+```
+
+When the case came from `trace case assemble`, pass its durable disclosure
+round and (optionally) one selected receipt to the same read-only page:
+
+```console
+go run ./cmd/ariadne experiment serve \
+  --trace-case .ariadne/case-workspace/case.json \
+  --trace-case-round .ariadne/case-workspace/disclosure-round.json \
+  --trace-case-receipt .ariadne/case-workspace/disclosure-receipt.json \
+  <archive-root>
+```
+
+The page re-derives the fixed disclosure round from the verified case and
+requires the supplied round identity to match before rendering it. A supplied
+receipt must match the verified case, round, and selected question. Saved
+artifacts are marked as verified in the page; paths remain configuration only
+and are never rendered. The route remains GET-only and returns the same
+generic `trace case unavailable` response for drift or malformed artifacts.
+
 The derived `trace case map` command groups safe category labels from every
 embedded trace and reports reviewed source, adapter, channel, event kind,
 destination, and retained-trace count. Aggregate `coverage_state` becomes
@@ -822,7 +850,7 @@ The local review page can receive a verified transition ledger, a saved
 reflection, an acceptance identity binding, two retained question rounds, and
 one portable trace archive, saved question round, replicated trace ledger, or
 cross-source case with
-`experiment serve --history <history.json> --reflection <reflection.json> --acceptance <acceptance.json> --round-first <first-round.json> --round-second <second-round.json> --trace-archive <trace-archive.json> --trace-round <trace-round.json> --trace-replication <ledger.json> --trace-case <case.json> --trace-study <study.json> --trace-study-round <round.json> --trace-study-receipt <receipt.json> [--minimization <run-directory>] [--minimization-round <round.json>] [--minimization-receipt <receipt.json>] <archive-root>`.
+`experiment serve --history <history.json> --reflection <reflection.json> --acceptance <acceptance.json> --round-first <first-round.json> --round-second <second-round.json> --trace-archive <trace-archive.json> --trace-round <trace-round.json> --trace-replication <ledger.json> --trace-case <case.json> [--trace-case-round <round.json>] [--trace-case-receipt <receipt.json>] --trace-study <study.json> --trace-study-round <round.json> --trace-study-receipt <receipt.json> [--minimization <run-directory>] [--minimization-round <round.json>] [--minimization-receipt <receipt.json>] <archive-root>`.
 It renders caller-ordered bounded transitions and re-asks the saved reflection's
 fixed question against the current archive, showing only safe comparison counts,
 identities, per-directory bounded state changes, and the repeated-change

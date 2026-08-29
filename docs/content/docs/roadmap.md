@@ -297,9 +297,11 @@ coordinates already verified trace archives or replication ledgers, creates the
 portable case, derives its disclosure-map question round from that newly
 verified case, and atomically publishes a new workspace containing only
 `case.json` and `disclosure-round.json`. The CLI summary exposes only safe
-identities, coverage, and fixed question results. This improves the usable
-cross-source workflow without adding a capture adapter, evidence store,
-authorization proof, chronology model, or causal claim.
+identities, coverage, and fixed question results. The existing `/trace-case`
+review surface can consume that durable round and an optional selected receipt
+after re-deriving and matching their case, round, and question identities. This
+improves the usable cross-source workflow without adding a capture adapter,
+evidence store, authorization proof, chronology model, or causal claim.
 
 The local review page is intentionally read-only. Its compact question round
 and receipt links, including stable history and receipt identities, are a
