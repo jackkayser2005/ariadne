@@ -763,6 +763,31 @@ trace count. A partial contributing trace changes aggregate `coverage_state` to
 `unknown`; a directly retained observation remains `observed`. The map does not
 infer absence, correlate identities, or become a second persisted evidence
 store.
+Compare two complete assembled case workspaces under one caller-supplied
+private investigation commitment:
+
+```console
+go run ./cmd/ariadne trace case map compare --json \
+  --commitment-sha256 <private-investigation-digest> \
+  .ariadne/first-case-workspace .ariadne/second-case-workspace
+```
+
+Both local assembly plans must contain the same lowercase 64-character
+`investigation_commitment_sha256`. The command's `--commitment-sha256` value is
+cross-checked against each embedded `case.json`; legacy unbound workspaces stay
+readable but return `incomparable` rather than receiving an invented binding.
+The command re-verifies `case.json` and `disclosure-round.json` in both
+workspaces before comparing their derived maps. Compatible reviewed
+provenance means the same safe source/adapter, adapter version, reviewed
+procedure identity, and declared scope. The result is `same`, `changed`, or
+`incomparable`, with deterministic added/removed category labels and full safe
+source/adapter/channel/kind/destination boundary changes. It also reports the
+first and second coverage states separately from the comparison's
+`evidence_state`. A partial workspace prevents negative absence claims: an
+unsupported disappearance is listed as `unknown`, never `removed`; known
+positive additions can still be retained with `unknown` evidence. Commitment,
+case, and disclosure-round digests are identities only; paths, URLs, process
+arguments, identifiers, and captured values never enter the output.
 
 The nested map question catalog adds two fixed questions and durable artifacts.
 `disclosure-map-coverage` is `complete` with `observed` evidence only when every

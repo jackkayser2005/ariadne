@@ -305,6 +305,21 @@ after re-deriving and matching their case, round, and question identities. This
 improves the usable cross-source workflow without adding a capture adapter,
 evidence store, authorization proof, chronology model, or causal claim.
 
+24. **Commitment-bound case-map comparison.** Two assembled case workspaces can
+    now be re-verified and compared in caller order under one private
+    investigation commitment embedded in both assembly plans. The caller's
+    digest is cross-checked against both packages; legacy unbound cases remain
+    readable but are `incomparable`. The comparison requires compatible reviewed
+    source/adapter/version/procedure/scope provenance and reports `same`,
+    `changed`, or `incomparable` with added and removed safe category and
+    source/adapter/channel/kind/destination boundary labels. Partial coverage
+    preserves positive observations but turns unsupported absence into explicit
+    `unknown` categories/boundaries and an unknown comparison evidence state.
+    Both case and disclosure-round identities remain visible alongside the
+    commitment digest; paths, URLs, arguments, identifiers, and captured values
+    remain outside the projection. This is a cross-case reflection boundary,
+    not chronology, causal attribution, authorization proof, or universal
+    tracing.
 The local review page is intentionally read-only. Its compact question round
 and receipt links, including stable history and receipt identities, are a
 bounded UI-control surface for a computer-use driver;

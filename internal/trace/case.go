@@ -54,9 +54,10 @@ type CaseInput struct {
 // archives or replication ledgers. It embeds child artifacts and rounds so a
 // later verifier never needs to reopen source-specific paths.
 type CasePackage struct {
-	SchemaVersion int         `json:"schema_version"`
-	OrderBasis    string      `json:"order_basis"`
-	Entries       []CaseEntry `json:"entries"`
+	SchemaVersion                 int         `json:"schema_version"`
+	OrderBasis                    string      `json:"order_basis"`
+	InvestigationCommitmentSHA256 string      `json:"investigation_commitment_sha256,omitempty"`
+	Entries                       []CaseEntry `json:"entries"`
 }
 
 // CaseEntry retains exactly one verified artifact and its matching question
@@ -107,16 +108,17 @@ type CaseEntryVerificationSummary struct {
 // summaries. Unknown child evidence is counted but does not invalidate the
 // package itself.
 type CaseVerificationSummary struct {
-	SchemaVersion  int                            `json:"schema_version"`
-	OrderBasis     string                         `json:"order_basis"`
-	Entries        int                            `json:"entries"`
-	Archives       int                            `json:"archives"`
-	Replications   int                            `json:"replications"`
-	UnknownEntries int                            `json:"unknown_entries"`
-	Sources        []CaseSourceSummary            `json:"sources"`
-	Outcomes       []CaseOutcomeSummary           `json:"outcomes"`
-	EntrySummaries []CaseEntryVerificationSummary `json:"entry_summaries"`
-	CaseSHA256     string                         `json:"case_sha256"`
+	SchemaVersion                 int                            `json:"schema_version"`
+	OrderBasis                    string                         `json:"order_basis"`
+	Entries                       int                            `json:"entries"`
+	Archives                      int                            `json:"archives"`
+	Replications                  int                            `json:"replications"`
+	UnknownEntries                int                            `json:"unknown_entries"`
+	Sources                       []CaseSourceSummary            `json:"sources"`
+	Outcomes                      []CaseOutcomeSummary           `json:"outcomes"`
+	EntrySummaries                []CaseEntryVerificationSummary `json:"entry_summaries"`
+	InvestigationCommitmentSHA256 string                         `json:"investigation_commitment_sha256,omitempty"`
+	CaseSHA256                    string                         `json:"case_sha256"`
 }
 
 // CaseQuestion is one fixed, bounded question available for a case.
@@ -172,6 +174,19 @@ type CaseQuestionRoundVerificationSummary struct {
 // SaveCase verifies and embeds each supplied artifact and matching question
 // round without overwriting an existing output path.
 func SaveCase(inputs []CaseInput, outputPath string) (CaseVerificationSummary, error) {
+	return saveCase("", inputs, outputPath)
+}
+
+// SaveCaseWithCommitment verifies and writes a case bound to a caller-supplied
+// private investigation commitment digest.
+func SaveCaseWithCommitment(commitmentSHA256 string, inputs []CaseInput, outputPath string) (CaseVerificationSummary, error) {
+	if !ValidSHA256(commitmentSHA256) {
+		return CaseVerificationSummary{}, errors.New("trace case investigation commitment is invalid")
+	}
+	return saveCase(commitmentSHA256, inputs, outputPath)
+}
+
+func saveCase(commitmentSHA256 string, inputs []CaseInput, outputPath string) (CaseVerificationSummary, error) {
 	if len(inputs) == 0 || len(inputs) > maxCaseEntries {
 		return CaseVerificationSummary{}, errors.New("trace case entry count is invalid")
 	}
@@ -179,9 +194,10 @@ func SaveCase(inputs []CaseInput, outputPath string) (CaseVerificationSummary, e
 		return CaseVerificationSummary{}, errors.New("trace case output path is required")
 	}
 	casePackage := CasePackage{
-		SchemaVersion: caseSchemaVersion,
-		OrderBasis:    "caller",
-		Entries:       make([]CaseEntry, 0, len(inputs)),
+		SchemaVersion:                 caseSchemaVersion,
+		OrderBasis:                    "caller",
+		InvestigationCommitmentSHA256: commitmentSHA256,
+		Entries:                       make([]CaseEntry, 0, len(inputs)),
 	}
 	for index, input := range inputs {
 		entry, err := readCaseEntry(input)
@@ -454,6 +470,9 @@ func validateCase(casePackage CasePackage) error {
 	if casePackage.OrderBasis != "caller" {
 		return errors.New("trace case order_basis is invalid")
 	}
+	if casePackage.InvestigationCommitmentSHA256 != "" && !ValidSHA256(casePackage.InvestigationCommitmentSHA256) {
+		return errors.New("trace case investigation commitment is invalid")
+	}
 	if len(casePackage.Entries) == 0 || len(casePackage.Entries) > maxCaseEntries {
 		return errors.New("trace case entries are invalid")
 	}
@@ -581,12 +600,13 @@ func caseSummary(casePackage CasePackage) (CaseVerificationSummary, error) {
 		return CaseVerificationSummary{}, err
 	}
 	summary := CaseVerificationSummary{
-		SchemaVersion:  caseSchemaVersion,
-		OrderBasis:     casePackage.OrderBasis,
-		Entries:        len(casePackage.Entries),
-		Sources:        make([]CaseSourceSummary, 0),
-		Outcomes:       make([]CaseOutcomeSummary, 0),
-		EntrySummaries: make([]CaseEntryVerificationSummary, 0, len(casePackage.Entries)),
+		InvestigationCommitmentSHA256: casePackage.InvestigationCommitmentSHA256,
+		SchemaVersion:                 caseSchemaVersion,
+		OrderBasis:                    casePackage.OrderBasis,
+		Entries:                       len(casePackage.Entries),
+		Sources:                       make([]CaseSourceSummary, 0),
+		Outcomes:                      make([]CaseOutcomeSummary, 0),
+		EntrySummaries:                make([]CaseEntryVerificationSummary, 0, len(casePackage.Entries)),
 	}
 	sourceCounts := make(map[string]CaseSourceSummary)
 	for _, entry := range casePackage.Entries {

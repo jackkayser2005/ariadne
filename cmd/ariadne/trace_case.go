@@ -18,6 +18,7 @@ type traceCaseAllAsker func(string) ([]trace.CaseAnswer, error)
 type traceCaseRoundSaver func(string, string) (trace.CaseQuestionRoundVerificationSummary, error)
 type traceCaseRoundVerifier func(string) (trace.CaseQuestionRoundVerificationSummary, error)
 type traceCaseMapper func(string) (trace.CaseDisclosureMap, error)
+type traceCaseMapComparer func(string, string, string) (trace.CaseDisclosureMapComparison, error)
 
 func mapTraceCase(path string) (trace.CaseDisclosureMap, error) {
 	casePackage, summary, err := trace.ReadCase(path)
@@ -54,6 +55,41 @@ func runTraceCaseMap(args []string, stdout, stderr io.Writer, mapCase traceCaseM
 	return 0
 }
 
+func compareTraceCaseMaps(firstWorkspace, secondWorkspace, commitmentSHA256 string) (trace.CaseDisclosureMapComparison, error) {
+	return trace.CompareCaseDisclosureMapWorkspaces(firstWorkspace, secondWorkspace, commitmentSHA256)
+}
+
+func runTraceCaseMapCompare(args []string, stdout, stderr io.Writer, compare traceCaseMapComparer) int {
+	flags := flag.NewFlagSet("trace case map compare", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	commitmentSHA256 := flags.String("commitment-sha256", "", "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 2 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+	if !trace.ValidSHA256(*commitmentSHA256) {
+		_, _ = io.WriteString(stderr, "ariadne: trace case map compare: commitment SHA-256 must be 64 lowercase hexadecimal characters\n")
+		return 2
+	}
+	result, err := compare(flags.Arg(0), flags.Arg(1), *commitmentSHA256)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: trace case map compare: %v\n", err)
+		return 1
+	}
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(result); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: trace case map compare: write output: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if err := writeTraceCaseMapComparison(stdout, result); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: trace case map compare: write output: %v\n", err)
+		return 1
+	}
+	return 0
+}
 func runTraceCaseSave(args []string, stdout, stderr io.Writer, save traceCaseSaver) int {
 	flags := flag.NewFlagSet("trace case save", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -341,6 +377,48 @@ func writeTraceCaseMap(stdout io.Writer, result trace.CaseDisclosureMap) error {
 			if _, err := fmt.Fprintf(stdout, "  source: %s\n  adapter: %s\n  channel: %s\n  kind: %s\n  destination: %s\n  trace_count: %d\n  evidence_state: %s\n", observation.Source, observation.Adapter, observation.Channel, observation.Kind, observation.Destination, observation.TraceCount, observation.EvidenceState); err != nil {
 				return err
 			}
+		}
+	}
+	return nil
+}
+
+func writeTraceCaseMapComparison(stdout io.Writer, result trace.CaseDisclosureMapComparison) error {
+	if _, err := fmt.Fprintf(stdout, "trace case disclosure maps compared\nschema_version: %d\ncomparison_id: %s\ncomparison_question: %s\norder_basis: %s\nresult: %s\ninvestigation_commitment_sha256: %s\nfirst_case_sha256: %s\nsecond_case_sha256: %s\nfirst_round_sha256: %s\nsecond_round_sha256: %s\nfirst_coverage_state: %s\nsecond_coverage_state: %s\nevidence_state: %s\ncompared_categories: %d\ncompared_boundaries: %d\n", result.SchemaVersion, result.ComparisonID, result.ComparisonQuestion, result.OrderBasis, result.Result, result.InvestigationCommitmentSHA256, result.FirstCaseSHA256, result.SecondCaseSHA256, result.FirstRoundSHA256, result.SecondRoundSHA256, result.FirstCoverageState, result.SecondCoverageState, result.EvidenceState, result.ComparedCategories, result.ComparedBoundaries); err != nil {
+		return err
+	}
+	if result.IncomparableReason != "" {
+		if _, err := fmt.Fprintf(stdout, "incomparable_reason: %s\n", result.IncomparableReason); err != nil {
+			return err
+		}
+	}
+	for _, category := range result.AddedCategories {
+		if _, err := fmt.Fprintf(stdout, "- added_category: %s\n", category); err != nil {
+			return err
+		}
+	}
+	for _, category := range result.RemovedCategories {
+		if _, err := fmt.Fprintf(stdout, "- removed_category: %s\n", category); err != nil {
+			return err
+		}
+	}
+	for _, category := range result.UnknownCategories {
+		if _, err := fmt.Fprintf(stdout, "- unknown_category: %s\n", category); err != nil {
+			return err
+		}
+	}
+	if err := writeTraceCaseMapComparisonBoundaries(stdout, "added_boundary", result.AddedBoundaries); err != nil {
+		return err
+	}
+	if err := writeTraceCaseMapComparisonBoundaries(stdout, "removed_boundary", result.RemovedBoundaries); err != nil {
+		return err
+	}
+	return writeTraceCaseMapComparisonBoundaries(stdout, "unknown_boundary", result.UnknownBoundaries)
+}
+
+func writeTraceCaseMapComparisonBoundaries(stdout io.Writer, label string, boundaries []trace.CaseDisclosureMapBoundaryChange) error {
+	for _, boundary := range boundaries {
+		if _, err := fmt.Fprintf(stdout, "- %s: %s/%s/%s/%s/%s/%s\n", label, boundary.Category, boundary.Source, boundary.Adapter, boundary.Channel, boundary.Kind, boundary.Destination); err != nil {
+			return err
 		}
 	}
 	return nil

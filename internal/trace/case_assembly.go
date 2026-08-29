@@ -33,9 +33,10 @@ type CaseAssemblyPlanEntry struct {
 // CaseAssemblyPlan is the local-only input for assembling a portable case and
 // its disclosure-map question round in one atomic workspace.
 type CaseAssemblyPlan struct {
-	SchemaVersion int                     `json:"schema_version"`
-	OrderBasis    string                  `json:"order_basis"`
-	Entries       []CaseAssemblyPlanEntry `json:"entries"`
+	SchemaVersion                 int                     `json:"schema_version"`
+	OrderBasis                    string                  `json:"order_basis"`
+	InvestigationCommitmentSHA256 string                  `json:"investigation_commitment_sha256,omitempty"`
+	Entries                       []CaseAssemblyPlanEntry `json:"entries"`
 }
 
 // CaseAssemblyQuestionSummary is the safe result of one fixed disclosure-map
@@ -50,12 +51,13 @@ type CaseAssemblyQuestionSummary struct {
 // repeats only their bounded disclosure-question results. It contains no
 // local paths or source-specific values.
 type CaseAssemblySummary struct {
-	SchemaVersion         int                           `json:"schema_version"`
-	Entries               int                           `json:"entries"`
-	CaseSHA256            string                        `json:"case_sha256"`
-	DisclosureRoundSHA256 string                        `json:"disclosure_round_sha256"`
-	CoverageState         evidence.State                `json:"coverage_state"`
-	Questions             []CaseAssemblyQuestionSummary `json:"questions"`
+	SchemaVersion                 int                           `json:"schema_version"`
+	Entries                       int                           `json:"entries"`
+	InvestigationCommitmentSHA256 string                        `json:"investigation_commitment_sha256,omitempty"`
+	CaseSHA256                    string                        `json:"case_sha256"`
+	DisclosureRoundSHA256         string                        `json:"disclosure_round_sha256"`
+	CoverageState                 evidence.State                `json:"coverage_state"`
+	Questions                     []CaseAssemblyQuestionSummary `json:"questions"`
 }
 
 // ReadCaseAssemblyPlan reads and validates a local assembly plan.
@@ -156,8 +158,14 @@ func AssembleCase(planPath, outputDir string) (CaseAssemblySummary, error) {
 		})
 	}
 	casePath := filepath.Join(stagingDir, "case.json")
-	if _, err := SaveCase(inputs, casePath); err != nil {
-		return CaseAssemblySummary{}, fmt.Errorf("trace case assembly case: %w", err)
+	var caseErr error
+	if plan.InvestigationCommitmentSHA256 == "" {
+		_, caseErr = SaveCase(inputs, casePath)
+	} else {
+		_, caseErr = SaveCaseWithCommitment(plan.InvestigationCommitmentSHA256, inputs, casePath)
+	}
+	if caseErr != nil {
+		return CaseAssemblySummary{}, fmt.Errorf("trace case assembly case: %w", caseErr)
 	}
 	roundPath := filepath.Join(stagingDir, "disclosure-round.json")
 	if _, err := SaveCaseDisclosureQuestionRound(casePath, roundPath); err != nil {
@@ -218,6 +226,9 @@ func validateCaseAssemblyPlan(plan CaseAssemblyPlan) error {
 	if plan.OrderBasis != "caller" {
 		return errors.New("trace case assembly plan order_basis is invalid")
 	}
+	if plan.InvestigationCommitmentSHA256 != "" && !ValidSHA256(plan.InvestigationCommitmentSHA256) {
+		return errors.New("trace case assembly plan investigation commitment is invalid")
+	}
 	if plan.Entries == nil || len(plan.Entries) == 0 || len(plan.Entries) > maxCaseEntries {
 		return errors.New("trace case assembly plan entries are invalid")
 	}
@@ -252,12 +263,13 @@ func caseAssemblySummary(caseSummary CaseVerificationSummary, round CaseDisclosu
 		})
 	}
 	return CaseAssemblySummary{
-		SchemaVersion:         caseAssemblySummarySchemaVersion,
-		Entries:               caseSummary.Entries,
-		CaseSHA256:            caseSummary.CaseSHA256,
-		DisclosureRoundSHA256: roundSummary.RoundSHA256,
-		CoverageState:         round.CoverageState,
-		Questions:             questions,
+		SchemaVersion:                 caseAssemblySummarySchemaVersion,
+		InvestigationCommitmentSHA256: caseSummary.InvestigationCommitmentSHA256,
+		Entries:                       caseSummary.Entries,
+		CaseSHA256:                    caseSummary.CaseSHA256,
+		DisclosureRoundSHA256:         roundSummary.RoundSHA256,
+		CoverageState:                 round.CoverageState,
+		Questions:                     questions,
 	}
 }
 
@@ -267,6 +279,9 @@ func validateCaseAssemblySummary(summary CaseAssemblySummary) error {
 	}
 	if !ValidSHA256(summary.CaseSHA256) || !ValidSHA256(summary.DisclosureRoundSHA256) {
 		return errors.New("trace case assembly summary identities are invalid")
+	}
+	if summary.InvestigationCommitmentSHA256 != "" && !ValidSHA256(summary.InvestigationCommitmentSHA256) {
+		return errors.New("trace case assembly summary investigation commitment is invalid")
 	}
 	if summary.CoverageState != evidence.Observed && summary.CoverageState != evidence.Unknown {
 		return errors.New("trace case assembly summary coverage_state is invalid")

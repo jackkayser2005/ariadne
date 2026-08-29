@@ -274,6 +274,9 @@ go run ./cmd/ariadne trace case assemble --json \
 go run ./cmd/ariadne trace case assemble verify --json .ariadne/case-workspace
 go run ./cmd/ariadne trace case verify --json .ariadne/case-workspace/case.json
 go run ./cmd/ariadne trace case map ask all --json .ariadne/case-workspace/case.json
+go run ./cmd/ariadne trace case map compare --json \
+  --commitment-sha256 <private-investigation-digest> \
+  .ariadne/first-case-workspace .ariadne/second-case-workspace
 ```
 
 The plan is a local-only input: its artifact paths are used while verifying
@@ -286,7 +289,11 @@ confirms that the retained disclosure round is the one derived from the
 current case before the workspace is handed to review.
 Assembly is a convenience coordinator over the existing verifiers, not a new
 evidence store, capture adapter, authorization proof, chronology model, or
-causal claim.
+causal claim. To make two workspaces comparable, set the same lowercase
+64-character `investigation_commitment_sha256` in both local assembly plans;
+the `--commitment-sha256` argument is checked against both embedded case
+packages. Legacy workspaces without that binding remain readable but compare as
+`incomparable`.
 
 The lower-level form remains available when a caller needs explicit control:
 
@@ -354,6 +361,16 @@ destination, and retained-trace count. Aggregate `coverage_state` becomes
 `unknown` when any contributing trace is partial; directly retained
 observations remain `observed`. The map is recomputed from the verified case
 and is not persisted as a second evidence store.
+`trace case map compare` is the next cross-case reflection boundary. It
+re-verifies both assembled workspaces, requires the same caller-supplied
+private investigation commitment and compatible reviewed source provenance,
+then reports `same`, `changed`, or `incomparable` with added, removed, and
+coverage-unresolved categories and source/adapter/channel/kind/destination
+boundaries. If either workspace is partial, an absent category or boundary is
+never called removed; supported positive observations may still be reported,
+but the aggregate `evidence_state` remains `unknown`. The output carries both
+case and disclosure-round identities plus the commitment digest, and contains
+no workspace paths, URLs, arguments, identifiers, or captured values.
 
 The nested `trace case map` question catalog adds two bounded reflections:
 `disclosure-map-coverage` returns `complete` with `observed` evidence only when
