@@ -665,6 +665,23 @@ Malformed or tampered input produces only `trace replication unavailable`.
 
 ## Portable cross-source case package
 
+For the common cross-source workflow, the local-only case plan can assemble
+already verified archives or replication ledgers and derive the disclosure
+question round in one atomic workspace:
+
+```console
+go run ./cmd/ariadne trace case assemble --json \
+  --plan examples/case-assembly-plan.json \
+  --output .ariadne/case-workspace
+```
+
+The plan paths are consumed only during assembly and never enter the output.
+The destination must be new; a successful workspace contains `case.json` and
+`disclosure-round.json`, while the safe command summary reports their
+canonical identities, coverage, and fixed question results. This coordinates
+existing verifiers and does not add capture, authorization, chronology, or
+causal semantics.
+
 Once standalone archives or replicated ledgers have their fixed question
 rounds, they can be joined into one bounded, caller-ordered package:
 

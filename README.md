@@ -263,7 +263,29 @@ causality.
 
 Join already verified trace history into one portable case package. The case
 embeds caller-ordered trace archives or replicated ledgers together with their
-matching fixed question rounds, so verification never reopens source paths:
+matching fixed question rounds, so verification never reopens source paths.
+For the common cross-source workflow, assemble those inputs and derive the
+disclosure question round in one atomic local workspace:
+
+```console
+go run ./cmd/ariadne trace case assemble --json \
+  --plan examples/case-assembly-plan.json \
+  --output .ariadne/case-workspace
+go run ./cmd/ariadne trace case verify --json .ariadne/case-workspace/case.json
+go run ./cmd/ariadne trace case map ask all --json .ariadne/case-workspace/case.json
+```
+
+The plan is a local-only input: its artifact paths are used while verifying
+the existing archives or replication ledgers, but are never copied into the
+workspace or summary. The destination must not already exist. On success the
+workspace contains only `case.json` and `disclosure-round.json`; the JSON or
+human summary reports their identities, coverage, and fixed question results.
+Assembly is a convenience coordinator over the existing verifiers, not a new
+evidence store, capture adapter, authorization proof, chronology model, or
+causal claim.
+
+The lower-level form remains available when a caller needs explicit control:
+
 
 ```console
 go run ./cmd/ariadne trace case save --json \

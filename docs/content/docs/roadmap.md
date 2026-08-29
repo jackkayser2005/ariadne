@@ -292,6 +292,15 @@ tracing.
     canonical identities, and internal binding without reopening source inputs;
     it does not authenticate the original case unless that case is separately
     verified.
+23. **Verified case assembly.** A bounded local-only `CaseAssemblyPlan` now
+coordinates already verified trace archives or replication ledgers, creates the
+portable case, derives its disclosure-map question round from that newly
+verified case, and atomically publishes a new workspace containing only
+`case.json` and `disclosure-round.json`. The CLI summary exposes only safe
+identities, coverage, and fixed question results. This improves the usable
+cross-source workflow without adding a capture adapter, evidence store,
+authorization proof, chronology model, or causal claim.
+
 The local review page is intentionally read-only. Its compact question round
 and receipt links, including stable history and receipt identities, are a
 bounded UI-control surface for a computer-use driver;
@@ -385,6 +394,11 @@ promoting repeated outcomes into causal claims. Its fixed question round and
 selected receipt now provide the durable handoff for asking those bounded
 questions again without reopening source paths or captured values.
 
+The case assembly command must reject malformed or unsupported local plans,
+leave no destination on failed input, publish only after re-verifying the
+generated case and disclosure round, preserve caller order, and keep plan paths
+out of generated artifacts and summaries.
+
 ## Acceptance gates
 
 - Go changes pass formatting, build, vet, race-enabled tests, and at least 90%
@@ -450,6 +464,10 @@ questions again without reopening source paths or captured values.
   is GET-only, renders only bounded comparison projections, escapes dynamic
   output, and fails closed without paths, payloads, URLs, captured values, or
   detailed errors.
+- Case assembly accepts only bounded local plans, requires a new destination,
+  re-verifies the generated case and disclosure round before publication,
+  preserves caller order, and never renders or persists plan paths in its
+  safe summary or portable artifacts.
 - UI changes pass deterministic handler tests; use computer-use only when a
   concrete rendered-flow check is needed and the host supports it.
 - No review page, answer, export, or log exposes captured values, secrets, or
