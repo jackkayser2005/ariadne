@@ -90,6 +90,14 @@ authority, and uses no-store/security headers. This closes the first
 observe/authenticate/reduce/replay/compare/verify slice into a usable local
 inspection surface without turning the desktop page into a capture service.
 
+**Current receipt trust-boundary slice.** Android and browser minimization
+verification now exposes the canonical root receipt identity in both human and
+JSON output and accepts an independently retained `--expect-sha256` trust
+anchor. This makes a copied run directory independently checkable without
+reopening the original plan or values; a mismatch fails closed. The digest
+binds the raw-value-free receipt and verified child identities, but it is not a
+signature and does not make the underlying evidence universally causal.
+
 **Current reflection slice (minimization questions).** The minimum-disclosure
 ladder now has a fixed question catalog for selection and support. A verified
 run can produce a portable question round, and a selected answer can be

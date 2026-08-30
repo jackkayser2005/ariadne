@@ -112,6 +112,18 @@ that same loopback server:
 
 ```console
 go run ./cmd/ariadne experiment minimize verify --json <minimization-directory>
+```
+
+Record the returned `receipt_sha256` outside the run directory. A later
+offline check can require that exact trust anchor:
+
+```console
+go run ./cmd/ariadne experiment minimize verify --json \
+  --expect-sha256 <receipt-sha256> \
+  <minimization-directory>
+```
+
+```console
 go run ./cmd/ariadne experiment serve \
   --minimization <minimization-directory> \
   <archive-root>

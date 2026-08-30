@@ -89,7 +89,7 @@ const usage = `usage:
 	ariadne browser fixture replicate [--json] --procedure <procedure.json> --driver <executable> [--driver-arg <arg>] --pairs <n> --output <directory>
 	ariadne browser fixture replicate verify [--json] <replicated-directory>
 	ariadne browser fixture minimize [--json] --plan <plan.json> --procedure <procedure.json> --driver <executable> [--driver-arg <arg>] --pairs <n> --output <directory>
-	ariadne browser fixture minimize verify [--json] <minimization-directory>
+	ariadne browser fixture minimize verify [--json] [--expect-sha256 <digest>] <minimization-directory>
 	ariadne browser fixture minimize questions [--json]
 	ariadne browser fixture minimize ask [--json] <minimization-directory> <question-id>
 	ariadne browser fixture minimize ask all [--json] <minimization-directory>
@@ -105,7 +105,7 @@ const usage = `usage:
 	ariadne experiment replicate [--adb <path>] --device <serial> --package <package> --pairs <n> --output <directory> <manifest.json>
 	ariadne experiment replicate verify [--json] <replicated-directory>
   ariadne experiment minimize [--json] [--adb <path>] --device <serial> --package <package> --pairs <n> --output <directory> <plan.json>
-  ariadne experiment minimize verify [--json] <minimization-directory>
+  ariadne experiment minimize verify [--json] [--expect-sha256 <digest>] <minimization-directory>
 	ariadne experiment minimize questions [--json]
 	ariadne experiment minimize ask [--json] <minimization-directory> <question-id>
 	ariadne experiment minimize ask all [--json] <minimization-directory>
@@ -395,10 +395,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runMinimizationAsk(args[4:], stdout, stderr, browser.AskFixtureMinimizationQuestion)
 	}
 	if len(args) >= 4 && args[0] == "browser" && args[1] == "fixture" && args[2] == "minimize" && args[3] == "verify" {
-		return runBrowserFixtureMinimizeVerify(args[4:], stdout, stderr, browser.VerifyFixtureMinimization)
+		return runBrowserFixtureMinimizeVerify(args[4:], stdout, stderr, browser.VerifyFixtureMinimizationWithIdentity)
 	}
 	if len(args) >= 3 && args[0] == "browser" && args[1] == "fixture" && args[2] == "minimize" {
-		return runBrowserFixtureMinimize(args[3:], stdout, stderr, browser.RunFixtureMinimization, browser.VerifyFixtureMinimization)
+		return runBrowserFixtureMinimize(args[3:], stdout, stderr, browser.RunFixtureMinimization, browser.VerifyFixtureMinimizationWithIdentity)
 	}
 	if len(args) >= 4 && args[0] == "browser" && args[1] == "fixture" && args[2] == "replicate" && args[3] == "verify" {
 		return runBrowserFixtureReplicateVerify(args[4:], stdout, stderr, browser.VerifyFixtureReplicated)
@@ -416,7 +416,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runExperimentReplicate(args[2:], stdout, stderr, adb.Check, adb.RunReplicated)
 	}
 	if len(args) >= 3 && args[0] == "experiment" && args[1] == "minimize" && args[2] == "verify" {
-		return runMinimizationVerify(args[3:], stdout, stderr, minimize.Verify)
+		return runMinimizationVerify(args[3:], stdout, stderr, minimize.VerifyWithIdentity)
 	}
 	if len(args) >= 3 && args[0] == "experiment" && args[1] == "minimize" && args[2] == "questions" {
 		return runMinimizationQuestions(args[3:], stdout, stderr, minimize.MinimizationQuestions)
@@ -1238,7 +1238,12 @@ type minimizationExecutor func(
 ) (minimize.MinimizationSummary, error)
 type bundleWriter func(string) (bundle.Summary, error)
 type replicatedVerifier func(string) (bundle.ReplicatedExperimentSummary, error)
-type minimizationVerifier func(string) (minimize.MinimizationSummary, error)
+type minimizationVerifier func(string) (minimize.MinimizationSummary, string, error)
+
+type minimizationVerificationOutput struct {
+	minimize.MinimizationSummary
+	ReceiptSHA256 string `json:"receipt_sha256"`
+}
 type bundleExporter func(string, string) (bundle.ExportSummary, error)
 type bundleExportVerifier func(string) (bundle.ExportVerificationSummary, error)
 type bundleFinder func(string, string) (bundle.Finding, error)
@@ -1395,23 +1400,45 @@ func runMinimizationVerify(
 	flags := flag.NewFlagSet("experiment minimize verify", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	jsonOutput := flags.Bool("json", false, "")
+	expectedSHA256 := flags.String("expect-sha256", "", "")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
 		_, _ = io.WriteString(stderr, usage)
 		return 2
 	}
-	summary, err := verify(flags.Arg(0))
+	expectedSHA256Provided := false
+	flags.Visit(func(visited *flag.Flag) {
+		if visited.Name == "expect-sha256" {
+			expectedSHA256Provided = true
+		}
+	})
+	if expectedSHA256Provided && !trace.ValidSHA256(*expectedSHA256) {
+		_, _ = io.WriteString(stderr, "ariadne: experiment minimize verify: expect-sha256 must be a lowercase 64-character SHA-256 digest\n")
+		return 2
+	}
+	summary, receiptSHA256, err := verify(flags.Arg(0))
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment minimize verify: %v\n", err)
 		return 1
 	}
+	if expectedSHA256Provided && receiptSHA256 != *expectedSHA256 {
+		_, _ = io.WriteString(stderr, "ariadne: experiment minimize verify: minimization receipt SHA-256 does not match expected identity\n")
+		return 1
+	}
 	if *jsonOutput {
-		if err := json.NewEncoder(stdout).Encode(summary); err != nil {
+		if err := json.NewEncoder(stdout).Encode(minimizationVerificationOutput{
+			MinimizationSummary: summary,
+			ReceiptSHA256:       receiptSHA256,
+		}); err != nil {
 			_, _ = fmt.Fprintf(stderr, "ariadne: experiment minimize verify: write output: %v\n", err)
 			return 1
 		}
 		return 0
 	}
 	if err := writeMinimizationSummary(stdout, "minimization verified", summary); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment minimize verify: write output: %v\n", err)
+		return 1
+	}
+	if _, err := fmt.Fprintf(stdout, "receipt_sha256: %s\n", receiptSHA256); err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment minimize verify: write output: %v\n", err)
 		return 1
 	}

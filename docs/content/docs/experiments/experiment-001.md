@@ -249,6 +249,18 @@ go run ./cmd/ariadne experiment minimize --device emulator-5554 --package dev.ar
 go run ./cmd/ariadne experiment minimize verify --json .ariadne/runs/android-location-minimize
 ```
 
+The verifier returns the observed root receipt SHA-256. For an independently
+retained trust anchor, require the exact canonical receipt identity:
+
+```console
+go run ./cmd/ariadne experiment minimize verify --json \
+  --expect-sha256 <receipt-sha256> \
+  .ariadne/runs/android-location-minimize
+```
+
+This pins the raw-value-free receipt and its verified child identities; it is
+not a signature or a universal causal claim.
+
 The reference candidate is not executed as a treatment; it supplies the fixed
 baseline for each lower-disclosure candidate. Every candidate runs through the
 same two-order replicated engine, and the minimization command automatically

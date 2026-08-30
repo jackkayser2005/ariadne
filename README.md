@@ -65,6 +65,19 @@ go run ./cmd/ariadne experiment minimize --device emulator-5554 --package dev.ar
 go run ./cmd/ariadne experiment minimize verify --json .ariadne/runs/android-location-minimize
 ```
 
+The verifier prints the observed root receipt SHA-256 in human output and adds
+`receipt_sha256` to JSON output. To require an identity retained outside the
+run directory, pass it back as a trust anchor:
+
+```console
+go run ./cmd/ariadne experiment minimize verify --json \
+  --expect-sha256 <receipt-sha256> \
+  .ariadne/runs/android-location-minimize
+```
+
+An expected digest pins the canonical receipt bytes and the verified child
+identities; it does not sign the run or prove universal causal truth.
+
 Each candidate gets a separate replicated evidence directory. The root
 `minimization.json` receipt contains candidate IDs, child receipt identities,
 counterfactual outcomes, and evidence states, but never candidate values. The
@@ -461,6 +474,11 @@ go run ./cmd/ariadne browser fixture minimize --json \
 go run ./cmd/ariadne browser fixture minimize verify --json \
   .ariadne/browser-account-minimize
 ```
+
+The browser verifier also prints and returns the canonical root receipt
+identity. Use `--expect-sha256 <receipt-sha256>` on the verify command when a
+trusted digest is available outside the copied run directory; a mismatch
+fails closed before any review surface consumes the ladder.
 
 The browser adapter binds only the safe candidates `reference` and `omitted`
 to the synthetic `account-id` input. Its fixed functionality criterion is
