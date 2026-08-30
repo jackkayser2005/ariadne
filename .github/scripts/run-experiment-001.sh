@@ -98,7 +98,7 @@ minimization_verify_json="${RUNNER_TEMP}/ariadne-minimization-verify.json"
 "${ariadne}" experiment minimize verify --json \
   "${minimization_dir}" >"${minimization_verify_json}"
 jq -e '
-  (keys_unsorted == ["schema_version", "plan_name", "variable", "reference_candidate", "functionality_criterion", "pairs_per_order", "evidence_state", "selection_state", "selected_candidate", "candidate_results"]) and
+  (keys_unsorted == ["schema_version", "plan_name", "variable", "reference_candidate", "functionality_criterion", "pairs_per_order", "evidence_state", "selection_state", "selected_candidate", "candidate_results", "receipt_sha256"]) and
   (.schema_version == 1) and
   (.plan_name == "android-location-minimize") and
   (.variable == "location") and
@@ -109,6 +109,7 @@ jq -e '
   (.selection_state == "selected") and
   (.selected_candidate == "omitted") and
   (.candidate_results | length == 2) and
+  (.receipt_sha256 | test("^[0-9a-f]{64}$")) and
   ([.candidate_results[].id] == ["city", "omitted"]) and
   (all(.candidate_results[]; .classification == "sufficient" and .outcome == "no-change-observed" and .evidence_state == "observed" and .pairs == 2 and .pairs_per_order == 1 and .completed_pairs == 2 and .changed_pairs == 0 and .no_change_pairs == 2 and .unknown_pairs == 0 and (.receipt_sha256 | test("^[0-9a-f]{64}$"))))
 ' "${minimization_verify_json}"
