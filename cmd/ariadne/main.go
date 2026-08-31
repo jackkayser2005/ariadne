@@ -56,7 +56,7 @@ const usage = `usage:
 	ariadne trace study ask receipt [--json] <round.json> <question-id>
 	ariadne trace study ask receipt save [--json] <round.json> <question-id> <receipt.json>
 	ariadne trace study ask receipt verify [--json] [--expect-sha256 <digest>] <receipt.json>
-	ariadne trace archive create [--json] --trace <trace.json> --session <session.json> ... <archive.json>
+	ariadne trace archive create [--json] (--trace <trace.json> --session <session.json> ... | --run <adapter-run-directory> ...) <archive.json>
 	ariadne trace archive verify [--json] [--expect-sha256 <digest>] <archive.json>
 	ariadne trace archive questions [--json]
 	ariadne trace archive ask [--json] <archive.json> <question-id>
@@ -183,7 +183,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(args) >= 3 && args[0] == "trace" && args[1] == "archive" {
 		if args[2] == "create" {
-			return runTraceArchiveCreate(args[3:], stdout, stderr, trace.SaveArchive)
+			return runTraceArchiveCreate(args[3:], stdout, stderr, trace.SaveArchive, trace.SaveSourceAdapterArchive)
 		}
 		if args[2] == "verify" {
 			return runTraceArchiveVerify(args[3:], stdout, stderr, trace.VerifyArchive)

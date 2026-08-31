@@ -377,40 +377,95 @@ func VerifySourceAdapterRun(rootDir string) (SourceAdapterRunSummary, error) {
 	return verifySourceAdapterRun(rootDir)
 }
 
+type verifiedSourceAdapterRun struct {
+	Receipt        SourceAdapterReceipt
+	ReceiptSHA256  string
+	Trace          Document
+	TraceSummary   VerificationSummary
+	Session        Session
+	SessionSummary SessionVerificationSummary
+}
+
 func verifySourceAdapterRun(rootDir string) (SourceAdapterRunSummary, error) {
-	if err := validateSourceAdapterRunDirectory(rootDir); err != nil {
+	run, err := readVerifiedSourceAdapterRun(rootDir)
+	if err != nil {
 		return SourceAdapterRunSummary{}, err
+	}
+	return SourceAdapterRunSummary{
+		ReceiptSHA256: run.ReceiptSHA256,
+		Receipt:       run.Receipt,
+		Trace:         run.TraceSummary,
+		Session:       run.SessionSummary,
+	}, nil
+}
+
+func readVerifiedSourceAdapterRun(rootDir string) (verifiedSourceAdapterRun, error) {
+	if err := validateSourceAdapterRunDirectory(rootDir); err != nil {
+		return verifiedSourceAdapterRun{}, err
 	}
 	receiptData, err := readSourceAdapterFile(filepath.Join(rootDir, sourceAdapterReceiptFile), maxSourceAdapterReceiptBytes)
 	if err != nil {
-		return SourceAdapterRunSummary{}, errors.New("source adapter receipt read failed")
+		return verifiedSourceAdapterRun{}, errors.New("source adapter receipt read failed")
 	}
 	receipt, err := DecodeSourceAdapterReceipt(receiptData)
 	if err != nil {
-		return SourceAdapterRunSummary{}, err
+		return verifiedSourceAdapterRun{}, err
 	}
-	tracePath := filepath.Join(rootDir, sourceAdapterTraceFile)
-	sessionPath := filepath.Join(rootDir, sourceAdapterSessionFile)
-	traceSummary, err := Verify(tracePath)
+	traceData, err := readSourceAdapterFile(filepath.Join(rootDir, sourceAdapterTraceFile), maxDocumentBytes)
 	if err != nil {
-		return SourceAdapterRunSummary{}, fmt.Errorf("source adapter trace: %w", err)
+		return verifiedSourceAdapterRun{}, errors.New("source adapter trace read failed")
 	}
-	sessionSummary, err := VerifySession(sessionPath, tracePath)
+	document, err := Decode(traceData)
 	if err != nil {
-		return SourceAdapterRunSummary{}, fmt.Errorf("source adapter session: %w", err)
+		return verifiedSourceAdapterRun{}, fmt.Errorf("source adapter trace: %w", err)
 	}
+	traceSHA256, err := SHA256(document)
+	if err != nil {
+		return verifiedSourceAdapterRun{}, fmt.Errorf("source adapter trace: %w", err)
+	}
+	traceSummary := VerificationSummary{
+		SchemaVersion: document.SchemaVersion,
+		Redacted:      document.Redacted,
+		Scope:         document.Scope,
+		Completeness:  document.Completeness,
+		Events:        len(document.Events),
+		TraceSHA256:   traceSHA256,
+	}
+	sessionData, err := readSourceAdapterFile(filepath.Join(rootDir, sourceAdapterSessionFile), maxSessionBytes)
+	if err != nil {
+		return verifiedSourceAdapterRun{}, errors.New("source adapter session read failed")
+	}
+	session, err := DecodeSession(sessionData)
+	if err != nil {
+		return verifiedSourceAdapterRun{}, fmt.Errorf("source adapter session: %w", err)
+	}
+	if err := validateSessionBinding(session, document, traceSHA256); err != nil {
+		return verifiedSourceAdapterRun{}, fmt.Errorf("source adapter session: %w", err)
+	}
+	sessionSHA256, err := SessionSHA256(session)
+	if err != nil {
+		return verifiedSourceAdapterRun{}, errors.New("source adapter session verification failed")
+	}
+	sessionSummary := sessionVerificationSummary(session, sessionSHA256)
 	if receipt.Adapter != sessionSummary.Adapter || receipt.AdapterVersion != sessionSummary.AdapterVersion ||
 		receipt.Source != sessionSummary.Source || receipt.Scope != sessionSummary.Scope ||
 		receipt.Completeness != sessionSummary.Completeness || receipt.ProcedureSHA256 != sessionSummary.ProcedureSHA256 ||
 		receipt.TraceSHA256 != traceSummary.TraceSHA256 || receipt.SessionSHA256 != sessionSummary.SessionSHA256 ||
 		receipt.Events != traceSummary.Events {
-		return SourceAdapterRunSummary{}, errors.New("source adapter receipt does not match verified artifacts")
+		return verifiedSourceAdapterRun{}, errors.New("source adapter receipt does not match verified artifacts")
 	}
 	receiptSHA256, err := SourceAdapterReceiptSHA256(receipt)
 	if err != nil {
-		return SourceAdapterRunSummary{}, errors.New("source adapter receipt identity failed")
+		return verifiedSourceAdapterRun{}, errors.New("source adapter receipt identity failed")
 	}
-	return SourceAdapterRunSummary{ReceiptSHA256: receiptSHA256, Receipt: receipt, Trace: traceSummary, Session: sessionSummary}, nil
+	return verifiedSourceAdapterRun{
+		Receipt:        receipt,
+		ReceiptSHA256:  receiptSHA256,
+		Trace:          document,
+		TraceSummary:   traceSummary,
+		Session:        session,
+		SessionSummary: sessionSummary,
+	}, nil
 }
 
 func validateSourceAdapterProcedure(procedure SourceAdapterProcedure) error {

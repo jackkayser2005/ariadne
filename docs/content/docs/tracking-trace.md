@@ -100,6 +100,36 @@ without launching the adapter. This proves a bounded consistency and session
 binding boundary. It does not authenticate the external executable, establish
 authorization, inspect unrelated traffic, or provide universal tracing.
 
+## Receipt-bound adapter-run archives
+
+A generic adapter run is now a first-class input to the source-neutral archive
+workflow. Supply one or more already-published run directories in caller order:
+
+~~~console
+go run ./cmd/ariadne trace archive create --json \
+  --run .ariadne/source-adapter-run-1 \
+  --run .ariadne/source-adapter-run-2 \
+  .ariadne/source-adapter-archive.json
+go run ./cmd/ariadne trace archive verify --json \
+  .ariadne/source-adapter-archive.json
+~~~
+
+This creates archive schema version 2. Ariadne reads and validates each run's
+receipt, trace, and session once into memory, embeds the safe receipt with the
+normalized trace/session pair, and re-verifies those links from the portable
+archive. The receipt identity must be unique within the archive. The CLI
+rejects mixing run directories with loose trace/session inputs, and legacy
+schema-version 1 archives remain readable.
+
+The embedded receipt contains only safe adapter, source, scope, completeness,
+event-count, and identity fields. It does not add the raw challenge, driver
+path or arguments, procedure file, adapter response, payloads, URLs, or source
+values to the archive. Verification establishes structural consistency and
+session provenance; it does not authenticate the external executable, prove
+authorization or capture truth, infer chronology, or establish causality.
+The resulting archive can be used unchanged by archive question rounds and
+trace case assembly.
+
 ## Experiment 001 Android producer
 
 After `experiment report` and `experiment verify` succeed, the first producer

@@ -103,6 +103,17 @@ verification rechecks the three artifacts without reopening the adapter. This
 is a consistency and session-binding boundary, not external authenticity,
 authorization proof, universal traffic capture, or causal evidence.
 
+**Current adapter-run archive bridge.** The generic source-adapter handoff now
+flows into the existing source-neutral archive, question-round, and case
+workflow without discarding its portable receipt. A repeated --run archive
+input verifies each three-artifact run into memory once, preserves the safe
+receipt beside its normalized trace and session, emits archive schema version
+2, rejects duplicate receipt identities, and rechecks all receipt-to-artifact
+bindings offline. Loose trace/session archives remain schema version 1 and
+readable. This is still structural consistency and process-session provenance:
+the receipt is not a signature, authorization proof, capture-truth claim,
+chronology model, universal tracer, or causal result.
+
 **Current receipt trust-boundary slice.** Android and browser minimization
 verification now exposes the canonical root receipt identity in both human and
 JSON output and accepts an independently retained `--expect-sha256` trust

@@ -159,6 +159,31 @@ source values. Verification is offline and proves consistency and session
 binding—not external authenticity, target authorization, universal capture, or
 causal impact.
 
+A verified adapter run can also be retained directly in a receipt-bound
+archive. Repeat --run in the caller's intended order:
+
+~~~console
+go run ./cmd/ariadne trace archive create --json \
+  --run .ariadne/source-adapter-run-1 \
+  --run .ariadne/source-adapter-run-2 \
+  .ariadne/source-adapter-archive.json
+go run ./cmd/ariadne trace archive verify --json \
+  .ariadne/source-adapter-archive.json
+go run ./cmd/ariadne trace archive ask all save --json \
+  .ariadne/source-adapter-archive.json .ariadne/source-adapter-round.json
+~~~
+
+This emits archive schema version 2 and preserves each run's safe receipt,
+including its procedure, executable, challenge-commitment, trace, and session
+identities. Ariadne verifies each run into memory before embedding it, then
+rechecks the receipt-to-trace/session bindings whenever the archive is read.
+Duplicate receipt identities and mixed --run plus --trace/--session input are
+rejected. The binding proves artifact consistency and process-session
+provenance only; it is not a signature, authorization proof, capture-truth
+claim, chronology inference, or causal result. The archive can now enter the
+existing question-round and trace-case workflow without losing that provenance.
+
+
 The first browser edge accepts an authorized driver's already-redacted audit and
 projects it into the same trace contract:
 
