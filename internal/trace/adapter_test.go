@@ -488,6 +488,11 @@ func (sourceAdapterErrorReader) Read([]byte) (int, error) {
 	return 0, errors.New("reader failed")
 }
 func TestSourceAdapterDirectoryAndBufferGuards(t *testing.T) {
+	var exhausted sourceAdapterBoundedBuffer
+	if _, err := exhausted.Write([]byte("x")); err == nil || !exhausted.overflow {
+		t.Fatal("zero-limit buffer accepted a write")
+	}
+
 	var buffer sourceAdapterBoundedBuffer
 	buffer.limit = 2
 	if _, err := buffer.Write([]byte("ab")); err != nil || buffer.String() != "ab" {

@@ -10,6 +10,20 @@ import (
 	"testing"
 )
 
+func TestCollectorDeliversOnlyFirstResult(t *testing.T) {
+	collector := &Collector{result: make(chan captureResult, 1)}
+	collector.deliver(captureResult{})
+	collector.deliver(captureResult{observation: Observation{Method: http.MethodGet}})
+	select {
+	case <-collector.result:
+	default:
+		t.Fatal("collector did not deliver the first result")
+	}
+	if len(collector.result) != 0 {
+		t.Fatal("collector delivered a second result")
+	}
+}
+
 func TestCollectorCapturesOneRequest(t *testing.T) {
 	collector, err := Start()
 	if err != nil {

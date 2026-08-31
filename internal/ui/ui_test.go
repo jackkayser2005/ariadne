@@ -1514,6 +1514,15 @@ func TestHandlerEmptyArchive(t *testing.T) {
 	}
 }
 
+func TestHandlerWithHistoryServesFavicon(t *testing.T) {
+	h := HandlerWithHistory(t.TempDir(), "")
+	recorder := httptest.NewRecorder()
+	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/favicon.ico", nil))
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("favicon status = %d, body=%q", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestHandlerHidesArchiveErrors(t *testing.T) {
 	h := newHandler(handler{
 		root:  "private-root",
