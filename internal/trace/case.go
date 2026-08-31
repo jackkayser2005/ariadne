@@ -887,8 +887,7 @@ func validateCaseAnswer(answer CaseAnswer, question CaseQuestion, caseSHA256 str
 }
 
 func validateCaseSourceSummary(source CaseSourceSummary) error {
-	expectedSource, ok := adapterSource(source.Adapter)
-	if !ok || source.Source != expectedSource || source.Entries <= 0 || source.Entries > maxCaseSummaryEntries {
+	if !validAdapterSource(source.Adapter, source.Source) || source.Entries <= 0 || source.Entries > maxCaseSummaryEntries {
 		return errors.New("source summary values are invalid")
 	}
 	return nil

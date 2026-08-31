@@ -90,6 +90,19 @@ authority, and uses no-store/security headers. This closes the first
 observe/authenticate/reduce/replay/compare/verify slice into a usable local
 inspection surface without turning the desktop page into a capture service.
 
+**Current generic source-adapter boundary slice.** The source-neutral trace now
+has a reusable process handoff for explicitly authorized source adapters. A
+bounded procedure declares only an external-* adapter ID, fixed source label,
+scope, duration, and event limit. Ariadne sends a one-shot random challenge and
+procedure digest over stdin, invokes the absolute executable without a shell,
+limits stdout/stderr and runtime, and accepts only one redacted trace response
+bound to that request. A successful run publishes exactly trace, session, and
+portable receipt artifacts atomically; the receipt retains only safe labels and
+procedure/executable/challenge-commitment/trace/session identities. Offline
+verification rechecks the three artifacts without reopening the adapter. This
+is a consistency and session-binding boundary, not external authenticity,
+authorization proof, universal traffic capture, or causal evidence.
+
 **Current receipt trust-boundary slice.** Android and browser minimization
 verification now exposes the canonical root receipt identity in both human and
 JSON output and accepts an independently retained `--expect-sha256` trust
@@ -430,6 +443,11 @@ out of generated artifacts and summaries.
 
 - Go changes pass formatting, build, vet, race-enabled tests, and at least 90%
   statement coverage.
+- Generic source-adapter runs reject duplicate, unknown, trailing, oversized,
+  mismatched-challenge, mismatched-procedure, source/scope/event-drift, unsafe
+  driver path or argument, output/diagnostic overflow, and timeout cases.
+  Successful runs publish exactly three raw-value-free artifacts whose receipt
+  and session identities verify offline; no failure becomes a privacy assurance.
 - Fixture or runner changes pass the hosted real-emulator workflow when local
   Android tooling is unavailable.
 - The local browser fixture producer and its two-order replication pass the

@@ -28,9 +28,11 @@ const usage = `usage:
   ariadne android check [--adb <path>] --device <serial> --package <package>
 	ariadne trace verify [--json] [--expect-sha256 <digest>] <trace.json>
 	ariadne trace compare [--json] <baseline-trace.json> <treatment-trace.json>
-	ariadne trace session create [--json] --adapter <adapter> --procedure-sha256 <digest> [--adapter-version <n>] <trace.json> <session.json>
+	ariadne trace adapter run [--json] --procedure <procedure.json> --driver <executable> [--driver-arg <arg>] --output <directory>
+	ariadne trace adapter verify [--json] [--expect-sha256 <digest>] <directory>
+	ariadne trace session create [--json] --adapter <adapter> --procedure-sha256 <digest> [--adapter-version <n>] [--source <source>] <trace.json> <session.json>
 	ariadne trace session verify [--json] [--expect-sha256 <digest>] <session.json> <trace.json>
-	ariadne trace session pair create [--json] --adapter <adapter> --procedure-sha256 <digest> [--adapter-version <n>] --order <baseline-treatment|treatment-baseline> <baseline-trace.json> <treatment-trace.json> <baseline-session.json> <treatment-session.json>
+	ariadne trace session pair create [--json] --adapter <adapter> --procedure-sha256 <digest> [--adapter-version <n>] [--source <source>] --order <baseline-treatment|treatment-baseline> <baseline-trace.json> <treatment-trace.json> <baseline-session.json> <treatment-session.json>
 	ariadne trace session pair verify [--json] <baseline-session.json> <baseline-trace.json> <treatment-session.json> <treatment-trace.json>
 	ariadne trace session pair compare [--json] <baseline-session.json> <baseline-trace.json> <treatment-session.json> <treatment-trace.json>
 	ariadne trace replication save [--json] [--reset-confirmed <pair-index>] <ledger.json> <baseline-trace.json> <treatment-trace.json> <baseline-session.json> <treatment-session.json> ...
@@ -170,6 +172,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(args) >= 2 && args[0] == "trace" && args[1] == "compare" {
 		return runTraceCompare(args[2:], stdout, stderr, trace.CompareFiles)
+	}
+	if len(args) >= 3 && args[0] == "trace" && args[1] == "adapter" {
+		if args[2] == "run" {
+			return runTraceAdapter(args[3:], stdout, stderr, trace.RunSourceAdapter)
+		}
+		if args[2] == "verify" {
+			return runTraceAdapterVerify(args[3:], stdout, stderr, trace.VerifySourceAdapterRun)
+		}
 	}
 	if len(args) >= 3 && args[0] == "trace" && args[1] == "archive" {
 		if args[2] == "create" {
@@ -974,6 +984,7 @@ func runTraceSessionCreate(
 	adapter := flags.String("adapter", "", "")
 	adapterVersion := flags.Int("adapter-version", 1, "")
 	procedureSHA256 := flags.String("procedure-sha256", "", "")
+	source := flags.String("source", "", "")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 2 || *adapter == "" || *procedureSHA256 == "" {
 		_, _ = io.WriteString(stderr, usage)
 		return 2
@@ -981,6 +992,7 @@ func runTraceSessionCreate(
 	summary, err := save(flags.Arg(0), flags.Arg(1), trace.SessionInput{
 		Adapter:         *adapter,
 		AdapterVersion:  *adapterVersion,
+		Source:          *source,
 		ProcedureSHA256: *procedureSHA256,
 		Role:            trace.RoleStandalone,
 		Order:           trace.OrderStandalone,
@@ -1091,6 +1103,7 @@ func runTraceSessionPairCreate(
 	adapter := flags.String("adapter", "", "")
 	adapterVersion := flags.Int("adapter-version", 1, "")
 	procedureSHA256 := flags.String("procedure-sha256", "", "")
+	source := flags.String("source", "", "")
 	order := flags.String("order", "", "")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 4 || *adapter == "" || *procedureSHA256 == "" || *order == "" {
 		_, _ = io.WriteString(stderr, usage)
@@ -1099,6 +1112,7 @@ func runTraceSessionPairCreate(
 	summary, err := save(flags.Arg(0), flags.Arg(1), flags.Arg(2), flags.Arg(3), trace.SessionPairInput{
 		Adapter:         *adapter,
 		AdapterVersion:  *adapterVersion,
+		Source:          *source,
 		ProcedureSHA256: *procedureSHA256,
 		Order:           *order,
 	})

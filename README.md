@@ -137,6 +137,28 @@ producers below are narrow authorized boundaries, not universal tracing; desktop
 and additional Android adapters still need their own reviewed procedures and
 redaction tests.
 
+A generic source-adapter handoff is available for an explicitly authorized
+adapter that can produce the same redacted contract:
+
+~~~console
+go run ./cmd/ariadne trace adapter run --json \
+  --procedure examples/source-adapter-procedure.json \
+  --driver <fixed-redacting-adapter> \
+  --output .ariadne/source-adapter-run
+go run ./cmd/ariadne trace adapter verify --json .ariadne/source-adapter-run
+~~~
+
+The procedure permits only a reviewed external-* adapter ID, one fixed source
+catalog label, scope, duration, and event limit. Ariadne sends a single-use
+random challenge and procedure digest over stdin, accepts one bounded response
+containing only a verified redacted trace, invokes the absolute driver without a
+shell, and publishes trace.json, session.json, and a portable receipt
+atomically. The receipt stores executable, procedure, trace, session, and
+challenge-commitment identities, never the challenge, driver arguments, or raw
+source values. Verification is offline and proves consistency and session
+binding—not external authenticity, target authorization, universal capture, or
+causal impact.
+
 The first browser edge accepts an authorized driver's already-redacted audit and
 projects it into the same trace contract:
 

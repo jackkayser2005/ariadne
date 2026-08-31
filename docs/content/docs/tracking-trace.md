@@ -68,6 +68,38 @@ absence is reported as `unknown`. A structural trace result does not prove
 what a payload contained or why a source sent it; the authoritative evidence
 bundle remains the place for those claims.
 
+## Generic source-adapter handoff
+
+When a reviewed source-specific adapter already exists, Ariadne can run it
+through a generic authenticated process boundary:
+
+~~~console
+go run ./cmd/ariadne trace adapter run --json \
+  --procedure examples/source-adapter-procedure.json \
+  --driver <fixed-redacting-adapter> \
+  --output .ariadne/source-adapter-run
+go run ./cmd/ariadne trace adapter verify --json \
+  .ariadne/source-adapter-run
+~~~
+
+The procedure contains only an external-* adapter ID, adapter version, one
+source from the fixed trace catalog, scope, duration, and event limit. It has
+no URL, account, profile, payload, selector, or raw value. Ariadne generates a
+single-use random challenge for the process, sends the challenge and procedure
+digest over stdin, and accepts exactly one bounded response on stdout. The
+response must carry the matching challenge and procedure digest and contain a
+valid redacted trace whose source, scope, and event count match the procedure.
+Driver arguments are bounded and the executable is invoked without a shell.
+
+A successful run is published atomically as exactly trace.json, session.json,
+and receipt.json. The receipt contains safe labels and identities for the
+procedure, executable, challenge commitment, trace, and session; it never
+contains the raw challenge, driver path or arguments, adapter response, or
+source-specific values. trace adapter verify rechecks the portable artifacts
+without launching the adapter. This proves a bounded consistency and session
+binding boundary. It does not authenticate the external executable, establish
+authorization, inspect unrelated traffic, or provide universal tracing.
+
 ## Experiment 001 Android producer
 
 After `experiment report` and `experiment verify` succeed, the first producer
