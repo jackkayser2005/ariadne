@@ -15,7 +15,9 @@ import (
 
 	"github.com/jackkayser2005/ariadne/internal/adb"
 	"github.com/jackkayser2005/ariadne/internal/bundle"
+	"github.com/jackkayser2005/ariadne/internal/evidence"
 	"github.com/jackkayser2005/ariadne/internal/experiment"
+	"github.com/jackkayser2005/ariadne/internal/validation"
 )
 
 const validManifest = `{
@@ -172,6 +174,108 @@ func TestRunValidateDirectoryReport(t *testing.T) {
 	}
 }
 
+func TestWriteValidationReportIncludesSafeFields(t *testing.T) {
+	report := validation.Report{
+		ArtifactKind:      validation.KindAndroidMinimization,
+		Overall:           validation.StatusPass,
+		Identity:          strings.Repeat("a", 64),
+		Outcome:           "no-change-observed",
+		EvidenceState:     evidence.Observed,
+		SelectionState:    "selected",
+		SelectedCandidate: "omitted",
+		Tiers: []validation.TierResult{
+			{Tier: validation.TierStructural, Status: validation.StatusPass, Reason: validation.ReasonVerified},
+			{Tier: validation.TierIntegrity, Status: validation.StatusPass, Reason: validation.ReasonVerified},
+			{Tier: validation.TierBoundary, Status: validation.StatusPass, Reason: validation.ReasonVerified},
+			{Tier: validation.TierReplay, Status: validation.StatusPass, Reason: validation.ReasonVerified},
+		},
+		Reason: validation.ReasonVerified,
+	}
+	var stdout bytes.Buffer
+	if err := writeValidationReport(report, &stdout); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"artifact: android-minimization",
+		"overall: pass",
+		"identity: " + strings.Repeat("a", 64),
+		"outcome: no-change-observed",
+		"evidence_state: observed",
+		"selection_state: selected",
+		"selected_candidate: omitted",
+		"structural: pass",
+		"integrity: pass",
+		"boundary: pass",
+		"replay: pass",
+		"reason: verified",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("human report missing %q: %q", want, stdout.String())
+		}
+	}
+}
+func TestRunValidateArgumentErrors(t *testing.T) {
+	for _, args := range [][]string{
+		{"validate", "--json"},
+		{"validate", "--json", "one", "two"},
+		{"validate", "--unknown", "manifest.json"},
+	} {
+		var stdout, stderr bytes.Buffer
+		if exitCode := run(args, &stdout, &stderr); exitCode != 2 || !strings.Contains(stderr.String(), "usage:") {
+			t.Fatalf("run(%q) = %d, stdout=%q, stderr=%q", args, exitCode, stdout.String(), stderr.String())
+		}
+	}
+}
+
+func TestRunValidateJSONWriteFailure(t *testing.T) {
+	path := writeManifest(t, validManifest)
+	var stderr bytes.Buffer
+
+	exitCode := run([]string{"validate", "--json", path}, failingWriter{}, &stderr)
+	if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+		t.Fatalf("run() = %d, stderr=%q", exitCode, stderr.String())
+	}
+}
+
+func TestRunValidateHumanWriteFailure(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "replicated")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "replication.json"), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+
+	exitCode := run([]string{"validate", root}, failingWriter{}, &stderr)
+	if exitCode != 1 || !strings.Contains(stderr.String(), "write output") {
+		t.Fatalf("run() = %d, stderr=%q", exitCode, stderr.String())
+	}
+}
+func TestWriteValidationReportFailurePaths(t *testing.T) {
+	report := validation.Report{
+		ArtifactKind:      validation.KindAndroidMinimization,
+		Overall:           validation.StatusPass,
+		Identity:          strings.Repeat("a", 64),
+		Outcome:           "no-change-observed",
+		EvidenceState:     evidence.Observed,
+		SelectionState:    "selected",
+		SelectedCandidate: "omitted",
+		Tiers: []validation.TierResult{
+			{Tier: validation.TierStructural, Status: validation.StatusPass, Reason: validation.ReasonVerified},
+			{Tier: validation.TierIntegrity, Status: validation.StatusPass, Reason: validation.ReasonVerified},
+			{Tier: validation.TierBoundary, Status: validation.StatusPass, Reason: validation.ReasonVerified},
+			{Tier: validation.TierReplay, Status: validation.StatusPass, Reason: validation.ReasonVerified},
+		},
+		Reason: validation.ReasonVerified,
+	}
+	for failAt := 1; failAt <= 12; failAt++ {
+		writer := &failAfterWriter{failAt: failAt}
+		if err := writeValidationReport(report, writer); err == nil {
+			t.Fatalf("failAt=%d: writeValidationReport() error = nil", failAt)
+		}
+	}
+}
 func TestRunBrowserTrace(t *testing.T) {
 	input := filepath.Join(t.TempDir(), "browser-audit.json")
 	data := []byte(`{"schema_version":1,"redacted":true,"scope":"outbound","completeness":"complete","events":[{"channel":"network","kind":"request","destination":"analytics","fields":["region"]}]}`)

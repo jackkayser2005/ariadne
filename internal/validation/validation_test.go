@@ -95,6 +95,14 @@ func TestValidateRejectsMalformedAndAmbiguousArtifacts(t *testing.T) {
 		assertRejected(t, report, KindAndroidMinimization)
 	})
 
+	t.Run("nonregular replication marker", func(t *testing.T) {
+		root := t.TempDir()
+		if err := os.Mkdir(filepath.Join(root, "replication.json"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		report := Validate(root)
+		assertRejected(t, report, KindAndroidReplication)
+	})
 	t.Run("ambiguous directory", func(t *testing.T) {
 		root := t.TempDir()
 		for _, name := range []string{"replication.json", "minimization.json"} {
@@ -133,6 +141,20 @@ func TestValidateUnavailableArtifacts(t *testing.T) {
 	}
 }
 
+func TestValidateOversizedManifestUnavailable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "manifest.json")
+	data := []byte(strings.Repeat("x", experiment.MaxManifestBytes+1))
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	report := Validate(path)
+	if report.ArtifactKind != KindManifest ||
+		report.Overall != StatusUnavailable ||
+		report.Reason != ReasonArtifactUnavailable {
+		t.Fatalf("report = %#v", report)
+	}
+}
 func TestValidateRejectsSymlink(t *testing.T) {
 	target := filepath.Join(t.TempDir(), "target")
 	link := filepath.Join(t.TempDir(), "link")
