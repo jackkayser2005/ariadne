@@ -72,6 +72,32 @@ persona_fields: 2
 manifest_contract_sha256: <64 lowercase hexadecimal characters>
 ```
 
+
+## Unified artifact validation
+
+Use the unified command when you want one safe status summary across the
+current manifest and Android bundle boundaries:
+
+~~~console
+go run ./cmd/ariadne validate --json examples/experiment-001.json
+go run ./cmd/ariadne validate --json <replicated-directory>
+go run ./cmd/ariadne validate --json <minimization-directory>
+~~~
+
+The report always lists the four tiers `structural`, `integrity`, `boundary`,
+and `replay`. A complete authenticated Android root can pass all four. A
+legacy root may be a `warning` because provenance is unavailable; an
+incomplete root is `unknown`; a malformed or mismatched root is `fail`.
+`replay` means that recorded pairs are complete enough for a later controlled
+replay or reproducibility review; it does not run anything. Only pass exits successfully; warning, unknown, fail, and unavailable return a nonzero exit.
+
+The JSON and human modes are raw-value-free. They contain no local paths,
+persona values, captured payloads, secrets, device serials, or driver
+arguments. Android replication `outcome` and `evidence_state` remain separate,
+and minimization reports retain the separate candidate selection state. This
+command composes the existing verifiers; it does not replace the specialized
+trace, browser, proxy, case, study, or question verification commands.
+
 ## Android target preflight
 
 Before a session, verify one explicitly selected device and package:

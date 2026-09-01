@@ -124,6 +124,43 @@ schemas, canonical SHA-256 identities, and contain no plan values, personas,
 device details, paths, URLs, or captured observations. Verification of these
 artifacts is structural and does not prove the original source evidence.
 
+
+## Tiered artifact validation
+
+The unified validator gives one deterministic summary of the current
+artifact guarantees:
+
+~~~console
+go run ./cmd/ariadne validate --json examples/experiment-001.json
+go run ./cmd/ariadne validate --json .ariadne/runs/experiment-001-replicated
+go run ./cmd/ariadne validate .ariadne/runs/android-location-minimize
+~~~
+
+The first validation slice recognizes a JSON experiment manifest (including `manifest.json`), an Android
+replication directory containing `replication.json`, and an Android
+minimization directory containing `minimization.json`. Every report lists
+`structural`, `integrity`, `boundary`, and `replay` tiers. Structural and
+integrity checks delegate to the existing specialized verifiers; boundary
+checks require the canonical provenance already present in new authenticated
+artifacts; replay reports readiness from recorded complete pairs but never
+launches a device or adapter.
+
+The aggregate status is `pass` when all applicable tiers pass, `warning` when
+the artifact is valid but a tier is unavailable (for example, a legacy receipt
+without provenance), `unknown` when incomplete evidence prevents a readiness
+conclusion, `fail` when validation rejects the artifact, and `unavailable` when
+the input is missing or unsupported. Only pass exits successfully; warning,
+unknown, failure, and unavailable return a nonzero exit. JSON and human output
+contain only safe identities, fixed labels, tier statuses, outcome semantics,
+and evidence state; they never include paths, persona values, payloads, secrets,
+or driver arguments. An `outcome` remains separate from `evidence_state`, and no
+status is a universal causal claim.
+
+This is a composition layer, not a second verifier or capture backend.
+Source-neutral trace, browser, proxy, case, study, and question artifacts
+continue to use their specialized verification commands until a later
+validation slice maps them explicitly.
+
 The detailed design and experiment log live in [`docs/`](docs/).
 The evidence-backed first-year path is tracked in
 [`docs/content/docs/roadmap.md`](docs/content/docs/roadmap.md).

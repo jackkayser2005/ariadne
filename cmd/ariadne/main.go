@@ -21,10 +21,11 @@ import (
 	"github.com/jackkayser2005/ariadne/internal/proxy"
 	"github.com/jackkayser2005/ariadne/internal/trace"
 	"github.com/jackkayser2005/ariadne/internal/ui"
+	"github.com/jackkayser2005/ariadne/internal/validation"
 )
 
 const usage = `usage:
-  ariadne validate <manifest.json>
+  ariadne validate [--json] <artifact>
   ariadne android check [--adb <path>] --device <serial> --package <package>
 	ariadne trace verify [--json] [--expect-sha256 <digest>] <trace.json>
 	ariadne trace compare [--json] <baseline-trace.json> <treatment-trace.json>
@@ -161,8 +162,8 @@ func main() {
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
-	if len(args) == 2 && args[0] == "validate" {
-		return runValidate(args[1], stdout, stderr)
+	if len(args) >= 2 && args[0] == "validate" {
+		return runValidate(args[1:], stdout, stderr)
 	}
 	if len(args) >= 2 && args[0] == "android" && args[1] == "check" {
 		return runAndroidCheck(args[2:], stdout, stderr, adb.Check)
@@ -572,7 +573,40 @@ func run(args []string, stdout, stderr io.Writer) int {
 	return 2
 }
 
-func runValidate(path string, stdout, stderr io.Writer) int {
+func runValidate(args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet("validate", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+
+	path := flags.Arg(0)
+	if !*jsonOutput {
+		info, err := os.Lstat(path)
+		if err != nil || info.Mode().IsRegular() {
+			return runLegacyManifestValidate(path, stdout, stderr)
+		}
+	}
+
+	report := validation.Validate(path)
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(report); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: validate: write output: %v\n", err)
+			return 1
+		}
+	} else if err := writeValidationReport(report, stdout); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: validate: write output: %v\n", err)
+		return 1
+	}
+	if report.Overall != validation.StatusPass {
+		return 1
+	}
+	return 0
+}
+
+func runLegacyManifestValidate(path string, stdout, stderr io.Writer) int {
 	file, err := os.Open(path)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: validate: open manifest: %v\n", err)
@@ -601,6 +635,49 @@ func runValidate(path string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+func writeValidationReport(report validation.Report, stdout io.Writer) error {
+	if _, err := fmt.Fprintf(stdout, "artifact: %s\n", report.ArtifactKind); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(stdout, "overall: %s\n", report.Overall); err != nil {
+		return err
+	}
+	if report.Identity != "" {
+		if _, err := fmt.Fprintf(stdout, "identity: %s\n", report.Identity); err != nil {
+			return err
+		}
+	}
+	if report.Outcome != "" {
+		if _, err := fmt.Fprintf(stdout, "outcome: %s\n", report.Outcome); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintf(stdout, "evidence_state: %s\n", report.EvidenceState); err != nil {
+		return err
+	}
+	if report.SelectionState != "" {
+		if _, err := fmt.Fprintf(stdout, "selection_state: %s\n", report.SelectionState); err != nil {
+			return err
+		}
+	}
+	if report.SelectedCandidate != "" {
+		if _, err := fmt.Fprintf(stdout, "selected_candidate: %s\n", report.SelectedCandidate); err != nil {
+			return err
+		}
+	}
+	for _, tier := range report.Tiers {
+		if _, err := fmt.Fprintf(stdout, "%s: %s\n", tier.Tier, tier.Status); err != nil {
+			return err
+		}
+	}
+	if report.Reason != "" {
+		if _, err := fmt.Fprintf(stdout, "reason: %s\n", report.Reason); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func runBrowserTrace(

@@ -121,6 +121,57 @@ func TestRunUsage(t *testing.T) {
 	}
 }
 
+func TestRunValidateJSONReport(t *testing.T) {
+	const secret = "location-secret-never-exported"
+	input := strings.Replace(validManifest, `"exact"`, `"`+secret+`"`, 1)
+	path := writeManifest(t, input)
+	var stdout, stderr bytes.Buffer
+
+	exitCode := run([]string{"validate", "--json", path}, &stdout, &stderr)
+
+	if exitCode != 1 || stderr.Len() != 0 {
+		t.Fatalf("run() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+	var report map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
+		t.Fatal(err)
+	}
+	if report["artifact_kind"] != "manifest" ||
+		report["overall"] != "warning" ||
+		report["evidence_state"] != "unknown" {
+		t.Fatalf("report = %#v", report)
+	}
+	tiers, ok := report["tiers"].([]any)
+	if !ok || len(tiers) != 4 {
+		t.Fatalf("tiers = %#v", report["tiers"])
+	}
+	if strings.Contains(stdout.String(), secret) || strings.Contains(stderr.String(), secret) {
+		t.Fatalf("validate exposed persona value: stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+}
+
+func TestRunValidateDirectoryReport(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "replicated")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "replication.json"), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+
+	exitCode := run([]string{"validate", root}, &stdout, &stderr)
+
+	if exitCode != 1 || stderr.Len() != 0 {
+		t.Fatalf("run() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "artifact: android-replication") ||
+		!strings.Contains(stdout.String(), "overall: fail") ||
+		strings.Contains(stdout.String(), root) {
+		t.Fatalf("human report = %q", stdout.String())
+	}
+}
+
 func TestRunBrowserTrace(t *testing.T) {
 	input := filepath.Join(t.TempDir(), "browser-audit.json")
 	data := []byte(`{"schema_version":1,"redacted":true,"scope":"outbound","completeness":"complete","events":[{"channel":"network","kind":"request","destination":"analytics","fields":["region"]}]}`)

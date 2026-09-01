@@ -467,6 +467,23 @@ minimization candidate/question projections carry it forward without raw
 values. Legacy artifacts remain readable without synthesized provenance. This
 is consistency and session binding, not a signature or causal assurance.
 
+
+**Current tiered validation slice.** `ariadne validate [--json] <artifact>`
+now composes the existing manifest, Android replication, and Android
+minimization verifiers into one raw-value-free report. It identifies the
+artifact family and returns four fixed tiers: structural schema validity,
+canonical-content and child-artifact integrity, provenance/boundary
+consistency, and replay/reproducibility readiness. The last tier is a
+readiness check only; validation never launches an adapter or device.
+`pass`, `warning`, `unknown`, `fail`, and `unavailable` remain distinct:
+legacy artifacts can be structurally valid while provenance is unavailable,
+and incomplete captures remain unknown. The report's counterfactual outcome,
+where present, remains separate from `evidence_state`, and no report status
+makes a causal claim. The initial surface deliberately recognizes only JSON experiment manifests,
+Android `replication.json` roots, and Android `minimization.json` roots; the specialized trace, browser, proxy, case, study,
+and question verifiers remain authoritative until their own mapping slice is
+reviewed. At the CLI, only an aggregate pass exits successfully; every other aggregate status is nonzero so unavailable evidence cannot be mistaken for a clean validation.
+
 ## Next tracked slices
 
 The next repository-level slices are tracked in [canonical provenance hardening](https://github.com/jackkayser2005/ariadne/issues/121),
