@@ -100,6 +100,20 @@ without launching the adapter. This proves a bounded consistency and session
 binding boundary. It does not authenticate the external executable, establish
 authorization, inspect unrelated traffic, or provide universal tracing.
 
+### Canonical provenance identity
+
+New successful generic adapter receipts include an optional provenance_sha256.
+The digest covers one canonical raw-value-free contract: schema version,
+source, adapter, adapter version, reviewed procedure SHA-256, and scope.
+The receipt verifier recomputes that contract from the safe receipt fields and
+rejects a mismatched digest before returning the run. Receipt-bound archives
+retain the same field when it is present.
+
+The field is a consistency and session-binding identity. It is not a signature,
+external executable-authenticity proof, authorization proof, reset proof, or
+causal claim. Legacy receipts that omit it remain readable; verification does
+not synthesize a value for them.
+
 ## Receipt-bound adapter-run archives
 
 A generic adapter run is now a first-class input to the source-neutral archive

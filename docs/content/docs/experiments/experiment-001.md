@@ -233,6 +233,13 @@ not a universal causal claim. The root receipt SHA-256 binds the summary to the
 recorded execution order and reset policy; it does not turn the result into a
 universal causal claim.
 
+Authenticated replication roots produced by the current runner also include
+provenance_sha256. The digest binds the canonical Android source, adapter,
+adapter version, manifest contract as the reviewed procedure identity, and
+the fixed all scope. Verification cross-checks that digest against each
+complete pair before returning it in the safe summary. A legacy replication
+root without the field remains readable and reports no invented provenance.
+
 ## Minimum-disclosure lab
 
 The location ladder is the first reduction slice. Its plan is

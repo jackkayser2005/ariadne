@@ -21,6 +21,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/jackkayser2005/ariadne/internal/jsoncheck"
+	"github.com/jackkayser2005/ariadne/internal/provenance"
 )
 
 const (
@@ -94,6 +95,7 @@ type SourceAdapterReceipt struct {
 	AdapterVersion   int    `json:"adapter_version"`
 	Source           string `json:"source"`
 	Scope            string `json:"scope"`
+	ProvenanceSHA256 string `json:"provenance_sha256,omitempty"`
 	Completeness     string `json:"completeness"`
 	Events           int    `json:"events"`
 	ProcedureSHA256  string `json:"procedure_sha256"`
@@ -255,6 +257,16 @@ func runSourceAdapterWithRunner(procedurePath, executable string, args []string,
 	if err != nil {
 		return SourceAdapterRunSummary{}, errors.New("source adapter procedure identity failed")
 	}
+	provenanceSHA256, err := sourceAdapterProvenanceSHA256(
+		procedure.Adapter,
+		procedure.AdapterVersion,
+		procedure.Source,
+		procedure.Scope,
+		procedureSHA256,
+	)
+	if err != nil {
+		return SourceAdapterRunSummary{}, errors.New("source adapter provenance identity failed")
+	}
 	if err := validateSourceAdapterCommand(executable, args); err != nil {
 		return SourceAdapterRunSummary{}, err
 	}
@@ -353,6 +365,7 @@ func runSourceAdapterWithRunner(procedurePath, executable string, args []string,
 		Completeness:     response.Trace.Completeness,
 		Events:           len(response.Trace.Events),
 		ProcedureSHA256:  procedureSHA256,
+		ProvenanceSHA256: provenanceSHA256,
 		ExecutableSHA256: executableSHA256,
 		ChallengeSHA256:  challengeSHA256,
 		TraceSHA256:      traceSHA256,
@@ -482,6 +495,17 @@ func validateSourceAdapterProcedure(procedure SourceAdapterProcedure) error {
 	return nil
 }
 
+func sourceAdapterProvenanceSHA256(adapter string, adapterVersion int, source, scope, procedureSHA256 string) (string, error) {
+	return (provenance.Contract{
+		SchemaVersion:   provenance.SchemaVersion,
+		Source:          source,
+		Adapter:         adapter,
+		AdapterVersion:  adapterVersion,
+		ProcedureSHA256: procedureSHA256,
+		Scope:           scope,
+	}).SHA256()
+}
+
 func validateSourceAdapterReceipt(receipt SourceAdapterReceipt) error {
 	if receipt.SchemaVersion != SourceAdapterReceiptSchemaVersion || !validExternalAdapter(receipt.Adapter) ||
 		receipt.AdapterVersion < 1 || receipt.AdapterVersion > maxAdapterVersion ||
@@ -491,6 +515,18 @@ func validateSourceAdapterReceipt(receipt SourceAdapterReceipt) error {
 		!ValidSHA256(receipt.ExecutableSHA256) || !ValidSHA256(receipt.ChallengeSHA256) ||
 		!ValidSHA256(receipt.TraceSHA256) || !ValidSHA256(receipt.SessionSHA256) {
 		return errors.New("source adapter receipt is invalid")
+	}
+	if receipt.ProvenanceSHA256 != "" {
+		expected, err := sourceAdapterProvenanceSHA256(
+			receipt.Adapter,
+			receipt.AdapterVersion,
+			receipt.Source,
+			receipt.Scope,
+			receipt.ProcedureSHA256,
+		)
+		if err != nil || receipt.ProvenanceSHA256 != expected {
+			return errors.New("source adapter receipt provenance is invalid")
+		}
 	}
 	return nil
 }

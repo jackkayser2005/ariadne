@@ -657,3 +657,34 @@ func removePairOutputs(t *testing.T, pairDir string) {
 		}
 	}
 }
+
+func TestVerifyReplicatedBindsCanonicalProvenanceDigest(t *testing.T) {
+	root := makeReplicatedRoot(t, false, false)
+	data, err := os.ReadFile(filepath.Join(root, "replication.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record adb.ReplicatedRunRecord
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatal(err)
+	}
+	expected, err := adb.ReplicationProvenanceSHA256(strings.Repeat("c", 64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.ProvenanceSHA256 = expected
+	writeReplicatedRecordForTest(t, root, record)
+	summary, err := VerifyReplicated(root)
+	if err != nil {
+		t.Fatalf("VerifyReplicated() error = %v", err)
+	}
+	if summary.ProvenanceSHA256 != expected {
+		t.Fatalf("summary provenance_sha256 = %q, want %q", summary.ProvenanceSHA256, expected)
+	}
+
+	record.ProvenanceSHA256 = strings.Repeat("f", 64)
+	writeReplicatedRecordForTest(t, root, record)
+	if _, err := VerifyReplicated(root); err == nil {
+		t.Fatal("VerifyReplicated() accepted a mismatched provenance digest")
+	}
+}

@@ -12,6 +12,7 @@ import (
 	"unicode"
 
 	"github.com/jackkayser2005/ariadne/internal/experiment"
+	"github.com/jackkayser2005/ariadne/internal/provenance"
 )
 
 const (
@@ -23,6 +24,14 @@ const (
 	ReplicationOrderTreatmentBaseline = "treatment-baseline"
 	// ReplicationResetPolicy records the reset applied before every session.
 	ReplicationResetPolicy = "reset-before-each-session"
+	// ReplicationSource is the canonical source identity for Android runs.
+	ReplicationSource = "android"
+	// ReplicationAdapter is the canonical adapter identity for Android runs.
+	ReplicationAdapter = "android-experiment-001"
+	// ReplicationAdapterVersion is the canonical Android adapter version.
+	ReplicationAdapterVersion = 1
+	// ReplicationScope is the fixed scope captured by the Android fixture.
+	ReplicationScope = "all"
 	// ReplicationStatusComplete records a successful pair or root.
 	ReplicationStatusComplete = "complete"
 	// ReplicationStatusIncomplete records a partial pair or root.
@@ -38,11 +47,39 @@ type ReplicatedRunRecord struct {
 	DeclaredVariable string                 `json:"declared_variable"`
 	PairsPerOrder    int                    `json:"pairs_per_order"`
 	ResetPolicy      string                 `json:"reset_policy"`
+	ProvenanceSHA256 string                 `json:"provenance_sha256,omitempty"`
 	Status           string                 `json:"status"`
 	CompletedPairs   int                    `json:"completed_pairs"`
 	FailurePair      int                    `json:"failure_pair,omitempty"`
 	FailureOrder     string                 `json:"failure_order,omitempty"`
 	Pairs            []ReplicatedPairRecord `json:"pairs"`
+}
+
+// ReplicationProvenance returns the canonical adapter boundary for an
+// authenticated Android replication run.
+func ReplicationProvenance(manifestContractSHA256 string) (provenance.Contract, error) {
+	contract := provenance.Contract{
+		SchemaVersion:   provenance.SchemaVersion,
+		Source:          ReplicationSource,
+		Adapter:         ReplicationAdapter,
+		AdapterVersion:  ReplicationAdapterVersion,
+		ProcedureSHA256: manifestContractSHA256,
+		Scope:           ReplicationScope,
+	}
+	if err := contract.Validate(); err != nil {
+		return provenance.Contract{}, err
+	}
+	return contract, nil
+}
+
+// ReplicationProvenanceSHA256 returns the canonical adapter-boundary identity
+// for an authenticated Android replication run.
+func ReplicationProvenanceSHA256(manifestContractSHA256 string) (string, error) {
+	contract, err := ReplicationProvenance(manifestContractSHA256)
+	if err != nil {
+		return "", err
+	}
+	return contract.SHA256()
 }
 
 // ReplicatedPairRecord identifies one matched pair and its execution order.
@@ -154,6 +191,14 @@ func runReplicatedWithMode(
 	); err != nil {
 		return err
 	}
+	provenanceSHA256 := ""
+	if authDependencies != nil {
+		var err error
+		provenanceSHA256, err = ReplicationProvenanceSHA256(manifest.ContractDigest())
+		if err != nil {
+			return fmt.Errorf("replication provenance: %w", err)
+		}
+	}
 	if err := os.MkdirAll(filepath.Dir(outputDir), 0o700); err != nil {
 		return fmt.Errorf("create output parent: %w", err)
 	}
@@ -167,6 +212,7 @@ func runReplicatedWithMode(
 		DeclaredVariable: manifest.Variable,
 		PairsPerOrder:    pairs,
 		ResetPolicy:      ReplicationResetPolicy,
+		ProvenanceSHA256: provenanceSHA256,
 		Status:           ReplicationStatusIncomplete,
 		Pairs:            make([]ReplicatedPairRecord, 0, pairs*2),
 	}
@@ -275,7 +321,8 @@ func completedPairCount(pairs []ReplicatedPairRecord) int {
 
 func writeReplicatedRecord(outputDir string, record ReplicatedRunRecord) error {
 	if !validReplicationMetadata(record.ManifestName) ||
-		!validReplicationMetadata(record.DeclaredVariable) {
+		!validReplicationMetadata(record.DeclaredVariable) ||
+		(record.ProvenanceSHA256 != "" && !validSHA256(record.ProvenanceSHA256)) {
 		return errors.New("replication metadata is invalid")
 	}
 	data, _ := json.MarshalIndent(record, "", "  ")

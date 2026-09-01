@@ -456,6 +456,17 @@ leave no destination on failed input, publish only after re-verifying the
 generated case and disclosure round, preserve caller order, and keep plan paths
 out of generated artifacts and summaries.
 
+**Current canonical provenance intersection slice.** New generic adapter
+receipts and authenticated Android replication roots now carry an optional
+canonical provenance digest. The shared contract is deliberately the small
+intersection of source, adapter, adapter version, reviewed procedure identity,
+and scope; environment, reset, package, challenge, and evidence identities
+remain adjacent bindings until their dedicated envelope work lands. Bundle
+verification cross-checks the Android digest against every complete pair, and
+minimization candidate/question projections carry it forward without raw
+values. Legacy artifacts remain readable without synthesized provenance. This
+is consistency and session binding, not a signature or causal assurance.
+
 ## Next tracked slices
 
 The next repository-level slices are tracked in [canonical provenance hardening](https://github.com/jackkayser2005/ariadne/issues/121),

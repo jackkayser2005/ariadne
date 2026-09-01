@@ -53,6 +53,17 @@ assurance. A missing authenticated network capture is also represented as an
 incomplete unknown, never as evidence of no change. Legacy bundles remain
 readable, but they do not receive invented authentication or outcome semantics.
 
+The current provenance hardening adds an optional provenance_sha256 to new
+generic adapter receipts and authenticated Android replication roots. It is
+the SHA-256 of a canonical raw-value-free contract containing the schema
+version, source, adapter, adapter version, reviewed procedure identity, and
+scope. Replication verification cross-checks it against each complete Android
+pair before returning it in the safe summary; minimization candidate receipts
+and question projections carry the same reference. Older artifacts without
+the field remain readable and keep the field unavailable. This is a
+consistency and session-binding identity, not a signature, external
+authenticity proof, reset proof, or causal claim.
+
 ## Minimum-disclosure lab
 
 The first reduction workflow uses the authorized Android fixture to test a

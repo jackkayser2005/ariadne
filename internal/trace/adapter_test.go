@@ -720,3 +720,69 @@ func TestSourceAdapterChallengeCommitment(t *testing.T) {
 		t.Fatalf("challenge commitment = %q, want %x", commitment, digest)
 	}
 }
+
+func TestSourceAdapterReceiptProvenanceBinding(t *testing.T) {
+	procedure := SourceAdapterProcedure{
+		SchemaVersion:  SourceAdapterProcedureSchemaVersion,
+		Adapter:        "external-desktop-v1",
+		AdapterVersion: 1,
+		Source:         "desktop",
+		Scope:          "outbound",
+		DurationMS:     5000,
+		MaxEvents:      1,
+	}
+	procedureSHA256, err := SourceAdapterProcedureSHA256(procedure)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provenanceSHA256, err := sourceAdapterProvenanceSHA256(
+		procedure.Adapter,
+		procedure.AdapterVersion,
+		procedure.Source,
+		procedure.Scope,
+		procedureSHA256,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt := SourceAdapterReceipt{
+		SchemaVersion:    SourceAdapterReceiptSchemaVersion,
+		Adapter:          procedure.Adapter,
+		AdapterVersion:   procedure.AdapterVersion,
+		Source:           procedure.Source,
+		Scope:            procedure.Scope,
+		Completeness:     Complete,
+		Events:           1,
+		ProcedureSHA256:  procedureSHA256,
+		ProvenanceSHA256: provenanceSHA256,
+		ExecutableSHA256: strings.Repeat("b", 64),
+		ChallengeSHA256:  strings.Repeat("c", 64),
+		TraceSHA256:      strings.Repeat("d", 64),
+		SessionSHA256:    strings.Repeat("e", 64),
+	}
+	data, err := json.Marshal(receipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodeSourceAdapterReceipt(data); err != nil {
+		t.Fatalf("DecodeSourceAdapterReceipt() error = %v", err)
+	}
+	tampered := receipt
+	tampered.ProvenanceSHA256 = strings.Repeat("f", 64)
+	data, err = json.Marshal(tampered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodeSourceAdapterReceipt(data); err == nil {
+		t.Fatal("DecodeSourceAdapterReceipt() accepted a tampered provenance digest")
+	}
+	legacy := receipt
+	legacy.ProvenanceSHA256 = ""
+	data, err = json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded, err := DecodeSourceAdapterReceipt(data); err != nil || decoded.ProvenanceSHA256 != "" {
+		t.Fatalf("legacy receipt = %#v, error = %v", decoded, err)
+	}
+}
