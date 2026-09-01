@@ -282,6 +282,10 @@ func runSourceAdapterWithRunner(procedurePath, executable string, args []string,
 	if err != nil {
 		return SourceAdapterRunSummary{}, fmt.Errorf("source adapter process: %w", err)
 	}
+	currentExecutableSHA256, hashErr := sourceAdapterExecutableSHA256(executable)
+	if hashErr != nil || currentExecutableSHA256 != executableSHA256 {
+		return SourceAdapterRunSummary{}, errors.New("source adapter executable changed during run")
+	}
 	response, err := DecodeSourceAdapterResponse(responseData)
 	if err != nil {
 		return SourceAdapterRunSummary{}, fmt.Errorf("source adapter response: %w", err)
@@ -540,8 +544,8 @@ func validateSourceAdapterCommand(executable string, args []string) error {
 	if strings.TrimSpace(executable) == "" || !filepath.IsAbs(executable) || strings.ContainsRune(executable, '\x00') {
 		return errors.New("source adapter driver must be an absolute path")
 	}
-	info, err := os.Lstat(executable)
-	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+	info, err := sourceAdapterLstatNoSymlinkPath(executable)
+	if err != nil || !info.Mode().IsRegular() {
 		return errors.New("source adapter driver is unavailable")
 	}
 	if len(args) > maxSourceAdapterArgs {
@@ -558,8 +562,8 @@ func validateSourceAdapterCommand(executable string, args []string) error {
 }
 
 func sourceAdapterExecutableSHA256(path string) (string, error) {
-	info, err := os.Lstat(path)
-	if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+	info, err := sourceAdapterLstatNoSymlinkPath(path)
+	if err != nil || !info.Mode().IsRegular() {
 		return "", errors.New("executable is unavailable")
 	}
 	file, err := os.Open(path)
@@ -567,6 +571,10 @@ func sourceAdapterExecutableSHA256(path string) (string, error) {
 		return "", err
 	}
 	defer file.Close()
+	openedInfo, err := file.Stat()
+	if err != nil || !os.SameFile(info, openedInfo) {
+		return "", errors.New("executable changed during identity check")
+	}
 	hasher := sha256.New()
 	count, err := io.Copy(hasher, io.LimitReader(file, maxSourceAdapterExecutableBytes+1))
 	if err != nil || count > maxSourceAdapterExecutableBytes {
@@ -703,16 +711,84 @@ func (buffer *sourceAdapterBoundedBuffer) String() string {
 	return string(buffer.data)
 }
 func readSourceAdapterFile(path string, limit int) ([]byte, error) {
+	if limit < 0 {
+		return nil, errors.New("input limit is invalid")
+	}
+	info, err := sourceAdapterLstatNoSymlinkPath(path)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("regular file required")
+	}
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
+	openedInfo, err := file.Stat()
+	if err != nil {
+		return nil, errors.New("stat after open failed")
+	}
+	if !os.SameFile(info, openedInfo) {
+		return nil, errors.New("path changed during verification")
+	}
 	data, err := io.ReadAll(io.LimitReader(file, int64(limit)+1))
 	if err != nil || len(data) > limit {
 		return nil, errors.New("input exceeds limit")
 	}
 	return data, nil
+}
+
+func sourceAdapterLstatNoSymlinkPath(path string) (os.FileInfo, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	volume := filepath.VolumeName(absolute)
+	remainder := strings.TrimPrefix(absolute, volume)
+	current := volume
+	separator := string(filepath.Separator)
+	if strings.HasPrefix(remainder, separator) {
+		current += separator
+		remainder = strings.TrimPrefix(remainder, separator)
+	}
+	if remainder == "" {
+		info, err := os.Lstat(current)
+		if err != nil {
+			return nil, err
+		}
+		if err := sourceAdapterPathSafetyError(info); err != nil {
+			return nil, err
+		}
+		return info, nil
+	}
+
+	var info os.FileInfo
+	for _, component := range strings.Split(remainder, separator) {
+		if component == "" || component == "." {
+			continue
+		}
+		current = filepath.Join(current, component)
+		info, err = os.Lstat(current)
+		if err != nil {
+			return nil, err
+		}
+		if err := sourceAdapterPathSafetyError(info); err != nil {
+			return nil, err
+		}
+	}
+	return info, nil
+}
+
+func sourceAdapterPathSafetyError(info os.FileInfo) error {
+	if info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("symbolic links are not allowed")
+	}
+	if info.Mode()&os.ModeIrregular != 0 {
+		return errors.New("reparse points and other irregular path components are not allowed")
+	}
+	return nil
 }
 
 func writeSourceAdapterJSON(path string, value any) error {

@@ -52,6 +52,7 @@ func TestValidateFixtureInputRejectsBoundaryValues(t *testing.T) {
 	}{
 		{name: "schema", mutate: func(input *fixtureInput) { input.SchemaVersion = 0 }},
 		{name: "package", mutate: func(input *fixtureInput) { input.PackageName = "" }},
+		{name: "package shell punctuation", mutate: func(input *fixtureInput) { input.PackageName = "dev.ariadne.fixture;id" }},
 		{name: "challenge", mutate: func(input *fixtureInput) { input.Challenge = strings.Repeat("a", 63) }},
 		{name: "role", mutate: func(input *fixtureInput) { input.Role = "observer" }},
 		{name: "order", mutate: func(input *fixtureInput) { input.Order = "random" }},

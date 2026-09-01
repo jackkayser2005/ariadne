@@ -114,6 +114,12 @@ readable. This is still structural consistency and process-session provenance:
 the receipt is not a signature, authorization proof, capture-truth claim,
 chronology model, universal tracer, or causal result.
 
+The adjacent hardening keeps this bridge fail-closed under local hostile input:
+invalid collector requests do not consume the valid observation slot, adapter
+artifact and executable reads reject symlink/reparse/path replacement, a
+post-run executable hash change aborts the run, and Android package selectors are
+restricted before ADB shell use.
+
 **Current receipt trust-boundary slice.** Android and browser minimization
 verification now exposes the canonical root receipt identity in both human and
 JSON output and accepts an independently retained `--expect-sha256` trust
@@ -449,6 +455,14 @@ The case assembly command must reject malformed or unsupported local plans,
 leave no destination on failed input, publish only after re-verifying the
 generated case and disclosure round, preserve caller order, and keep plan paths
 out of generated artifacts and summaries.
+
+## Next tracked slices
+
+The next repository-level slices are tracked in [canonical provenance hardening](https://github.com/jackkayser2005/ariadne/issues/121),
+the [golden Android replication fixture](https://github.com/jackkayser2005/ariadne/issues/122), and a
+[tiered `ariadne validate` command](https://github.com/jackkayser2005/ariadne/issues/123).
+They extend the current contracts without adding a second evidence store,
+remote control plane, or universal capture claim.
 
 ## Acceptance gates
 

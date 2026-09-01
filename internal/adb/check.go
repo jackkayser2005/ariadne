@@ -57,7 +57,7 @@ func checkWith(
 	if !validSelection(device) {
 		return Target{}, errors.New("device is invalid")
 	}
-	if !validSelection(packageName) {
+	if !validPackageName(packageName) {
 		return Target{}, errors.New("package is invalid")
 	}
 
@@ -244,6 +244,27 @@ func validSelection(value string) bool {
 	return value != "" &&
 		strings.TrimSpace(value) == value &&
 		!strings.ContainsFunc(value, unicode.IsControl)
+}
+
+func validPackageName(value string) bool {
+	if !validSelection(value) || len(value) > 255 {
+		return false
+	}
+	for _, segment := range strings.Split(value, ".") {
+		if segment == "" {
+			return false
+		}
+		for index, character := range segment {
+			if index == 0 && (character < 'A' || character > 'Z') && (character < 'a' || character > 'z') {
+				return false
+			}
+			if (character < 'A' || character > 'Z') && (character < 'a' || character > 'z') &&
+				(character < '0' || character > '9') && character != '_' {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func runCommand(ctx context.Context, binary string, args ...string) ([]byte, error) {

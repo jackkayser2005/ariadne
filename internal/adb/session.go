@@ -250,7 +250,7 @@ func validatePairConfig(
 	if !validSelection(target.Device) {
 		return errors.New("device is invalid")
 	}
-	if !validSelection(target.Package) {
+	if !validPackageName(target.Package) {
 		return errors.New("package is invalid")
 	}
 	if !validSelection(target.Version) {

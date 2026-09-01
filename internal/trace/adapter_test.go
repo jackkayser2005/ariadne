@@ -169,6 +169,27 @@ func TestRunSourceAdapterWithRunnerBindsRequestAndPublishes(t *testing.T) {
 	}
 }
 
+func TestRunSourceAdapterRejectsExecutableDrift(t *testing.T) {
+	procedurePath := writeSourceAdapterProcedure(t, 5000, 1)
+	driverPath := filepath.Join(t.TempDir(), "driver")
+	if err := os.WriteFile(driverPath, []byte("before"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	_, err := runSourceAdapterWithRunner(procedurePath, driverPath, nil, filepath.Join(t.TempDir(), "run"), func(_ context.Context, _ string, _ []string, data []byte) ([]byte, error) {
+		if err := os.WriteFile(driverPath, []byte("after"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		var request SourceAdapterRequest
+		if err := json.Unmarshal(data, &request); err != nil {
+			return nil, err
+		}
+		return json.Marshal(sourceAdapterTestResponse(request))
+	})
+	if err == nil || !strings.Contains(err.Error(), "executable changed") {
+		t.Fatalf("runSourceAdapterWithRunner() error = %v", err)
+	}
+}
+
 func TestGenericSourceAdapterFlowsThroughPairsAndReplication(t *testing.T) {
 	procedure := strings.Repeat("a", 64)
 	traceDocument := Document{
@@ -405,6 +426,13 @@ func TestSourceAdapterFileAndReceiptFailurePaths(t *testing.T) {
 	if _, err := readSourceAdapterFile(t.TempDir(), maxSourceAdapterReceiptBytes); err == nil {
 		t.Fatal("readSourceAdapterFile accepted a directory")
 	}
+	if _, err := readSourceAdapterFile(filepath.Join(t.TempDir(), "missing"), -1); err == nil {
+		t.Fatal("readSourceAdapterFile accepted a negative limit")
+	}
+	rootPath := filepath.VolumeName(os.Args[0]) + string(filepath.Separator)
+	if info, err := sourceAdapterLstatNoSymlinkPath(rootPath); err != nil || info.Mode().IsRegular() {
+		t.Fatalf("sourceAdapterLstatNoSymlinkPath(%q) = %#v, err = %v", rootPath, info, err)
+	}
 	if _, err := SourceAdapterReceiptSHA256(SourceAdapterReceipt{}); err == nil {
 		t.Fatal("SourceAdapterReceiptSHA256 accepted an invalid receipt")
 	}
@@ -505,6 +533,10 @@ func TestSourceAdapterDirectoryAndBufferGuards(t *testing.T) {
 		t.Fatal("bounded buffer accepted a second overflow")
 	}
 
+	partial := sourceAdapterBoundedBuffer{limit: 2}
+	if written, err := partial.Write([]byte("abc")); err == nil || written != 2 || partial.String() != "ab" || !partial.overflow {
+		t.Fatalf("partial overflow write = %q, written = %d, err = %v", partial.String(), written, err)
+	}
 	if err := validateSourceAdapterRunDirectory(filepath.Join(t.TempDir(), "missing")); err == nil {
 		t.Fatal("directory validator accepted a missing directory")
 	}
@@ -584,11 +616,49 @@ func TestSourceAdapterCommandAndIdentityGuards(t *testing.T) {
 	}
 }
 
+func TestSourceAdapterExecutableSizeLimit(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "oversized-driver")
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	if err := file.Truncate(int64(maxSourceAdapterExecutableBytes) + 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sourceAdapterExecutableSHA256(path); err == nil {
+		t.Fatal("sourceAdapterExecutableSHA256 accepted an oversized executable")
+	}
+}
+
+func TestSourceAdapterPathSafetyRejectsIrregular(t *testing.T) {
+	if err := sourceAdapterPathSafetyError(sourceAdapterFileInfo{mode: os.ModeIrregular}); err == nil {
+		t.Fatal("sourceAdapterPathSafetyError accepted an irregular path component")
+	}
+}
+
+type sourceAdapterFileInfo struct {
+	mode os.FileMode
+}
+
+func (info sourceAdapterFileInfo) Name() string      { return "test" }
+func (sourceAdapterFileInfo) Size() int64            { return 0 }
+func (info sourceAdapterFileInfo) Mode() os.FileMode { return info.mode }
+func (sourceAdapterFileInfo) ModTime() time.Time     { return time.Time{} }
+func (info sourceAdapterFileInfo) IsDir() bool       { return info.mode.IsDir() }
+func (sourceAdapterFileInfo) Sys() any               { return nil }
+
 func TestSourceAdapterPortableDirectoryRejectsSymlinkWhenSupported(t *testing.T) {
 	root := t.TempDir()
 	link := filepath.Join(root, "link")
 	if err := os.Symlink(filepath.Join(root, "target"), link); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if _, err := readSourceAdapterFile(link, maxSourceAdapterReceiptBytes); err == nil {
+		t.Fatal("readSourceAdapterFile accepted a symlink")
 	}
 	if err := validateSourceAdapterRunDirectory(root); err == nil {
 		t.Fatal("directory validator accepted a symlink")

@@ -3,8 +3,10 @@ package collector
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
@@ -24,6 +26,26 @@ func TestCollectorDeliversOnlyFirstResult(t *testing.T) {
 	}
 }
 
+func TestCollectorRejectsBodyReadErrorsWithoutClaimingSlot(t *testing.T) {
+	collector := &Collector{result: make(chan captureResult, 1)}
+	request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/observe", nil)
+	request.Header.Set("Content-Type", "application/json")
+	request.Body = failingBody{}
+	response := httptest.NewRecorder()
+
+	collector.handle(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusBadRequest)
+	}
+	if collector.claimed.Load() {
+		t.Fatal("body read failure claimed the collector")
+	}
+}
+
+type failingBody struct{}
+
+func (failingBody) Read([]byte) (int, error) { return 0, errors.New("body read failed") }
+func (failingBody) Close() error             { return nil }
 func TestCollectorCapturesOneRequest(t *testing.T) {
 	collector, err := Start()
 	if err != nil {
@@ -80,7 +102,7 @@ func TestCollectorCapturesOneRequest(t *testing.T) {
 	}
 }
 
-func TestCollectorRejectsInvalidRequests(t *testing.T) {
+func TestCollectorRejectsInvalidRequestsWithoutClaimingSlot(t *testing.T) {
 	tests := []struct {
 		name        string
 		method      string
@@ -89,7 +111,6 @@ func TestCollectorRejectsInvalidRequests(t *testing.T) {
 		encoding    string
 		body        string
 		wantStatus  int
-		wantError   string
 	}{
 		{
 			name:        "method",
@@ -97,7 +118,6 @@ func TestCollectorRejectsInvalidRequests(t *testing.T) {
 			contentType: "application/json",
 			body:        `{}`,
 			wantStatus:  http.StatusMethodNotAllowed,
-			wantError:   "method",
 		},
 		{
 			name:        "path",
@@ -106,7 +126,6 @@ func TestCollectorRejectsInvalidRequests(t *testing.T) {
 			contentType: "application/json",
 			body:        `{}`,
 			wantStatus:  http.StatusNotFound,
-			wantError:   "target",
 		},
 		{
 			name:        "query",
@@ -115,7 +134,6 @@ func TestCollectorRejectsInvalidRequests(t *testing.T) {
 			contentType: "application/json",
 			body:        `{}`,
 			wantStatus:  http.StatusNotFound,
-			wantError:   "target",
 		},
 		{
 			name:        "content encoding",
@@ -124,7 +142,6 @@ func TestCollectorRejectsInvalidRequests(t *testing.T) {
 			encoding:    "gzip",
 			body:        `{}`,
 			wantStatus:  http.StatusUnsupportedMediaType,
-			wantError:   "encoding",
 		},
 		{
 			name:        "content type",
@@ -132,7 +149,6 @@ func TestCollectorRejectsInvalidRequests(t *testing.T) {
 			contentType: "text/plain",
 			body:        `{}`,
 			wantStatus:  http.StatusUnsupportedMediaType,
-			wantError:   "content type",
 		},
 		{
 			name:        "malformed content type",
@@ -140,14 +156,12 @@ func TestCollectorRejectsInvalidRequests(t *testing.T) {
 			contentType: `application/json; charset="`,
 			body:        `{}`,
 			wantStatus:  http.StatusUnsupportedMediaType,
-			wantError:   "content type",
 		},
 		{
 			name:        "empty body",
 			method:      http.MethodPost,
 			contentType: "application/json",
 			wantStatus:  http.StatusBadRequest,
-			wantError:   "JSON object",
 		},
 		{
 			name:        "non-object",
@@ -155,7 +169,6 @@ func TestCollectorRejectsInvalidRequests(t *testing.T) {
 			contentType: "application/json",
 			body:        `[]`,
 			wantStatus:  http.StatusBadRequest,
-			wantError:   "JSON object",
 		},
 		{
 			name:        "malformed JSON",
@@ -163,7 +176,6 @@ func TestCollectorRejectsInvalidRequests(t *testing.T) {
 			contentType: "application/json",
 			body:        `{"value":`,
 			wantStatus:  http.StatusBadRequest,
-			wantError:   "JSON object",
 		},
 		{
 			name:        "oversized",
@@ -171,7 +183,6 @@ func TestCollectorRejectsInvalidRequests(t *testing.T) {
 			contentType: "application/json",
 			body:        `{"value":"` + strings.Repeat("x", maxBodyBytes) + `"}`,
 			wantStatus:  http.StatusRequestEntityTooLarge,
-			wantError:   "exceeds",
 		},
 	}
 
@@ -209,12 +220,30 @@ func TestCollectorRejectsInvalidRequests(t *testing.T) {
 				t.Fatalf("status = %d, want %d", response.StatusCode, test.wantStatus)
 			}
 
-			_, err = collector.Wait(context.Background())
-			if err == nil || !strings.Contains(err.Error(), test.wantError) {
-				t.Fatalf("Wait() error = %v, want containing %q", err, test.wantError)
+			validRequest, err := http.NewRequest(
+				http.MethodPost,
+				collectorURL(collector),
+				strings.NewReader(`{"valid":true}`),
+			)
+			if err != nil {
+				t.Fatal(err)
 			}
-			if test.body != "" && strings.Contains(err.Error(), test.body) {
-				t.Fatalf("Wait() exposed request body: %v", err)
+			validRequest.Header.Set("Content-Type", "application/json")
+			validResponse, err := http.DefaultClient.Do(validRequest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _ = io.Copy(io.Discard, validResponse.Body)
+			validResponse.Body.Close()
+			if validResponse.StatusCode != http.StatusNoContent {
+				t.Fatalf("valid request status = %d", validResponse.StatusCode)
+			}
+			observation, err := collector.Wait(context.Background())
+			if err != nil {
+				t.Fatalf("Wait() error after invalid request = %v", err)
+			}
+			if observation.Method != http.MethodPost || observation.Path != "/observe" {
+				t.Fatalf("observation after invalid request = %#v", observation)
 			}
 		})
 	}

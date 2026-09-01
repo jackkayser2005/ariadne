@@ -93,7 +93,7 @@ func validateFixtureInput(input fixtureInput) error {
 	if input.SchemaVersion != fixtureInputSchemaVersion {
 		return errors.New("fixture input schema_version is invalid")
 	}
-	if !validSelection(input.PackageName) {
+	if !validPackageName(input.PackageName) {
 		return errors.New("fixture input package_name is invalid")
 	}
 	if !validChallenge(input.Challenge) {

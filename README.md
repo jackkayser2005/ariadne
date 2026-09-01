@@ -121,6 +121,10 @@ The read-only computer-use acceptance sequence is documented in
 The source-neutral tracking trace contract is documented in
 [`docs/content/docs/tracking-trace.md`](docs/content/docs/tracking-trace.md).
 
+The next tracked slices are [canonical provenance hardening](https://github.com/jackkayser2005/ariadne/issues/121),
+the [golden Android replication fixture](https://github.com/jackkayser2005/ariadne/issues/122), and a
+[tiered `ariadne validate` command](https://github.com/jackkayser2005/ariadne/issues/123).
+
 Ariadne now verifies and compares raw-value-free tracking traces from an
 authorized source adapter:
 
@@ -158,6 +162,13 @@ challenge-commitment identities, never the challenge, driver arguments, or raw
 source values. Verification is offline and proves consistency and session
 binding—not external authenticity, target authorization, universal capture, or
 causal impact.
+
+These local boundaries are fail-closed: malformed collector requests do not
+consume the one-shot observation slot; adapter artifact and executable reads
+reject symlinks, reparse points, and path replacement; detectable executable
+hash drift across a run aborts receipt publication; and Android package
+selectors are restricted to package-name syntax before they reach ADB shell
+commands.
 
 A verified adapter run can also be retained directly in a receipt-bound
 archive. Repeat --run in the caller's intended order:

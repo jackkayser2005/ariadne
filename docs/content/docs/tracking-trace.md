@@ -130,6 +130,12 @@ authorization or capture truth, infer chronology, or establish causality.
 The resulting archive can be used unchanged by archive question rounds and
 trace case assembly.
 
+The boundary is fail-closed for local hostile input: invalid collector
+requests cannot consume the one-shot observation slot; adapter artifact and
+executable reads reject symlinks, reparse points, and path replacement; an
+executable whose post-run hash differs cannot produce a receipt; and Android
+package selectors are validated before they reach ADB shell commands.
+
 ## Experiment 001 Android producer
 
 After `experiment report` and `experiment verify` succeed, the first producer
