@@ -484,13 +484,29 @@ Android `replication.json` roots, and Android `minimization.json` roots; the spe
 and question verifiers remain authoritative until their own mapping slice is
 reviewed. At the CLI, only an aggregate pass exits successfully; every other aggregate status is nonzero so unavailable evidence cannot be mistaken for a clean validation.
 
+**Current golden Android acceptance slice.** The Android acceptance receipt
+now joins the verified standalone run, authenticated two-order replication,
+redacted export, bounded reflection, and GET-only review smoke into one
+raw-value-free handoff. It accepts only the current Experiment 001 target
+fingerprint and complete observed results, keeps counterfactual outcome separate
+from evidence state, rejects reused or unavailable authenticated boundaries,
+and publishes only safe identities, counts, and fixed review metadata. Offline
+receipt verification checks the supplied contract and canonical identity; the
+hosted API 35 emulator workflow remains the proof that the target behavior and
+review projection actually ran. Raw run directories and reports remain
+authoritative inputs, not portable publication artifacts.
+
 ## Next tracked slices
 
-The next repository-level slices are tracked in [canonical provenance hardening](https://github.com/jackkayser2005/ariadne/issues/121),
-the [golden Android replication fixture](https://github.com/jackkayser2005/ariadne/issues/122), and a
-[tiered `ariadne validate` command](https://github.com/jackkayser2005/ariadne/issues/123).
-They extend the current contracts without adding a second evidence store,
-remote control plane, or universal capture claim.
+The focused golden Android acceptance slice is implemented in the CLI and
+hosted workflow under [issue #122](https://github.com/jackkayser2005/ariadne/issues/122);
+its real-emulator run remains the acceptance evidence gate. The canonical
+provenance intersection and tiered validation slices from
+[issue #121](https://github.com/jackkayser2005/ariadne/issues/121) and
+[issue #123](https://github.com/jackkayser2005/ariadne/issues/123) are present
+in the current line; their broader envelope and wider artifact-family mapping
+remain follow-up work. These slices extend the current contracts without adding
+a second evidence store, remote control plane, or universal capture claim.
 
 ## Acceptance gates
 
@@ -501,6 +517,12 @@ remote control plane, or universal capture claim.
   driver path or argument, output/diagnostic overflow, and timeout cases.
   Successful runs publish exactly three raw-value-free artifacts whose receipt
   and session identities verify offline; no failure becomes a privacy assurance.
+- The hosted Android acceptance path proves the pinned fixture fingerprint,
+  standalone observed change, authenticated replication in both orders,
+  redacted export/reflection identity binding, GET-only review behavior, and
+  raw-value-free publication. Its acceptance receipt is a bounded handoff, not
+  a universal causal claim.
+
 - Fixture or runner changes pass the hosted real-emulator workflow when local
   Android tooling is unavailable.
 - The local browser fixture producer and its two-order replication pass the

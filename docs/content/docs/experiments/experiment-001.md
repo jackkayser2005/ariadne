@@ -266,6 +266,54 @@ the fixed all scope. Verification cross-checks that digest against each
 complete pair before returning it in the safe summary. A legacy replication
 root without the field remains readable and reports no invented provenance.
 
+## Golden Android acceptance receipt
+
+The hosted workflow is the canonical end-to-end acceptance path for the current
+Android fixture. It pins API 35, Google APIs, x86_64, the pixel_7 profile, and
+emulator port 5554. It proves the standalone run, both replication orders, the
+authenticated session boundary, the raw-value-free export, the bounded
+reflection, and the read-only review projection before publishing a small safe
+artifact set.
+
+A local checkout can create the same receipt only when it has produced the
+current golden target and artifact contract. After the standalone run,
+replication, export, and reflection are verified, start the review server in
+one terminal:
+
+~~~console
+go run ./cmd/ariadne experiment serve --addr 127.0.0.1:8787 --reflection .ariadne/archive-question.json --export .ariadne/runs/experiment-001.redacted.json .ariadne/runs
+~~~
+
+In another terminal, check GET / and
+GET /run?directory=experiment-001. Confirm a POST to / returns 405 and
+Allow: GET. Then save and verify the raw-value-free acceptance receipt:
+
+~~~console
+go run ./cmd/ariadne experiment acceptance save --json --review-self-attested \
+  .ariadne/runs/experiment-001 \
+  .ariadne/runs/experiment-001-replicated \
+  .ariadne/runs/experiment-001.redacted.json \
+  .ariadne/archive-question.json \
+  .ariadne/experiment-001-acceptance.json
+go run ./cmd/ariadne experiment acceptance verify --json \
+  .ariadne/experiment-001-acceptance.json
+go run ./cmd/ariadne experiment acceptance verify --json \
+  --expect-sha256 <acceptance-sha256> \
+  .ariadne/experiment-001-acceptance.json
+~~~
+
+The review check is a prerequisite for the flag; the flag does not simulate
+computer use or target behavior. The receipt keeps only fixed identities,
+counts, replicated outcome, separate evidence states, the selected question
+identity, and the GET-only review contract. It does not contain personas,
+challenges, payloads, device serials, paths, or URLs. Offline verification
+checks the receipt contract and canonical identity; it does not rerun Android
+or establish universal causality.
+
+The hosted workflow uploads only the acceptance JSON and text report, the
+raw-value-free reflection and export, and the safe replication root receipt.
+Authoritative run directories and raw reports remain local CI inputs.
+
 ## Minimum-disclosure lab
 
 The location ladder is the first reduction slice. Its plan is

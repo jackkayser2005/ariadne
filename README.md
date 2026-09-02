@@ -64,6 +64,48 @@ the field remain readable and keep the field unavailable. This is a
 consistency and session-binding identity, not a signature, external
 authenticity proof, reset proof, or causal claim.
 
+## Golden Android acceptance
+
+The hosted Experiment 001 workflow now closes the first complete
+observe -> authenticate -> reduce -> replay -> compare -> verify path. It
+uses a pinned API 35 Google APIs x86_64 emulator with the authorized fixture,
+runs the standalone reference experiment and one pair in each explicit order,
+checks the loopback review projection, and publishes only raw-value-free
+artifacts.
+
+After producing equivalent local artifacts on an explicitly authorized
+emulator, save and verify the acceptance receipt:
+
+~~~console
+go run ./cmd/ariadne experiment export .ariadne/runs/experiment-001 .ariadne/runs/experiment-001.redacted.json
+go run ./cmd/ariadne experiment ask-archive save --json .ariadne/runs counterfactual-change .ariadne/archive-question.json
+go run ./cmd/ariadne experiment acceptance save --json --review-self-attested \
+  .ariadne/runs/experiment-001 \
+  .ariadne/runs/experiment-001-replicated \
+  .ariadne/runs/experiment-001.redacted.json \
+  .ariadne/archive-question.json \
+  .ariadne/experiment-001-acceptance.json
+go run ./cmd/ariadne experiment acceptance verify --json \
+  .ariadne/experiment-001-acceptance.json
+go run ./cmd/ariadne experiment acceptance verify --json \
+  --expect-sha256 <acceptance-sha256> \
+  .ariadne/experiment-001-acceptance.json
+~~~
+
+Before passing --review-self-attested, inspect the local server with GET / and
+GET /run?directory=experiment-001, and confirm that POST returns 405 with
+Allow: GET. The hosted workflow performs this check itself. The acceptance
+receipt records only safe identities, fixed counts, the replicated outcome,
+separate evidence states, the selected question identity, and the GET-only
+review contract. It contains no personas, challenges, payloads, device serials,
+paths, or URLs. Offline verification checks those identities and contracts; it
+does not rerun Android or turn the checked artifacts into a universal causal
+claim.
+
+The workflow uploads the acceptance JSON and text report, reflection, redacted
+export, and safe replication.json only. The authoritative run directories and
+their raw reports remain ephemeral CI inputs and are not publication artifacts.
+
 ## Minimum-disclosure lab
 
 The first reduction workflow uses the authorized Android fixture to test a
@@ -169,9 +211,14 @@ The read-only computer-use acceptance sequence is documented in
 The source-neutral tracking trace contract is documented in
 [`docs/content/docs/tracking-trace.md`](docs/content/docs/tracking-trace.md).
 
-The next tracked slices are [canonical provenance hardening](https://github.com/jackkayser2005/ariadne/issues/121),
-the [golden Android replication fixture](https://github.com/jackkayser2005/ariadne/issues/122), and a
-[tiered `ariadne validate` command](https://github.com/jackkayser2005/ariadne/issues/123).
+The focused golden Android acceptance slice is implemented in the CLI and
+hosted workflow under [issue #122](https://github.com/jackkayser2005/ariadne/issues/122);
+its real-emulator run remains the acceptance evidence gate. The canonical
+provenance intersection and tiered validation slices from
+[issue #121](https://github.com/jackkayser2005/ariadne/issues/121) and
+[issue #123](https://github.com/jackkayser2005/ariadne/issues/123) are present
+in the current line; their broader envelope and wider artifact-family mapping
+remain follow-up work.
 
 Ariadne now verifies and compares raw-value-free tracking traces from an
 authorized source adapter:

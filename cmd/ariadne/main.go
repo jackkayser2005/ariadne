@@ -107,6 +107,8 @@ const usage = `usage:
 	ariadne experiment run [--adb <path>] --device <serial> --package <package> --output <directory> <manifest.json>
 	ariadne experiment replicate [--adb <path>] --device <serial> --package <package> --pairs <n> --output <directory> <manifest.json>
 	ariadne experiment replicate verify [--json] <replicated-directory>
+	ariadne experiment acceptance save [--json] --review-self-attested <run-directory> <replicated-directory> <export.json> <reflection.json> <acceptance.json>
+	ariadne experiment acceptance verify [--json] [--expect-sha256 <digest>] <acceptance.json>
   ariadne experiment minimize [--json] [--adb <path>] --device <serial> --package <package> --pairs <n> --output <directory> <plan.json>
   ariadne experiment minimize verify [--json] [--expect-sha256 <digest>] <minimization-directory>
 	ariadne experiment minimize questions [--json]
@@ -452,6 +454,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return runMinimizationAskReceipt(args[4:], stdout, stderr, minimize.AskMinimizationQuestionReceipt)
 		}
 		return runMinimizationAsk(args[3:], stdout, stderr, minimize.AskMinimizationQuestion)
+	}
+	if len(args) >= 3 && args[0] == "experiment" && args[1] == "acceptance" {
+		if args[2] == "save" {
+			return runAndroidAcceptanceSave(args[3:], stdout, stderr, bundle.SaveAndroidAcceptanceRecord)
+		}
+		if args[2] == "verify" {
+			return runAndroidAcceptanceVerify(args[3:], stdout, stderr, bundle.VerifyAndroidAcceptanceRecord)
+		}
+		_, _ = io.WriteString(stderr, usage)
+		return 2
 	}
 	if len(args) >= 2 && args[0] == "experiment" && args[1] == "minimize" {
 		return runExperimentMinimize(args[2:], stdout, stderr, adb.Check, func(

@@ -269,6 +269,120 @@ jq -e '
 ' "${archive_question_verified_json}"
 reflection_sha256="$(jq -r '.reflection_sha256' "${archive_question_verified_json}")"
 "${ariadne}" experiment ask-archive verify --json --expect-sha256 "${reflection_sha256}" "${archive_question_json}" > /dev/null
+
+review_server_log="${RUNNER_TEMP}/ariadne-review-server.log"
+review_index_html="${RUNNER_TEMP}/ariadne-review-index.html"
+review_run_html="${RUNNER_TEMP}/ariadne-review-run.html"
+review_post_body="${RUNNER_TEMP}/ariadne-review-post.txt"
+review_post_headers="${RUNNER_TEMP}/ariadne-review-post.headers"
+"${ariadne}" experiment serve \
+  --addr 127.0.0.1:8787 \
+  --reflection "${archive_question_json}" \
+  --export "${redacted_export_json}" \
+  ".ariadne/ci" >"${review_server_log}" 2>&1 &
+review_pid=$!
+cleanup_review() {
+  kill "${review_pid}" 2>/dev/null || true
+  wait "${review_pid}" 2>/dev/null || true
+}
+trap 'cleanup_review; echo "experiment-001 script failed at line ${LINENO}" >&2' ERR
+review_ready=false
+for attempt in $(seq 1 30); do
+  if curl --silent --show-error --fail \
+    "http://127.0.0.1:8787/" >"${review_index_html}"; then
+    review_ready=true
+    break
+  fi
+  sleep 1
+done
+[[ "${review_ready}" == true ]]
+curl --silent --show-error --fail \
+  "http://127.0.0.1:8787/run?directory=experiment-001" \
+  >"${review_run_html}"
+review_post_status="$(curl --silent --show-error \
+  --dump-header "${review_post_headers}" \
+  --output "${review_post_body}" \
+  --write-out '%{http_code}' \
+  -X POST "http://127.0.0.1:8787/")"
+[[ "${review_post_status}" == "405" ]]
+grep -F -q "method not allowed" "${review_post_body}"
+grep -F -i -q "Allow: GET" "${review_post_headers}"
+if grep -F -q \
+  -e "baseline@example.invalid" \
+  -e "treatment@example.invalid" \
+  -e "standard" \
+  -e "personalized" \
+  -e "emulator-5554" \
+  -e "challenge" \
+  "${review_index_html}" \
+  "${review_run_html}"; then
+  echo "read-only review exposed a raw value or device identity" >&2
+  exit 1
+fi
+cleanup_review
+trap 'echo "experiment-001 script failed at line ${LINENO}" >&2' ERR
+
+redacted_export_artifact=".ariadne/ci/experiment-001-redacted.json"
+cp "${redacted_export_json}" "${redacted_export_artifact}"
+reflection_artifact=".ariadne/ci/experiment-001-reflection.json"
+cp "${archive_question_json}" "${reflection_artifact}"
+acceptance_artifact=".ariadne/ci/experiment-001-acceptance.json"
+acceptance_save_summary_json="${RUNNER_TEMP}/ariadne-acceptance-save-summary.json"
+"${ariadne}" experiment acceptance save --json --review-self-attested \
+  "${run_dir}" \
+  "${replicated_dir}" \
+  "${redacted_export_json}" \
+  "${archive_question_json}" \
+  "${acceptance_artifact}" >"${acceptance_save_summary_json}"
+jq -e '
+  (keys_unsorted == ["schema_version", "workflow", "manifest_name", "declared_variable", "manifest_contract_sha256", "run_evidence_sha256", "replication_receipt_sha256", "replication_provenance_sha256", "outcome", "evidence_state", "question_id", "question_state", "review_method", "review_path", "review_status", "acceptance_sha256"]) and
+  (.schema_version == 1) and
+  (.workflow == "experiment-001-emulator") and
+  (.manifest_name == "experiment-001-email") and
+  (.declared_variable == "email") and
+  (.manifest_contract_sha256 | test("^[0-9a-f]{64}$")) and
+  (.run_evidence_sha256 == $source_evidence_sha256) and
+  (.replication_receipt_sha256 | test("^[0-9a-f]{64}$")) and
+  (.replication_provenance_sha256 | test("^[0-9a-f]{64}$")) and
+  (.outcome == "replicated-change") and
+  (.evidence_state == "observed") and
+  (.question_id == "counterfactual-change") and
+  (.question_state == "observed") and
+  (.review_method == "GET") and
+  (.review_path == "/") and
+  (.review_status == "self-attested") and
+  (.acceptance_sha256 | test("^[0-9a-f]{64}$"))
+' --arg source_evidence_sha256 "${source_evidence_sha256}" \
+  "${acceptance_save_summary_json}"
+acceptance_sha256="$(jq -r '.acceptance_sha256' "${acceptance_save_summary_json}")"
+acceptance_verify_summary_json="${RUNNER_TEMP}/ariadne-acceptance-verify-summary.json"
+"${ariadne}" experiment acceptance verify --json \
+  --expect-sha256 "${acceptance_sha256}" \
+  "${acceptance_artifact}" >"${acceptance_verify_summary_json}"
+cmp -s "${acceptance_save_summary_json}" "${acceptance_verify_summary_json}"
+acceptance_text=".ariadne/ci/experiment-001-acceptance.txt"
+"${ariadne}" experiment acceptance verify \
+  --expect-sha256 "${acceptance_sha256}" \
+  "${acceptance_artifact}" >"${acceptance_text}"
+grep -F -q -x "android acceptance record structurally verified" \
+  "${acceptance_text}"
+grep -F -q "GET self-attested (/)" "${acceptance_text}"
+grep -F -q "does not prove target behavior beyond the checked artifacts" \
+  "${acceptance_text}"
+if grep -F -q \
+  -e "baseline@example.invalid" \
+  -e "treatment@example.invalid" \
+  -e "standard" \
+  -e "personalized" \
+  -e "emulator-5554" \
+  -e "challenge" \
+  "${redacted_export_artifact}" \
+  "${reflection_artifact}" \
+  "${acceptance_artifact}" \
+  "${acceptance_text}"; then
+  echo "published acceptance artifacts exposed a raw value or device identity" >&2
+  exit 1
+fi
 archive_question_older_json="${RUNNER_TEMP}/ariadne-archive-question-older.json"
 archive_question_newer_json="${RUNNER_TEMP}/ariadne-archive-question-newer.json"
 cp "${archive_question_json}" "${archive_question_older_json}"
