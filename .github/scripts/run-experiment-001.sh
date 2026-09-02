@@ -322,6 +322,44 @@ fi
 cleanup_review
 trap 'echo "experiment-001 script failed at line ${LINENO}" >&2' ERR
 
+archive_question_older_json="${RUNNER_TEMP}/ariadne-archive-question-older.json"
+archive_question_newer_json="${RUNNER_TEMP}/ariadne-archive-question-newer.json"
+cp "${archive_question_json}" "${archive_question_older_json}"
+cp "${archive_question_json}" "${archive_question_newer_json}"
+archive_question_comparison_json="${RUNNER_TEMP}/ariadne-archive-question-comparison.json"
+"${ariadne}" experiment ask-archive compare --json "${archive_question_older_json}" "${archive_question_newer_json}" >"${archive_question_comparison_json}"
+jq -e '
+     (keys_unsorted == ["schema_version", "comparison_id", "comparison_question", "question_id", "question", "result", "older_reflection_sha256", "newer_reflection_sha256", "compared", "changed", "older_only", "newer_only", "state_changes"]) and
+     (.schema_version == 2) and
+     (.comparison_id == "answer-state-change") and
+     (.comparison_question == "Did the bounded answer state change between these saved reflection snapshots?") and
+  (.question_id == "counterfactual-change") and
+  (.result == "same") and
+  (.older_reflection_sha256 == .newer_reflection_sha256) and
+  (.compared == 1) and
+  (.changed == 0) and
+  (.older_only == 0) and
+  (.newer_only == 0) and
+  (.state_changes == [])
+' "${archive_question_comparison_json}"
+archive_question_current_comparison_json="${RUNNER_TEMP}/ariadne-archive-question-current-comparison.json"
+"${ariadne}" experiment ask-archive compare-current --json \
+  "${archive_question_older_json}" \
+  ".ariadne/ci" >"${archive_question_current_comparison_json}"
+jq -e '
+  (keys_unsorted == ["schema_version", "comparison_id", "comparison_question", "question_id", "question", "result", "older_reflection_sha256", "newer_reflection_sha256", "compared", "changed", "older_only", "newer_only", "state_changes"]) and
+  (.schema_version == 2) and
+  (.comparison_id == "answer-state-change") and
+  (.comparison_question == "Did the bounded answer state change between these saved reflection snapshots?") and
+  (.question_id == "counterfactual-change") and
+  (.result == "same") and
+  (.older_reflection_sha256 == .newer_reflection_sha256) and
+  (.compared == 1) and
+  (.changed == 0) and
+  (.older_only == 0) and
+  (.newer_only == 0) and
+  (.state_changes == [])
+' "${archive_question_current_comparison_json}"
 redacted_export_artifact=".ariadne/ci/experiment-001-redacted.json"
 cp "${redacted_export_json}" "${redacted_export_artifact}"
 reflection_artifact=".ariadne/ci/experiment-001-reflection.json"
@@ -383,44 +421,6 @@ if grep -F -q \
   echo "published acceptance artifacts exposed a raw value or device identity" >&2
   exit 1
 fi
-archive_question_older_json="${RUNNER_TEMP}/ariadne-archive-question-older.json"
-archive_question_newer_json="${RUNNER_TEMP}/ariadne-archive-question-newer.json"
-cp "${archive_question_json}" "${archive_question_older_json}"
-cp "${archive_question_json}" "${archive_question_newer_json}"
-archive_question_comparison_json="${RUNNER_TEMP}/ariadne-archive-question-comparison.json"
-"${ariadne}" experiment ask-archive compare --json "${archive_question_older_json}" "${archive_question_newer_json}" >"${archive_question_comparison_json}"
-jq -e '
-     (keys_unsorted == ["schema_version", "comparison_id", "comparison_question", "question_id", "question", "result", "older_reflection_sha256", "newer_reflection_sha256", "compared", "changed", "older_only", "newer_only", "state_changes"]) and
-     (.schema_version == 2) and
-     (.comparison_id == "answer-state-change") and
-     (.comparison_question == "Did the bounded answer state change between these saved reflection snapshots?") and
-  (.question_id == "counterfactual-change") and
-  (.result == "same") and
-  (.older_reflection_sha256 == .newer_reflection_sha256) and
-  (.compared == 1) and
-  (.changed == 0) and
-  (.older_only == 0) and
-  (.newer_only == 0) and
-  (.state_changes == [])
-' "${archive_question_comparison_json}"
-archive_question_current_comparison_json="${RUNNER_TEMP}/ariadne-archive-question-current-comparison.json"
-"${ariadne}" experiment ask-archive compare-current --json \
-  "${archive_question_older_json}" \
-  ".ariadne/ci" >"${archive_question_current_comparison_json}"
-jq -e '
-  (keys_unsorted == ["schema_version", "comparison_id", "comparison_question", "question_id", "question", "result", "older_reflection_sha256", "newer_reflection_sha256", "compared", "changed", "older_only", "newer_only", "state_changes"]) and
-  (.schema_version == 2) and
-  (.comparison_id == "answer-state-change") and
-  (.comparison_question == "Did the bounded answer state change between these saved reflection snapshots?") and
-  (.question_id == "counterfactual-change") and
-  (.result == "same") and
-  (.older_reflection_sha256 == .newer_reflection_sha256) and
-  (.compared == 1) and
-  (.changed == 0) and
-  (.older_only == 0) and
-  (.newer_only == 0) and
-  (.state_changes == [])
-' "${archive_question_current_comparison_json}"
 archive_question_transitions_json="${RUNNER_TEMP}/ariadne-archive-question-transitions.json"
 archive_question_transitions_save_summary_json="${RUNNER_TEMP}/ariadne-archive-question-transitions-save-summary.json"
 "${ariadne}" experiment ask-archive transitions save --json \
