@@ -1275,3 +1275,48 @@ func TestDecodeRejectsOversizedPlanAndSaveRejectsInvalidPath(t *testing.T) {
 		t.Fatal(`Verify("") error = nil`)
 	}
 }
+
+func TestMinimizationCarriesCanonicalProvenance(t *testing.T) {
+	provenanceSHA256 := strings.Repeat("b", 64)
+	child := bundle.ReplicatedExperimentSummary{
+		ManifestName:     "plan-city",
+		ProvenanceSHA256: provenanceSHA256,
+		ReceiptSHA256:    strings.Repeat("a", 64),
+		Pairs:            2,
+		PairsPerOrder:    1,
+		CompletedPairs:   2,
+		NoChangePairs:    2,
+		Outcome:          bundle.NoChangeObserved,
+		EvidenceState:    evidence.Observed,
+	}
+	result := candidateResult("city", "candidate-001-city", child)
+	if result.ProvenanceSHA256 != provenanceSHA256 {
+		t.Fatalf("candidate provenance_sha256 = %q, want %q", result.ProvenanceSHA256, provenanceSHA256)
+	}
+	summary := MinimizationSummary{
+		SchemaVersion:          SummarySchemaVersion,
+		PlanName:               "plan",
+		Variable:               "email",
+		ReferenceCandidate:     "exact",
+		FunctionalityCriterion: FunctionalityCriterionAllNonDisclosureFields,
+		PairsPerOrder:          1,
+		EvidenceState:          evidence.Observed,
+		SelectionState:         SelectionSelected,
+		SelectedCandidate:      "city",
+		CandidateResults:       []CandidateResult{result},
+	}
+	if err := validateSummary(summary); err != nil {
+		t.Fatalf("validateSummary() error = %v", err)
+	}
+	projection := candidateProjection(result)
+	if projection.ProvenanceSHA256 != provenanceSHA256 {
+		t.Fatalf("projection provenance_sha256 = %q, want %q", projection.ProvenanceSHA256, provenanceSHA256)
+	}
+	if err := validateCandidateProjection(projection); err != nil {
+		t.Fatalf("validateCandidateProjection() error = %v", err)
+	}
+	projection.ProvenanceSHA256 = "invalid"
+	if err := validateCandidateProjection(projection); err == nil {
+		t.Fatal("validateCandidateProjection() accepted an invalid provenance digest")
+	}
+}

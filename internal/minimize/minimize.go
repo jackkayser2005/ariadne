@@ -90,19 +90,20 @@ const (
 
 // CandidateResult is a raw-value-free result for one replicated candidate.
 type CandidateResult struct {
-	ID             string                   `json:"id"`
-	ManifestName   string                   `json:"manifest_name,omitempty"`
-	Directory      string                   `json:"directory"`
-	Classification CandidateClassification  `json:"classification"`
-	Outcome        bundle.ReplicatedOutcome `json:"outcome"`
-	EvidenceState  evidence.State           `json:"evidence_state"`
-	ReceiptSHA256  string                   `json:"receipt_sha256"`
-	Pairs          int                      `json:"pairs"`
-	PairsPerOrder  int                      `json:"pairs_per_order"`
-	CompletedPairs int                      `json:"completed_pairs"`
-	ChangedPairs   int                      `json:"changed_pairs"`
-	NoChangePairs  int                      `json:"no_change_pairs"`
-	UnknownPairs   int                      `json:"unknown_pairs"`
+	ID               string                   `json:"id"`
+	ManifestName     string                   `json:"manifest_name,omitempty"`
+	Directory        string                   `json:"directory"`
+	Classification   CandidateClassification  `json:"classification"`
+	Outcome          bundle.ReplicatedOutcome `json:"outcome"`
+	EvidenceState    evidence.State           `json:"evidence_state"`
+	ReceiptSHA256    string                   `json:"receipt_sha256"`
+	ProvenanceSHA256 string                   `json:"provenance_sha256,omitempty"`
+	Pairs            int                      `json:"pairs"`
+	PairsPerOrder    int                      `json:"pairs_per_order"`
+	CompletedPairs   int                      `json:"completed_pairs"`
+	ChangedPairs     int                      `json:"changed_pairs"`
+	NoChangePairs    int                      `json:"no_change_pairs"`
+	UnknownPairs     int                      `json:"unknown_pairs"`
 }
 
 // MinimizationSummary is the raw-value-free receipt for one complete ladder
@@ -471,19 +472,20 @@ func candidateDirectory(index int, id string) string {
 
 func candidateResult(id, directory string, summary bundle.ReplicatedExperimentSummary) CandidateResult {
 	return CandidateResult{
-		ID:             id,
-		ManifestName:   summary.ManifestName,
-		Directory:      directory,
-		Classification: classify(summary.Outcome, summary.EvidenceState),
-		Outcome:        summary.Outcome,
-		EvidenceState:  summary.EvidenceState,
-		ReceiptSHA256:  summary.ReceiptSHA256,
-		Pairs:          summary.Pairs,
-		PairsPerOrder:  summary.PairsPerOrder,
-		CompletedPairs: summary.CompletedPairs,
-		ChangedPairs:   summary.ChangedPairs,
-		NoChangePairs:  summary.NoChangePairs,
-		UnknownPairs:   summary.UnknownPairs,
+		ID:               id,
+		ManifestName:     summary.ManifestName,
+		Directory:        directory,
+		Classification:   classify(summary.Outcome, summary.EvidenceState),
+		Outcome:          summary.Outcome,
+		EvidenceState:    summary.EvidenceState,
+		ReceiptSHA256:    summary.ReceiptSHA256,
+		ProvenanceSHA256: summary.ProvenanceSHA256,
+		Pairs:            summary.Pairs,
+		PairsPerOrder:    summary.PairsPerOrder,
+		CompletedPairs:   summary.CompletedPairs,
+		ChangedPairs:     summary.ChangedPairs,
+		NoChangePairs:    summary.NoChangePairs,
+		UnknownPairs:     summary.UnknownPairs,
 	}
 }
 
@@ -764,6 +766,9 @@ func validateSummary(summary MinimizationSummary) error {
 		}
 		if !validDigest(result.ReceiptSHA256) {
 			return errors.New("candidate result receipt_sha256 is invalid")
+		}
+		if result.ProvenanceSHA256 != "" && !validDigest(result.ProvenanceSHA256) {
+			return errors.New("candidate result provenance_sha256 is invalid")
 		}
 		if result.Pairs != result.PairsPerOrder*2 ||
 			result.PairsPerOrder != summary.PairsPerOrder ||

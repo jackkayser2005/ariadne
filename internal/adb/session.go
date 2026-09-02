@@ -24,7 +24,7 @@ import (
 const sessionSchemaVersion = 7
 const networkObservationTimeout = 5 * time.Second
 const networkCleanupTimeout = 5 * time.Second
-const uiHierarchySettleTimeout = 10 * time.Second
+const uiHierarchySettleTimeout = 30 * time.Second
 const uiHierarchyRetryInterval = 100 * time.Millisecond
 
 var errFixtureControlNotUnique = errors.New("fixture control was not found uniquely")
@@ -250,7 +250,7 @@ func validatePairConfig(
 	if !validSelection(target.Device) {
 		return errors.New("device is invalid")
 	}
-	if !validSelection(target.Package) {
+	if !validPackageName(target.Package) {
 		return errors.New("package is invalid")
 	}
 	if !validSelection(target.Version) {

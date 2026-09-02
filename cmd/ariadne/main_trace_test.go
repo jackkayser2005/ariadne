@@ -121,7 +121,7 @@ func TestRunTraceSessionCreateAndVerify(t *testing.T) {
 		SessionSHA256:   strings.Repeat("d", 64),
 	}
 	save := func(tracePath, sessionPath string, input trace.SessionInput) (trace.SessionVerificationSummary, error) {
-		if tracePath != "trace.json" || sessionPath != "session.json" || input.Adapter != summary.Adapter || input.AdapterVersion != summary.AdapterVersion || input.ProcedureSHA256 != summary.ProcedureSHA256 || input.Role != trace.RoleStandalone || input.Order != trace.OrderStandalone || input.PairSHA256 != "" {
+		if tracePath != "trace.json" || sessionPath != "session.json" || input.Adapter != summary.Adapter || input.AdapterVersion != summary.AdapterVersion || input.Source != summary.Source || input.ProcedureSHA256 != summary.ProcedureSHA256 || input.Role != trace.RoleStandalone || input.Order != trace.OrderStandalone || input.PairSHA256 != "" {
 			t.Fatalf("save args = %q, %q, %#v", tracePath, sessionPath, input)
 		}
 		return summary, nil
@@ -136,6 +136,7 @@ func TestRunTraceSessionCreateAndVerify(t *testing.T) {
 	args := []string{
 		"--adapter", summary.Adapter,
 		"--adapter-version", "1",
+		"--source", summary.Source,
 		"--procedure-sha256", summary.ProcedureSHA256,
 		"trace.json", "session.json",
 	}
@@ -358,12 +359,12 @@ func TestRunTraceSessionPairCreate(t *testing.T) {
 		TreatmentSessionSHA256: strings.Repeat("f", 64),
 	}
 	save := func(baselineTrace, treatmentTrace, baselineSession, treatmentSession string, input trace.SessionPairInput) (trace.SessionPairVerificationSummary, error) {
-		if baselineTrace != "baseline-trace.json" || treatmentTrace != "treatment-trace.json" || baselineSession != "baseline-session.json" || treatmentSession != "treatment-session.json" || input.Adapter != summary.Adapter || input.AdapterVersion != summary.AdapterVersion || input.ProcedureSHA256 != summary.ProcedureSHA256 || input.Order != summary.Order {
+		if baselineTrace != "baseline-trace.json" || treatmentTrace != "treatment-trace.json" || baselineSession != "baseline-session.json" || treatmentSession != "treatment-session.json" || input.Adapter != summary.Adapter || input.AdapterVersion != summary.AdapterVersion || input.Source != summary.Source || input.ProcedureSHA256 != summary.ProcedureSHA256 || input.Order != summary.Order {
 			t.Fatalf("pair create args = %q, %q, %q, %q, %#v", baselineTrace, treatmentTrace, baselineSession, treatmentSession, input)
 		}
 		return summary, nil
 	}
-	args := []string{"--adapter", summary.Adapter, "--adapter-version", "1", "--procedure-sha256", summary.ProcedureSHA256, "--order", summary.Order, "baseline-trace.json", "treatment-trace.json", "baseline-session.json", "treatment-session.json"}
+	args := []string{"--adapter", summary.Adapter, "--adapter-version", "1", "--source", summary.Source, "--procedure-sha256", summary.ProcedureSHA256, "--order", summary.Order, "baseline-trace.json", "treatment-trace.json", "baseline-session.json", "treatment-session.json"}
 	var stdout, stderr bytes.Buffer
 	if exitCode := runTraceSessionPairCreate(args, &stdout, &stderr, save); exitCode != 0 {
 		t.Fatalf("runTraceSessionPairCreate() = %d, stderr=%q", exitCode, stderr.String())

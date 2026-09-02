@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -254,8 +255,16 @@ func TestRunReplicatedReportsOutputParentFailure(t *testing.T) {
 
 func TestWriteReplicatedRecordRejectsInvalidMetadata(t *testing.T) {
 	outputDir := t.TempDir()
-	if err := writeReplicatedRecord(outputDir, ReplicatedRunRecord{}); err == nil {
-		t.Fatal("writeReplicatedRecord() error = nil")
+	for _, record := range []ReplicatedRunRecord{
+		{},
+		{ManifestName: "manifest", DeclaredVariable: "variable", ProvenanceSHA256: "bad"},
+	} {
+		if err := writeReplicatedRecord(outputDir, record); err == nil {
+			t.Fatalf("writeReplicatedRecord(%+v) error = nil", record)
+		}
+	}
+	if _, err := ReplicationProvenance(""); err == nil {
+		t.Fatal("ReplicationProvenance() error = nil")
 	}
 }
 
@@ -276,5 +285,110 @@ func TestRunReplicatedPreservesExclusiveRoot(t *testing.T) {
 	)
 	if err == nil || !strings.Contains(err.Error(), "create output directory") {
 		t.Fatalf("existing root error = %v", err)
+	}
+}
+
+func TestAuthenticatedReplicationRecordsCanonicalProvenance(t *testing.T) {
+	manifest := sessionManifest()
+	manifest.SchemaVersion = 3
+	manifest.TapResourceID = "dev.ariadne.fixture:id/observe_button"
+	target := sessionTarget()
+	challenges := []string{
+		strings.Repeat("0123456789abcdef", 4),
+		strings.Repeat("fedcba9876543210", 4),
+		strings.Repeat("0011223344556677", 4),
+		strings.Repeat("8899aabbccddeeff", 4),
+	}
+	challengeIndex := 0
+	currentInput := fixtureInput{}
+	ui := []byte("<hierarchy><node resource-id=\"dev.ariadne.fixture:id/observe_button\" bounds=\"[100,200][300,400]\" /> </hierarchy>")
+	writeInput := func(_ context.Context, _ string, data []byte, _ ...string) ([]byte, error) {
+		if err := json.Unmarshal(data, &currentInput); err != nil {
+			return nil, err
+		}
+		if err := validateFixtureInput(currentInput); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
+	postObservation := func(body []byte) error {
+		response, err := http.Post(
+			"http://127.0.0.1:"+strconv.Itoa(currentInput.CollectorPort)+"/observe",
+			"application/json",
+			strings.NewReader(string(body)),
+		)
+		if err != nil {
+			return err
+		}
+		defer response.Body.Close()
+		if response.StatusCode != http.StatusNoContent {
+			return errors.New("collector rejected fixture observation")
+		}
+		return nil
+	}
+	run := func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		if len(args) > 3 && args[3] == "pm" {
+			return []byte("Success\n"), nil
+		}
+		if len(args) > 2 && args[2] == "reverse" {
+			return nil, nil
+		}
+		if len(args) > 3 && args[3] == "am" {
+			body := []byte("{\"schema_version\":1,\"challenge\":\"" + currentInput.Challenge + "\",\"region\":\"us-east\",\"variant\":\"standard\"}")
+			if err := postObservation(body); err != nil {
+				return nil, err
+			}
+			return []byte("Status: ok\n"), nil
+		}
+		if len(args) > 3 && (args[3] == "uiautomator" || args[3] == "cat") {
+			return ui, nil
+		}
+		if len(args) > 2 && args[2] == "exec-out" {
+			return []byte("{\"schema_version\":1,\"challenge\":\"" + currentInput.Challenge + "\",\"region\":\"us-east\",\"variant\":\"standard\"}"), nil
+		}
+		return []byte("Status: ok\n"), nil
+	}
+	challenge := func() (string, error) {
+		if challengeIndex >= len(challenges) {
+			return "", errors.New("test challenge sequence exhausted")
+		}
+		value := challenges[challengeIndex]
+		challengeIndex++
+		return value, nil
+	}
+	outputDir := filepath.Join(t.TempDir(), "replicated")
+	if err := runReplicatedWithAuthenticated(
+		context.Background(),
+		"adb",
+		target,
+		manifest,
+		outputDir,
+		1,
+		run,
+		writeInput,
+		challenge,
+		sequenceClock(),
+	); err != nil {
+		t.Fatalf("runReplicatedWithAuthenticated() error = %v", err)
+	}
+	expected, err := ReplicationProvenanceSHA256(manifest.ContractDigest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(outputDir, "replication.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record ReplicatedRunRecord
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatal(err)
+	}
+	if record.ProvenanceSHA256 != expected {
+		t.Fatalf("provenance_sha256 = %q, want %q", record.ProvenanceSHA256, expected)
+	}
+	for _, secret := range append(challenges, manifest.Baseline["email"], manifest.Treatment["email"]) {
+		if strings.Contains(string(data), secret) {
+			t.Fatalf("replication metadata exposed %q: %s", secret, data)
+		}
 	}
 }

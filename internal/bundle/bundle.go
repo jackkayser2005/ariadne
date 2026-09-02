@@ -1478,14 +1478,22 @@ func artifactByPath(artifacts []adb.Artifact, path string) (adb.Artifact, bool) 
 	return found, count == 1
 }
 
+var errUnsafePath = errors.New("unsafe path")
+
 func pathSafetyError(info os.FileInfo) error {
 	if info.Mode()&os.ModeSymlink != 0 {
-		return errors.New("symbolic links are not allowed")
+		return fmt.Errorf("symbolic links are not allowed: %w", errUnsafePath)
 	}
 	if info.Mode()&os.ModeIrregular != 0 {
-		return errors.New("reparse points and other irregular path components are not allowed")
+		return fmt.Errorf("reparse points and other irregular path components are not allowed: %w", errUnsafePath)
 	}
 	return nil
+}
+
+// IsPathSafetyError reports whether err indicates a rejected symlink, reparse
+// point, or path replacement during safe file opening.
+func IsPathSafetyError(err error) bool {
+	return errors.Is(err, errUnsafePath)
 }
 
 func lstatNoSymlinkPath(path string) (os.FileInfo, error) {
@@ -1528,7 +1536,7 @@ func readFileBounded(path string, limit int64) ([]byte, error) {
 		return nil, fmt.Errorf("open: %w", err)
 	}
 	if !info.Mode().IsRegular() {
-		return nil, errors.New("open: regular file required")
+		return nil, fmt.Errorf("open: regular file required: %w", errUnsafePath)
 	}
 	file, err := os.Open(path)
 	if err != nil {
@@ -1540,7 +1548,14 @@ func readFileBounded(path string, limit int64) ([]byte, error) {
 		return nil, fmt.Errorf("stat after open: %w", err)
 	}
 	if !os.SameFile(info, openedInfo) {
-		return nil, errors.New("open: path changed during verification")
+		return nil, fmt.Errorf("open: path changed during verification: %w", errUnsafePath)
+	}
+	currentInfo, err := lstatNoSymlinkPath(path)
+	if err != nil {
+		return nil, fmt.Errorf("recheck after open: %w", err)
+	}
+	if !currentInfo.Mode().IsRegular() || !os.SameFile(currentInfo, openedInfo) {
+		return nil, fmt.Errorf("open: path changed during verification: %w", errUnsafePath)
 	}
 	data, err := io.ReadAll(io.LimitReader(file, limit+1))
 	if err != nil {

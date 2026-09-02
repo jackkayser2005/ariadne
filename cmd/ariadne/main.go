@@ -21,16 +21,19 @@ import (
 	"github.com/jackkayser2005/ariadne/internal/proxy"
 	"github.com/jackkayser2005/ariadne/internal/trace"
 	"github.com/jackkayser2005/ariadne/internal/ui"
+	"github.com/jackkayser2005/ariadne/internal/validation"
 )
 
 const usage = `usage:
-  ariadne validate <manifest.json>
+  ariadne validate [--json] <artifact>
   ariadne android check [--adb <path>] --device <serial> --package <package>
 	ariadne trace verify [--json] [--expect-sha256 <digest>] <trace.json>
 	ariadne trace compare [--json] <baseline-trace.json> <treatment-trace.json>
-	ariadne trace session create [--json] --adapter <adapter> --procedure-sha256 <digest> [--adapter-version <n>] <trace.json> <session.json>
+	ariadne trace adapter run [--json] --procedure <procedure.json> --driver <executable> [--driver-arg <arg>] --output <directory>
+	ariadne trace adapter verify [--json] [--expect-sha256 <digest>] <directory>
+	ariadne trace session create [--json] --adapter <adapter> --procedure-sha256 <digest> [--adapter-version <n>] [--source <source>] <trace.json> <session.json>
 	ariadne trace session verify [--json] [--expect-sha256 <digest>] <session.json> <trace.json>
-	ariadne trace session pair create [--json] --adapter <adapter> --procedure-sha256 <digest> [--adapter-version <n>] --order <baseline-treatment|treatment-baseline> <baseline-trace.json> <treatment-trace.json> <baseline-session.json> <treatment-session.json>
+	ariadne trace session pair create [--json] --adapter <adapter> --procedure-sha256 <digest> [--adapter-version <n>] [--source <source>] --order <baseline-treatment|treatment-baseline> <baseline-trace.json> <treatment-trace.json> <baseline-session.json> <treatment-session.json>
 	ariadne trace session pair verify [--json] <baseline-session.json> <baseline-trace.json> <treatment-session.json> <treatment-trace.json>
 	ariadne trace session pair compare [--json] <baseline-session.json> <baseline-trace.json> <treatment-session.json> <treatment-trace.json>
 	ariadne trace replication save [--json] [--reset-confirmed <pair-index>] <ledger.json> <baseline-trace.json> <treatment-trace.json> <baseline-session.json> <treatment-session.json> ...
@@ -54,7 +57,7 @@ const usage = `usage:
 	ariadne trace study ask receipt [--json] <round.json> <question-id>
 	ariadne trace study ask receipt save [--json] <round.json> <question-id> <receipt.json>
 	ariadne trace study ask receipt verify [--json] [--expect-sha256 <digest>] <receipt.json>
-	ariadne trace archive create [--json] --trace <trace.json> --session <session.json> ... <archive.json>
+	ariadne trace archive create [--json] (--trace <trace.json> --session <session.json> ... | --run <adapter-run-directory> ...) <archive.json>
 	ariadne trace archive verify [--json] [--expect-sha256 <digest>] <archive.json>
 	ariadne trace archive questions [--json]
 	ariadne trace archive ask [--json] <archive.json> <question-id>
@@ -65,8 +68,11 @@ const usage = `usage:
 	ariadne trace archive ask receipt save [--json] <round.json> <question-id> <receipt.json>
 	ariadne trace archive ask receipt verify [--json] [--expect-sha256 <digest>] <receipt.json>
 	ariadne trace case save [--json] <case.json> <trace-archive|trace-replication> <artifact.json> <question-round.json> ...
+	ariadne trace case assemble [--json] --plan <case-plan.json> --output <case-workspace>
+	ariadne trace case assemble verify [--json] <case-workspace>
 	ariadne trace case verify [--json] [--expect-sha256 <digest>] <case.json>
 	ariadne trace case map [--json] <case.json>
+	ariadne trace case map compare [--json] --commitment-sha256 <digest> <first-case-workspace> <second-case-workspace>
 	ariadne trace case map questions [--json]
 	ariadne trace case map ask [--json] <case.json> <question-id>
 	ariadne trace case map ask all [--json] <case.json>
@@ -86,7 +92,7 @@ const usage = `usage:
 	ariadne browser fixture replicate [--json] --procedure <procedure.json> --driver <executable> [--driver-arg <arg>] --pairs <n> --output <directory>
 	ariadne browser fixture replicate verify [--json] <replicated-directory>
 	ariadne browser fixture minimize [--json] --plan <plan.json> --procedure <procedure.json> --driver <executable> [--driver-arg <arg>] --pairs <n> --output <directory>
-	ariadne browser fixture minimize verify [--json] <minimization-directory>
+	ariadne browser fixture minimize verify [--json] [--expect-sha256 <digest>] <minimization-directory>
 	ariadne browser fixture minimize questions [--json]
 	ariadne browser fixture minimize ask [--json] <minimization-directory> <question-id>
 	ariadne browser fixture minimize ask all [--json] <minimization-directory>
@@ -101,8 +107,10 @@ const usage = `usage:
 	ariadne experiment run [--adb <path>] --device <serial> --package <package> --output <directory> <manifest.json>
 	ariadne experiment replicate [--adb <path>] --device <serial> --package <package> --pairs <n> --output <directory> <manifest.json>
 	ariadne experiment replicate verify [--json] <replicated-directory>
+	ariadne experiment acceptance save [--json] --review-self-attested <run-directory> <replicated-directory> <export.json> <reflection.json> <acceptance.json>
+	ariadne experiment acceptance verify [--json] [--expect-sha256 <digest>] <acceptance.json>
   ariadne experiment minimize [--json] [--adb <path>] --device <serial> --package <package> --pairs <n> --output <directory> <plan.json>
-  ariadne experiment minimize verify [--json] <minimization-directory>
+  ariadne experiment minimize verify [--json] [--expect-sha256 <digest>] <minimization-directory>
 	ariadne experiment minimize questions [--json]
 	ariadne experiment minimize ask [--json] <minimization-directory> <question-id>
 	ariadne experiment minimize ask all [--json] <minimization-directory>
@@ -142,7 +150,7 @@ const usage = `usage:
   ariadne experiment ask-archive verify [--json] [--expect-sha256 <digest>] <report.json>
   ariadne experiment questions [--json]
   ariadne experiment list [--json] <archive-root>
-	ariadne experiment serve [--addr <address>] [--history <history.json>] [--reflection <report.json>] [--export <export.json>] [--acceptance <acceptance.json>] [--round-first <round.json> --round-second <round.json>] [--trace-archive <archive.json>] [--trace-round <round.json>] [--trace-replication <ledger.json>] [--trace-case <case.json>] [--trace-study <study.json>] [--trace-study-round <round.json>] [--trace-study-receipt <receipt.json>] [--trace-study-second <study.json> --trace-study-round-second <round.json>] [--minimization <run-directory>] [--minimization-round <round.json>] [--minimization-receipt <receipt.json>] <archive-root>
+	ariadne experiment serve [--addr <address>] [--history <history.json>] [--reflection <report.json>] [--export <export.json>] [--acceptance <acceptance.json>] [--round-first <round.json> --round-second <round.json>] [--trace-archive <archive.json>] [--trace-round <round.json>] [--trace-replication <ledger.json>] [--trace-case <case.json>] [--trace-case-round <round.json>] [--trace-case-receipt <receipt.json>] [--trace-study <study.json>] [--trace-study-round <round.json>] [--trace-study-receipt <receipt.json>] [--trace-study-second <study.json> --trace-study-round-second <round.json>] [--minimization <run-directory>] [--minimization-round <round.json>] [--minimization-receipt <receipt.json>] <archive-root>
 `
 
 const adbCheckTimeout = 10 * time.Second
@@ -156,8 +164,8 @@ func main() {
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
-	if len(args) == 2 && args[0] == "validate" {
-		return runValidate(args[1], stdout, stderr)
+	if len(args) >= 2 && args[0] == "validate" {
+		return runValidate(args[1:], stdout, stderr)
 	}
 	if len(args) >= 2 && args[0] == "android" && args[1] == "check" {
 		return runAndroidCheck(args[2:], stdout, stderr, adb.Check)
@@ -168,9 +176,17 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) >= 2 && args[0] == "trace" && args[1] == "compare" {
 		return runTraceCompare(args[2:], stdout, stderr, trace.CompareFiles)
 	}
+	if len(args) >= 3 && args[0] == "trace" && args[1] == "adapter" {
+		if args[2] == "run" {
+			return runTraceAdapter(args[3:], stdout, stderr, trace.RunSourceAdapter)
+		}
+		if args[2] == "verify" {
+			return runTraceAdapterVerify(args[3:], stdout, stderr, trace.VerifySourceAdapterRun)
+		}
+	}
 	if len(args) >= 3 && args[0] == "trace" && args[1] == "archive" {
 		if args[2] == "create" {
-			return runTraceArchiveCreate(args[3:], stdout, stderr, trace.SaveArchive)
+			return runTraceArchiveCreate(args[3:], stdout, stderr, trace.SaveArchive, trace.SaveSourceAdapterArchive)
 		}
 		if args[2] == "verify" {
 			return runTraceArchiveVerify(args[3:], stdout, stderr, trace.VerifyArchive)
@@ -201,6 +217,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	if len(args) >= 3 && args[0] == "trace" && args[1] == "case" {
+		if args[2] == "assemble" {
+			if len(args) >= 4 && args[3] == "verify" {
+				return runTraceCaseAssembleVerify(args[4:], stdout, stderr, trace.VerifyCaseAssembly)
+			}
+			return runTraceCaseAssemble(args[3:], stdout, stderr, trace.AssembleCase)
+		}
 		if args[2] == "save" {
 			return runTraceCaseSave(args[3:], stdout, stderr, trace.SaveCase)
 		}
@@ -208,6 +230,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return runTraceCaseVerify(args[3:], stdout, stderr, trace.VerifyCase)
 		}
 		if args[2] == "map" {
+			if len(args) >= 4 && args[3] == "compare" {
+				return runTraceCaseMapCompare(args[4:], stdout, stderr, compareTraceCaseMaps)
+			}
 			if len(args) >= 4 && args[3] == "questions" {
 				return runTraceCaseMapQuestions(args[4:], stdout, stderr, trace.CaseDisclosureQuestions)
 			}
@@ -383,10 +408,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runMinimizationAsk(args[4:], stdout, stderr, browser.AskFixtureMinimizationQuestion)
 	}
 	if len(args) >= 4 && args[0] == "browser" && args[1] == "fixture" && args[2] == "minimize" && args[3] == "verify" {
-		return runBrowserFixtureMinimizeVerify(args[4:], stdout, stderr, browser.VerifyFixtureMinimization)
+		return runBrowserFixtureMinimizeVerify(args[4:], stdout, stderr, browser.VerifyFixtureMinimizationWithIdentity)
 	}
 	if len(args) >= 3 && args[0] == "browser" && args[1] == "fixture" && args[2] == "minimize" {
-		return runBrowserFixtureMinimize(args[3:], stdout, stderr, browser.RunFixtureMinimization, browser.VerifyFixtureMinimization)
+		return runBrowserFixtureMinimize(args[3:], stdout, stderr, browser.RunFixtureMinimization, browser.VerifyFixtureMinimizationWithIdentity)
 	}
 	if len(args) >= 4 && args[0] == "browser" && args[1] == "fixture" && args[2] == "replicate" && args[3] == "verify" {
 		return runBrowserFixtureReplicateVerify(args[4:], stdout, stderr, browser.VerifyFixtureReplicated)
@@ -404,7 +429,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runExperimentReplicate(args[2:], stdout, stderr, adb.Check, adb.RunReplicated)
 	}
 	if len(args) >= 3 && args[0] == "experiment" && args[1] == "minimize" && args[2] == "verify" {
-		return runMinimizationVerify(args[3:], stdout, stderr, minimize.Verify)
+		return runMinimizationVerify(args[3:], stdout, stderr, minimize.VerifyWithIdentity)
 	}
 	if len(args) >= 3 && args[0] == "experiment" && args[1] == "minimize" && args[2] == "questions" {
 		return runMinimizationQuestions(args[3:], stdout, stderr, minimize.MinimizationQuestions)
@@ -429,6 +454,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return runMinimizationAskReceipt(args[4:], stdout, stderr, minimize.AskMinimizationQuestionReceipt)
 		}
 		return runMinimizationAsk(args[3:], stdout, stderr, minimize.AskMinimizationQuestion)
+	}
+	if len(args) >= 3 && args[0] == "experiment" && args[1] == "acceptance" {
+		if args[2] == "save" {
+			return runAndroidAcceptanceSave(args[3:], stdout, stderr, bundle.SaveAndroidAcceptanceRecord)
+		}
+		if args[2] == "verify" {
+			return runAndroidAcceptanceVerify(args[3:], stdout, stderr, bundle.VerifyAndroidAcceptanceRecord)
+		}
+		_, _ = io.WriteString(stderr, usage)
+		return 2
 	}
 	if len(args) >= 2 && args[0] == "experiment" && args[1] == "minimize" {
 		return runExperimentMinimize(args[2:], stdout, stderr, adb.Check, func(
@@ -550,7 +585,40 @@ func run(args []string, stdout, stderr io.Writer) int {
 	return 2
 }
 
-func runValidate(path string, stdout, stderr io.Writer) int {
+func runValidate(args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet("validate", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	jsonOutput := flags.Bool("json", false, "")
+	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
+		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+
+	path := flags.Arg(0)
+	if !*jsonOutput {
+		info, err := os.Lstat(path)
+		if err != nil || info.Mode().IsRegular() {
+			return runLegacyManifestValidate(path, stdout, stderr)
+		}
+	}
+
+	report := validation.Validate(path)
+	if *jsonOutput {
+		if err := json.NewEncoder(stdout).Encode(report); err != nil {
+			_, _ = fmt.Fprintf(stderr, "ariadne: validate: write output: %v\n", err)
+			return 1
+		}
+	} else if err := writeValidationReport(report, stdout); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: validate: write output: %v\n", err)
+		return 1
+	}
+	if report.Overall != validation.StatusPass {
+		return 1
+	}
+	return 0
+}
+
+func runLegacyManifestValidate(path string, stdout, stderr io.Writer) int {
 	file, err := os.Open(path)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: validate: open manifest: %v\n", err)
@@ -579,6 +647,49 @@ func runValidate(path string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+func writeValidationReport(report validation.Report, stdout io.Writer) error {
+	if _, err := fmt.Fprintf(stdout, "artifact: %s\n", report.ArtifactKind); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(stdout, "overall: %s\n", report.Overall); err != nil {
+		return err
+	}
+	if report.Identity != "" {
+		if _, err := fmt.Fprintf(stdout, "identity: %s\n", report.Identity); err != nil {
+			return err
+		}
+	}
+	if report.Outcome != "" {
+		if _, err := fmt.Fprintf(stdout, "outcome: %s\n", report.Outcome); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintf(stdout, "evidence_state: %s\n", report.EvidenceState); err != nil {
+		return err
+	}
+	if report.SelectionState != "" {
+		if _, err := fmt.Fprintf(stdout, "selection_state: %s\n", report.SelectionState); err != nil {
+			return err
+		}
+	}
+	if report.SelectedCandidate != "" {
+		if _, err := fmt.Fprintf(stdout, "selected_candidate: %s\n", report.SelectedCandidate); err != nil {
+			return err
+		}
+	}
+	for _, tier := range report.Tiers {
+		if _, err := fmt.Fprintf(stdout, "%s: %s\n", tier.Tier, tier.Status); err != nil {
+			return err
+		}
+	}
+	if report.Reason != "" {
+		if _, err := fmt.Fprintf(stdout, "reason: %s\n", report.Reason); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func runBrowserTrace(
@@ -962,6 +1073,7 @@ func runTraceSessionCreate(
 	adapter := flags.String("adapter", "", "")
 	adapterVersion := flags.Int("adapter-version", 1, "")
 	procedureSHA256 := flags.String("procedure-sha256", "", "")
+	source := flags.String("source", "", "")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 2 || *adapter == "" || *procedureSHA256 == "" {
 		_, _ = io.WriteString(stderr, usage)
 		return 2
@@ -969,6 +1081,7 @@ func runTraceSessionCreate(
 	summary, err := save(flags.Arg(0), flags.Arg(1), trace.SessionInput{
 		Adapter:         *adapter,
 		AdapterVersion:  *adapterVersion,
+		Source:          *source,
 		ProcedureSHA256: *procedureSHA256,
 		Role:            trace.RoleStandalone,
 		Order:           trace.OrderStandalone,
@@ -1079,6 +1192,7 @@ func runTraceSessionPairCreate(
 	adapter := flags.String("adapter", "", "")
 	adapterVersion := flags.Int("adapter-version", 1, "")
 	procedureSHA256 := flags.String("procedure-sha256", "", "")
+	source := flags.String("source", "", "")
 	order := flags.String("order", "", "")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 4 || *adapter == "" || *procedureSHA256 == "" || *order == "" {
 		_, _ = io.WriteString(stderr, usage)
@@ -1087,6 +1201,7 @@ func runTraceSessionPairCreate(
 	summary, err := save(flags.Arg(0), flags.Arg(1), flags.Arg(2), flags.Arg(3), trace.SessionPairInput{
 		Adapter:         *adapter,
 		AdapterVersion:  *adapterVersion,
+		Source:          *source,
 		ProcedureSHA256: *procedureSHA256,
 		Order:           *order,
 	})
@@ -1226,7 +1341,12 @@ type minimizationExecutor func(
 ) (minimize.MinimizationSummary, error)
 type bundleWriter func(string) (bundle.Summary, error)
 type replicatedVerifier func(string) (bundle.ReplicatedExperimentSummary, error)
-type minimizationVerifier func(string) (minimize.MinimizationSummary, error)
+type minimizationVerifier func(string) (minimize.MinimizationSummary, string, error)
+
+type minimizationVerificationOutput struct {
+	minimize.MinimizationSummary
+	ReceiptSHA256 string `json:"receipt_sha256"`
+}
 type bundleExporter func(string, string) (bundle.ExportSummary, error)
 type bundleExportVerifier func(string) (bundle.ExportVerificationSummary, error)
 type bundleFinder func(string, string) (bundle.Finding, error)
@@ -1383,23 +1503,45 @@ func runMinimizationVerify(
 	flags := flag.NewFlagSet("experiment minimize verify", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	jsonOutput := flags.Bool("json", false, "")
+	expectedSHA256 := flags.String("expect-sha256", "", "")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
 		_, _ = io.WriteString(stderr, usage)
 		return 2
 	}
-	summary, err := verify(flags.Arg(0))
+	expectedSHA256Provided := false
+	flags.Visit(func(visited *flag.Flag) {
+		if visited.Name == "expect-sha256" {
+			expectedSHA256Provided = true
+		}
+	})
+	if expectedSHA256Provided && !trace.ValidSHA256(*expectedSHA256) {
+		_, _ = io.WriteString(stderr, "ariadne: experiment minimize verify: expect-sha256 must be a lowercase 64-character SHA-256 digest\n")
+		return 2
+	}
+	summary, receiptSHA256, err := verify(flags.Arg(0))
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment minimize verify: %v\n", err)
 		return 1
 	}
+	if expectedSHA256Provided && receiptSHA256 != *expectedSHA256 {
+		_, _ = io.WriteString(stderr, "ariadne: experiment minimize verify: minimization receipt SHA-256 does not match expected identity\n")
+		return 1
+	}
 	if *jsonOutput {
-		if err := json.NewEncoder(stdout).Encode(summary); err != nil {
+		if err := json.NewEncoder(stdout).Encode(minimizationVerificationOutput{
+			MinimizationSummary: summary,
+			ReceiptSHA256:       receiptSHA256,
+		}); err != nil {
 			_, _ = fmt.Fprintf(stderr, "ariadne: experiment minimize verify: write output: %v\n", err)
 			return 1
 		}
 		return 0
 	}
 	if err := writeMinimizationSummary(stdout, "minimization verified", summary); err != nil {
+		_, _ = fmt.Fprintf(stderr, "ariadne: experiment minimize verify: write output: %v\n", err)
+		return 1
+	}
+	if _, err := fmt.Fprintf(stdout, "receipt_sha256: %s\n", receiptSHA256); err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment minimize verify: write output: %v\n", err)
 		return 1
 	}
@@ -3238,6 +3380,8 @@ func runServe(
 	traceRoundPath := flags.String("trace-round", "", "")
 	traceReplicationPath := flags.String("trace-replication", "", "")
 	traceCasePath := flags.String("trace-case", "", "")
+	traceCaseRoundPath := flags.String("trace-case-round", "", "")
+	traceCaseReceiptPath := flags.String("trace-case-receipt", "", "")
 	traceStudyPath := flags.String("trace-study", "", "")
 	traceStudyRoundPath := flags.String("trace-study-round", "", "")
 	traceStudyReceiptPath := flags.String("trace-study-receipt", "", "")
@@ -3264,6 +3408,10 @@ func runServe(
 	}
 	if (*traceStudyRoundPath != "" || *traceStudyReceiptPath != "") && *traceStudyPath == "" {
 		_, _ = io.WriteString(stderr, "ariadne: experiment serve: --trace-study-round and --trace-study-receipt require --trace-study\n")
+		return 2
+	}
+	if (*traceCaseRoundPath != "" || *traceCaseReceiptPath != "") && *traceCasePath == "" {
+		_, _ = io.WriteString(stderr, "ariadne: experiment serve: --trace-case-round and --trace-case-receipt require --trace-case\n")
 		return 2
 	}
 	if (*minimizationRoundPath != "" || *minimizationReceiptPath != "") && *minimizationPath == "" {
@@ -3294,6 +3442,8 @@ func runServe(
 		TraceRoundPath:            *traceRoundPath,
 		TraceReplicationPath:      *traceReplicationPath,
 		TraceCasePath:             *traceCasePath,
+		TraceCaseRoundPath:        *traceCaseRoundPath,
+		TraceCaseReceiptPath:      *traceCaseReceiptPath,
 		TraceStudyPath:            *traceStudyPath,
 		TraceStudyRoundPath:       *traceStudyRoundPath,
 		TraceStudyReceiptPath:     *traceStudyReceiptPath,

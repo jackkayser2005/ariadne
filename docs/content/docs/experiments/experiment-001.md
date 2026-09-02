@@ -72,6 +72,32 @@ persona_fields: 2
 manifest_contract_sha256: <64 lowercase hexadecimal characters>
 ```
 
+
+## Unified artifact validation
+
+Use the unified command when you want one safe status summary across the
+current manifest and Android bundle boundaries:
+
+~~~console
+go run ./cmd/ariadne validate --json examples/experiment-001.json
+go run ./cmd/ariadne validate --json <replicated-directory>
+go run ./cmd/ariadne validate --json <minimization-directory>
+~~~
+
+The report always lists the four tiers `structural`, `integrity`, `boundary`,
+and `replay`. A complete authenticated Android root can pass all four. A
+legacy root may be a `warning` because provenance is unavailable; an
+incomplete root is `unknown`; a malformed or mismatched root is `fail`.
+`replay` means that recorded pairs are complete enough for a later controlled
+replay or reproducibility review; it does not run anything. Only pass exits successfully; warning, unknown, fail, and unavailable return a nonzero exit.
+
+The JSON and human modes are raw-value-free. They contain no local paths,
+persona values, captured payloads, secrets, device serials, or driver
+arguments. Android replication `outcome` and `evidence_state` remain separate,
+and minimization reports retain the separate candidate selection state. This
+command composes the existing verifiers; it does not replace the specialized
+trace, browser, proxy, case, study, or question verification commands.
+
 ## Android target preflight
 
 Before a session, verify one explicitly selected device and package:
@@ -233,6 +259,61 @@ not a universal causal claim. The root receipt SHA-256 binds the summary to the
 recorded execution order and reset policy; it does not turn the result into a
 universal causal claim.
 
+Authenticated replication roots produced by the current runner also include
+provenance_sha256. The digest binds the canonical Android source, adapter,
+adapter version, manifest contract as the reviewed procedure identity, and
+the fixed all scope. Verification cross-checks that digest against each
+complete pair before returning it in the safe summary. A legacy replication
+root without the field remains readable and reports no invented provenance.
+
+## Golden Android acceptance receipt
+
+The hosted workflow is the canonical end-to-end acceptance path for the current
+Android fixture. It pins API 35, Google APIs, x86_64, the pixel_7 profile, and
+emulator port 5554. It proves the standalone run, both replication orders, the
+authenticated session boundary, the raw-value-free export, the bounded
+reflection, and the read-only review projection before publishing a small safe
+artifact set.
+
+A local checkout can create the same receipt only when it has produced the
+current golden target and artifact contract. After the standalone run,
+replication, export, and reflection are verified, start the review server in
+one terminal:
+
+~~~console
+go run ./cmd/ariadne experiment serve --addr 127.0.0.1:8787 --reflection .ariadne/archive-question.json --export .ariadne/runs/experiment-001.redacted.json .ariadne/runs
+~~~
+
+In another terminal, check GET / and
+GET /run?directory=experiment-001. Confirm a POST to / returns 405 and
+Allow: GET. Then save and verify the raw-value-free acceptance receipt:
+
+~~~console
+go run ./cmd/ariadne experiment acceptance save --json --review-self-attested \
+  .ariadne/runs/experiment-001 \
+  .ariadne/runs/experiment-001-replicated \
+  .ariadne/runs/experiment-001.redacted.json \
+  .ariadne/archive-question.json \
+  .ariadne/experiment-001-acceptance.json
+go run ./cmd/ariadne experiment acceptance verify --json \
+  .ariadne/experiment-001-acceptance.json
+go run ./cmd/ariadne experiment acceptance verify --json \
+  --expect-sha256 <acceptance-sha256> \
+  .ariadne/experiment-001-acceptance.json
+~~~
+
+The review check is a prerequisite for the flag; the flag does not simulate
+computer use or target behavior. The receipt keeps only fixed identities,
+counts, replicated outcome, separate evidence states, the selected question
+identity, and the GET-only review contract. It does not contain personas,
+challenges, payloads, device serials, paths, or URLs. Offline verification
+checks the receipt contract and canonical identity; it does not rerun Android
+or establish universal causality.
+
+The hosted workflow uploads only the acceptance JSON and text report, the
+raw-value-free reflection and export, and the safe replication root receipt.
+Authoritative run directories and raw reports remain local CI inputs.
+
 ## Minimum-disclosure lab
 
 The location ladder is the first reduction slice. Its plan is
@@ -248,6 +329,18 @@ Run it only against the explicitly selected authorized emulator:
 go run ./cmd/ariadne experiment minimize --device emulator-5554 --package dev.ariadne.fixture --pairs 1 --output .ariadne/runs/android-location-minimize examples/android-location-minimize.json
 go run ./cmd/ariadne experiment minimize verify --json .ariadne/runs/android-location-minimize
 ```
+
+The verifier returns the observed root receipt SHA-256. For an independently
+retained trust anchor, require the exact canonical receipt identity:
+
+```console
+go run ./cmd/ariadne experiment minimize verify --json \
+  --expect-sha256 <receipt-sha256> \
+  .ariadne/runs/android-location-minimize
+```
+
+This pins the raw-value-free receipt and its verified child identities; it is
+not a signature or a universal causal claim.
 
 The reference candidate is not executed as a treatment; it supplies the fixed
 baseline for each lower-disclosure candidate. Every candidate runs through the

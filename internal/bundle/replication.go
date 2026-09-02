@@ -50,6 +50,7 @@ type ReplicatedExperimentSummary struct {
 	ManifestName           string                  `json:"manifest_name"`
 	DeclaredVariable       string                  `json:"declared_variable"`
 	ReceiptSHA256          string                  `json:"receipt_sha256"`
+	ProvenanceSHA256       string                  `json:"provenance_sha256,omitempty"`
 	Pairs                  int                     `json:"pairs"`
 	PairsPerOrder          int                     `json:"pairs_per_order"`
 	BaselineTreatmentPairs int                     `json:"baseline_treatment_pairs"`
@@ -106,6 +107,12 @@ func VerifyReplicated(rootDir string) (ReplicatedExperimentSummary, error) {
 				summary.DeclaredVariable != record.DeclaredVariable {
 				return ReplicatedExperimentSummary{}, errors.New("replication pair manifest metadata disagrees")
 			}
+			if record.ProvenanceSHA256 != "" {
+				expected, err := adb.ReplicationProvenanceSHA256(summary.ManifestContractSHA256)
+				if err != nil || expected != record.ProvenanceSHA256 {
+					return ReplicatedExperimentSummary{}, errors.New("replication provenance digest disagrees")
+				}
+			}
 			if provenance == nil {
 				copy := summary
 				provenance = &copy
@@ -145,11 +152,16 @@ func VerifyReplicated(rootDir string) (ReplicatedExperimentSummary, error) {
 		}
 	}
 
+	verifiedProvenanceSHA256 := ""
+	if provenance != nil {
+		verifiedProvenanceSHA256 = record.ProvenanceSHA256
+	}
 	result := ReplicatedExperimentSummary{
 		SchemaVersion:          adb.ReplicatedRunSchemaVersion,
 		ManifestName:           record.ManifestName,
 		DeclaredVariable:       record.DeclaredVariable,
 		ReceiptSHA256:          digestSHA256(receiptData),
+		ProvenanceSHA256:       verifiedProvenanceSHA256,
 		Pairs:                  totalPairs,
 		PairsPerOrder:          record.PairsPerOrder,
 		BaselineTreatmentPairs: record.PairsPerOrder,
@@ -203,6 +215,9 @@ func validateReplicatedRecord(rootDir string, record adb.ReplicatedRunRecord) er
 		!validMetadataValue(record.ManifestName) ||
 		!validMetadataValue(record.DeclaredVariable) {
 		return errors.New("replication metadata is invalid")
+	}
+	if record.ProvenanceSHA256 != "" && !validDigest(record.ProvenanceSHA256) {
+		return errors.New("replication metadata provenance is invalid")
 	}
 	if record.PairsPerOrder < 1 || record.PairsPerOrder > 8 ||
 		record.ResetPolicy != adb.ReplicationResetPolicy {

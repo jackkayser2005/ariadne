@@ -68,6 +68,88 @@ absence is reported as `unknown`. A structural trace result does not prove
 what a payload contained or why a source sent it; the authoritative evidence
 bundle remains the place for those claims.
 
+## Generic source-adapter handoff
+
+When a reviewed source-specific adapter already exists, Ariadne can run it
+through a generic authenticated process boundary:
+
+~~~console
+go run ./cmd/ariadne trace adapter run --json \
+  --procedure examples/source-adapter-procedure.json \
+  --driver <fixed-redacting-adapter> \
+  --output .ariadne/source-adapter-run
+go run ./cmd/ariadne trace adapter verify --json \
+  .ariadne/source-adapter-run
+~~~
+
+The procedure contains only an external-* adapter ID, adapter version, one
+source from the fixed trace catalog, scope, duration, and event limit. It has
+no URL, account, profile, payload, selector, or raw value. Ariadne generates a
+single-use random challenge for the process, sends the challenge and procedure
+digest over stdin, and accepts exactly one bounded response on stdout. The
+response must carry the matching challenge and procedure digest and contain a
+valid redacted trace whose source, scope, and event count match the procedure.
+Driver arguments are bounded and the executable is invoked without a shell.
+
+A successful run is published atomically as exactly trace.json, session.json,
+and receipt.json. The receipt contains safe labels and identities for the
+procedure, executable, challenge commitment, trace, and session; it never
+contains the raw challenge, driver path or arguments, adapter response, or
+source-specific values. trace adapter verify rechecks the portable artifacts
+without launching the adapter. This proves a bounded consistency and session
+binding boundary. It does not authenticate the external executable, establish
+authorization, inspect unrelated traffic, or provide universal tracing.
+
+### Canonical provenance identity
+
+New successful generic adapter receipts include an optional provenance_sha256.
+The digest covers one canonical raw-value-free contract: schema version,
+source, adapter, adapter version, reviewed procedure SHA-256, and scope.
+The receipt verifier recomputes that contract from the safe receipt fields and
+rejects a mismatched digest before returning the run. Receipt-bound archives
+retain the same field when it is present.
+
+The field is a consistency and session-binding identity. It is not a signature,
+external executable-authenticity proof, authorization proof, reset proof, or
+causal claim. Legacy receipts that omit it remain readable; verification does
+not synthesize a value for them.
+
+## Receipt-bound adapter-run archives
+
+A generic adapter run is now a first-class input to the source-neutral archive
+workflow. Supply one or more already-published run directories in caller order:
+
+~~~console
+go run ./cmd/ariadne trace archive create --json \
+  --run .ariadne/source-adapter-run-1 \
+  --run .ariadne/source-adapter-run-2 \
+  .ariadne/source-adapter-archive.json
+go run ./cmd/ariadne trace archive verify --json \
+  .ariadne/source-adapter-archive.json
+~~~
+
+This creates archive schema version 2. Ariadne reads and validates each run's
+receipt, trace, and session once into memory, embeds the safe receipt with the
+normalized trace/session pair, and re-verifies those links from the portable
+archive. The receipt identity must be unique within the archive. The CLI
+rejects mixing run directories with loose trace/session inputs, and legacy
+schema-version 1 archives remain readable.
+
+The embedded receipt contains only safe adapter, source, scope, completeness,
+event-count, and identity fields. It does not add the raw challenge, driver
+path or arguments, procedure file, adapter response, payloads, URLs, or source
+values to the archive. Verification establishes structural consistency and
+session provenance; it does not authenticate the external executable, prove
+authorization or capture truth, infer chronology, or establish causality.
+The resulting archive can be used unchanged by archive question rounds and
+trace case assembly.
+
+The boundary is fail-closed for local hostile input: invalid collector
+requests cannot consume the one-shot observation slot; adapter artifact and
+executable reads reject symlinks, reparse points, and path replacement; an
+executable whose post-run hash differs cannot produce a receipt; and Android
+package selectors are validated before they reach ADB shell commands.
+
 ## Experiment 001 Android producer
 
 After `experiment report` and `experiment verify` succeed, the first producer
@@ -665,6 +747,56 @@ Malformed or tampered input produces only `trace replication unavailable`.
 
 ## Portable cross-source case package
 
+For the common cross-source workflow, the local-only case plan can assemble
+already verified archives or replication ledgers and derive the disclosure
+question round in one atomic workspace:
+
+```console
+go run ./cmd/ariadne trace case assemble --json \
+  --plan examples/case-assembly-plan.json \
+  --output .ariadne/case-workspace
+```
+
+The plan paths are consumed only during assembly and never enter the output.
+Verify the published workspace as one unit before opening the review page:
+
+```console
+go run ./cmd/ariadne trace case assemble verify --json .ariadne/case-workspace
+```
+
+The destination must be new; a successful workspace contains `case.json` and
+`disclosure-round.json`, while the safe command summary reports their
+canonical identities, coverage, and fixed question results. This coordinates
+existing verifiers and does not add capture, authorization, chronology, or
+causal semantics.
+
+If a selected disclosure question needs a durable receipt, create it from the
+assembled round before opening the page:
+
+```console
+go run ./cmd/ariadne trace case map ask receipt save --json \
+  .ariadne/case-workspace/disclosure-round.json \
+  cross-boundary-category-overlap \
+  .ariadne/case-workspace/disclosure-receipt.json
+```
+
+To hand an assembled case to the same read-only review surface, pass the
+durable disclosure round produced beside `case.json`:
+
+```console
+go run ./cmd/ariadne experiment serve \
+  --trace-case .ariadne/case-workspace/case.json \
+  --trace-case-round .ariadne/case-workspace/disclosure-round.json \
+  --trace-case-receipt .ariadne/case-workspace/disclosure-receipt.json \
+  <archive-root>
+```
+
+The existing `/trace-case` route re-derives the fixed round from the verified
+case and accepts the saved round only when its case and canonical round
+identities match. A saved receipt must also match the case, round, and selected
+question. The page marks saved artifacts as verified without displaying their
+paths; malformed or drifting artifacts fail closed.
+
 Once standalone archives or replicated ledgers have their fixed question
 rounds, they can be joined into one bounded, caller-ordered package:
 
@@ -713,6 +845,31 @@ trace count. A partial contributing trace changes aggregate `coverage_state` to
 `unknown`; a directly retained observation remains `observed`. The map does not
 infer absence, correlate identities, or become a second persisted evidence
 store.
+Compare two complete assembled case workspaces under one caller-supplied
+private investigation commitment:
+
+```console
+go run ./cmd/ariadne trace case map compare --json \
+  --commitment-sha256 <private-investigation-digest> \
+  .ariadne/first-case-workspace .ariadne/second-case-workspace
+```
+
+Both local assembly plans must contain the same lowercase 64-character
+`investigation_commitment_sha256`. The command's `--commitment-sha256` value is
+cross-checked against each embedded `case.json`; legacy unbound workspaces stay
+readable but return `incomparable` rather than receiving an invented binding.
+The command re-verifies `case.json` and `disclosure-round.json` in both
+workspaces before comparing their derived maps. Compatible reviewed
+provenance means the same safe source/adapter, adapter version, reviewed
+procedure identity, and declared scope. The result is `same`, `changed`, or
+`incomparable`, with deterministic added/removed category labels and full safe
+source/adapter/channel/kind/destination boundary changes. It also reports the
+first and second coverage states separately from the comparison's
+`evidence_state`. A partial workspace prevents negative absence claims: an
+unsupported disappearance is listed as `unknown`, never `removed`; known
+positive additions can still be retained with `unknown` evidence. Commitment,
+case, and disclosure-round digests are identities only; paths, URLs, process
+arguments, identifiers, and captured values never enter the output.
 
 The nested map question catalog adds two fixed questions and durable artifacts.
 `disclosure-map-coverage` is `complete` with `observed` evidence only when every

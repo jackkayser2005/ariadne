@@ -75,6 +75,226 @@ func TestTraceArchiveQuestionsAndVerification(t *testing.T) {
 	}
 }
 
+func TestSaveSourceAdapterArchivePreservesRunReceiptsAndFlowsThroughCase(t *testing.T) {
+	procedurePath := writeSourceAdapterProcedure(t, 5000, 2)
+	driverPath := sourceAdapterTestDriver(t)
+	firstDir := filepath.Join(t.TempDir(), "first-run")
+	secondDir := filepath.Join(t.TempDir(), "second-run")
+	first, err := RunSourceAdapter(procedurePath, driverPath, sourceAdapterTestDriverArgs("success"), firstDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := RunSourceAdapter(procedurePath, driverPath, sourceAdapterTestDriverArgs("success"), secondDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ReceiptSHA256 == second.ReceiptSHA256 {
+		t.Fatal("source adapter runs unexpectedly share a receipt identity")
+	}
+
+	archivePath := filepath.Join(t.TempDir(), "archive.json")
+	saved, err := SaveSourceAdapterArchive([]string{firstDir, secondDir}, archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.SchemaVersion != archiveSchemaVersion || saved.Entries != 2 || saved.Complete != 2 {
+		t.Fatalf("saved summary = %#v", saved)
+	}
+	archive, verified, err := ReadArchive(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verified.ArchiveSHA256 != saved.ArchiveSHA256 || len(archive.Entries) != 2 {
+		t.Fatalf("verified archive = %#v, summary = %#v", archive, verified)
+	}
+	for index, wantReceipt := range []string{first.ReceiptSHA256, second.ReceiptSHA256} {
+		binding := archive.Entries[index].AdapterRun
+		if binding == nil || binding.ReceiptSHA256 != wantReceipt || binding.Receipt.TraceSHA256 != archive.Entries[index].Session.TraceSHA256 {
+			t.Fatalf("archive entry %d binding = %#v", index+1, binding)
+		}
+	}
+	data, err := os.ReadFile(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serialized := string(data)
+	for _, forbidden := range []string{driverPath, "\"challenge\":\"", "\"procedure\":\""} {
+		if strings.Contains(serialized, forbidden) {
+			t.Fatalf("receipt-bound archive exposed transient input %q: %s", forbidden, data)
+		}
+	}
+	if !strings.Contains(serialized, "\"adapter_run\"") {
+		t.Fatalf("receipt-bound archive omitted adapter provenance: %s", data)
+	}
+
+	roundPath := filepath.Join(t.TempDir(), "round.json")
+	if _, err := SaveArchiveQuestionRound(archivePath, roundPath); err != nil {
+		t.Fatal(err)
+	}
+	casePath := filepath.Join(t.TempDir(), "case.json")
+	caseSummary, err := SaveCase([]CaseInput{{
+		Kind:              CaseEntryTraceArchive,
+		ArtifactPath:      archivePath,
+		QuestionRoundPath: roundPath,
+	}}, casePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if caseSummary.Entries != 1 || caseSummary.Archives != 1 {
+		t.Fatalf("case summary = %#v", caseSummary)
+	}
+	if _, err := VerifyCase(casePath); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSaveSourceAdapterArchiveRejectsBindingTamperingAndDuplicateRuns(t *testing.T) {
+	procedurePath := writeSourceAdapterProcedure(t, 5000, 1)
+	driverPath := sourceAdapterTestDriver(t)
+	runDir := filepath.Join(t.TempDir(), "run")
+	if _, err := RunSourceAdapter(procedurePath, driverPath, sourceAdapterTestDriverArgs("success"), runDir); err != nil {
+		t.Fatal(err)
+	}
+	archivePath := filepath.Join(t.TempDir(), "archive.json")
+	if _, err := SaveSourceAdapterArchive([]string{runDir}, archivePath); err != nil {
+		t.Fatal(err)
+	}
+	archive, _, err := ReadArchive(archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutations := []struct {
+		name  string
+		apply func(*Archive)
+	}{
+		{name: "legacy schema", apply: func(value *Archive) { value.SchemaVersion = archiveLegacySchemaVersion }},
+		{name: "receipt identity", apply: func(value *Archive) {
+			binding := *value.Entries[0].AdapterRun
+			binding.ReceiptSHA256 = strings.Repeat("f", 64)
+			value.Entries[0].AdapterRun = &binding
+		}},
+		{name: "receipt trace binding", apply: func(value *Archive) {
+			binding := *value.Entries[0].AdapterRun
+			binding.Receipt.TraceSHA256 = strings.Repeat("e", 64)
+			value.Entries[0].AdapterRun = &binding
+		}},
+		{name: "duplicate receipt", apply: func(value *Archive) {
+			second := value.Entries[0]
+			second.Position = 2
+			value.Entries = []ArchiveEntry{value.Entries[0], second}
+		}},
+	}
+	for _, mutation := range mutations {
+		t.Run(mutation.name, func(t *testing.T) {
+			mutated := archive
+			mutated.Entries = append([]ArchiveEntry(nil), archive.Entries...)
+			mutation.apply(&mutated)
+			data, err := json.Marshal(mutated)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := DecodeArchive(data); err == nil {
+				t.Fatal("DecodeArchive() accepted tampered adapter archive")
+			}
+		})
+	}
+	if _, err := SaveSourceAdapterArchive([]string{runDir, runDir}, filepath.Join(t.TempDir(), "duplicate.json")); err == nil {
+		t.Fatal("SaveSourceAdapterArchive() accepted duplicate run receipts")
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "extra.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SaveSourceAdapterArchive([]string{runDir}, filepath.Join(t.TempDir(), "extra-archive.json")); err == nil {
+		t.Fatal("SaveSourceAdapterArchive() accepted an extra run artifact")
+	}
+}
+
+func TestSaveSourceAdapterArchiveBoundaryInputs(t *testing.T) {
+	procedurePath := writeSourceAdapterProcedure(t, 5000, 1)
+	driverPath := sourceAdapterTestDriver(t)
+	runDir := filepath.Join(t.TempDir(), "run")
+	if _, err := RunSourceAdapter(procedurePath, driverPath, sourceAdapterTestDriverArgs("success"), runDir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SaveSourceAdapterArchive(nil, filepath.Join(t.TempDir(), "empty.json")); err == nil {
+		t.Fatal("SaveSourceAdapterArchive() accepted no runs")
+	}
+	tooMany := make([]string, maxArchiveEntries+1)
+	for index := range tooMany {
+		tooMany[index] = runDir
+	}
+	if _, err := SaveSourceAdapterArchive(tooMany, filepath.Join(t.TempDir(), "too-many.json")); err == nil {
+		t.Fatal("SaveSourceAdapterArchive() accepted too many runs")
+	}
+	if _, err := SaveSourceAdapterArchive([]string{runDir}, ""); err == nil {
+		t.Fatal("SaveSourceAdapterArchive() accepted an empty output")
+	}
+	if _, err := SaveSourceAdapterArchive([]string{filepath.Join(t.TempDir(), "missing")}, filepath.Join(t.TempDir(), "missing.json")); err == nil {
+		t.Fatal("SaveSourceAdapterArchive() accepted a missing run")
+	}
+	if _, err := SaveSourceAdapterArchive([]string{driverPath}, filepath.Join(t.TempDir(), "file.json")); err == nil {
+		t.Fatal("SaveSourceAdapterArchive() accepted a file as a run directory")
+	}
+	parentFile := filepath.Join(t.TempDir(), "parent")
+	if err := os.WriteFile(parentFile, []byte("file"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SaveSourceAdapterArchive([]string{runDir}, filepath.Join(parentFile, "archive.json")); err == nil {
+		t.Fatal("SaveSourceAdapterArchive() accepted a file output parent")
+	}
+
+	copyRun := func(name string) string {
+		t.Helper()
+		copyDir := filepath.Join(t.TempDir(), name)
+		if err := os.MkdirAll(copyDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		for _, fileName := range []string{sourceAdapterTraceFile, sourceAdapterSessionFile, sourceAdapterReceiptFile} {
+			data, err := os.ReadFile(filepath.Join(runDir, fileName))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(copyDir, fileName), data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return copyDir
+	}
+	for _, fileName := range []string{sourceAdapterTraceFile, sourceAdapterSessionFile, sourceAdapterReceiptFile} {
+		t.Run("missing-"+fileName, func(t *testing.T) {
+			copyDir := copyRun("missing-" + fileName)
+			if err := os.Remove(filepath.Join(copyDir, fileName)); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := SaveSourceAdapterArchive([]string{copyDir}, filepath.Join(t.TempDir(), "archive.json")); err == nil {
+				t.Fatal("SaveSourceAdapterArchive() accepted a missing artifact")
+			}
+		})
+	}
+	t.Run("receipt mismatch", func(t *testing.T) {
+		copyDir := copyRun("receipt-mismatch")
+		receiptPath := filepath.Join(copyDir, sourceAdapterReceiptFile)
+		data, err := os.ReadFile(receiptPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var receipt SourceAdapterReceipt
+		if err := json.Unmarshal(data, &receipt); err != nil {
+			t.Fatal(err)
+		}
+		receipt.Source = "browser"
+		data, err = json.Marshal(receipt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(receiptPath, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := SaveSourceAdapterArchive([]string{copyDir}, filepath.Join(t.TempDir(), "archive.json")); err == nil {
+			t.Fatal("SaveSourceAdapterArchive() accepted a mismatched receipt")
+		}
+	})
+}
 func TestTraceArchiveChangeResults(t *testing.T) {
 	root := t.TempDir()
 	procedure := strings.Repeat("b", 64)
@@ -205,7 +425,7 @@ func TestTraceArchiveRejectsMalformedDocumentsAndPaths(t *testing.T) {
 		name  string
 		apply func(*Archive)
 	}{
-		{name: "schema", apply: func(value *Archive) { value.SchemaVersion = 2 }},
+		{name: "schema", apply: func(value *Archive) { value.SchemaVersion = 3 }},
 		{name: "order basis", apply: func(value *Archive) { value.OrderBasis = "chronological" }},
 		{name: "position", apply: func(value *Archive) { value.Entries[0].Position = 2 }},
 		{name: "session scope", apply: func(value *Archive) { value.Entries[0].Session.Scope = "storage" }},

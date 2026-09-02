@@ -96,11 +96,12 @@ func TestRunMinimizationVerify(t *testing.T) {
 	for _, jsonOutput := range []bool{false, true} {
 		t.Run(map[bool]string{false: "human", true: "json"}[jsonOutput], func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
-			args := []string{"run"}
+			expectedSHA256 := strings.Repeat("a", 64)
+			args := []string{"--expect-sha256", expectedSHA256, "run"}
 			if jsonOutput {
-				args = []string{"--json", "run"}
+				args = []string{"--json", "--expect-sha256", expectedSHA256, "run"}
 			}
-			exitCode := runMinimizationVerify(args, &stdout, &stderr, func(path string) (minimize.MinimizationSummary, error) {
+			exitCode := runMinimizationVerify(args, &stdout, &stderr, func(path string) (minimize.MinimizationSummary, string, error) {
 				if path != "run" {
 					t.Fatalf("verify path = %q", path)
 				}
@@ -109,7 +110,7 @@ func TestRunMinimizationVerify(t *testing.T) {
 					Variable:       "location",
 					SelectionState: minimize.SelectionUnknown,
 					EvidenceState:  evidence.Unknown,
-				}, nil
+				}, strings.Repeat("a", 64), nil
 			})
 			if exitCode != 0 || stderr.Len() != 0 {
 				t.Fatalf("runMinimizationVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
@@ -119,17 +120,34 @@ func TestRunMinimizationVerify(t *testing.T) {
 				if err := json.Unmarshal(stdout.Bytes(), &summary); err != nil {
 					t.Fatal(err)
 				}
-				if summary.SelectionState != minimize.SelectionUnknown {
+				if summary.SelectionState != minimize.SelectionUnknown || !strings.Contains(stdout.String(), `"receipt_sha256":"`+strings.Repeat("a", 64)+`"`) {
 					t.Fatalf("JSON summary = %#v", summary)
 				}
 			} else if !strings.Contains(stdout.String(), "minimization verified") ||
-				!strings.Contains(stdout.String(), "selected_candidate: none") {
+				!strings.Contains(stdout.String(), "selected_candidate: none") ||
+				!strings.Contains(stdout.String(), "receipt_sha256: "+strings.Repeat("a", 64)) {
 				t.Fatalf("human summary = %q", stdout.String())
 			}
 		})
 	}
 }
 
+func TestRunMinimizationExpectedIdentityFailures(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if exitCode := runMinimizationVerify([]string{"--expect-sha256", "bad", "run"}, &stdout, &stderr, func(string) (minimize.MinimizationSummary, string, error) {
+		t.Fatal("verify callback ran for invalid expected digest")
+		return minimize.MinimizationSummary{}, "", nil
+	}); exitCode != 2 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "64-character SHA-256") {
+		t.Fatalf("invalid expected minimization identity = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if exitCode := runMinimizationVerify([]string{"--expect-sha256", strings.Repeat("b", 64), "run"}, &stdout, &stderr, func(string) (minimize.MinimizationSummary, string, error) {
+		return minimize.MinimizationSummary{}, strings.Repeat("a", 64), nil
+	}); exitCode != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "does not match expected identity") {
+		t.Fatalf("mismatched minimization identity = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+}
 func TestRunMinimizationUsageAndFailures(t *testing.T) {
 	for _, args := range [][]string{
 		{"experiment", "minimize"},

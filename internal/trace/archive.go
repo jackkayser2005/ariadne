@@ -18,9 +18,11 @@ import (
 )
 
 const (
-	archiveSchemaVersion = 1
-	maxArchiveBytes      = 1 << 20
-	maxArchiveEntries    = 32
+	archiveLegacySchemaVersion = 1
+	archiveSchemaVersion       = 2
+	archiveAnswerSchemaVersion = 1
+	maxArchiveBytes            = 1 << 20
+	maxArchiveEntries          = 32
 )
 
 const (
@@ -57,11 +59,20 @@ type Archive struct {
 	Entries       []ArchiveEntry `json:"entries"`
 }
 
+// ArchiveAdapterRunBinding preserves the safe receipt identity for one
+// source-adapter run embedded in a v2 archive. It is structural provenance,
+// not a signature or an authorization claim.
+type ArchiveAdapterRunBinding struct {
+	Receipt       SourceAdapterReceipt `json:"receipt"`
+	ReceiptSHA256 string               `json:"receipt_sha256"`
+}
+
 // ArchiveEntry retains one normalized trace and its provenance envelope.
 type ArchiveEntry struct {
-	Position int      `json:"position"`
-	Session  Session  `json:"session"`
-	Trace    Document `json:"trace"`
+	Position   int                       `json:"position"`
+	Session    Session                   `json:"session"`
+	Trace      Document                  `json:"trace"`
+	AdapterRun *ArchiveAdapterRunBinding `json:"adapter_run,omitempty"`
 }
 
 // ArchiveSourceSummary counts safe reviewed source identities represented in an archive.
@@ -128,7 +139,7 @@ func SaveArchive(inputs []ArchiveInput, outputPath string) (ArchiveVerificationS
 	}
 
 	archive := Archive{
-		SchemaVersion: archiveSchemaVersion,
+		SchemaVersion: archiveLegacySchemaVersion,
 		OrderBasis:    "caller",
 		Entries:       make([]ArchiveEntry, 0, len(inputs)),
 	}
@@ -159,6 +170,57 @@ func SaveArchive(inputs []ArchiveInput, outputPath string) (ArchiveVerificationS
 			Position: index + 1,
 			Session:  session,
 			Trace:    document,
+		})
+	}
+
+	data, err := marshalArchive(archive)
+	if err != nil {
+		return ArchiveVerificationSummary{}, err
+	}
+	if err := writeArchiveExclusive(outputPath, append(data, '\n')); err != nil {
+		return ArchiveVerificationSummary{}, fmt.Errorf("trace archive: %w", err)
+	}
+	return archiveSummary(archive)
+}
+
+// SaveSourceAdapterArchive verifies and embeds copied source-adapter runs in a
+// receipt-bound archive without overwriting an existing output path. Each run
+// is read into memory once before it is embedded, preventing a later file
+// change from replacing the artifacts that were verified.
+func SaveSourceAdapterArchive(runDirs []string, outputPath string) (ArchiveVerificationSummary, error) {
+	if len(runDirs) == 0 || len(runDirs) > maxArchiveEntries {
+		return ArchiveVerificationSummary{}, errors.New("trace archive entry count is invalid")
+	}
+	if strings.TrimSpace(outputPath) == "" {
+		return ArchiveVerificationSummary{}, errors.New("trace archive output path is required")
+	}
+
+	archive := Archive{
+		SchemaVersion: archiveSchemaVersion,
+		OrderBasis:    "caller",
+		Entries:       make([]ArchiveEntry, 0, len(runDirs)),
+	}
+	seenReceipts := make(map[string]struct{}, len(runDirs))
+	for index, runDir := range runDirs {
+		run, err := readVerifiedSourceAdapterRun(runDir)
+		if err != nil {
+			return ArchiveVerificationSummary{}, fmt.Errorf("trace archive entry %d adapter run: %w", index+1, err)
+		}
+		if run.Session.Role != RoleStandalone || run.Session.Order != OrderStandalone {
+			return ArchiveVerificationSummary{}, fmt.Errorf("trace archive entry %d must be standalone", index+1)
+		}
+		if _, exists := seenReceipts[run.ReceiptSHA256]; exists {
+			return ArchiveVerificationSummary{}, errors.New("trace archive adapter receipts must be distinct")
+		}
+		seenReceipts[run.ReceiptSHA256] = struct{}{}
+		archive.Entries = append(archive.Entries, ArchiveEntry{
+			Position: index + 1,
+			Session:  run.Session,
+			Trace:    run.Trace,
+			AdapterRun: &ArchiveAdapterRunBinding{
+				Receipt:       run.Receipt,
+				ReceiptSHA256: run.ReceiptSHA256,
+			},
 		})
 	}
 
@@ -260,7 +322,7 @@ func AnswerArchive(archive Archive, archiveSHA256, questionID string) (ArchiveAn
 		return ArchiveAnswer{}, errors.New("trace archive identity does not match archive")
 	}
 	answer := ArchiveAnswer{
-		SchemaVersion: archiveSchemaVersion,
+		SchemaVersion: archiveAnswerSchemaVersion,
 		QuestionID:    question.ID,
 		Question:      question.Text,
 		EvidenceState: evidence.Observed,
@@ -435,7 +497,7 @@ func archiveSummary(archive Archive) (ArchiveVerificationSummary, error) {
 }
 
 func validateArchive(archive *Archive) error {
-	if archive.SchemaVersion != archiveSchemaVersion {
+	if archive.SchemaVersion != archiveLegacySchemaVersion && archive.SchemaVersion != archiveSchemaVersion {
 		return errors.New("trace archive has unsupported schema_version")
 	}
 	if archive.OrderBasis != "caller" {
@@ -444,6 +506,7 @@ func validateArchive(archive *Archive) error {
 	if archive.Entries == nil || len(archive.Entries) == 0 || len(archive.Entries) > maxArchiveEntries {
 		return errors.New("trace archive entries are invalid")
 	}
+	seenReceipts := make(map[string]struct{}, len(archive.Entries))
 	for index := range archive.Entries {
 		entry := &archive.Entries[index]
 		if entry.Position != index+1 {
@@ -462,6 +525,47 @@ func validateArchive(archive *Archive) error {
 		if err := validateSessionBinding(entry.Session, entry.Trace, traceSHA256); err != nil {
 			return fmt.Errorf("trace archive entry %d: %w", index+1, err)
 		}
+		if entry.AdapterRun != nil {
+			if archive.SchemaVersion != archiveSchemaVersion {
+				return errors.New("trace archive adapter run requires schema_version 2")
+			}
+			if err := validateArchiveAdapterRun(*entry.AdapterRun, entry.Session, entry.Trace, traceSHA256); err != nil {
+				return fmt.Errorf("trace archive entry %d adapter run: %w", index+1, err)
+			}
+			if _, exists := seenReceipts[entry.AdapterRun.ReceiptSHA256]; exists {
+				return errors.New("trace archive adapter receipts must be distinct")
+			}
+			seenReceipts[entry.AdapterRun.ReceiptSHA256] = struct{}{}
+		}
+	}
+	return nil
+}
+
+func validateArchiveAdapterRun(binding ArchiveAdapterRunBinding, session Session, document Document, traceSHA256 string) error {
+	if err := validateSourceAdapterReceipt(binding.Receipt); err != nil {
+		return err
+	}
+	if !ValidSHA256(binding.ReceiptSHA256) {
+		return errors.New("adapter run receipt identity is invalid")
+	}
+	expectedReceiptSHA256, err := SourceAdapterReceiptSHA256(binding.Receipt)
+	if err != nil {
+		return errors.New("adapter run receipt identity failed")
+	}
+	if binding.ReceiptSHA256 != expectedReceiptSHA256 {
+		return errors.New("adapter run receipt identity does not match receipt")
+	}
+	sessionSHA256, err := SessionSHA256(session)
+	if err != nil {
+		return errors.New("adapter run session identity failed")
+	}
+	receipt := binding.Receipt
+	if receipt.Adapter != session.Adapter || receipt.AdapterVersion != session.AdapterVersion ||
+		receipt.Source != session.Source || receipt.Scope != session.Scope ||
+		receipt.Completeness != session.Completeness || receipt.Events != len(document.Events) ||
+		receipt.ProcedureSHA256 != session.ProcedureSHA256 || receipt.TraceSHA256 != traceSHA256 ||
+		receipt.SessionSHA256 != sessionSHA256 {
+		return errors.New("adapter run receipt does not match embedded artifacts")
 	}
 	return nil
 }

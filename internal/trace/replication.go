@@ -314,6 +314,7 @@ func embeddedSessionPairSummary(baseline, treatment Session) (SessionPairVerific
 	expectedPairSHA256, err := SessionPairSHA256(baseline.TraceSHA256, treatment.TraceSHA256, SessionPairInput{
 		Adapter:         baseline.Adapter,
 		AdapterVersion:  baseline.AdapterVersion,
+		Source:          baseline.Source,
 		ProcedureSHA256: baseline.ProcedureSHA256,
 		Scope:           baseline.Scope,
 		Order:           baseline.Order,
