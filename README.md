@@ -270,7 +270,10 @@ catalog label, scope, duration, and event limit. Ariadne sends a single-use
 random challenge and procedure digest over stdin, accepts one bounded response
 containing only a verified redacted trace, invokes the absolute driver without a
 shell, and publishes trace.json, session.json, and a portable receipt
-atomically. The receipt stores executable, procedure, trace, session, and
+atomically. The shared `internal/securefs` boundary rejects symlinked or
+reparse-point parents, opens new leaves exclusively, and rechecks the opened
+identity before publication is accepted. The receipt stores executable,
+procedure, trace, session, and
 challenge-commitment identities, never the challenge, driver arguments, or raw
 source values. Verification is offline and proves consistency and session
 binding—not external authenticity, target authorization, universal capture, or
