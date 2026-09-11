@@ -332,6 +332,30 @@ func SaveLadder(rootDir string, summary LadderSummary) error {
 	return nil
 }
 
+// LooksLikeLadder reports whether a bounded ladder receipt names the supplied
+// adapter. It is only a dispatch hint; VerifyLadder remains authoritative.
+func LooksLikeLadder(rootDir, adapter string) bool {
+	if strings.TrimSpace(rootDir) == "" || strings.TrimSpace(adapter) == "" {
+		return false
+	}
+	data, err := bundle.ReadBoundedFile(filepath.Join(rootDir, "minimization.json"), maxLadderSummaryBytes)
+	if err != nil || jsoncheck.RejectDuplicateKeys(data) != nil {
+		return false
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	var marker struct {
+		Adapter string
+	}
+	if err := decoder.Decode(&marker); err != nil {
+		return false
+	}
+	var trailing json.RawMessage
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return false
+	}
+	return marker.Adapter == adapter
+}
+
 // VerifyLadder verifies the canonical receipt and delegates each child to its
 // source adapter. The returned digest is the identity of the receipt bytes.
 func VerifyLadder(rootDir string, verifyChild LadderChildVerifier) (LadderSummary, string, error) {

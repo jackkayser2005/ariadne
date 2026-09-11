@@ -432,6 +432,22 @@ claim.
 This remains a deterministic local-fixture smoke path. It is not a user-session
 adapter, a universal browser sniffer, or evidence about arbitrary browser data.
 
+### Browser fixture minimization
+
+The same browser fixture can run its fixed reference/omitted ladder through
+fresh-profile replication pairs:
+
+~~~console
+go run ./cmd/ariadne browser fixture minimize verify --json \
+  .ariadne/browser-account-minimize
+go run ./cmd/ariadne validate --json .ariadne/browser-account-minimize
+~~~
+
+The common validator identifies this directory as browser-minimization,
+rechecks the browser-owned ladder and child replications, and reports the
+selected candidate, outcome, evidence state, and replay readiness without
+reopening the procedure, driver, profiles, or captured events.
+
 ## Session provenance
 
 A trace can be retained with a small provenance envelope after it verifies:

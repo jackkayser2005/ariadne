@@ -187,6 +187,7 @@ go run ./cmd/ariadne validate --json .ariadne/source-adapter-run
 go run ./cmd/ariadne validate --json .ariadne/browser-export.har
 go run ./cmd/ariadne validate --json .ariadne/proxy-replicated
 go run ./cmd/ariadne validate --json .ariadne/browser-fixture-replicated
+go run ./cmd/ariadne validate --json .ariadne/browser-account-minimize
 ~~~
 
 For trace archives, replication ledgers, cross-source cases, and studies, the same command also has a concise human
@@ -194,7 +195,7 @@ summary when `--json` is omitted; JSON remains available for scripts and the loc
 review server.
 
 The validation surface recognizes a JSON experiment manifest (including `manifest.json`),
-verified source-neutral trace archives, replication ledgers, cross-source cases, studies, generic source-adapter runs, bounded HAR exports, and verified browser fixture and proxy replication directories; Android replication and minimization
+verified source-neutral trace archives, replication ledgers, cross-source cases, studies, generic source-adapter runs, bounded HAR exports, and verified browser fixture replication and minimization directories plus proxy replication directories; Android replication and minimization
 directories, and a verified browser weather investigation directory containing
 `weather.json`. Every report lists
 `structural`, `integrity`, `boundary`, and `replay` tiers. Structural and
@@ -216,7 +217,7 @@ status is a universal causal claim.
 
 This is a composition layer, not a second verifier or capture backend.
 Trace archive, replication, case, and study verification now join the same entry point as the first
-browser investigation. Verified browser fixture and proxy replication directories now join the entry point as well; single proxy capture traces, HAR exports, and question artifacts continue
+browser investigation. Verified browser fixture replication and minimization directories plus proxy replication directories now join the entry point as well; single proxy capture traces, HAR exports, and question artifacts continue
 to use their specialized verification commands until their own mapping slices
 are reviewed.
 

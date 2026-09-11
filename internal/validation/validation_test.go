@@ -195,6 +195,17 @@ func TestValidateRejectsMalformedAndAmbiguousArtifacts(t *testing.T) {
 		assertRejected(t, Validate(root), KindBrowserReplication)
 	})
 
+	t.Run("malformed browser minimization", func(t *testing.T) {
+		root := filepath.Join(t.TempDir(), "browser-minimization")
+		if err := os.Mkdir(root, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "minimization.json"), []byte("{\"adapter\":\"browser-local-fixture\"}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		assertRejected(t, Validate(root), KindBrowserMinimization)
+	})
+
 	t.Run("malformed minimization", func(t *testing.T) {
 		root := filepath.Join(t.TempDir(), "minimization")
 		if err := os.Mkdir(root, 0o700); err != nil {
@@ -1010,6 +1021,60 @@ func TestReportFromBrowserReplication(t *testing.T) {
 		tierStatus(report, TierReplay) != StatusUnknown ||
 		report.Reason != ReasonIncompleteCapture {
 		t.Fatalf("partial report = %#v", report)
+	}
+}
+
+func TestReportFromBrowserMinimization(t *testing.T) {
+	summary := minimize.LadderSummary{
+		SchemaVersion:          minimize.LadderSummarySchemaVersion,
+		PlanName:               "browser-account-minimize",
+		Variable:               "account-id",
+		ReferenceCandidate:     browser.BrowserFixtureReferenceCandidate,
+		FunctionalityCriterion: browser.BrowserFunctionalityCriterion,
+		Adapter:                browser.BrowserReplicationAdapter,
+		AdapterVersion:         browser.BrowserReplicationAdapterVersion,
+		ProcedureSHA256:        strings.Repeat("a", 64),
+		Scope:                  "outbound",
+		ResetPolicy:            browser.BrowserReplicationResetPolicy,
+		PairsPerOrder:          1,
+		EvidenceState:          evidence.Observed,
+		SelectionState:         minimize.SelectionSelected,
+		SelectedCandidate:      browser.BrowserFixtureOmittedCandidate,
+		CandidateResults: []minimize.LadderCandidateResult{{
+			ID:             browser.BrowserFixtureOmittedCandidate,
+			Directory:      "candidate-001-omitted",
+			Classification: minimize.CandidateSufficient,
+			Outcome:        trace.NoChangeObserved,
+			EvidenceState:  evidence.Observed,
+			ReceiptSHA256:  strings.Repeat("b", 64),
+			Pairs:          2,
+			PairsPerOrder:  1,
+			CompletedPairs: 2,
+			NoChangePairs:  2,
+		}},
+	}
+	report := reportFromBrowserMinimization(summary, strings.Repeat("c", 64))
+	if report.ArtifactKind != KindBrowserMinimization ||
+		report.Overall != StatusPass ||
+		report.SelectedCandidate != browser.BrowserFixtureOmittedCandidate ||
+		tierStatus(report, TierBoundary) != StatusPass ||
+		tierStatus(report, TierReplay) != StatusPass {
+		t.Fatalf("complete report = %#v", report)
+	}
+
+	summary.EvidenceState = evidence.Unknown
+	summary.SelectionState = minimize.SelectionUnknown
+	summary.SelectedCandidate = ""
+	summary.CandidateResults[0].Classification = minimize.CandidateUnknown
+	summary.CandidateResults[0].Outcome = trace.ReplicationUnknown
+	summary.CandidateResults[0].EvidenceState = evidence.Unknown
+	summary.CandidateResults[0].UnknownPairs = 1
+	report = reportFromBrowserMinimization(summary, "incomplete")
+	if report.Overall != StatusUnknown ||
+		report.EvidenceState != evidence.Unknown ||
+		tierStatus(report, TierReplay) != StatusUnknown ||
+		report.Reason != ReasonIncompleteCapture {
+		t.Fatalf("incomplete report = %#v", report)
 	}
 }
 

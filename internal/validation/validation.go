@@ -32,6 +32,8 @@ const (
 	KindAndroidReplication ArtifactKind = "android-replication"
 	// KindAndroidMinimization identifies an Android minimization directory.
 	KindAndroidMinimization ArtifactKind = "android-minimization"
+	// KindBrowserMinimization identifies a verified browser fixture minimization directory.
+	KindBrowserMinimization ArtifactKind = "browser-minimization"
 	// KindBrowserWeather identifies a verified browser weather investigation.
 	KindBrowserWeather ArtifactKind = "browser-weather"
 	// KindBrowserReplication identifies a verified browser fixture replication directory.
@@ -265,6 +267,13 @@ func validateDirectory(path string) Report {
 		if !minimization.regular {
 			return rejectedReport(KindAndroidMinimization)
 		}
+		if minimize.LooksLikeLadder(path, browser.BrowserReplicationAdapter) {
+			summary, identity, err := browser.VerifyFixtureMinimizationWithIdentity(path)
+			if err != nil {
+				return rejectedReport(KindBrowserMinimization)
+			}
+			return reportFromBrowserMinimization(summary, identity)
+		}
 		summary, identity, err := minimize.VerifyWithIdentity(path)
 		if err != nil {
 			return rejectedReport(KindAndroidMinimization)
@@ -485,6 +494,29 @@ func reportFromWeather(review browser.WeatherReview) Report {
 		setTier(&report, TierReplay, StatusUnknown, ReasonIncompleteCapture)
 	}
 	return finalize(report)
+}
+
+func reportFromBrowserMinimization(summary minimize.LadderSummary, identity string) Report {
+	report := reportFromMinimization(summaryAsMinimization(summary), identity)
+	report.ArtifactKind = KindBrowserMinimization
+	report.Reason = ""
+	setTier(&report, TierBoundary, StatusPass, ReasonVerified)
+	return finalize(report)
+}
+
+func summaryAsMinimization(summary minimize.LadderSummary) minimize.MinimizationSummary {
+	return minimize.MinimizationSummary{
+		SchemaVersion:          summary.SchemaVersion,
+		PlanName:               summary.PlanName,
+		Variable:               summary.Variable,
+		ReferenceCandidate:     summary.ReferenceCandidate,
+		FunctionalityCriterion: summary.FunctionalityCriterion,
+		PairsPerOrder:          summary.PairsPerOrder,
+		EvidenceState:          summary.EvidenceState,
+		SelectionState:         summary.SelectionState,
+		SelectedCandidate:      summary.SelectedCandidate,
+		CandidateResults:       summary.CandidateResults,
+	}
 }
 
 func reportFromMinimization(summary minimize.MinimizationSummary, identity string) Report {
