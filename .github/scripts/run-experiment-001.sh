@@ -1301,7 +1301,7 @@ mv \
   "${provenance_dir}/treatment/session.json"
 expect_failure \
   "provenance-mismatch" \
-  "session metadata disagree" \
+  "authenticated session binding does not match metadata" \
   "${ariadne}" experiment report "${provenance_dir}"
 test ! -e "${provenance_dir}/evidence.json"
 test ! -e "${provenance_dir}/report.md"
