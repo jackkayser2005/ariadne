@@ -123,6 +123,13 @@ artifact and executable reads reject symlink/reparse/path replacement, a
 post-run executable hash change aborts the run, and Android package selectors are
 restricted before ADB shell use.
 
+Output publication now follows the same fail-closed boundary. The shared
+internal/securefs helper validates every parent component without following
+symlinks or reparse points, creates directories one component at a time, opens
+new leaves exclusively, and rechecks the opened identity. Trace, Android, browser,
+proxy, minimization, question, bundle, and adapter writers use it so a redirected
+or replaced output path cannot silently become the published evidence.
+
 **Current receipt trust-boundary slice.** Android and browser minimization
 verification now exposes the canonical root receipt identity in both human and
 JSON output and accepts an independently retained `--expect-sha256` trust

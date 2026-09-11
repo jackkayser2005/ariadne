@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackkayser2005/ariadne/internal/evidence"
 	"github.com/jackkayser2005/ariadne/internal/jsoncheck"
+	"github.com/jackkayser2005/ariadne/internal/securefs"
 )
 
 const (
@@ -123,14 +124,14 @@ func AssembleCase(planPath, outputDir string) (CaseAssemblySummary, error) {
 	}
 
 	outputDir = filepath.Clean(outputDir)
-	if _, err := os.Lstat(outputDir); err == nil {
-		return CaseAssemblySummary{}, errors.New("trace case assembly output directory already exists")
-	} else if !errors.Is(err, os.ErrNotExist) {
+	if err := securefs.RequireAbsent(outputDir); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return CaseAssemblySummary{}, errors.New("trace case assembly output directory already exists")
+		}
 		return CaseAssemblySummary{}, errors.New("trace case assembly output directory is unavailable")
 	}
 	parent := filepath.Dir(outputDir)
-	parentInfo, err := os.Stat(parent)
-	if err != nil || !parentInfo.IsDir() {
+	if err := securefs.ValidateDirectory(parent); err != nil {
 		return CaseAssemblySummary{}, errors.New("trace case assembly output parent is unavailable")
 	}
 	stagingDir, err := os.MkdirTemp(parent, ".ariadne-case-assembly-")
@@ -172,6 +173,12 @@ func AssembleCase(planPath, outputDir string) (CaseAssemblySummary, error) {
 		return CaseAssemblySummary{}, fmt.Errorf("trace case assembly generated files: %w", err)
 	}
 
+	if err := securefs.ValidateDirectory(parent); err != nil {
+		return CaseAssemblySummary{}, errors.New("publish trace case assembly workspace")
+	}
+	if err := securefs.RequireAbsent(outputDir); err != nil {
+		return CaseAssemblySummary{}, errors.New("publish trace case assembly workspace")
+	}
 	if err := os.Rename(stagingDir, outputDir); err != nil {
 		return CaseAssemblySummary{}, errors.New("publish trace case assembly workspace")
 	}

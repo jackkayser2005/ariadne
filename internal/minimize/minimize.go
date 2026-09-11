@@ -23,6 +23,7 @@ import (
 	"github.com/jackkayser2005/ariadne/internal/evidence"
 	"github.com/jackkayser2005/ariadne/internal/experiment"
 	"github.com/jackkayser2005/ariadne/internal/jsoncheck"
+	"github.com/jackkayser2005/ariadne/internal/securefs"
 )
 
 const (
@@ -343,10 +344,10 @@ func execute(
 	if runner == nil || reporter == nil || verifier == nil {
 		return MinimizationSummary{}, errors.New("minimization dependencies are required")
 	}
-	if err := os.MkdirAll(filepath.Dir(outputDir), 0o700); err != nil {
+	if err := securefs.MkdirAll(filepath.Dir(outputDir), 0o700); err != nil {
 		return MinimizationSummary{}, fmt.Errorf("create output parent: %w", err)
 	}
-	if err := os.Mkdir(outputDir, 0o700); err != nil {
+	if err := securefs.MkdirExclusive(outputDir, 0o700); err != nil {
 		return MinimizationSummary{}, fmt.Errorf("create output directory: %w", err)
 	}
 
@@ -604,27 +605,9 @@ func Save(rootDir string, summary MinimizationSummary) error {
 		return fmt.Errorf("minimization receipt exceeds %d-byte limit", maxSummaryBytes)
 	}
 	path := filepath.Join(rootDir, "minimization.json")
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
+	if err := securefs.WriteExclusiveExistingParent(path, data, 0o600); err != nil {
 		return fmt.Errorf("create minimization receipt: %w", err)
 	}
-	remove := true
-	defer func() {
-		_ = file.Close()
-		if remove {
-			_ = os.Remove(path)
-		}
-	}()
-	if _, err := file.Write(data); err != nil {
-		return fmt.Errorf("write minimization receipt: %w", err)
-	}
-	if err := file.Sync(); err != nil {
-		return fmt.Errorf("sync minimization receipt: %w", err)
-	}
-	if err := file.Close(); err != nil {
-		return fmt.Errorf("close minimization receipt: %w", err)
-	}
-	remove = false
 	return nil
 }
 

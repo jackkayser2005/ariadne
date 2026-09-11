@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -19,6 +18,7 @@ import (
 
 	"github.com/jackkayser2005/ariadne/internal/collector"
 	"github.com/jackkayser2005/ariadne/internal/experiment"
+	"github.com/jackkayser2005/ariadne/internal/securefs"
 )
 
 const sessionSchemaVersion = 7
@@ -203,10 +203,10 @@ func runPairWithOrderAndAuth(
 	if err := validatePairConfig(binary, target, manifest, outputDir, sessions); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(outputDir), 0o700); err != nil {
+	if err := securefs.MkdirAll(filepath.Dir(outputDir), 0o700); err != nil {
 		return fmt.Errorf("create output parent: %w", err)
 	}
-	if err := os.Mkdir(outputDir, 0o700); err != nil {
+	if err := securefs.MkdirExclusive(outputDir, 0o700); err != nil {
 		return fmt.Errorf("create output directory: %w", err)
 	}
 	if authDependencies != nil && (authDependencies.writeInput == nil || authDependencies.challenge == nil) {
@@ -336,7 +336,7 @@ func runSessionWithAuth(
 	auth *sessionAuth,
 ) error {
 	sessionDir := filepath.Join(outputDir, kind)
-	if err := os.Mkdir(sessionDir, 0o700); err != nil {
+	if err := securefs.MkdirExclusive(sessionDir, 0o700); err != nil {
 		return fmt.Errorf("%s: create session directory: %w", kind, err)
 	}
 
@@ -694,11 +694,12 @@ func writeArtifact(
 	sessionDir, relativePath, kind, source string,
 	data []byte,
 ) (Artifact, error) {
-	directory := filepath.Dir(filepath.Join(sessionDir, filepath.FromSlash(relativePath)))
-	if err := os.MkdirAll(directory, 0o700); err != nil {
+	path := filepath.Join(sessionDir, filepath.FromSlash(relativePath))
+	directory := filepath.Dir(path)
+	if err := securefs.MkdirAll(directory, 0o700); err != nil {
 		return Artifact{}, fmt.Errorf("create observation directory: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(sessionDir, filepath.FromSlash(relativePath)), data, 0o600); err != nil {
+	if err := securefs.WriteExclusiveExistingParent(path, data, 0o600); err != nil {
 		return Artifact{}, fmt.Errorf("write observation: %w", err)
 	}
 
@@ -932,7 +933,7 @@ func finishSession(
 		return fmt.Errorf("encode session metadata: %w", err)
 	}
 	data = append(data, '\n')
-	if err := os.WriteFile(filepath.Join(sessionDir, "session.json"), data, 0o600); err != nil {
+	if err := securefs.WriteExclusive(filepath.Join(sessionDir, "session.json"), data, 0o600); err != nil {
 		return fmt.Errorf("write session metadata: %w", err)
 	}
 	return sessionErr

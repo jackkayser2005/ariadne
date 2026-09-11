@@ -24,6 +24,7 @@ import (
 	"github.com/jackkayser2005/ariadne/internal/evidence"
 	"github.com/jackkayser2005/ariadne/internal/experiment"
 	"github.com/jackkayser2005/ariadne/internal/jsoncheck"
+	"github.com/jackkayser2005/ariadne/internal/securefs"
 )
 
 const (
@@ -1745,26 +1746,8 @@ func writeOutputs(runDir string, evidence, report []byte) error {
 }
 
 func writeExclusive(path string, data []byte) error {
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return fmt.Errorf("create %s: %w", filepath.Base(path), err)
-	}
-	remove := true
-	defer func() {
-		_ = file.Close()
-		if remove {
-			_ = os.Remove(path)
-		}
-	}()
-	if _, err := file.Write(data); err != nil {
+	if err := securefs.WriteExclusiveExistingParent(path, data, 0o600); err != nil {
 		return fmt.Errorf("write %s: %w", filepath.Base(path), err)
 	}
-	if err := file.Sync(); err != nil {
-		return fmt.Errorf("sync %s: %w", filepath.Base(path), err)
-	}
-	if err := file.Close(); err != nil {
-		return fmt.Errorf("close %s: %w", filepath.Base(path), err)
-	}
-	remove = false
 	return nil
 }

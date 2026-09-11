@@ -20,6 +20,7 @@ import (
 	"github.com/jackkayser2005/ariadne/internal/evidence"
 	"github.com/jackkayser2005/ariadne/internal/jsoncheck"
 	"github.com/jackkayser2005/ariadne/internal/minimize"
+	"github.com/jackkayser2005/ariadne/internal/securefs"
 	"github.com/jackkayser2005/ariadne/internal/trace"
 )
 
@@ -277,7 +278,7 @@ func runWeather(ctx context.Context, input WeatherInput, driver captureRunner) e
 		return errors.New("weather output already exists or is inaccessible")
 	}
 	parent := filepath.Dir(input.OutputDir)
-	if err := os.MkdirAll(parent, 0o700); err != nil {
+	if err := securefs.MkdirAll(parent, 0o700); err != nil {
 		return errors.New("create weather parent")
 	}
 	staging, err := os.MkdirTemp(parent, ".weather-")
@@ -343,6 +344,9 @@ func runWeather(ctx context.Context, input WeatherInput, driver captureRunner) e
 	}
 	if _, err := VerifyWeather(staging); err != nil {
 		return err
+	}
+	if err := securefs.RequireAbsent(input.OutputDir); err != nil {
+		return errors.New("weather output publish failed")
 	}
 	if err := os.Rename(staging, input.OutputDir); err != nil {
 		return errors.New("publish weather investigation")

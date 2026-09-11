@@ -22,6 +22,7 @@ import (
 
 	"github.com/jackkayser2005/ariadne/internal/jsoncheck"
 	"github.com/jackkayser2005/ariadne/internal/provenance"
+	"github.com/jackkayser2005/ariadne/internal/securefs"
 )
 
 const (
@@ -346,7 +347,7 @@ func runSourceAdapterWithRunnerMode(procedurePath, executable string, args []str
 	}
 
 	parent := filepath.Dir(cleanOutputDir)
-	if err := os.MkdirAll(parent, 0o700); err != nil {
+	if err := securefs.MkdirAll(parent, 0o700); err != nil {
 		return SourceAdapterRunSummary{}, errors.New("source adapter output directory failed")
 	}
 	temporaryDir, err := os.MkdirTemp(parent, ".ariadne-source-adapter-*")
@@ -395,6 +396,9 @@ func runSourceAdapterWithRunnerMode(procedurePath, executable string, args []str
 	verified, err := verifySourceAdapterRun(temporaryDir)
 	if err != nil {
 		return SourceAdapterRunSummary{}, fmt.Errorf("source adapter verification: %w", err)
+	}
+	if err := securefs.RequireAbsent(cleanOutputDir); err != nil {
+		return SourceAdapterRunSummary{}, errors.New("source adapter output publish failed")
 	}
 	if err := os.Rename(temporaryDir, cleanOutputDir); err != nil {
 		return SourceAdapterRunSummary{}, errors.New("source adapter output publish failed")
@@ -934,30 +938,9 @@ func writeSourceAdapterJSON(path string, value any) error {
 }
 
 func writeSourceAdapterExclusive(path string, data []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return errors.New("create output directory")
+	if err := securefs.WriteExclusive(path, data, 0o600); err != nil {
+		return fmt.Errorf("create output: %w", err)
 	}
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return errors.New("create output")
-	}
-	remove := true
-	defer func() {
-		_ = file.Close()
-		if remove {
-			_ = os.Remove(path)
-		}
-	}()
-	if _, err := file.Write(data); err != nil {
-		return errors.New("write output")
-	}
-	if err := file.Sync(); err != nil {
-		return errors.New("sync output")
-	}
-	if err := file.Close(); err != nil {
-		return errors.New("close output")
-	}
-	remove = false
 	return nil
 }
 

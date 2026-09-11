@@ -159,6 +159,13 @@ executable reads reject symlinks, reparse points, and path replacement; an
 executable whose post-run hash differs cannot produce a receipt; and Android
 package selectors are validated before they reach ADB shell commands.
 
+Output publication uses the same boundary in the other direction. The shared
+`internal/securefs` helper walks every parent component without
+following symlinks or reparse points, creates new directories one component at
+a time, opens new leaves exclusively, and rechecks the opened identity. Trace,
+Android, browser, proxy, minimization, question, bundle, and adapter writers
+use that helper; a redirected or replaced output path fails closed.
+
 ## Experiment 001 Android producer
 
 After `experiment report` and `experiment verify` succeed, the first producer

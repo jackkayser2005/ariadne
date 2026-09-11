@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/jackkayser2005/ariadne/internal/experiment"
 	"github.com/jackkayser2005/ariadne/internal/provenance"
+	"github.com/jackkayser2005/ariadne/internal/securefs"
 )
 
 const (
@@ -210,10 +210,10 @@ func runReplicatedWithMode(
 			return fmt.Errorf("replication provenance: %w", err)
 		}
 	}
-	if err := os.MkdirAll(filepath.Dir(outputDir), 0o700); err != nil {
+	if err := securefs.MkdirAll(filepath.Dir(outputDir), 0o700); err != nil {
 		return fmt.Errorf("create output parent: %w", err)
 	}
-	if err := os.Mkdir(outputDir, 0o700); err != nil {
+	if err := securefs.MkdirExclusive(outputDir, 0o700); err != nil {
 		return fmt.Errorf("create output directory: %w", err)
 	}
 
@@ -394,27 +394,9 @@ func writeReplicatedRecord(outputDir string, record ReplicatedRunRecord) error {
 	data, _ := json.MarshalIndent(record, "", "  ")
 	data = append(data, '\n')
 	path := filepath.Join(outputDir, "replication.json")
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
+	if err := securefs.WriteExclusiveExistingParent(path, data, 0o600); err != nil {
 		return fmt.Errorf("create replication metadata: %w", err)
 	}
-	remove := true
-	defer func() {
-		_ = file.Close()
-		if remove {
-			_ = os.Remove(path)
-		}
-	}()
-	if _, err := file.Write(data); err != nil {
-		return fmt.Errorf("write replication metadata: %w", err)
-	}
-	if err := file.Sync(); err != nil {
-		return fmt.Errorf("sync replication metadata: %w", err)
-	}
-	if err := file.Close(); err != nil {
-		return fmt.Errorf("close replication metadata: %w", err)
-	}
-	remove = false
 	return nil
 }
 

@@ -8,14 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/jackkayser2005/ariadne/internal/bundle"
 	"github.com/jackkayser2005/ariadne/internal/evidence"
 	"github.com/jackkayser2005/ariadne/internal/jsoncheck"
+	"github.com/jackkayser2005/ariadne/internal/securefs"
 )
 
 const (
@@ -887,29 +886,8 @@ func writeQuestionArtifact(path string, data []byte, kind string) error {
 	if len(data) > questionArtifactMaxBytes {
 		return fmt.Errorf("%s exceeds %d-byte limit", kind, questionArtifactMaxBytes)
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("%s: create output directory: %w", kind, err)
-	}
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
+	if err := securefs.WriteExclusive(path, data, 0o600); err != nil {
 		return fmt.Errorf("%s: create output: %w", kind, err)
 	}
-	remove := true
-	defer func() {
-		_ = file.Close()
-		if remove {
-			_ = os.Remove(path)
-		}
-	}()
-	if _, err := file.Write(data); err != nil {
-		return fmt.Errorf("%s: write output: %w", kind, err)
-	}
-	if err := file.Sync(); err != nil {
-		return fmt.Errorf("%s: sync output: %w", kind, err)
-	}
-	if err := file.Close(); err != nil {
-		return fmt.Errorf("%s: close output: %w", kind, err)
-	}
-	remove = false
 	return nil
 }

@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
@@ -16,6 +15,7 @@ import (
 	"github.com/jackkayser2005/ariadne/internal/bundle"
 	"github.com/jackkayser2005/ariadne/internal/evidence"
 	"github.com/jackkayser2005/ariadne/internal/jsoncheck"
+	"github.com/jackkayser2005/ariadne/internal/securefs"
 	portabletrace "github.com/jackkayser2005/ariadne/internal/trace"
 )
 
@@ -308,27 +308,9 @@ func SaveLadder(rootDir string, summary LadderSummary) error {
 		return fmt.Errorf("ladder receipt exceeds %d-byte limit", maxLadderSummaryBytes)
 	}
 	path := filepath.Join(rootDir, "minimization.json")
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
+	if err := securefs.WriteExclusiveExistingParent(path, data, 0o600); err != nil {
 		return fmt.Errorf("create ladder receipt: %w", err)
 	}
-	remove := true
-	defer func() {
-		_ = file.Close()
-		if remove {
-			_ = os.Remove(path)
-		}
-	}()
-	if _, err := file.Write(data); err != nil {
-		return fmt.Errorf("write ladder receipt: %w", err)
-	}
-	if err := file.Sync(); err != nil {
-		return fmt.Errorf("sync ladder receipt: %w", err)
-	}
-	if err := file.Close(); err != nil {
-		return fmt.Errorf("close ladder receipt: %w", err)
-	}
-	remove = false
 	return nil
 }
 

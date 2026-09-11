@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackkayser2005/ariadne/internal/securefs"
 	portabletrace "github.com/jackkayser2005/ariadne/internal/trace"
 )
 
@@ -447,29 +448,8 @@ func writeExclusive(path string, data []byte) error {
 	if strings.TrimSpace(path) == "" {
 		return errors.New("output path is required")
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return errors.New("create output directory")
+	if err := securefs.WriteExclusive(path, data, 0o600); err != nil {
+		return fmt.Errorf("create output: %w", err)
 	}
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return errors.New("create output")
-	}
-	remove := true
-	defer func() {
-		_ = file.Close()
-		if remove {
-			_ = os.Remove(path)
-		}
-	}()
-	if _, err := file.Write(data); err != nil {
-		return errors.New("write output")
-	}
-	if err := file.Sync(); err != nil {
-		return errors.New("sync output")
-	}
-	if err := file.Close(); err != nil {
-		return errors.New("close output")
-	}
-	remove = false
 	return nil
 }

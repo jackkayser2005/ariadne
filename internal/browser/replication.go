@@ -15,6 +15,7 @@ import (
 
 	"github.com/jackkayser2005/ariadne/internal/evidence"
 	"github.com/jackkayser2005/ariadne/internal/jsoncheck"
+	"github.com/jackkayser2005/ariadne/internal/securefs"
 	portabletrace "github.com/jackkayser2005/ariadne/internal/trace"
 )
 
@@ -143,10 +144,10 @@ func runFixtureReplicatedWith(ctx context.Context, input FixtureReplicationInput
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if err := os.MkdirAll(filepath.Dir(input.OutputDir), 0o700); err != nil {
+	if err := securefs.MkdirAll(filepath.Dir(input.OutputDir), 0o700); err != nil {
 		return errors.New("create browser replication parent")
 	}
-	if err := os.Mkdir(input.OutputDir, 0o700); err != nil {
+	if err := securefs.MkdirExclusive(input.OutputDir, 0o700); err != nil {
 		return errors.New("create browser replication output")
 	}
 
@@ -173,7 +174,7 @@ func runFixtureReplicatedWith(ctx context.Context, input FixtureReplicationInput
 	for pair := 1; pair <= input.Pairs; pair++ {
 		for _, order := range orders {
 			directory := fmt.Sprintf("pair-%03d-%s", pair, order.name)
-			if err := os.Mkdir(filepath.Join(input.OutputDir, directory), 0o700); err != nil {
+			if err := securefs.MkdirExclusive(filepath.Join(input.OutputDir, directory), 0o700); err != nil {
 				return writeFixtureReplicationFailure(input.OutputDir, record, pair, order.name, errors.New("create browser replication pair"))
 			}
 			if err := ctx.Err(); err != nil {
@@ -506,27 +507,10 @@ func writeFixtureReplicationRecord(rootDir string, record ReplicatedRunRecord) e
 		return errors.New("encode browser replication metadata")
 	}
 	data = append(data, '\n')
-	file, err := os.OpenFile(filepath.Join(rootDir, "replication.json"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return errors.New("create browser replication metadata")
+	path := filepath.Join(rootDir, "replication.json")
+	if err := securefs.WriteExclusiveExistingParent(path, data, 0o600); err != nil {
+		return fmt.Errorf("create browser replication metadata: %w", err)
 	}
-	remove := true
-	defer func() {
-		_ = file.Close()
-		if remove {
-			_ = os.Remove(filepath.Join(rootDir, "replication.json"))
-		}
-	}()
-	if _, err := file.Write(data); err != nil {
-		return errors.New("write browser replication metadata")
-	}
-	if err := file.Sync(); err != nil {
-		return errors.New("sync browser replication metadata")
-	}
-	if err := file.Close(); err != nil {
-		return errors.New("close browser replication metadata")
-	}
-	remove = false
 	return nil
 }
 
