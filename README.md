@@ -1200,7 +1200,8 @@ on each GET and never renders coordinates, URLs, payloads, executable paths, or
 local artifact paths. The JSON and page also expose verifier-derived
 per-candidate functionality counts and fixed explanations for visibility gaps.
 See the [weather investigation guide](docs/content/docs/weather-investigation.md)
-for the tested live result and coverage limits.
+for the tested live result and coverage limits. The [audit and verification report](docs/content/docs/audit-report.md)
+records the security findings, performance measurements, and remaining gaps.
 
 ## Development
 

@@ -814,3 +814,45 @@ func TestSourceAdapterReceiptProvenanceBinding(t *testing.T) {
 		t.Fatalf("legacy receipt = %#v, error = %v", decoded, err)
 	}
 }
+
+func TestStageSourceAdapterExecutableBindsBytesAndRejectsSymlinkPaths(t *testing.T) {
+	program := sourceAdapterTestDriver(t)
+	staged, digest, cleanup, err := stageSourceAdapterExecutable(program)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if staged == program || !ValidSHA256(digest) {
+		cleanup()
+		t.Fatalf("staged executable = %q, digest = %q", staged, digest)
+	}
+	stagedDigest, err := sourceAdapterExecutableSHA256(staged)
+	if err != nil || stagedDigest != digest {
+		cleanup()
+		t.Fatalf("staged digest = %q, err = %v; want %q", stagedDigest, err, digest)
+	}
+	cleanup()
+	if _, err := os.Stat(staged); !os.IsNotExist(err) {
+		t.Fatalf("staged executable remains after cleanup: %v", err)
+	}
+
+	root := t.TempDir()
+	target := filepath.Join(root, "driver.exe")
+	if err := os.WriteFile(target, []byte("driver"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	leaf := filepath.Join(root, "leaf.exe")
+	if err := os.Symlink(target, leaf); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if _, _, _, err := stageSourceAdapterExecutable(leaf); err == nil {
+		t.Fatal("stageSourceAdapterExecutable() accepted a symlink leaf")
+	}
+	parentRoot := t.TempDir()
+	parentLink := filepath.Join(parentRoot, "linked-root")
+	if err := os.Symlink(root, parentLink); err != nil {
+		t.Skipf("directory symlinks unavailable: %v", err)
+	}
+	if _, _, _, err := stageSourceAdapterExecutable(filepath.Join(parentLink, "driver.exe")); err == nil {
+		t.Fatal("stageSourceAdapterExecutable() accepted a symlink ancestor")
+	}
+}

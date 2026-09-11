@@ -241,12 +241,16 @@ func SourceAdapterReceiptSHA256(receipt SourceAdapterReceipt) (string, error) {
 // the bounded stdin/stdout contract and atomically publishes trace.json,
 // session.json, and receipt.json.
 func RunSourceAdapter(procedurePath, executable string, args []string, outputDir string) (SourceAdapterRunSummary, error) {
-	return runSourceAdapterWithRunner(procedurePath, executable, args, outputDir, runSourceAdapterProcess)
+	return runSourceAdapterWithRunnerMode(procedurePath, executable, args, outputDir, runSourceAdapterProcess, true)
 }
 
 type sourceAdapterProcessRunner func(context.Context, string, []string, []byte) ([]byte, error)
 
 func runSourceAdapterWithRunner(procedurePath, executable string, args []string, outputDir string, run sourceAdapterProcessRunner) (SourceAdapterRunSummary, error) {
+	return runSourceAdapterWithRunnerMode(procedurePath, executable, args, outputDir, run, false)
+}
+
+func runSourceAdapterWithRunnerMode(procedurePath, executable string, args []string, outputDir string, run sourceAdapterProcessRunner, stage bool) (SourceAdapterRunSummary, error) {
 	if strings.TrimSpace(procedurePath) == "" || strings.TrimSpace(executable) == "" || strings.TrimSpace(outputDir) == "" {
 		return SourceAdapterRunSummary{}, errors.New("source adapter paths and driver are required")
 	}
@@ -271,9 +275,20 @@ func runSourceAdapterWithRunner(procedurePath, executable string, args []string,
 	if err := validateSourceAdapterCommand(executable, args); err != nil {
 		return SourceAdapterRunSummary{}, err
 	}
-	executableSHA256, err := sourceAdapterExecutableSHA256(executable)
-	if err != nil {
-		return SourceAdapterRunSummary{}, errors.New("source adapter executable identity failed")
+	executionPath := executable
+	cleanupExecutable := func() {}
+	var executableSHA256 string
+	if stage {
+		executionPath, executableSHA256, cleanupExecutable, err = stageSourceAdapterExecutable(executable)
+		if err != nil {
+			return SourceAdapterRunSummary{}, errors.New("source adapter executable staging failed")
+		}
+		defer cleanupExecutable()
+	} else {
+		executableSHA256, err = sourceAdapterExecutableSHA256(executable)
+		if err != nil {
+			return SourceAdapterRunSummary{}, errors.New("source adapter executable identity failed")
+		}
 	}
 	// Reject an occupied output path before invoking the external adapter.
 	// This prevents a bad destination from causing an unnecessary or recursive process.
@@ -299,11 +314,11 @@ func runSourceAdapterWithRunner(procedurePath, executable string, args []string,
 	requestData = append(requestData, '\n')
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(procedure.DurationMS)*time.Millisecond)
 	defer cancel()
-	responseData, err := run(ctx, executable, args, requestData)
+	responseData, err := run(ctx, executionPath, args, requestData)
 	if err != nil {
 		return SourceAdapterRunSummary{}, fmt.Errorf("source adapter process: %w", err)
 	}
-	currentExecutableSHA256, hashErr := sourceAdapterExecutableSHA256(executable)
+	currentExecutableSHA256, hashErr := sourceAdapterExecutableSHA256(executionPath)
 	if hashErr != nil || currentExecutableSHA256 != executableSHA256 {
 		return SourceAdapterRunSummary{}, errors.New("source adapter executable changed during run")
 	}
@@ -601,25 +616,76 @@ func validateSourceAdapterCommand(executable string, args []string) error {
 }
 
 func sourceAdapterExecutableSHA256(path string) (string, error) {
-	info, err := sourceAdapterLstatNoSymlinkPath(path)
-	if err != nil || !info.Mode().IsRegular() {
-		return "", errors.New("executable is unavailable")
-	}
-	file, err := os.Open(path)
+	file, err := openSourceAdapterExecutable(path)
 	if err != nil {
 		return "", err
 	}
 	defer file.Close()
-	openedInfo, err := file.Stat()
-	if err != nil || !os.SameFile(info, openedInfo) {
-		return "", errors.New("executable changed during identity check")
-	}
 	hasher := sha256.New()
 	count, err := io.Copy(hasher, io.LimitReader(file, maxSourceAdapterExecutableBytes+1))
 	if err != nil || count > maxSourceAdapterExecutableBytes {
 		return "", errors.New("executable exceeds limit")
 	}
 	return hex.EncodeToString(hasher.Sum(nil)), nil
+}
+
+func openSourceAdapterExecutable(path string) (*os.File, error) {
+	info, err := sourceAdapterLstatNoSymlinkPath(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return nil, errors.New("executable is unavailable")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, errors.New("executable is unavailable")
+	}
+	openedInfo, err := file.Stat()
+	if err != nil || !os.SameFile(info, openedInfo) {
+		_ = file.Close()
+		return nil, errors.New("executable changed during identity check")
+	}
+	currentInfo, err := sourceAdapterLstatNoSymlinkPath(path)
+	if err != nil || !currentInfo.Mode().IsRegular() || !os.SameFile(currentInfo, openedInfo) {
+		_ = file.Close()
+		return nil, errors.New("executable changed during identity check")
+	}
+	return file, nil
+}
+
+func stageSourceAdapterExecutable(path string) (string, string, func(), error) {
+	source, err := openSourceAdapterExecutable(path)
+	if err != nil {
+		return "", "", func() {}, err
+	}
+	defer source.Close()
+	temporaryDirectory, err := os.MkdirTemp("", "ariadne-source-adapter-")
+	if err != nil {
+		return "", "", func() {}, errors.New("create source adapter staging directory")
+	}
+	stagedName := "driver" + filepath.Ext(path)
+	stagedPath := filepath.Join(temporaryDirectory, stagedName)
+	cleanup := func() {
+		_ = os.Remove(stagedPath)
+		_ = os.Remove(temporaryDirectory)
+	}
+	target, err := os.OpenFile(stagedPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o700)
+	if err != nil {
+		cleanup()
+		return "", "", func() {}, errors.New("create staged source adapter executable")
+	}
+	hasher := sha256.New()
+	count, copyErr := io.Copy(io.MultiWriter(target, hasher), io.LimitReader(source, maxSourceAdapterExecutableBytes+1))
+	if copyErr == nil && count > maxSourceAdapterExecutableBytes {
+		copyErr = errors.New("executable exceeds limit")
+	}
+	if copyErr == nil {
+		copyErr = target.Sync()
+	}
+	closeErr := target.Close()
+	if copyErr != nil || closeErr != nil {
+		cleanup()
+		return "", "", func() {}, errors.New("stage source adapter executable")
+	}
+	return stagedPath, hex.EncodeToString(hasher.Sum(nil)), cleanup, nil
 }
 
 func runSourceAdapterProcess(ctx context.Context, executable string, args []string, request []byte) ([]byte, error) {
