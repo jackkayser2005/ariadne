@@ -65,6 +65,18 @@ jq -e '
   (.pair_summaries | length == 2) and
   (all(.pair_summaries[]; .outcome == "changed" and .evidence_state == "observed" and .differences == 1 and .unknowns == 0 and (.evidence_sha256 | test("^[0-9a-f]{64}$")) and (.binding_sha256 | test("^[0-9a-f]{64}$"))))
 ' "${replicated_verify_json}"
+replicated_validate_json="${RUNNER_TEMP}/ariadne-replicated-validate.json"
+"${ariadne}" validate --json "${replicated_dir}" >"${replicated_validate_json}"
+jq -e '
+  (.schema_version == 1) and
+  (.artifact_kind == "android-replication") and
+  (.overall == "pass") and
+  (.outcome == "replicated-change") and
+  (.evidence_state == "observed") and
+  (.identity | test("^[0-9a-f]{64}$")) and
+  (.tiers | length == 4) and
+  (all(.tiers[]; .status == "pass"))
+' "${replicated_validate_json}"
 if grep -F -q \
   -e "baseline@example.invalid" \
   -e "treatment@example.invalid" \
@@ -122,6 +134,19 @@ jq -e '
   ([.candidate_results[].id] == ["city", "omitted"]) and
   (all(.candidate_results[]; .classification == "sufficient" and .outcome == "no-change-observed" and .evidence_state == "observed" and .pairs == 2 and .pairs_per_order == 1 and .completed_pairs == 2 and .changed_pairs == 0 and .no_change_pairs == 2 and .unknown_pairs == 0 and (.receipt_sha256 | test("^[0-9a-f]{64}$")) and (.binding_sha256 | test("^[0-9a-f]{64}$"))))
 ' "${minimization_verify_json}"
+minimization_validate_json="${RUNNER_TEMP}/ariadne-minimization-validate.json"
+"${ariadne}" validate --json "${minimization_dir}" >"${minimization_validate_json}"
+jq -e '
+  (.schema_version == 1) and
+  (.artifact_kind == "android-minimization") and
+  (.overall == "pass") and
+  (.evidence_state == "observed") and
+  (.selection_state == "selected") and
+  (.selected_candidate == "omitted") and
+  (.identity | test("^[0-9a-f]{64}$")) and
+  (.tiers | length == 4) and
+  (all(.tiers[]; .status == "pass"))
+' "${minimization_validate_json}"
 if grep -F -q \
   -e "37.7749-122.4194" \
   -e "san-francisco" \
