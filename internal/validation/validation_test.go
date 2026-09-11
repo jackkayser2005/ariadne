@@ -63,6 +63,39 @@ func TestValidateManifest(t *testing.T) {
 	}
 }
 
+func TestValidateHAR(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "capture.har")
+	data := []byte("{\"log\":{\"version\":\"1.2\",\"entries\":[{\"request\":{\"url\":\"https://example.test/?email=secret\"}}]}}")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	summary, err := browser.VerifyHAR(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := Validate(path)
+	if report.ArtifactKind != KindBrowserHAR || report.Overall != StatusWarning ||
+		report.Identity != summary.HARFileSHA256 || report.EvidenceState != evidence.Unknown ||
+		tierStatus(report, TierBoundary) != StatusUnavailable || tierStatus(report, TierReplay) != StatusUnavailable {
+		t.Fatalf("report = %#v", report)
+	}
+	encoded, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "secret") || strings.Contains(string(encoded), "example.test") {
+		t.Fatalf("report exposed HAR content: %s", encoded)
+	}
+}
+
+func TestValidateRejectsMalformedHAR(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "capture.har")
+	if err := os.WriteFile(path, []byte("{\"log\":{\"version\":\"1.1\",\"entries\":[]}}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	assertRejected(t, Validate(path), KindBrowserHAR)
+}
+
 func TestValidateRejectsMalformedAndAmbiguousArtifacts(t *testing.T) {
 	t.Run("malformed manifest", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "manifest.json")

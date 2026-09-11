@@ -26,6 +26,9 @@ statement coverage. Package coverage is not a proof of complete behavior: the
 regression tests still target hostile files, malformed and oversized input,
 redaction, path replacement, timeouts, cleanup, redirects, undeclared browser
 origins, denied permissions, and incomplete captures.
+The unified validator also inventories bounded HAR exports and generic
+source-adapter runs, while leaving their boundary and replay guarantees
+unavailable unless a separate controlled procedure supplies them.
 
 The dependency baseline was checked with `go run golang.org/x/vuln/cmd/govulncheck@latest ./...` on Go 1.26.8. It completed successfully and reported `No vulnerabilities found.` This is a point-in-time result from the scanner database fetched during the run; repeat it before release.
 
@@ -79,8 +82,8 @@ apply to the run, so Ariadne withholds a minimum-disclosure recommendation.
 The forecast result is kept separate from exact weather-content equality, and
 the driver cannot observe server-side storage or onward sharing.
 
-The local GET-only page at `/weather` re-verifies the run on each request and
-starts with a plain-language explanation. The CLI's default output reports the
+The local GET-only pages at `/weather` and `/source-adapter` re-verify their saved artifacts on each request and
+start with plain-language explanations. The CLI's default output reports the
 same counts and limits without printing coordinates or URLs. The technical
 identities remain available under the collapsed evidence section.
 

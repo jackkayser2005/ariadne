@@ -22,6 +22,7 @@ type ReviewOptions struct {
 	HARPath                   string
 	HAROrigin                 string
 	WeatherPath               string
+	SourceAdapterPath         string
 	ArchiveRoot               string
 	HistoryPath               string
 	ReflectionPath            string
@@ -51,6 +52,10 @@ type ReviewOptions struct {
 func reviewHandler(options ReviewOptions) http.Handler {
 	h := archiveHandler(options.ArchiveRoot)
 	h.weatherPath = options.WeatherPath
+	if options.SourceAdapterPath != "" {
+		h.sourceAdapterPath = options.SourceAdapterPath
+		h.sourceAdapterVerify = trace.VerifySourceAdapterRun
+	}
 	h.harPath = options.HARPath
 	h.harSecondPath = options.HARSecondPath
 	h.harOrigin = options.HAROrigin

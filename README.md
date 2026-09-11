@@ -184,6 +184,7 @@ go run ./cmd/ariadne validate --json .ariadne/trace-replication.json
 go run ./cmd/ariadne validate --json .ariadne/trace-case.json
 go run ./cmd/ariadne validate --json .ariadne/trace-study.json
 go run ./cmd/ariadne validate --json .ariadne/source-adapter-run
+go run ./cmd/ariadne validate --json .ariadne/browser-export.har
 ~~~
 
 For trace archives, replication ledgers, cross-source cases, and studies, the same command also has a concise human
@@ -191,7 +192,7 @@ summary when `--json` is omitted; JSON remains available for scripts and the loc
 review server.
 
 The validation surface recognizes a JSON experiment manifest (including `manifest.json`),
-verified source-neutral trace archives, replication ledgers, cross-source cases, studies, and generic source-adapter runs, Android replication and minimization
+verified source-neutral trace archives, replication ledgers, cross-source cases, studies, generic source-adapter runs, and bounded HAR exports; Android replication and minimization
 directories, and a verified browser weather investigation directory containing
 `weather.json`. Every report lists
 `structural`, `integrity`, `boundary`, and `replay` tiers. Structural and
@@ -271,6 +272,14 @@ challenge-commitment identities, never the challenge, driver arguments, or raw
 source values. Verification is offline and proves consistency and session
 binding—not external authenticity, target authorization, universal capture, or
 causal impact.
+The loopback review server can expose one verified source-adapter run:
+
+go run ./cmd/ariadne experiment serve --source-adapter .ariadne/source-adapter-run <archive-root>
+
+The read-only /source-adapter route re-verifies the receipt, trace, and session
+on every GET and shows only safe labels, completeness, and identities. It does
+not render the run path, procedure, executable, challenge, payloads, URLs, or
+captured values.
 
 These local boundaries are fail-closed: malformed collector requests do not
 consume the one-shot observation slot; adapter artifact and executable reads
@@ -1056,7 +1065,7 @@ The local review page can receive a verified transition ledger, a saved
 reflection, an acceptance identity binding, two retained question rounds, and
 one portable trace archive, saved question round, replicated trace ledger, or
 cross-source case with
-`experiment serve --history <history.json> --reflection <reflection.json> --acceptance <acceptance.json> --round-first <first-round.json> --round-second <second-round.json> --trace-archive <trace-archive.json> --trace-round <trace-round.json> --trace-replication <ledger.json> --trace-case <case.json> [--trace-case-round <round.json>] [--trace-case-receipt <receipt.json>] --trace-study <study.json> --trace-study-round <round.json> --trace-study-receipt <receipt.json> [--minimization <run-directory>] [--minimization-round <round.json>] [--minimization-receipt <receipt.json>] <archive-root>`.
+`experiment serve --history <history.json> --reflection <reflection.json> --acceptance <acceptance.json> --round-first <first-round.json> --round-second <second-round.json> --trace-archive <trace-archive.json> --trace-round <trace-round.json> --trace-replication <ledger.json> --trace-case <case.json> [--trace-case-round <round.json>] [--trace-case-receipt <receipt.json>] --trace-study <study.json> --trace-study-round <round.json> --trace-study-receipt <receipt.json> [--source-adapter <run-directory>] [--minimization <run-directory>] [--minimization-round <round.json>] [--minimization-receipt <receipt.json>] <archive-root>`.
 It renders caller-ordered bounded transitions and re-asks the saved reflection's
 fixed question against the current archive, showing only safe comparison counts,
 identities, per-directory bounded state changes, and the repeated-change

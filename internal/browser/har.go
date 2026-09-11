@@ -2,6 +2,8 @@ package browser
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,8 +19,9 @@ import (
 )
 
 const (
-	maxHARBytes        = 8 << 20
-	maxHARPathSegments = 1024
+	maxHARBytes         = 8 << 20
+	maxHARPathSegments  = 1024
+	harValidationOrigin = "https://example.invalid"
 )
 
 type harName struct {
@@ -68,6 +71,14 @@ type HARComparison struct {
 	Right              HARReview `json:"right"`
 }
 
+// HARVerificationSummary identifies a structurally valid HAR export without
+// retaining its URLs, fields, payloads, or values.
+type HARVerificationSummary struct {
+	SchemaVersion int    `json:"schema_version"`
+	Requests      int    `json:"requests"`
+	Destinations  int    `json:"destinations"`
+	HARFileSHA256 string `json:"har_file_sha256"`
+}
 type harLabelResolver struct {
 	base      string
 	labels    map[string]string
@@ -101,6 +112,29 @@ func InspectHAR(data []byte, origin string) (HARReview, error) {
 	return inspectHAR(data, origin, nil)
 }
 
+// VerifyHAR verifies one bounded local HAR export and returns only its
+// structural counts and file identity. It does not authenticate the export
+// or claim that any request reached a server.
+func VerifyHAR(path string) (HARVerificationSummary, error) {
+	if strings.TrimSpace(path) == "" {
+		return HARVerificationSummary{}, errors.New("HAR path is required")
+	}
+	data, err := bundle.ReadBoundedFile(path, maxHARBytes)
+	if err != nil {
+		return HARVerificationSummary{}, errors.New("read HAR")
+	}
+	review, err := inspectHAR(data, harValidationOrigin, nil)
+	if err != nil {
+		return HARVerificationSummary{}, errors.New("invalid HAR")
+	}
+	digest := sha256.Sum256(data)
+	return HARVerificationSummary{
+		SchemaVersion: review.SchemaVersion,
+		Requests:      review.Requests,
+		Destinations:  len(review.Destinations),
+		HARFileSHA256: hex.EncodeToString(digest[:]),
+	}, nil
+}
 func inspectHAR(data []byte, origin string, rules []harRule) (HARReview, error) {
 	resolver, err := newHARLabelResolver(origin)
 	if err != nil {

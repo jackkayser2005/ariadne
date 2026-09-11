@@ -115,6 +115,14 @@ external executable-authenticity proof, authorization proof, reset proof, or
 causal claim. Legacy receipts that omit it remain readable; verification does
 not synthesize a value for them.
 
+The loopback review server can expose one verified run:
+
+go run ./cmd/ariadne experiment serve --source-adapter .ariadne/source-adapter-run <archive-root>
+
+The /source-adapter route re-verifies the three portable files on each GET and
+renders only safe labels, completeness, and identities. It never renders the
+run path, procedure, executable, challenge, payloads, URLs, or captured values.
+
 ## Receipt-bound adapter-run archives
 
 A generic adapter run is now a first-class input to the source-neutral archive

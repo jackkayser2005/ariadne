@@ -33,6 +33,8 @@ const (
 	KindAndroidMinimization ArtifactKind = "android-minimization"
 	// KindBrowserWeather identifies a verified browser weather investigation.
 	KindBrowserWeather ArtifactKind = "browser-weather"
+	// KindBrowserHAR identifies a bounded HAR export inventory.
+	KindBrowserHAR ArtifactKind = "browser-har"
 	// KindTraceArchive identifies a verified source-neutral trace archive.
 	KindTraceArchive ArtifactKind = "trace-archive"
 	// KindTraceReplication identifies a verified source-neutral replication ledger.
@@ -133,6 +135,13 @@ func Validate(path string) Report {
 	}
 	if !info.Mode().IsRegular() {
 		return rejectedReport(KindUnknown)
+	}
+	if strings.EqualFold(filepath.Ext(path), ".har") {
+		summary, err := browser.VerifyHAR(path)
+		if err != nil {
+			return rejectedReport(KindBrowserHAR)
+		}
+		return reportFromHAR(summary)
 	}
 	if filepath.Base(path) != "manifest.json" && !strings.EqualFold(filepath.Ext(path), ".json") {
 		return unavailableReport(KindUnknown, ReasonUnsupportedArtifact)
@@ -401,6 +410,13 @@ func reportFromSourceAdapter(summary trace.SourceAdapterRunSummary) Report {
 	return finalize(report)
 }
 
+func reportFromHAR(summary browser.HARVerificationSummary) Report {
+	report := verifiedReport(KindBrowserHAR)
+	report.Identity = summary.HARFileSHA256
+	setTier(&report, TierBoundary, StatusUnavailable, ReasonProvenanceUnavailable)
+	setTier(&report, TierReplay, StatusUnavailable, ReasonNotApplicable)
+	return finalize(report)
+}
 func reportFromWeather(review browser.WeatherReview) Report {
 	report := verifiedReport(KindBrowserWeather)
 	report.Identity = review.ReceiptSHA256

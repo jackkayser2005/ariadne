@@ -24,6 +24,8 @@ type handler struct {
 	harPath                  string
 	harOrigin                string
 	weatherPath              string
+	sourceAdapterPath        string
+	sourceAdapterVerify      func(string) (trace.SourceAdapterRunSummary, error)
 	root                     string
 	index                    func(string) ([]bundle.ArchiveEntry, error)
 	verify                   func(string) (bundle.Summary, error)
@@ -181,6 +183,7 @@ type pageData struct {
 	TraceStudyComparison                   trace.ReplicationStudyQuestionRoundComparison
 	TraceStudySelectedQuestionID           string
 	WeatherConfigured                      bool
+	SourceAdapterConfigured                bool
 	HARConfigured                          bool
 	HARComparisonConfigured                bool
 	MinimizationConfigured                 bool
@@ -324,6 +327,7 @@ func newHandlerWithHost(h handler, expectedHost string) http.Handler {
 	mux.HandleFunc("/trace-study-comparison", h.handleTraceStudyComparison)
 	mux.HandleFunc("/minimization", h.handleMinimization)
 	mux.HandleFunc("/weather", h.handleWeather)
+	mux.HandleFunc("/source-adapter", h.handleSourceAdapter)
 	mux.HandleFunc("/capture", h.handleHAR)
 	mux.HandleFunc("/capture-report", h.handleHAR)
 	mux.HandleFunc("/capture-compare", h.handleHARComparison)
@@ -540,6 +544,7 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		TraceStudyConfigured:               h.traceStudyConfigured(),
 		TraceStudyComparisonConfigured:     h.traceStudyComparison != nil,
 		WeatherConfigured:                  h.weatherPath != "",
+		SourceAdapterConfigured:            h.sourceAdapterPath != "",
 		HARConfigured:                      h.harPath != "" && h.harOrigin != "",
 		HARComparisonConfigured:            h.harPath != "" && h.harOrigin != "" && h.harSecondPath != "" && h.harRulesPath != "",
 		MinimizationConfigured:             h.minimizationPath != "",
@@ -1353,6 +1358,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       <div class="flow-step"><span class="flow-index">4</span><div><strong>Keep evidence</strong><span>Reopen a redacted explanation later.</span></div></div>
     </section>
     {{if .WeatherConfigured}}<section class="panel" aria-labelledby="start-here"><p class="eyebrow">Start here</p><h2 id="start-here">Understand where information goes.</h2><p>Follow a weather website test: what location left the browser, where it went, and whether sharing less still gave a forecast. No technical knowledge needed.</p><a class="button" href="/weather">Open weather investigation</a><p class="context">This is a saved test using synthetic locations. Ariadne is not monitoring your browsing or the rest of your device.</p></section>{{end}}
+    {{if .SourceAdapterConfigured}}<section class="panel" aria-labelledby="source-adapter-start"><p class="eyebrow">Redacted information trail</p><h2 id="source-adapter-start">Understand what an authorized source observed.</h2><p>See the safe labels, completeness, and evidence identities from one adapter run. Payloads and executable details stay out of the page.</p><a class="button" href="/source-adapter">Open source-adapter explanation</a><p class="context">This is a saved redacted trace, not a monitor of the rest of your device.</p></section>{{end}}
     {{if .HARConfigured}}<section class="panel"><p class="eyebrow">Saved browser capture</p><h2>Explore a website's recorded activity.</h2><p>See request destinations and clues about personal information in the configured capture. The explanation omits captured values.</p><a class="button" href="/capture">Explain this capture</a><p class="context">An imported file is not a controlled experiment. Clues do not establish that personal information reached a server.</p></section>{{end}}
     {{if .HARComparisonConfigured}}<section class="panel"><h2>Look at two captures together.</h2><p>Follow the same test values across two exported files. Missing observations remain unknown.</p><a class="button" href="/capture-compare">Compare these captures</a></section>{{end}}
     <section class="panel">

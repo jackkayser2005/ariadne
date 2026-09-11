@@ -79,6 +79,41 @@ func TestInspectHARLimits(t *testing.T) {
 	}
 }
 
+func TestVerifyHARBindsBoundedFile(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "capture.har")
+	if err := os.WriteFile(path, []byte(harSample), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	summary, err := VerifyHAR(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.SchemaVersion != 4 || summary.Requests != 3 || summary.Destinations != 2 || len(summary.HARFileSHA256) != 64 {
+		t.Fatalf("summary = %#v", summary)
+	}
+	encoded, err := json.Marshal(summary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"secret", "example.test", "other.test"} {
+		if bytes.Contains(encoded, []byte(forbidden)) {
+			t.Fatalf("summary retained %s: %s", forbidden, encoded)
+		}
+	}
+	for _, bad := range []string{root, filepath.Join(root, "missing.har")} {
+		if _, err := VerifyHAR(bad); err == nil || strings.Contains(err.Error(), root) {
+			t.Fatalf("VerifyHAR(%q) = %v", bad, err)
+		}
+	}
+	if err := os.WriteFile(path, []byte("invalid"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyHAR(path); err == nil || strings.Contains(err.Error(), "secret") {
+		t.Fatalf("VerifyHAR accepted invalid input: %v", err)
+	}
+}
+
 func TestSaveHARReportSafety(t *testing.T) {
 	root := t.TempDir()
 	input := filepath.Join(root, "private.har")

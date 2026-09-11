@@ -178,7 +178,7 @@ experiment
   ariadne experiment ask-archive verify [--json] [--expect-sha256 <digest>] <report.json>
   ariadne experiment questions [--json]
   ariadne experiment list [--json] <archive-root>
-	ariadne experiment serve [--addr <address>] [--history <history.json>] [--reflection <report.json>] [--export <export.json>] [--acceptance <acceptance.json>] [--round-first <round.json> --round-second <round.json>] [--trace-archive <archive.json>] [--trace-round <round.json>] [--trace-replication <ledger.json>] [--trace-case <case.json>] [--trace-case-round <round.json>] [--trace-case-receipt <receipt.json>] [--trace-study <study.json>] [--trace-study-round <round.json>] [--trace-study-receipt <receipt.json>] [--trace-study-second <study.json> --trace-study-round-second <round.json>] [--minimization <run-directory>] [--minimization-round <round.json>] [--minimization-receipt <receipt.json>] <archive-root>
+	ariadne experiment serve [--addr <address>] [--history <history.json>] [--reflection <report.json>] [--export <export.json>] [--acceptance <acceptance.json>] [--round-first <round.json> --round-second <round.json>] [--trace-archive <archive.json>] [--trace-round <round.json>] [--trace-replication <ledger.json>] [--trace-case <case.json>] [--trace-case-round <round.json>] [--trace-case-receipt <receipt.json>] [--trace-study <study.json>] [--trace-study-round <round.json>] [--trace-study-receipt <receipt.json>] [--trace-study-second <study.json> --trace-study-round-second <round.json>] [--source-adapter <run-directory>] [--minimization <run-directory>] [--minimization-round <round.json>] [--minimization-receipt <receipt.json>] <archive-root>
 `
 
 const adbCheckTimeout = 10 * time.Second
@@ -3446,6 +3446,7 @@ func runServe(
 	traceStudySecondPath := flags.String("trace-study-second", "", "")
 	traceStudyRoundSecondPath := flags.String("trace-study-round-second", "", "")
 	weatherPath := flags.String("weather", "", "")
+	sourceAdapterPath := flags.String("source-adapter", "", "")
 	harPath := flags.String("har", "", "")
 	harSecond := flags.String("har-second", "", "")
 	harOrigin := flags.String("har-origin", "", "")
@@ -3499,6 +3500,7 @@ func runServe(
 	}
 	reviewHandler := ui.HandlerWithReviewOptions(ui.ReviewOptions{
 		WeatherPath:               *weatherPath,
+		SourceAdapterPath:         *sourceAdapterPath,
 		HARPath:                   *harPath,
 		HARSecondPath:             *harSecond,
 		HAROrigin:                 *harOrigin,
