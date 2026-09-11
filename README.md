@@ -183,6 +183,7 @@ go run ./cmd/ariadne validate --json .ariadne/trace-archive.json
 go run ./cmd/ariadne validate --json .ariadne/trace-replication.json
 go run ./cmd/ariadne validate --json .ariadne/trace-case.json
 go run ./cmd/ariadne validate --json .ariadne/trace-study.json
+go run ./cmd/ariadne validate --json .ariadne/source-adapter-run
 ~~~
 
 For trace archives, replication ledgers, cross-source cases, and studies, the same command also has a concise human
@@ -190,7 +191,7 @@ summary when `--json` is omitted; JSON remains available for scripts and the loc
 review server.
 
 The validation surface recognizes a JSON experiment manifest (including `manifest.json`),
-verified source-neutral trace archives, replication ledgers, cross-source cases, and studies, Android replication and minimization
+verified source-neutral trace archives, replication ledgers, cross-source cases, studies, and generic source-adapter runs, Android replication and minimization
 directories, and a verified browser weather investigation directory containing
 `weather.json`. Every report lists
 `structural`, `integrity`, `boundary`, and `replay` tiers. Structural and

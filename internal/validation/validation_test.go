@@ -788,3 +788,135 @@ func assertRejected(t *testing.T, report Report, kind ArtifactKind) {
 		t.Fatalf("rejected tiers = %#v", report.Tiers)
 	}
 }
+
+func TestValidateSourceAdapterRun(t *testing.T) {
+	root := t.TempDir()
+	tracePath := filepath.Join(root, "trace.json")
+	sessionPath := filepath.Join(root, "session.json")
+	document := trace.Document{
+		SchemaVersion: 1,
+		Redacted:      true,
+		Scope:         "outbound",
+		Completeness:  trace.Complete,
+		Events: []trace.Event{{
+			Source: "desktop", Channel: "network", Kind: "request",
+			Destination: "analytics", Fields: []string{"region"},
+		}},
+	}
+	data, err := json.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(tracePath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	procedure := trace.SourceAdapterProcedure{
+		SchemaVersion: trace.SourceAdapterProcedureSchemaVersion,
+		Adapter:       "external-desktop-v1", AdapterVersion: 1,
+		Source: "desktop", Scope: "outbound", DurationMS: 5000, MaxEvents: 1,
+	}
+	procedureSHA256, err := trace.SourceAdapterProcedureSHA256(procedure)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := trace.SaveSession(tracePath, sessionPath, trace.SessionInput{
+		Adapter: procedure.Adapter, AdapterVersion: procedure.AdapterVersion,
+		Source: procedure.Source, ProcedureSHA256: procedureSHA256,
+		Role: trace.RoleStandalone, Order: trace.OrderStandalone,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	traceSummary, err := trace.Verify(tracePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt := trace.SourceAdapterReceipt{
+		SchemaVersion: trace.SourceAdapterReceiptSchemaVersion,
+		Adapter:       procedure.Adapter, AdapterVersion: procedure.AdapterVersion,
+		Source: procedure.Source, Scope: procedure.Scope,
+		Completeness: trace.Complete, Events: traceSummary.Events,
+		ProcedureSHA256:  procedureSHA256,
+		ExecutableSHA256: strings.Repeat("b", 64),
+		ChallengeSHA256:  strings.Repeat("c", 64),
+		TraceSHA256:      traceSummary.TraceSHA256,
+		SessionSHA256:    session.SessionSHA256,
+	}
+	receiptData, err := json.Marshal(receipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "receipt.json"), receiptData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	receiptSHA256, err := trace.SourceAdapterReceiptSHA256(receipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	report := Validate(root)
+	if report.ArtifactKind != KindSourceAdapterRun ||
+		report.Overall != StatusWarning ||
+		report.Identity != receiptSHA256 ||
+		report.EvidenceState != evidence.Observed ||
+		report.Reason != ReasonProvenanceUnavailable ||
+		tierStatus(report, TierBoundary) != StatusUnavailable ||
+		tierStatus(report, TierReplay) != StatusUnavailable {
+		t.Fatalf("report = %#v", report)
+	}
+}
+
+func TestValidateRejectsMalformedSourceAdapterRun(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "receipt.json"), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	assertRejected(t, Validate(root), KindSourceAdapterRun)
+
+	root = t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "receipt.json"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	assertRejected(t, Validate(root), KindSourceAdapterRun)
+
+	root = t.TempDir()
+	for _, name := range []string{"receipt.json", "weather.json"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte("{}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assertRejected(t, Validate(root), KindUnknown)
+}
+
+func TestReportFromSourceAdapter(t *testing.T) {
+	summary := trace.SourceAdapterRunSummary{
+		ReceiptSHA256: strings.Repeat("a", 64),
+		Receipt: trace.SourceAdapterReceipt{
+			ProvenanceSHA256: strings.Repeat("b", 64),
+		},
+		Trace:   trace.VerificationSummary{Completeness: trace.Complete},
+		Session: trace.SessionVerificationSummary{Completeness: trace.Complete},
+	}
+	report := reportFromSourceAdapter(summary)
+	if report.ArtifactKind != KindSourceAdapterRun ||
+		report.Overall != StatusWarning ||
+		report.EvidenceState != evidence.Observed ||
+		report.Identity != summary.ReceiptSHA256 ||
+		tierStatus(report, TierBoundary) != StatusPass ||
+		tierStatus(report, TierReplay) != StatusUnavailable ||
+		report.Reason != ReasonValidationIncomplete {
+		t.Fatalf("complete report = %#v", report)
+	}
+
+	summary.Receipt.ProvenanceSHA256 = ""
+	summary.Trace.Completeness = trace.Partial
+	summary.Session.Completeness = trace.Partial
+	report = reportFromSourceAdapter(summary)
+	if report.Overall != StatusUnknown ||
+		report.EvidenceState != evidence.Unknown ||
+		tierStatus(report, TierBoundary) != StatusUnavailable ||
+		tierStatus(report, TierReplay) != StatusUnknown ||
+		report.Reason != ReasonIncompleteCapture {
+		t.Fatalf("partial report = %#v", report)
+	}
+}

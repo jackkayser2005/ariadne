@@ -80,6 +80,7 @@ go run ./cmd/ariadne trace adapter run --json \
   --output .ariadne/source-adapter-run
 go run ./cmd/ariadne trace adapter verify --json \
   .ariadne/source-adapter-run
+go run ./cmd/ariadne validate --json .ariadne/source-adapter-run
 ~~~
 
 The procedure contains only an external-* adapter ID, adapter version, one

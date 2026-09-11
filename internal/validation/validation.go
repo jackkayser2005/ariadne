@@ -41,6 +41,8 @@ const (
 	KindTraceCase ArtifactKind = "trace-case"
 	// KindTraceStudy identifies a verified cross-run replication study.
 	KindTraceStudy ArtifactKind = "trace-study"
+	// KindSourceAdapterRun identifies a verified generic source-adapter run.
+	KindSourceAdapterRun ArtifactKind = "source-adapter-run"
 )
 
 // Tier identifies one independent validation guarantee.
@@ -188,11 +190,25 @@ func validateDirectory(path string) Report {
 	weather, weatherErr := inspectMarker(path, "weather.json")
 	replication, replicationErr := inspectMarker(path, "replication.json")
 	minimization, minimizationErr := inspectMarker(path, "minimization.json")
-	if weatherErr != nil || replicationErr != nil || minimizationErr != nil {
+	sourceAdapter, sourceAdapterErr := inspectMarker(path, "receipt.json")
+	if weatherErr != nil || replicationErr != nil || minimizationErr != nil || sourceAdapterErr != nil {
 		return unavailableReport(KindUnknown, ReasonArtifactUnavailable)
+	}
+	if sourceAdapter.present && (weather.present || replication.present || minimization.present) {
+		return rejectedReport(KindUnknown)
 	}
 	if weather.present && replication.present {
 		return rejectedReport(KindUnknown)
+	}
+	if sourceAdapter.present {
+		if !sourceAdapter.regular {
+			return rejectedReport(KindSourceAdapterRun)
+		}
+		summary, err := trace.VerifySourceAdapterRun(path)
+		if err != nil {
+			return rejectedReport(KindSourceAdapterRun)
+		}
+		return reportFromSourceAdapter(summary)
 	}
 	if weather.present {
 		if !weather.regular {
@@ -356,6 +372,29 @@ func reportFromTraceStudy(summary trace.StudyVerificationSummary) Report {
 		summary.EvidenceState == evidence.Observed &&
 		summary.Outcome != trace.ReplicationUnknown {
 		setTier(&report, TierReplay, StatusPass, ReasonVerified)
+	} else {
+		setTier(&report, TierReplay, StatusUnknown, ReasonIncompleteCapture)
+	}
+	return finalize(report)
+}
+
+func reportFromSourceAdapter(summary trace.SourceAdapterRunSummary) Report {
+	report := verifiedReport(KindSourceAdapterRun)
+	report.Identity = summary.ReceiptSHA256
+	if summary.Trace.Completeness == trace.Complete && summary.Session.Completeness == trace.Complete {
+		report.EvidenceState = evidence.Observed
+	} else {
+		report.EvidenceState = evidence.Unknown
+	}
+	if summary.Receipt.ProvenanceSHA256 == "" {
+		setTier(&report, TierBoundary, StatusUnavailable, ReasonProvenanceUnavailable)
+	} else {
+		setTier(&report, TierBoundary, StatusPass, ReasonVerified)
+	}
+	// A portable run deliberately omits the procedure and executable bytes. It
+	// can be verified and compared, but cannot be replayed from this directory.
+	if report.EvidenceState == evidence.Observed {
+		setTier(&report, TierReplay, StatusUnavailable, ReasonNotApplicable)
 	} else {
 		setTier(&report, TierReplay, StatusUnknown, ReasonIncompleteCapture)
 	}
