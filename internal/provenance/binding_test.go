@@ -191,6 +191,31 @@ func TestBindingDigestsAreCanonicalAndMutationSensitive(t *testing.T) {
 	}
 }
 
+func TestBindingDigestsRejectInvalidValues(t *testing.T) {
+	session := validSessionBindingForTest()
+	session.Status = "invalid"
+	if _, err := session.SHA256(); err == nil {
+		t.Fatal("SessionBinding.SHA256() accepted an invalid binding")
+	}
+
+	pair := validPairBindingForTest()
+	pair.Order = "invalid"
+	if _, err := pair.SHA256(); err == nil {
+		t.Fatal("PairBinding.SHA256() accepted an invalid binding")
+	}
+
+	replication := validReplicationBindingForTest()
+	replication.Pairs = replication.Pairs[:1]
+	if _, err := replication.SHA256(); err == nil {
+		t.Fatal("ReplicationBinding.SHA256() accepted an incomplete binding")
+	}
+
+	evidence := validEvidenceBindingForTest()
+	evidence.Pairs = evidence.Pairs[:1]
+	if _, err := evidence.SHA256(); err == nil {
+		t.Fatal("EvidenceBinding.SHA256() accepted a one-order binding")
+	}
+}
 func TestSessionBindingValidationRejectsUnsafeStates(t *testing.T) {
 	tests := []struct {
 		name   string

@@ -276,7 +276,7 @@ func (binding PairBinding) Validate() error {
 	if !validText(binding.ManifestName, 1024) || !validText(binding.DeclaredVariable, 128) ||
 		!validDigest(binding.ManifestContractSHA256) || !validDigest(binding.ProvenanceSHA256) ||
 		!validDigest(binding.ProcedureSHA256) || binding.ResetPolicy == "" || binding.Pair < 1 || binding.Pair > 8 ||
-		!validBindingLabel(binding.Order, 32) || !validRelativePath(binding.Directory) ||
+		(binding.Order != "baseline-treatment" && binding.Order != "treatment-baseline") || !validRelativePath(binding.Directory) ||
 		(binding.FirstSession != "baseline" && binding.FirstSession != "treatment") ||
 		(binding.SecondSession != "baseline" && binding.SecondSession != "treatment") ||
 		!validDigest(binding.FirstSessionBindingSHA256) || !validDigest(binding.SecondSessionBindingSHA256) {
