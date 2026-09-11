@@ -40,6 +40,8 @@ const (
 	KindBrowserReplication ArtifactKind = "browser-replication"
 	// KindBrowserHAR identifies a bounded HAR export inventory.
 	KindBrowserHAR ArtifactKind = "browser-har"
+	// KindTrace identifies a standalone redacted trace document.
+	KindTrace ArtifactKind = "trace"
 	// KindTraceArchive identifies a verified source-neutral trace archive.
 	KindTraceArchive ArtifactKind = "trace-archive"
 	// KindTraceReplication identifies a verified source-neutral replication ledger.
@@ -177,6 +179,12 @@ func Validate(path string) Report {
 	if looksLikeTraceStudyPath(path) {
 		return rejectedReport(KindTraceStudy)
 	}
+	if summary, err := trace.Verify(path); err == nil {
+		return reportFromTrace(summary)
+	}
+	if looksLikeTracePath(path) {
+		return rejectedReport(KindTrace)
+	}
 	return validateManifest(path)
 }
 
@@ -193,6 +201,11 @@ func looksLikeTraceCasePath(path string) bool {
 func looksLikeTraceStudyPath(path string) bool {
 	base := strings.ToLower(filepath.Base(path))
 	return base == "study.json" || base == "trace-study.json" || base == "replication-study.json" || strings.HasSuffix(base, "-study.json")
+}
+
+func looksLikeTracePath(path string) bool {
+	base := strings.ToLower(filepath.Base(path))
+	return base == "trace.json" || strings.HasSuffix(base, "-trace.json")
 }
 
 func looksLikeTraceReplicationPath(path string) bool {
@@ -479,6 +492,20 @@ func reportFromHAR(summary browser.HARVerificationSummary) Report {
 	setTier(&report, TierReplay, StatusUnavailable, ReasonNotApplicable)
 	return finalize(report)
 }
+func reportFromTrace(summary trace.VerificationSummary) Report {
+	report := verifiedReport(KindTrace)
+	report.Identity = summary.TraceSHA256
+	setTier(&report, TierBoundary, StatusUnavailable, ReasonProvenanceUnavailable)
+	if summary.Completeness == trace.Complete {
+		report.EvidenceState = evidence.Observed
+		setTier(&report, TierReplay, StatusPass, ReasonVerified)
+	} else {
+		report.EvidenceState = evidence.Unknown
+		setTier(&report, TierReplay, StatusUnknown, ReasonIncompleteCapture)
+	}
+	return finalize(report)
+}
+
 func reportFromWeather(review browser.WeatherReview) Report {
 	report := verifiedReport(KindBrowserWeather)
 	report.Identity = review.ReceiptSHA256

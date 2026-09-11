@@ -89,6 +89,62 @@ func TestValidateHAR(t *testing.T) {
 	}
 }
 
+func TestValidateStandaloneTrace(t *testing.T) {
+	tests := []struct {
+		name         string
+		file         string
+		completeness string
+		overall      Status
+		evidence     evidence.State
+		replay       Status
+	}{
+		{name: "complete", file: "captured.json", completeness: trace.Complete, overall: StatusWarning, evidence: evidence.Observed, replay: StatusPass},
+		{name: "partial", file: "proxy-trace.json", completeness: trace.Partial, overall: StatusUnknown, evidence: evidence.Unknown, replay: StatusUnknown},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), test.file)
+			document := trace.Document{
+				SchemaVersion: 1,
+				Redacted:      true,
+				Scope:         "outbound",
+				Completeness:  test.completeness,
+				Events: []trace.Event{{
+					Source:      "proxy",
+					Channel:     "network",
+					Kind:        "request",
+					Destination: "analytics",
+					Fields:      []string{"region"},
+				}},
+			}
+			data, err := json.Marshal(document)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			summary, err := trace.Verify(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			report := Validate(path)
+			if report.ArtifactKind != KindTrace || report.Overall != test.overall ||
+				report.Identity != summary.TraceSHA256 || report.EvidenceState != test.evidence ||
+				report.Reason == "" || tierStatus(report, TierReplay) != test.replay ||
+				tierStatus(report, TierBoundary) != StatusUnavailable {
+				t.Fatalf("report = %#v", report)
+			}
+			encoded, err := json.Marshal(report)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(encoded), "analytics") || strings.Contains(string(encoded), "region") {
+				t.Fatalf("trace report exposed event labels: %s", encoded)
+			}
+		})
+	}
+}
 func TestValidateProxyReplication(t *testing.T) {
 	root := writeValidationProxyReplication(t)
 	summary, err := proxy.VerifyReplicated(root)
@@ -230,6 +286,13 @@ func TestValidateRejectsMalformedAndAmbiguousArtifacts(t *testing.T) {
 		assertRejected(t, report, KindBrowserWeather)
 	})
 
+	t.Run("malformed standalone trace", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "trace.json")
+		if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		assertRejected(t, Validate(path), KindTrace)
+	})
 	t.Run("malformed trace archive", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "trace-archive.json")
 		if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {

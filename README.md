@@ -186,6 +186,7 @@ go run ./cmd/ariadne validate --json .ariadne/trace-study.json
 go run ./cmd/ariadne validate --json .ariadne/source-adapter-run
 go run ./cmd/ariadne validate --json .ariadne/browser-export.har
 go run ./cmd/ariadne validate --json .ariadne/proxy-replicated
+go run ./cmd/ariadne validate --json .ariadne/proxy-trace.json
 go run ./cmd/ariadne validate --json .ariadne/browser-fixture-replicated
 go run ./cmd/ariadne validate --json .ariadne/browser-account-minimize
 ~~~
@@ -217,7 +218,7 @@ status is a universal causal claim.
 
 This is a composition layer, not a second verifier or capture backend.
 Trace archive, replication, case, and study verification now join the same entry point as the first
-browser investigation. Verified browser fixture replication and minimization directories plus proxy replication directories now join the entry point as well; single proxy capture traces, HAR exports, and question artifacts continue
+browser investigation. Verified browser fixture replication and minimization directories plus proxy replication directories now join the entry point as well; standalone redacted trace documents now join the common validator with provenance unavailable when they lack a session envelope; HAR exports and question artifacts continue
 to use their specialized verification commands until their own mapping slices
 are reviewed.
 
