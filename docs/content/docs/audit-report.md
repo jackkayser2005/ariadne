@@ -26,8 +26,9 @@ statement coverage. Package coverage is not a proof of complete behavior: the
 regression tests still target hostile files, malformed and oversized input,
 redaction, path replacement, timeouts, cleanup, redirects, undeclared browser
 origins, denied permissions, and incomplete captures.
-The unified validator also inventories bounded HAR exports and generic
-source-adapter runs, while leaving their boundary and replay guarantees
+The unified validator also inventories bounded HAR exports, verified proxy
+replication directories, and generic source-adapter runs.
+Proxy replication reports session-bound boundary consistency while retaining unknown replay readiness for its intentionally partial trace; HAR and generic source-adapter boundary and replay guarantees
 unavailable unless a separate controlled procedure supplies them.
 
 The dependency baseline was checked with `go run golang.org/x/vuln/cmd/govulncheck@latest ./...` on Go 1.26.8. It completed successfully and reported `No vulnerabilities found.` This is a point-in-time result from the scanner database fetched during the run; repeat it before release.

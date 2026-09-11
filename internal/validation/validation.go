@@ -13,6 +13,7 @@ import (
 	"github.com/jackkayser2005/ariadne/internal/evidence"
 	"github.com/jackkayser2005/ariadne/internal/experiment"
 	"github.com/jackkayser2005/ariadne/internal/minimize"
+	"github.com/jackkayser2005/ariadne/internal/proxy"
 	"github.com/jackkayser2005/ariadne/internal/trace"
 )
 
@@ -45,6 +46,8 @@ const (
 	KindTraceStudy ArtifactKind = "trace-study"
 	// KindSourceAdapterRun identifies a verified generic source-adapter run.
 	KindSourceAdapterRun ArtifactKind = "source-adapter-run"
+	// KindProxyReplication identifies a verified loopback proxy replication directory.
+	KindProxyReplication ArtifactKind = "proxy-replication"
 )
 
 // Tier identifies one independent validation guarantee.
@@ -236,6 +239,9 @@ func validateDirectory(path string) Report {
 		if !replication.regular {
 			return rejectedReport(KindAndroidReplication)
 		}
+		if summary, err := proxy.VerifyReplicated(path); err == nil {
+			return reportFromProxyReplication(summary)
+		}
 		summary, err := bundle.VerifyReplicated(path)
 		if err != nil {
 			return rejectedReport(KindAndroidReplication)
@@ -311,6 +317,23 @@ func reportFromReplication(summary bundle.ReplicatedExperimentSummary) Report {
 		setTier(&report, TierReplay, StatusUnknown, ReasonIncompleteCapture)
 	} else {
 		setTier(&report, TierReplay, StatusPass, ReasonVerified)
+	}
+	return finalize(report)
+}
+
+func reportFromProxyReplication(summary proxy.ReplicationSummary) Report {
+	report := verifiedReport(KindProxyReplication)
+	report.Identity = summary.ReceiptSHA256
+	report.Outcome = string(summary.Outcome)
+	report.EvidenceState = summary.EvidenceState
+	setTier(&report, TierBoundary, StatusPass, ReasonVerified)
+	if summary.CompletedPairs == summary.Pairs &&
+		summary.UnknownPairs == 0 &&
+		summary.EvidenceState == evidence.Observed &&
+		summary.Outcome != trace.ReplicationUnknown {
+		setTier(&report, TierReplay, StatusPass, ReasonVerified)
+	} else {
+		setTier(&report, TierReplay, StatusUnknown, ReasonIncompleteCapture)
 	}
 	return finalize(report)
 }

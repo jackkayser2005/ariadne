@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -28,7 +29,7 @@ func TestRunTraceAdapter(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if decoded != summary || gotProcedure != "procedure.json" || gotDriver != "driver.exe" || gotOutput != "run" || strings.Join(gotArgs, ",") != "one,two" {
+	if !reflect.DeepEqual(decoded, summary) || gotProcedure != "procedure.json" || gotDriver != "driver.exe" || gotOutput != "run" || strings.Join(gotArgs, ",") != "one,two" {
 		t.Fatalf("decoded = %#v, args = %q %q %q %#v", decoded, gotProcedure, gotDriver, gotOutput, gotArgs)
 	}
 
@@ -78,7 +79,7 @@ func TestRunTraceAdapterVerify(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if decoded != summary {
+	if !reflect.DeepEqual(decoded, summary) {
 		t.Fatalf("decoded = %#v, want %#v", decoded, summary)
 	}
 

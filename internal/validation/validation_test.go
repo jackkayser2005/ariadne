@@ -12,6 +12,7 @@ import (
 	"github.com/jackkayser2005/ariadne/internal/evidence"
 	"github.com/jackkayser2005/ariadne/internal/experiment"
 	"github.com/jackkayser2005/ariadne/internal/minimize"
+	"github.com/jackkayser2005/ariadne/internal/proxy"
 	"github.com/jackkayser2005/ariadne/internal/trace"
 )
 
@@ -85,6 +86,33 @@ func TestValidateHAR(t *testing.T) {
 	}
 	if strings.Contains(string(encoded), "secret") || strings.Contains(string(encoded), "example.test") {
 		t.Fatalf("report exposed HAR content: %s", encoded)
+	}
+}
+
+func TestValidateProxyReplication(t *testing.T) {
+	root := writeValidationProxyReplication(t)
+	summary, err := proxy.VerifyReplicated(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	report := Validate(root)
+	if report.ArtifactKind != KindProxyReplication ||
+		report.Overall != StatusUnknown ||
+		report.Identity != summary.ReceiptSHA256 ||
+		report.Outcome != string(trace.NoChangeObserved) ||
+		report.EvidenceState != evidence.Unknown ||
+		report.Reason != ReasonIncompleteCapture ||
+		tierStatus(report, TierBoundary) != StatusPass ||
+		tierStatus(report, TierReplay) != StatusUnknown {
+		t.Fatalf("report = %#v", report)
+	}
+	encoded, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), root) {
+		t.Fatalf("proxy report exposed root path: %s", encoded)
 	}
 }
 
@@ -585,6 +613,106 @@ func TestReportFromTraceStudy(t *testing.T) {
 		t.Fatalf("incomplete report = %#v", report)
 	}
 }
+func writeValidationProxyReplication(t testing.TB) string {
+	t.Helper()
+	root := filepath.Join(t.TempDir(), "proxy-replicated")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	record := proxy.ReplicatedRunRecord{
+		SchemaVersion:              proxy.ProxyReplicationSchemaVersion,
+		Adapter:                    proxy.Adapter,
+		AdapterVersion:             proxy.AdapterVersion,
+		Scope:                      "outbound",
+		PairsPerOrder:              1,
+		ResetPolicy:                proxy.ProxyReplicationResetPolicy,
+		ControlledArgumentPosition: "final",
+		ControlledArgumentCount:    1,
+		ConditionValuesWithheld:    true,
+		ExecutionIdentitySHA256:    strings.Repeat("b", 64),
+		Status:                     proxy.ProxyReplicationStatusComplete,
+		Pairs:                      make([]proxy.ReplicatedPairRecord, 0, 2),
+	}
+	for _, order := range []string{trace.OrderBaselineTreatment, trace.OrderTreatmentBaseline} {
+		directory := "pair-001-" + order
+		pairRoot := filepath.Join(root, directory)
+		if err := os.MkdirAll(filepath.Join(pairRoot, "baseline"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(pairRoot, "treatment"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		document := trace.Document{
+			SchemaVersion: 1,
+			Redacted:      true,
+			Scope:         "outbound",
+			Completeness:  trace.Partial,
+			Events: []trace.Event{{
+				Source: "proxy", Channel: "network", Kind: "request",
+				Destination: "first-party", Fields: []string{"region"},
+			}},
+		}
+		data, err := json.Marshal(document)
+		if err != nil {
+			t.Fatal(err)
+		}
+		baselineTrace := filepath.Join(pairRoot, "baseline", "trace.json")
+		treatmentTrace := filepath.Join(pairRoot, "treatment", "trace.json")
+		if err := os.WriteFile(baselineTrace, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(treatmentTrace, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		baselineSession := filepath.Join(pairRoot, "baseline", "session.json")
+		treatmentSession := filepath.Join(pairRoot, "treatment", "session.json")
+		saved, err := trace.SaveSessionPair(
+			baselineTrace,
+			treatmentTrace,
+			baselineSession,
+			treatmentSession,
+			trace.SessionPairInput{
+				Adapter:         proxy.Adapter,
+				AdapterVersion:  proxy.AdapterVersion,
+				ProcedureSHA256: strings.Repeat("a", 64),
+				Scope:           "outbound",
+				Order:           order,
+			},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		firstSession, secondSession := trace.RoleBaseline, trace.RoleTreatment
+		if order == trace.OrderTreatmentBaseline {
+			firstSession, secondSession = secondSession, firstSession
+		}
+		record.Pairs = append(record.Pairs, proxy.ReplicatedPairRecord{
+			Pair:                   1,
+			Order:                  order,
+			Directory:              directory,
+			FirstSession:           firstSession,
+			SecondSession:          secondSession,
+			Status:                 proxy.ProxyReplicationStatusComplete,
+			BaselineTraceSHA256:    saved.BaselineTraceSHA256,
+			TreatmentTraceSHA256:   saved.TreatmentTraceSHA256,
+			BaselineSessionSHA256:  saved.BaselineSessionSHA256,
+			TreatmentSessionSHA256: saved.TreatmentSessionSHA256,
+			PairSHA256:             saved.PairSHA256,
+		})
+	}
+	record.CompletedPairs = len(record.Pairs)
+	data, err := json.MarshalIndent(record, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = append(data, '\n')
+	if err := os.WriteFile(filepath.Join(root, "replication.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
 func writeValidationReplicationPair(t testing.TB, root, name, order string) trace.ReplicationPairInput {
 	t.Helper()
 	baselinePath := filepath.Join(root, name+"-baseline-trace.json")
@@ -708,6 +836,34 @@ func TestReportFromReplication(t *testing.T) {
 	if report.Overall != StatusUnknown || tierStatus(report, TierReplay) != StatusUnknown ||
 		report.Reason != ReasonIncompleteCapture {
 		t.Fatalf("incomplete report = %#v", report)
+	}
+}
+
+func TestReportFromProxyReplication(t *testing.T) {
+	summary := proxy.ReplicationSummary{
+		ReceiptSHA256:  strings.Repeat("a", 64),
+		Pairs:          2,
+		CompletedPairs: 2,
+		Outcome:        trace.ReplicatedChange,
+		EvidenceState:  evidence.Observed,
+	}
+	report := reportFromProxyReplication(summary)
+	if report.ArtifactKind != KindProxyReplication ||
+		report.Overall != StatusPass ||
+		report.Identity != summary.ReceiptSHA256 ||
+		report.Outcome != string(trace.ReplicatedChange) ||
+		report.EvidenceState != evidence.Observed ||
+		tierStatus(report, TierBoundary) != StatusPass ||
+		tierStatus(report, TierReplay) != StatusPass {
+		t.Fatalf("complete report = %#v", report)
+	}
+
+	summary.EvidenceState = evidence.Unknown
+	report = reportFromProxyReplication(summary)
+	if report.Overall != StatusUnknown ||
+		tierStatus(report, TierReplay) != StatusUnknown ||
+		report.Reason != ReasonIncompleteCapture {
+		t.Fatalf("partial report = %#v", report)
 	}
 }
 

@@ -379,6 +379,20 @@ partial capture cannot establish absence. An interrupted run leaves a bounded
 runner is a narrow authorized process boundary, not universal tracing or a
 causal proof.
 
+The unified validate command also recognizes a verified proxy replication
+directory:
+
+~~~console
+go run ./cmd/ariadne validate --json .ariadne/proxy-replicated
+~~~
+
+It reports the safe receipt identity, aggregate outcome, and separate
+evidence state without reopening process arguments, authorities, credentials,
+or tunnel data. Because the proxy trace is intentionally partial, a valid run
+can retain an observed same-event result while replay readiness remains
+unknown. A single proxy capture trace still uses the specialized proxy
+verification command.
+
 ### Replicated local fixture
 
 The fixture also has a counterfactual runner that owns the two fixed variants:
