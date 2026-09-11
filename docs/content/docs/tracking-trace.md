@@ -408,6 +408,7 @@ go run ./cmd/ariadne browser fixture replicate --json \
   --output .ariadne/browser-fixture-replicated
 go run ./cmd/ariadne browser fixture replicate verify --json \
   .ariadne/browser-fixture-replicated
+go run ./cmd/ariadne validate --json .ariadne/browser-fixture-replicated
 ```
 
 Each pair runs `baseline-treatment` and `treatment-baseline`. Every session
@@ -418,7 +419,8 @@ identity, reset policy, pair/order metadata, and completion status. Each pair
 contains provenance-bound baseline and treatment traces/sessions. Verification
 reuses the portable session-pair check and structural comparison, then reports
 `replicated-change`, `no-change-observed`, `mixed-inconsistent`, or `unknown`
-separately from `evidence_state`. Two separate trace files may have identical
+separately from `evidence_state`. The unified validate command reports this directory as browser-replication with the receipt identity, replicated outcome, evidence state, and replay readiness. It never launches the browser or reopens the procedure.
+Two separate trace files may have identical
 normalized content; that is a valid `no-change-observed` result.
 
 The checked-in fixture intentionally marks unsupported or failed activity as

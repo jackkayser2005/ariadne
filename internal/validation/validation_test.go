@@ -116,6 +116,33 @@ func TestValidateProxyReplication(t *testing.T) {
 	}
 }
 
+func TestValidateBrowserReplication(t *testing.T) {
+	root := writeValidationBrowserReplication(t)
+	summary, err := browser.VerifyFixtureReplicated(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	report := Validate(root)
+	if report.ArtifactKind != KindBrowserReplication ||
+		report.Overall != StatusPass ||
+		report.Identity != summary.ReceiptSHA256 ||
+		report.Outcome != string(trace.ReplicatedChange) ||
+		report.EvidenceState != evidence.Observed ||
+		report.Reason != ReasonVerified ||
+		tierStatus(report, TierBoundary) != StatusPass ||
+		tierStatus(report, TierReplay) != StatusPass {
+		t.Fatalf("report = %#v", report)
+	}
+	encoded, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), root) {
+		t.Fatalf("browser report exposed root path: %s", encoded)
+	}
+}
+
 func TestValidateRejectsMalformedHAR(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "capture.har")
 	if err := os.WriteFile(path, []byte("{\"log\":{\"version\":\"1.1\",\"entries\":[]}}"), 0o600); err != nil {
@@ -155,6 +182,17 @@ func TestValidateRejectsMalformedAndAmbiguousArtifacts(t *testing.T) {
 			t.Fatal(err)
 		}
 		assertRejected(t, Validate(root), KindProxyReplication)
+	})
+
+	t.Run("malformed browser replication", func(t *testing.T) {
+		root := filepath.Join(t.TempDir(), "browser-replication")
+		if err := os.Mkdir(root, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "replication.json"), []byte("{\"adapter\":\"browser-local-fixture\"}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		assertRejected(t, Validate(root), KindBrowserReplication)
 	})
 
 	t.Run("malformed minimization", func(t *testing.T) {
@@ -624,6 +662,103 @@ func TestReportFromTraceStudy(t *testing.T) {
 		t.Fatalf("incomplete report = %#v", report)
 	}
 }
+func writeValidationBrowserReplication(t testing.TB) string {
+	t.Helper()
+	root := filepath.Join(t.TempDir(), "browser-replicated")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	record := browser.ReplicatedRunRecord{
+		SchemaVersion:   browser.BrowserReplicationSchemaVersion,
+		Adapter:         browser.BrowserReplicationAdapter,
+		AdapterVersion:  browser.BrowserReplicationAdapterVersion,
+		ProcedureSHA256: strings.Repeat("c", 64),
+		Scope:           "outbound",
+		PairsPerOrder:   1,
+		ResetPolicy:     browser.BrowserReplicationResetPolicy,
+		Status:          browser.BrowserReplicationStatusComplete,
+		Pairs:           make([]browser.ReplicatedPairRecord, 0, 2),
+	}
+	for _, order := range []string{trace.OrderBaselineTreatment, trace.OrderTreatmentBaseline} {
+		directory := "pair-001-" + order
+		pairRoot := filepath.Join(root, directory)
+		if err := os.MkdirAll(filepath.Join(pairRoot, "baseline"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(pairRoot, "treatment"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		makeDocument := func(fields []string) trace.Document {
+			return trace.Document{
+				SchemaVersion: 1,
+				Redacted:      true,
+				Scope:         "outbound",
+				Completeness:  trace.Complete,
+				Events: []trace.Event{{
+					Source: "browser", Channel: "network", Kind: "request",
+					Destination: "first-party", Fields: fields,
+				}},
+			}
+		}
+		baselineData, err := json.Marshal(makeDocument([]string{"region"}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		treatmentData, err := json.Marshal(makeDocument([]string{"region", "location"}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		baselineTrace := filepath.Join(pairRoot, "baseline", "trace.json")
+		treatmentTrace := filepath.Join(pairRoot, "treatment", "trace.json")
+		if err := os.WriteFile(baselineTrace, baselineData, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(treatmentTrace, treatmentData, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		baselineSession := filepath.Join(pairRoot, "baseline", "session.json")
+		treatmentSession := filepath.Join(pairRoot, "treatment", "session.json")
+		if _, err := trace.SaveSessionPair(
+			baselineTrace,
+			treatmentTrace,
+			baselineSession,
+			treatmentSession,
+			trace.SessionPairInput{
+				Adapter:         browser.BrowserReplicationAdapter,
+				AdapterVersion:  browser.BrowserReplicationAdapterVersion,
+				ProcedureSHA256: strings.Repeat("c", 64),
+				Scope:           "outbound",
+				Order:           order,
+			},
+		); err != nil {
+			t.Fatal(err)
+		}
+		firstSession, secondSession := trace.RoleBaseline, trace.RoleTreatment
+		if order == trace.OrderTreatmentBaseline {
+			firstSession, secondSession = secondSession, firstSession
+		}
+		record.Pairs = append(record.Pairs, browser.ReplicatedPairRecord{
+			Pair:          1,
+			Order:         order,
+			Directory:     directory,
+			FirstSession:  firstSession,
+			SecondSession: secondSession,
+			Status:        browser.BrowserReplicationStatusComplete,
+		})
+	}
+	record.CompletedPairs = len(record.Pairs)
+	data, err := json.MarshalIndent(record, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	data = append(data, '\n')
+	if err := os.WriteFile(filepath.Join(root, "replication.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
 func writeValidationProxyReplication(t testing.TB) string {
 	t.Helper()
 	root := filepath.Join(t.TempDir(), "proxy-replicated")
@@ -847,6 +982,34 @@ func TestReportFromReplication(t *testing.T) {
 	if report.Overall != StatusUnknown || tierStatus(report, TierReplay) != StatusUnknown ||
 		report.Reason != ReasonIncompleteCapture {
 		t.Fatalf("incomplete report = %#v", report)
+	}
+}
+
+func TestReportFromBrowserReplication(t *testing.T) {
+	summary := browser.BrowserReplicationSummary{
+		ReceiptSHA256:  strings.Repeat("a", 64),
+		Pairs:          2,
+		CompletedPairs: 2,
+		Outcome:        trace.ReplicatedChange,
+		EvidenceState:  evidence.Observed,
+	}
+	report := reportFromBrowserReplication(summary)
+	if report.ArtifactKind != KindBrowserReplication ||
+		report.Overall != StatusPass ||
+		report.Identity != summary.ReceiptSHA256 ||
+		report.Outcome != string(trace.ReplicatedChange) ||
+		report.EvidenceState != evidence.Observed ||
+		tierStatus(report, TierBoundary) != StatusPass ||
+		tierStatus(report, TierReplay) != StatusPass {
+		t.Fatalf("complete report = %#v", report)
+	}
+
+	summary.EvidenceState = evidence.Unknown
+	report = reportFromBrowserReplication(summary)
+	if report.Overall != StatusUnknown ||
+		tierStatus(report, TierReplay) != StatusUnknown ||
+		report.Reason != ReasonIncompleteCapture {
+		t.Fatalf("partial report = %#v", report)
 	}
 }
 

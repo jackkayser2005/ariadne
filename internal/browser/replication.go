@@ -209,6 +209,31 @@ func runFixtureReplicatedWith(ctx context.Context, input FixtureReplicationInput
 	return nil
 }
 
+// LooksLikeReplication reports whether a bounded receipt names the browser
+// fixture adapter. It is only a dispatch hint; VerifyFixtureReplicated remains
+// authoritative.
+func LooksLikeReplication(rootDir string) bool {
+	if strings.TrimSpace(rootDir) == "" {
+		return false
+	}
+	data, err := readBrowserReplicationFile(filepath.Join(rootDir, "replication.json"), maxBrowserReplicationBytes)
+	if err != nil || jsoncheck.RejectDuplicateKeys(data) != nil {
+		return false
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	var marker struct {
+		Adapter string
+	}
+	if err := decoder.Decode(&marker); err != nil {
+		return false
+	}
+	var trailing json.RawMessage
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return false
+	}
+	return marker.Adapter == BrowserReplicationAdapter
+}
+
 // VerifyFixtureReplicated verifies a browser fixture receipt and its bound pairs.
 func VerifyFixtureReplicated(rootDir string) (BrowserReplicationSummary, error) {
 	return verifyFixtureReplicatedWithFields(rootDir, nil)

@@ -87,6 +87,38 @@ func TestRunFixtureReplicatedRecordsBothOrdersAndVerifiesChange(t *testing.T) {
 	}
 }
 
+func TestLooksLikeReplicationUsesOnlyTheBoundedAdapterMarker(t *testing.T) {
+	root := t.TempDir()
+	receiptPath := filepath.Join(root, "replication.json")
+	tests := []struct {
+		name string
+		data string
+		want bool
+	}{
+		{name: "browser", data: "{\"adapter\":\"browser-local-fixture\"}", want: true},
+		{name: "other adapter", data: "{\"adapter\":\"other\"}", want: false},
+		{name: "malformed", data: "{", want: false},
+		{name: "trailing", data: "{\"adapter\":\"browser-local-fixture\"}{}", want: false},
+		{name: "duplicate", data: "{\"adapter\":\"browser-local-fixture\",\"adapter\":\"browser-local-fixture\"}", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := os.WriteFile(receiptPath, []byte(test.data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if got := LooksLikeReplication(root); got != test.want {
+				t.Fatalf("LooksLikeReplication() = %t, want %t", got, test.want)
+			}
+		})
+	}
+	if err := os.Remove(receiptPath); err != nil {
+		t.Fatal(err)
+	}
+	if LooksLikeReplication(root) || LooksLikeReplication("") {
+		t.Fatal("LooksLikeReplication() accepted an unavailable root")
+	}
+}
+
 func TestVerifyFixtureReplicatedClassifiesNoChangeAndUnknown(t *testing.T) {
 	tests := []struct {
 		name         string

@@ -34,6 +34,8 @@ const (
 	KindAndroidMinimization ArtifactKind = "android-minimization"
 	// KindBrowserWeather identifies a verified browser weather investigation.
 	KindBrowserWeather ArtifactKind = "browser-weather"
+	// KindBrowserReplication identifies a verified browser fixture replication directory.
+	KindBrowserReplication ArtifactKind = "browser-replication"
 	// KindBrowserHAR identifies a bounded HAR export inventory.
 	KindBrowserHAR ArtifactKind = "browser-har"
 	// KindTraceArchive identifies a verified source-neutral trace archive.
@@ -246,6 +248,13 @@ func validateDirectory(path string) Report {
 			}
 			return reportFromProxyReplication(summary)
 		}
+		if browser.LooksLikeReplication(path) {
+			summary, err := browser.VerifyFixtureReplicated(path)
+			if err != nil {
+				return rejectedReport(KindBrowserReplication)
+			}
+			return reportFromBrowserReplication(summary)
+		}
 		summary, err := bundle.VerifyReplicated(path)
 		if err != nil {
 			return rejectedReport(KindAndroidReplication)
@@ -321,6 +330,23 @@ func reportFromReplication(summary bundle.ReplicatedExperimentSummary) Report {
 		setTier(&report, TierReplay, StatusUnknown, ReasonIncompleteCapture)
 	} else {
 		setTier(&report, TierReplay, StatusPass, ReasonVerified)
+	}
+	return finalize(report)
+}
+
+func reportFromBrowserReplication(summary browser.BrowserReplicationSummary) Report {
+	report := verifiedReport(KindBrowserReplication)
+	report.Identity = summary.ReceiptSHA256
+	report.Outcome = string(summary.Outcome)
+	report.EvidenceState = summary.EvidenceState
+	setTier(&report, TierBoundary, StatusPass, ReasonVerified)
+	if summary.CompletedPairs == summary.Pairs &&
+		summary.UnknownPairs == 0 &&
+		summary.EvidenceState == evidence.Observed &&
+		summary.Outcome != trace.ReplicationUnknown {
+		setTier(&report, TierReplay, StatusPass, ReasonVerified)
+	} else {
+		setTier(&report, TierReplay, StatusUnknown, ReasonIncompleteCapture)
 	}
 	return finalize(report)
 }
