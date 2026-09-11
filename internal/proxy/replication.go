@@ -219,6 +219,30 @@ func runReplicatedWith(ctx context.Context, input ReplicationInput, capture prox
 	return writeReplicationRecord(input.OutputDir, record)
 }
 
+// LooksLikeReplication reports whether a bounded receipt names the proxy
+// adapter. It is only a dispatch hint; VerifyReplicated remains authoritative.
+func LooksLikeReplication(rootDir string) bool {
+	if strings.TrimSpace(rootDir) == "" {
+		return false
+	}
+	data, err := readReplicationFile(filepath.Join(rootDir, "replication.json"), maxProxyReplicationBytes)
+	if err != nil || jsoncheck.RejectDuplicateKeys(data) != nil {
+		return false
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	var marker struct {
+		Adapter string
+	}
+	if err := decoder.Decode(&marker); err != nil {
+		return false
+	}
+	var trailing json.RawMessage
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return false
+	}
+	return marker.Adapter == Adapter
+}
+
 // VerifyReplicated verifies a proxy replication receipt and recomputes every
 // complete pair from its bound trace and session files.
 func VerifyReplicated(rootDir string) (ReplicationSummary, error) {

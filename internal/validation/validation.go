@@ -239,7 +239,11 @@ func validateDirectory(path string) Report {
 		if !replication.regular {
 			return rejectedReport(KindAndroidReplication)
 		}
-		if summary, err := proxy.VerifyReplicated(path); err == nil {
+		if proxy.LooksLikeReplication(path) {
+			summary, err := proxy.VerifyReplicated(path)
+			if err != nil {
+				return rejectedReport(KindProxyReplication)
+			}
 			return reportFromProxyReplication(summary)
 		}
 		summary, err := bundle.VerifyReplicated(path)

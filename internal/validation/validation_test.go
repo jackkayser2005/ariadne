@@ -146,6 +146,17 @@ func TestValidateRejectsMalformedAndAmbiguousArtifacts(t *testing.T) {
 		assertRejected(t, report, KindAndroidReplication)
 	})
 
+	t.Run("malformed proxy replication", func(t *testing.T) {
+		root := filepath.Join(t.TempDir(), "proxy-replication")
+		if err := os.Mkdir(root, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "replication.json"), []byte("{\"adapter\":\"proxy-connect\"}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		assertRejected(t, Validate(root), KindProxyReplication)
+	})
+
 	t.Run("malformed minimization", func(t *testing.T) {
 		root := filepath.Join(t.TempDir(), "minimization")
 		if err := os.Mkdir(root, 0o700); err != nil {
