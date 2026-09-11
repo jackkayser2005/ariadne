@@ -74,7 +74,7 @@ func TestIndexReturnsUnknownSummary(t *testing.T) {
 	root := t.TempDir()
 	runDir := makeStorageFailureRun(t, "")
 	archiveDir := filepath.Join(root, "storage-gap")
-	if err := os.Rename(runDir, archiveDir); err != nil {
+	if err := renameArchivePath(runDir, archiveDir); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Write(archiveDir); err != nil {
@@ -202,7 +202,7 @@ func TestIndexRejectsSymbolicLinks(t *testing.T) {
 		root := t.TempDir()
 		runDir := archiveRun(t, root, "linked-junction", runOptions{})
 		outside := filepath.Join(t.TempDir(), "observations")
-		if err := os.Rename(
+		if err := renameArchivePath(
 			filepath.Join(runDir, "baseline", "observations"),
 			outside,
 		); err != nil {
@@ -221,7 +221,7 @@ func TestIndexRejectsSymbolicLinks(t *testing.T) {
 		root := t.TempDir()
 		runDir := archiveRun(t, root, "linked-intermediate", runOptions{})
 		outside := filepath.Join(t.TempDir(), "observations")
-		if err := os.Rename(
+		if err := renameArchivePath(
 			filepath.Join(runDir, "baseline", "observations"),
 			outside,
 		); err != nil {
@@ -249,11 +249,25 @@ func TestValidArchiveEntryName(t *testing.T) {
 	}
 }
 
+func renameArchivePath(oldPath, newPath string) error {
+	err := os.Rename(oldPath, newPath)
+	if err == nil || runtime.GOOS != "windows" {
+		return err
+	}
+	for attempt := 0; attempt < 10; attempt++ {
+		time.Sleep(10 * time.Millisecond)
+		if err = os.Rename(oldPath, newPath); err == nil {
+			return nil
+		}
+	}
+	return err
+}
+
 func archiveRun(t *testing.T, root, name string, options runOptions) string {
 	t.Helper()
 	runDir := makeRun(t, options)
 	archiveDir := filepath.Join(root, name)
-	if err := os.Rename(runDir, archiveDir); err != nil {
+	if err := renameArchivePath(runDir, archiveDir); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Write(archiveDir); err != nil {

@@ -76,7 +76,7 @@ func TestVerifyArchiveQuestionReportAcceptsUnavailableEntry(t *testing.T) {
 	archiveRun(t, root, "current", runOptions{})
 	legacyRun := makeRun(t, runOptions{sessionSchemaVersion: 5})
 	legacyDir := filepath.Join(root, "legacy")
-	if err := os.Rename(legacyRun, legacyDir); err != nil {
+	if err := renameArchivePath(legacyRun, legacyDir); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Write(legacyDir); err != nil {
@@ -149,7 +149,7 @@ func TestVerifyArchiveQuestionReportRejectsUnsafeUnknownReason(t *testing.T) {
 	archiveRun(t, root, "complete", runOptions{})
 	storageRun := makeStorageFailureRun(t, "")
 	storageDir := filepath.Join(root, "storage-gap")
-	if err := os.Rename(storageRun, storageDir); err != nil {
+	if err := renameArchivePath(storageRun, storageDir); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Write(storageDir); err != nil {

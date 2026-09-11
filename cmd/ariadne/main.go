@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
@@ -25,8 +26,25 @@ import (
 )
 
 const usage = `usage:
+Ariadne
+workflow: investigate -> compare -> trace -> verify
+
+next step: choose the command group that matches the evidence you have.
+  investigate: validate an artifact or collect a browser, proxy, or experiment run
+  compare: inspect the bounded difference between baseline and treatment
+  trace: save the evidence and its provenance
+  verify: check the receipt before review or sharing
+
+output: plain text by default; add --json for machine-readable output.
+color: set ARIADNE_COLOR=1 to color successful status lines green on an interactive terminal.
+
+command groups
+
+investigate
   ariadne validate [--json] <artifact>
   ariadne android check [--adb <path>] --device <serial> --package <package>
+
+trace
 	ariadne trace verify [--json] [--expect-sha256 <digest>] <trace.json>
 	ariadne trace compare [--json] <baseline-trace.json> <treatment-trace.json>
 	ariadne trace adapter run [--json] --procedure <procedure.json> --driver <executable> [--driver-arg <arg>] --output <directory>
@@ -87,8 +105,14 @@ const usage = `usage:
 	ariadne trace case ask all save [--json] <case.json> <round.json>
 	ariadne trace case ask all verify [--json] [--expect-sha256 <digest>] <round.json>
 	ariadne trace case ask all compare [--json] <first-round.json> <second-round.json>
+
+browser / weather
+	ariadne browser compare-har --origin <origin> --test-values <rules.json> --output <new.html> <first.har> <second.har>
+	ariadne browser inspect-har --origin <origin> --output <new.html> [--test-values <rules.json>] <capture.har>
 	ariadne browser trace [--json] <redacted-browser-audit.json> <trace.json>
 	ariadne browser capture [--json] --procedure <procedure.json> --driver <executable> [--driver-arg <arg>] <trace.json>
+	ariadne browser weather [--json] --driver <executable> [--driver-arg <arg>] --output <directory>
+	ariadne browser weather verify [--json] [--expect-sha256 <digest>] <directory>
 	ariadne browser fixture replicate [--json] --procedure <procedure.json> --driver <executable> [--driver-arg <arg>] --pairs <n> --output <directory>
 	ariadne browser fixture replicate verify [--json] <replicated-directory>
 	ariadne browser fixture minimize [--json] --plan <plan.json> --procedure <procedure.json> --driver <executable> [--driver-arg <arg>] --pairs <n> --output <directory>
@@ -101,9 +125,13 @@ const usage = `usage:
 	ariadne browser fixture minimize ask receipt [--json] <round.json> <question-id>
 	ariadne browser fixture minimize ask receipt save [--json] <round.json> <question-id> <receipt.json>
 	ariadne browser fixture minimize ask receipt verify [--json] [--expect-sha256 <digest>] <receipt.json>
+
+proxy
 	ariadne proxy capture [--json] --procedure <procedure.json> --program <executable> [--program-arg <arg>] <trace.json>
 	ariadne proxy replicate [--json] --procedure <procedure.json> --program <executable> [--shared-arg <arg>] --baseline-arg <arg> --treatment-arg <arg> --pairs <n> --output <directory>
 	ariadne proxy replicate verify [--json] <replicated-directory>
+
+experiment
 	ariadne experiment run [--adb <path>] --device <serial> --package <package> --output <directory> <manifest.json>
 	ariadne experiment replicate [--adb <path>] --device <serial> --package <package> --pairs <n> --output <directory> <manifest.json>
 	ariadne experiment replicate verify [--json] <replicated-directory>
@@ -364,6 +392,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 			return runTraceStudyAsk(args[3:], stdout, stderr, trace.AskReplicationStudyQuestion)
 		}
 	}
+	if len(args) >= 2 && args[0] == "browser" && args[1] == "compare-har" {
+		return runCompareHAR(args[2:], stdout, stderr)
+	}
+	if len(args) >= 2 && args[0] == "browser" && args[1] == "inspect-har" {
+		return runHAR(args[2:], stdout, stderr)
+	}
 	if len(args) >= 2 && args[0] == "browser" && args[1] == "trace" {
 		return runBrowserTrace(args[2:], stdout, stderr, browser.SaveTrace)
 	}
@@ -382,6 +416,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 	if len(args) >= 3 && args[0] == "proxy" && args[1] == "replicate" {
 		return runProxyReplicate(args[2:], stdout, stderr, proxy.RunReplicated, proxy.VerifyReplicated)
+	}
+	if len(args) >= 2 && args[0] == "browser" && args[1] == "weather" {
+		return runWeather(args[2:], stdout, stderr)
 	}
 	if len(args) >= 4 && args[0] == "browser" && args[1] == "fixture" && args[2] == "minimize" && args[3] == "questions" {
 		return runMinimizationQuestions(args[4:], stdout, stderr, minimize.LadderQuestions)
@@ -595,14 +632,25 @@ func runValidate(args []string, stdout, stderr io.Writer) int {
 	}
 
 	path := flags.Arg(0)
+	var report validation.Report
+	reportReady := false
 	if !*jsonOutput {
 		info, err := os.Lstat(path)
-		if err != nil || info.Mode().IsRegular() {
+		if err != nil {
 			return runLegacyManifestValidate(path, stdout, stderr)
+		}
+		if info.Mode().IsRegular() {
+			report = validation.Validate(path)
+			if report.ArtifactKind == validation.KindManifest || report.ArtifactKind == validation.KindUnknown {
+				return runLegacyManifestValidate(path, stdout, stderr)
+			}
+			reportReady = true
 		}
 	}
 
-	report := validation.Validate(path)
+	if !reportReady {
+		report = validation.Validate(path)
+	}
 	if *jsonOutput {
 		if err := json.NewEncoder(stdout).Encode(report); err != nil {
 			_, _ = fmt.Fprintf(stderr, "ariadne: validate: write output: %v\n", err)
@@ -619,14 +667,13 @@ func runValidate(args []string, stdout, stderr io.Writer) int {
 }
 
 func runLegacyManifestValidate(path string, stdout, stderr io.Writer) int {
-	file, err := os.Open(path)
+	data, err := bundle.ReadBoundedFile(path, experiment.MaxManifestBytes)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: validate: open manifest: %v\n", err)
 		return 1
 	}
-	defer file.Close()
 
-	manifest, err := experiment.Decode(file)
+	manifest, err := experiment.Decode(bytes.NewReader(data))
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: validate: %v\n", err)
 		return 1
@@ -654,6 +701,9 @@ func writeValidationReport(report validation.Report, stdout io.Writer) error {
 		return err
 	}
 	if _, err := fmt.Fprintf(stdout, "overall: %s\n", report.Overall); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(stdout, "meaning: %s\n", validationMeaning(report.Overall)); err != nil {
 		return err
 	}
 	if report.Identity != "" {
@@ -690,6 +740,23 @@ func writeValidationReport(report validation.Report, stdout io.Writer) error {
 		}
 	}
 	return nil
+}
+
+func validationMeaning(status validation.Status) string {
+	switch status {
+	case validation.StatusPass:
+		return "The saved evidence passed its checks; this proves consistency, not everything that happened elsewhere."
+	case validation.StatusWarning:
+		return "The artifact is valid, but part of the check is unavailable."
+	case validation.StatusUnknown:
+		return "The evidence is incomplete, so Ariadne cannot answer yet."
+	case validation.StatusFail:
+		return "Ariadne rejected this artifact; do not use it as evidence."
+	case validation.StatusUnavailable:
+		return "Ariadne could not read enough to check this artifact."
+	default:
+		return "Ariadne could not interpret this result."
+	}
 }
 
 func runBrowserTrace(
@@ -1456,14 +1523,7 @@ func runExperimentMinimize(
 		return 2
 	}
 
-	file, err := os.Open(flags.Arg(0))
-	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "ariadne: experiment minimize: open plan: %v\n", err)
-		return 1
-	}
-	defer file.Close()
-
-	plan, err := minimize.Decode(file)
+	plan, err := minimize.ReadPlan(flags.Arg(0))
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment minimize: %v\n", err)
 		return 1
@@ -1604,14 +1664,13 @@ func runExperiment(
 		return 2
 	}
 
-	file, err := os.Open(flags.Arg(0))
+	data, err := bundle.ReadBoundedFile(flags.Arg(0), experiment.MaxManifestBytes)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment run: open manifest: %v\n", err)
 		return 1
 	}
-	defer file.Close()
 
-	manifest, err := experiment.Decode(file)
+	manifest, err := experiment.Decode(bytes.NewReader(data))
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment run: %v\n", err)
 		return 1
@@ -1666,14 +1725,13 @@ func runExperimentReplicate(
 		return 2
 	}
 
-	file, err := os.Open(flags.Arg(0))
+	data, err := bundle.ReadBoundedFile(flags.Arg(0), experiment.MaxManifestBytes)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment replicate: open manifest: %v\n", err)
 		return 1
 	}
-	defer file.Close()
 
-	manifest, err := experiment.Decode(file)
+	manifest, err := experiment.Decode(bytes.NewReader(data))
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment replicate: %v\n", err)
 		return 1
@@ -3387,11 +3445,20 @@ func runServe(
 	traceStudyReceiptPath := flags.String("trace-study-receipt", "", "")
 	traceStudySecondPath := flags.String("trace-study-second", "", "")
 	traceStudyRoundSecondPath := flags.String("trace-study-round-second", "", "")
+	weatherPath := flags.String("weather", "", "")
+	harPath := flags.String("har", "", "")
+	harSecond := flags.String("har-second", "", "")
+	harOrigin := flags.String("har-origin", "", "")
+	harRules := flags.String("har-test-values", "", "")
 	minimizationPath := flags.String("minimization", "", "")
 	minimizationRoundPath := flags.String("minimization-round", "", "")
 	minimizationReceiptPath := flags.String("minimization-receipt", "", "")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 1 {
 		_, _ = io.WriteString(stderr, usage)
+		return 2
+	}
+	if (*harPath == "") != (*harOrigin == "") || (*harRules != "" && *harPath == "") || (*harSecond != "" && (*harPath == "" || *harRules == "")) {
+		fmt.Fprintln(stderr, "ariadne: experiment serve: --har and --har-origin must be supplied together")
 		return 2
 	}
 	if !loopbackAddress(*address) {
@@ -3426,11 +3493,16 @@ func runServe(
 		_, _ = io.WriteString(stderr, "ariadne: experiment serve: --trace-study-second and --trace-study-round-second require --trace-study and --trace-study-round\n")
 		return 2
 	}
-	if _, err := fmt.Fprintf(stdout, "ariadne: review UI listening at http://%s/\n", *address); err != nil {
+	if err := writeCLIStatus(stdout, fmt.Sprintf("ariadne: review UI listening at http://%s/\n", *address)); err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: experiment serve: write output: %v\n", err)
 		return 1
 	}
 	reviewHandler := ui.HandlerWithReviewOptions(ui.ReviewOptions{
+		WeatherPath:               *weatherPath,
+		HARPath:                   *harPath,
+		HARSecondPath:             *harSecond,
+		HAROrigin:                 *harOrigin,
+		HARTestValuesPath:         *harRules,
 		ArchiveRoot:               flags.Arg(0),
 		HistoryPath:               *historyPath,
 		ReflectionPath:            *reflectionPath,

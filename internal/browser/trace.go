@@ -14,6 +14,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/jackkayser2005/ariadne/internal/bundle"
 	"github.com/jackkayser2005/ariadne/internal/jsoncheck"
 	portabletrace "github.com/jackkayser2005/ariadne/internal/trace"
 )
@@ -207,13 +208,8 @@ func validField(value string) bool {
 }
 
 func readBounded(path string) ([]byte, error) {
-	file, err := os.Open(path)
+	data, err := bundle.ReadBoundedFile(path, maxAuditBytes)
 	if err != nil {
-		return nil, errors.New("read input")
-	}
-	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, maxAuditBytes+1))
-	if err != nil || len(data) > maxAuditBytes {
 		return nil, errors.New("read input")
 	}
 	return data, nil

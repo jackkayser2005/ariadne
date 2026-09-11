@@ -19,6 +19,11 @@ import (
 )
 
 type handler struct {
+	harSecondPath            string
+	harRulesPath             string
+	harPath                  string
+	harOrigin                string
+	weatherPath              string
 	root                     string
 	index                    func(string) ([]bundle.ArchiveEntry, error)
 	verify                   func(string) (bundle.Summary, error)
@@ -175,6 +180,9 @@ type pageData struct {
 	TraceStudyComparisonConfigured         bool
 	TraceStudyComparison                   trace.ReplicationStudyQuestionRoundComparison
 	TraceStudySelectedQuestionID           string
+	WeatherConfigured                      bool
+	HARConfigured                          bool
+	HARComparisonConfigured                bool
 	MinimizationConfigured                 bool
 	Minimization                           minimizationReviewData
 }
@@ -315,6 +323,11 @@ func newHandlerWithHost(h handler, expectedHost string) http.Handler {
 	mux.HandleFunc("/trace-study", h.handleTraceStudy)
 	mux.HandleFunc("/trace-study-comparison", h.handleTraceStudyComparison)
 	mux.HandleFunc("/minimization", h.handleMinimization)
+	mux.HandleFunc("/weather", h.handleWeather)
+	mux.HandleFunc("/capture", h.handleHAR)
+	mux.HandleFunc("/capture-report", h.handleHAR)
+	mux.HandleFunc("/capture-compare", h.handleHARComparison)
+	mux.HandleFunc("/capture-comparison-report", h.handleHARComparison)
 	mux.HandleFunc("/favicon.ico", handleFavicon)
 	return secureReviewHandler(mux, expectedHost)
 }
@@ -526,6 +539,9 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		TraceCaseConfigured:                h.traceCaseConfigured(),
 		TraceStudyConfigured:               h.traceStudyConfigured(),
 		TraceStudyComparisonConfigured:     h.traceStudyComparison != nil,
+		WeatherConfigured:                  h.weatherPath != "",
+		HARConfigured:                      h.harPath != "" && h.harOrigin != "",
+		HARComparisonConfigured:            h.harPath != "" && h.harOrigin != "" && h.harSecondPath != "" && h.harRulesPath != "",
 		MinimizationConfigured:             h.minimizationPath != "",
 	})
 }
@@ -1228,14 +1244,16 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{.Title}}</title>
   <style>
-    :root { color-scheme: light; --ink: #16202a; --muted: #64717d; --line: #d8e0e5; --paper: #f7f9fa; --card: #fff; --accent: #0b6e69; --accent-soft: #e1f2ef; --warning: #8a5a00; --warning-soft: #fff3d5; }
+    :root { color-scheme: light; --ink: #13291f; --muted: #5e7167; --line: #d5e2d9; --paper: #f3f8f3; --card: #fffefa; --accent: #176341; --accent-strong: #0f4c32; --accent-soft: #dff1e5; --warning: #8a5a00; --warning-soft: #fff3d5; }
     * { box-sizing: border-box; }
-    body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.55 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { margin: 0; min-height: 100vh; background: linear-gradient(180deg, #e8f3ea 0, var(--paper) 360px); color: var(--ink); font: 16px/1.55 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     main { width: min(980px, calc(100% - 32px)); margin: 0 auto; padding: 28px 0 56px; }
-    header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding-bottom: 56px; }
-    .brand { color: var(--ink); font-size: 14px; font-weight: 800; letter-spacing: .16em; text-decoration: none; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 48px; }
+    .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--ink); font-size: 14px; font-weight: 800; letter-spacing: .16em; text-decoration: none; }
+    .brand::before { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 5px var(--accent-soft); content: ""; }
     .context, .eyebrow, .directory, .metric-label, footer { color: var(--muted); font-size: 13px; }
-    .hero { max-width: 680px; padding-bottom: 42px; }
+    .header-context { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.58); padding: 5px 10px; }
+    .hero { max-width: 680px; padding-bottom: 30px; }
     h1 { max-width: 760px; margin: 0 0 12px; font-size: clamp(34px, 6vw, 58px); letter-spacing: -.05em; line-height: 1.02; }
     h2 { margin: 0; font-size: 22px; letter-spacing: -.02em; }
     h3 { margin: 4px 0 2px; font-size: 20px; }
@@ -1243,18 +1261,20 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
     .lede { color: var(--muted); font-size: 19px; }
     .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin: 0 0 14px; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
-    .card, .panel { border: 1px solid var(--line); border-radius: 16px; background: var(--card); padding: 22px; box-shadow: 0 8px 24px rgba(22,32,42,.04); }
+    .card, .panel { border: 1px solid var(--line); border-radius: 16px; background: var(--card); padding: 22px; box-shadow: 0 10px 28px rgba(23,99,65,.08); }
     .card { display: flex; flex-direction: column; min-height: 230px; }
     .card .button { margin-top: auto; }
+    .panel + .panel { margin-top: 14px; }
     .directory { word-break: break-word; }
     .metrics { display: flex; gap: 22px; margin: 22px 0; }
     .metric { display: grid; gap: 2px; }
     .metric-value { font-size: 27px; font-weight: 750; line-height: 1; }
-    .button { display: inline-flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--accent); border-radius: 10px; color: var(--accent); background: transparent; padding: 10px 13px; font-weight: 700; text-decoration: none; }
-    .button:hover { color: #fff; background: var(--accent); }
+    .button { display: inline-flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--accent); border-radius: 10px; color: #fff; background: var(--accent); padding: 10px 13px; font-weight: 700; text-decoration: none; transition: background .15s ease, border-color .15s ease, transform .15s ease; }
+    .button:hover { color: #fff; background: var(--accent-strong); border-color: var(--accent-strong); transform: translateY(-1px); }
+    .button:focus-visible, .back:focus-visible, .brand:focus-visible { outline: 3px solid #9ad6aa; outline-offset: 3px; }
     .question-links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
     .question-list { display: grid; gap: 10px; margin-top: 18px; }
-    .back { display: inline-block; margin-bottom: 26px; color: var(--accent); font-weight: 700; text-decoration: none; }
+    .back { display: inline-block; margin-bottom: 26px; color: var(--accent-strong); font-weight: 700; text-decoration: none; }
     .status { display: inline-block; border-radius: 999px; background: var(--accent-soft); color: var(--accent); padding: 5px 11px; font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
     .status-unknown, .status-insufficient, .status-mixed-inconsistent, .status-no-sufficient-candidate { background: var(--warning-soft); color: var(--warning); }
     .status-unavailable { background: var(--line); color: var(--muted); }
@@ -1268,14 +1288,21 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
     a.finding { color: var(--accent); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13px; }
     .empty { color: var(--muted); border: 1px dashed var(--line); border-radius: 14px; padding: 24px; }
     footer { border-top: 1px solid var(--line); margin-top: 52px; padding-top: 16px; }
-    @media (max-width: 560px) { header { display: block; padding-bottom: 38px; } .context { display: block; margin-top: 8px; } dl { grid-template-columns: 1fr; gap: 3px; } dd { margin-bottom: 10px; } }
+    .flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 0 0 28px; }
+    .flow-step { display: flex; align-items: flex-start; gap: 10px; min-height: 92px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.68); padding: 14px; }
+    .flow-index { display: grid; flex: 0 0 26px; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-strong); font-size: 13px; font-weight: 800; }
+    .flow-step strong, .flow-step span { display: block; }
+    .flow-step strong { margin-bottom: 3px; font-size: 14px; }
+    .flow-step div > span { color: var(--muted); font-size: 13px; line-height: 1.35; }
+    @media (max-width: 760px) { .flow { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 560px) { header { display: block; padding-bottom: 38px; } .header-context { display: flex; width: fit-content; margin-top: 10px; } dl { grid-template-columns: 1fr; gap: 3px; } dd { margin-bottom: 10px; } .flow { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
 <main>
   <header>
     <a class="brand" href="/">ARIADNE</a>
-    <span class="context">counterfactual evidence review · read only</span>
+    <span class="context header-context">counterfactual evidence review · read only</span>
   </header>
 
   {{define "provenance"}}
@@ -1315,10 +1342,19 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
 
   {{if eq .View "index"}}
     <section class="hero">
-      <p class="eyebrow">verified archive</p>
-      <h1>Review what changed.</h1>
-      <p class="lede">Start from a verified bundle, ask one bounded question, and follow its safe finding references. Captured values never appear here.</p>
+      <p class="eyebrow">local investigations</p>
+      <h1>Follow the information.</h1>
+      <p class="lede">See what was found, compare the results, and open the evidence behind each explanation. Private captured values stay out of these pages.</p>
     </section>
+    <section class="flow" aria-label="Ariadne investigation workflow">
+      <div class="flow-step"><span class="flow-index">1</span><div><strong>Investigate</strong><span>Run a test or open a saved capture.</span></div></div>
+      <div class="flow-step"><span class="flow-index">2</span><div><strong>Compare</strong><span>See what changed between runs.</span></div></div>
+      <div class="flow-step"><span class="flow-index">3</span><div><strong>Trace</strong><span>Follow information to a recorded destination.</span></div></div>
+      <div class="flow-step"><span class="flow-index">4</span><div><strong>Keep evidence</strong><span>Reopen a redacted explanation later.</span></div></div>
+    </section>
+    {{if .WeatherConfigured}}<section class="panel" aria-labelledby="start-here"><p class="eyebrow">Start here</p><h2 id="start-here">Understand where information goes.</h2><p>Follow a weather website test: what location left the browser, where it went, and whether sharing less still gave a forecast. No technical knowledge needed.</p><a class="button" href="/weather">Open weather investigation</a><p class="context">This is a saved test using synthetic locations. Ariadne is not monitoring your browsing or the rest of your device.</p></section>{{end}}
+    {{if .HARConfigured}}<section class="panel"><p class="eyebrow">Saved browser capture</p><h2>Explore a website's recorded activity.</h2><p>See request destinations and clues about personal information in the configured capture. The explanation omits captured values.</p><a class="button" href="/capture">Explain this capture</a><p class="context">An imported file is not a controlled experiment. Clues do not establish that personal information reached a server.</p></section>{{end}}
+    {{if .HARComparisonConfigured}}<section class="panel"><h2>Look at two captures together.</h2><p>Follow the same test values across two exported files. Missing observations remain unknown.</p><a class="button" href="/capture-compare">Compare these captures</a></section>{{end}}
     <section class="panel">
       <div class="section-head"><h2>Ask across this archive</h2><span class="context">fixed, read only</span></div>
       <p class="context">Choose one bounded question to re-check against every verified bundle.</p>
@@ -1362,6 +1398,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       {{if .TraceStudyComparisonConfigured}}<a class="button" href="/trace-study-comparison">Open retained study comparison <span aria-hidden="true">&rarr;</span></a>{{end}}
     </section>
     {{end}}
+
     {{if .MinimizationConfigured}}
     <section class="panel" id="minimization-orientation" aria-label="Minimum-disclosure experiment">
       <div class="section-head"><h2>Minimum-disclosure experiment</h2><span class="context">verified, read only</span></div>

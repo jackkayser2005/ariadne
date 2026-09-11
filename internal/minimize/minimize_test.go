@@ -1320,3 +1320,31 @@ func TestMinimizationCarriesCanonicalProvenance(t *testing.T) {
 		t.Fatal("validateCandidateProjection() accepted an invalid provenance digest")
 	}
 }
+
+func TestReadPlanRejectsSymlinkPaths(t *testing.T) {
+	root := t.TempDir()
+	data, err := json.Marshal(testPlan())
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, "plan.json")
+	if err := os.WriteFile(target, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	leaf := filepath.Join(root, "leaf.json")
+	if err := os.Symlink(target, leaf); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if _, err := ReadPlan(leaf); err == nil {
+		t.Fatal("ReadPlan() accepted a symlink leaf")
+	}
+
+	parentRoot := t.TempDir()
+	parentLink := filepath.Join(parentRoot, "linked-root")
+	if err := os.Symlink(root, parentLink); err != nil {
+		t.Skipf("directory symlinks unavailable: %v", err)
+	}
+	if _, err := ReadPlan(filepath.Join(parentLink, "plan.json")); err == nil {
+		t.Fatal("ReadPlan() accepted a symlink ancestor")
+	}
+}

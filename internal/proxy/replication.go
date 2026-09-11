@@ -688,7 +688,7 @@ func lstatReplicationPath(path string) (os.FileInfo, error) {
 }
 
 func hashExecutable(path string) (string, error) {
-	file, err := os.Open(path)
+	file, err := openExecutable(path)
 	if err != nil {
 		return "", err
 	}
@@ -698,6 +698,28 @@ func hashExecutable(path string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func openExecutable(path string) (*os.File, error) {
+	info, err := lstatReplicationPath(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return nil, errors.New("proxy executable is unavailable")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, errors.New("proxy executable is unavailable")
+	}
+	openedInfo, err := file.Stat()
+	if err != nil || !os.SameFile(info, openedInfo) {
+		_ = file.Close()
+		return nil, errors.New("proxy executable changed during verification")
+	}
+	currentInfo, err := lstatReplicationPath(path)
+	if err != nil || !currentInfo.Mode().IsRegular() || !os.SameFile(currentInfo, openedInfo) {
+		_ = file.Close()
+		return nil, errors.New("proxy executable changed during verification")
+	}
+	return file, nil
 }
 
 func stageExecutable(path string) (string, string, func(), error) {
@@ -714,7 +736,7 @@ func stageExecutable(path string) (string, string, func(), error) {
 		_ = os.Remove(temporaryDirectory)
 	}
 	stagedPath := filepath.Join(temporaryDirectory, stagedName)
-	source, err := os.Open(path)
+	source, err := openExecutable(path)
 	if err != nil {
 		cleanup()
 		return "", "", func() {}, errors.New("open proxy executable")

@@ -133,8 +133,8 @@ func validateProgram(program string, args []string) error {
 	if strings.TrimSpace(program) == "" || !filepath.IsAbs(program) {
 		return errors.New("proxy program must be an absolute path")
 	}
-	info, err := os.Stat(program)
-	if err != nil || info.IsDir() {
+	info, err := lstatReplicationPath(program)
+	if err != nil || !info.Mode().IsRegular() {
 		return errors.New("proxy program is unavailable")
 	}
 	if len(args) > maxProcessArgs {

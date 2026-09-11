@@ -568,11 +568,61 @@ func TestTraceArchiveAdditionalFailurePaths(t *testing.T) {
 	}
 }
 
-func writeStandaloneArchiveInput(t *testing.T, root, name string, document Document, procedure string) ArchiveInput {
+func TestTraceArchiveReadersRejectSymlinkPaths(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "target.json")
+	if err := os.WriteFile(target, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "link.json")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	readers := []struct {
+		name string
+		read func(string) error
+	}{
+		{name: "trace", read: func(path string) error { _, err := Read(path); return err }},
+		{name: "session", read: func(path string) error { _, err := readSession(path); return err }},
+		{name: "archive", read: func(path string) error { _, err := readArchive(path); return err }},
+		{name: "case", read: func(path string) error { _, err := readCase(path); return err }},
+		{name: "study", read: func(path string) error { _, err := readReplicationStudy(path); return err }},
+		{name: "case assembly plan", read: func(path string) error { _, err := ReadCaseAssemblyPlan(path); return err }},
+	}
+	for _, reader := range readers {
+		t.Run(reader.name+" leaf", func(t *testing.T) {
+			if err := reader.read(link); err == nil {
+				t.Fatalf("%s reader accepted a symlink", reader.name)
+			}
+		})
+	}
+
+	targetDir := filepath.Join(root, "target-dir")
+	if err := os.Mkdir(targetDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	inside := filepath.Join(targetDir, "archive.json")
+	if err := os.WriteFile(inside, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	linkedDir := filepath.Join(root, "linked-dir")
+	if err := os.Symlink(targetDir, linkedDir); err != nil {
+		t.Skipf("directory symlinks unavailable: %v", err)
+	}
+	for _, reader := range readers {
+		t.Run(reader.name+" parent", func(t *testing.T) {
+			if err := reader.read(filepath.Join(linkedDir, "archive.json")); err == nil {
+				t.Fatalf("%s reader accepted a symlinked parent", reader.name)
+			}
+		})
+	}
+}
+
+func writeStandaloneArchiveInput(t testing.TB, root, name string, document Document, procedure string) ArchiveInput {
 	return writeStandaloneArchiveInputWithAdapter(t, root, name, document, "android-experiment-001", procedure)
 }
 
-func writeStandaloneArchiveInputWithAdapter(t *testing.T, root, name string, document Document, adapter, procedure string) ArchiveInput {
+func writeStandaloneArchiveInputWithAdapter(t testing.TB, root, name string, document Document, adapter, procedure string) ArchiveInput {
 	t.Helper()
 	tracePath := filepath.Join(root, name+"-trace.json")
 	sessionPath := filepath.Join(root, name+"-session.json")

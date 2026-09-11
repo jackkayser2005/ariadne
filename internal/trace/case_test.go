@@ -508,7 +508,7 @@ func TestCaseAdditionalBoundaries(t *testing.T) {
 	}
 }
 
-func writeCaseArchive(t *testing.T, root string) (string, string) {
+func writeCaseArchive(t testing.TB, root string) (string, string) {
 	t.Helper()
 	first := writeStandaloneArchiveInput(t, root, "case-archive-first", validArchiveTrace("region"), strings.Repeat("1", 64))
 	second := writeStandaloneArchiveInput(t, root, "case-archive-second", validArchiveTrace("region"), strings.Repeat("1", 64))

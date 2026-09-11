@@ -566,3 +566,34 @@ func writeReplicationTrace(t *testing.T, path, variant, completeness string) por
 	}
 	return summary
 }
+
+func TestProxyProgramRejectsSymlinkPaths(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "program.exe")
+	if err := os.WriteFile(target, []byte("program"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	leaf := filepath.Join(root, "leaf.exe")
+	if err := os.Symlink(target, leaf); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if err := validateProgram(leaf, nil); err == nil {
+		t.Fatal("validateProgram() accepted a symlink leaf")
+	}
+	if _, err := hashExecutable(leaf); err == nil {
+		t.Fatal("hashExecutable() accepted a symlink leaf")
+	}
+	if _, _, _, err := stageExecutable(leaf); err == nil {
+		t.Fatal("stageExecutable() accepted a symlink leaf")
+	}
+
+	parentRoot := t.TempDir()
+	parentLink := filepath.Join(parentRoot, "linked-root")
+	if err := os.Symlink(root, parentLink); err != nil {
+		t.Skipf("directory symlinks unavailable: %v", err)
+	}
+	ancestor := filepath.Join(parentLink, "program.exe")
+	if err := validateProgram(ancestor, nil); err == nil {
+		t.Fatal("validateProgram() accepted a symlink ancestor")
+	}
+}

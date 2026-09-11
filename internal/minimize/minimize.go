@@ -176,6 +176,17 @@ func Decode(reader io.Reader) (MinimizationPlan, error) {
 
 // Validate reports whether the plan is safe to turn into authenticated
 // Android manifests.
+// ReadPlan reads one minimization plan through the bounded, no-symlink artifact reader.
+func ReadPlan(path string) (MinimizationPlan, error) {
+	if strings.TrimSpace(path) == "" {
+		return MinimizationPlan{}, errors.New("minimization plan path is required")
+	}
+	data, err := bundle.ReadBoundedFile(path, maxPlanBytes)
+	if err != nil {
+		return MinimizationPlan{}, fmt.Errorf("open plan: %w", err)
+	}
+	return Decode(bytes.NewReader(data))
+}
 func (plan MinimizationPlan) Validate() error {
 	if plan.SchemaVersion != CurrentSchemaVersion {
 		return fmt.Errorf("schema_version: unsupported value %d", plan.SchemaVersion)

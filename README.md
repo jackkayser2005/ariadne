@@ -178,11 +178,21 @@ artifact guarantees:
 go run ./cmd/ariadne validate --json examples/experiment-001.json
 go run ./cmd/ariadne validate --json .ariadne/runs/experiment-001-replicated
 go run ./cmd/ariadne validate .ariadne/runs/android-location-minimize
+go run ./cmd/ariadne validate --json .ariadne/runs/weather-location
+go run ./cmd/ariadne validate --json .ariadne/trace-archive.json
+go run ./cmd/ariadne validate --json .ariadne/trace-replication.json
+go run ./cmd/ariadne validate --json .ariadne/trace-case.json
+go run ./cmd/ariadne validate --json .ariadne/trace-study.json
 ~~~
 
-The first validation slice recognizes a JSON experiment manifest (including `manifest.json`), an Android
-replication directory containing `replication.json`, and an Android
-minimization directory containing `minimization.json`. Every report lists
+For trace archives, replication ledgers, cross-source cases, and studies, the same command also has a concise human
+summary when `--json` is omitted; JSON remains available for scripts and the local
+review server.
+
+The validation surface recognizes a JSON experiment manifest (including `manifest.json`),
+verified source-neutral trace archives, replication ledgers, cross-source cases, and studies, Android replication and minimization
+directories, and a verified browser weather investigation directory containing
+`weather.json`. Every report lists
 `structural`, `integrity`, `boundary`, and `replay` tiers. Structural and
 integrity checks delegate to the existing specialized verifiers; boundary
 checks require the canonical provenance already present in new authenticated
@@ -201,9 +211,10 @@ or driver arguments. An `outcome` remains separate from `evidence_state`, and no
 status is a universal causal claim.
 
 This is a composition layer, not a second verifier or capture backend.
-Source-neutral trace, browser, proxy, case, study, and question artifacts
-continue to use their specialized verification commands until a later
-validation slice maps them explicitly.
+Trace archive, replication, case, and study verification now join the same entry point as the first
+browser investigation. HAR, proxy, and question artifacts continue
+to use their specialized verification commands until their own mapping slices
+are reviewed.
 
 The detailed design and experiment log live in [`docs/`](docs/).
 The evidence-backed first-year path is tracked in
@@ -1169,6 +1180,28 @@ It can also review one portable export with
 and its safe finding references remain read-only and display their verified
 export identities.
 
+## Website location investigation
+
+The fixed `browser-weather-location-v1` procedure runs eight fresh-profile Chrome
+sessions against `https://beta.weather.gov`, comparing synthetic precise,
+city-center, and denied geolocation. It captures only redacted attempted and
+response-backed location labels, verified traces, and bounded visibility gaps.
+A workflow failure or unsupported channel remains `unknown`; the result is not
+an onward-sharing or causal claim.
+
+~~~console
+go run ./cmd/ariadne browser weather --json --driver "C:\Program Files\nodejs\node.exe" --driver-arg cmd/browser-fixture-driver/weather_driver.mjs --driver-arg --browser --driver-arg "C:\Program Files\Google\Chrome\Application\chrome.exe" --output .ariadne/runs/weather-location
+go run ./cmd/ariadne browser weather verify --json --expect-sha256 <receipt-sha256> .ariadne/runs/weather-location
+go run ./cmd/ariadne experiment serve --addr 127.0.0.1:8787 --weather .ariadne/runs/weather-location .ariadne/runs
+~~~
+
+Open `/weather` on the loopback review server. The page re-verifies the bundle
+on each GET and never renders coordinates, URLs, payloads, executable paths, or
+local artifact paths. The JSON and page also expose verifier-derived
+per-candidate functionality counts and fixed explanations for visibility gaps.
+See the [weather investigation guide](docs/content/docs/weather-investigation.md)
+for the tested live result and coverage limits.
+
 ## Development
 
 Prerequisites:
@@ -1213,3 +1246,11 @@ Pre-alpha. We are building Experiment 001 in the
 Only analyze software, devices, accounts, and data you own or are explicitly
 authorized to test. Evidence bundles must redact secrets and unrelated personal
 data by default.
+
+### Saved browser capture review
+
+Create a plain-language local HTML inventory with `ariadne browser inspect-har
+--origin https://example.com --output review.html capture.har`. Reports omit raw
+values and identify field-name clues without claiming confirmed disclosure.
+See [capture review](docs/content/docs/browser-capture-review.md) for supported
+inputs and visibility limits.

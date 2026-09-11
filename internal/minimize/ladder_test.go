@@ -394,3 +394,32 @@ func ladderResult(id string, outcome portabletrace.ReplicatedOutcome, state evid
 		UnknownPairs:   unknown,
 	}
 }
+
+func TestReadLadderRejectsSymlinkPaths(t *testing.T) {
+	root := t.TempDir()
+	plan := testLadderPlan()
+	data, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, "plan.json")
+	if err := os.WriteFile(target, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	leaf := filepath.Join(root, "leaf.json")
+	if err := os.Symlink(target, leaf); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if _, err := ReadLadder(leaf); err == nil {
+		t.Fatal("ReadLadder() accepted a symlink leaf")
+	}
+
+	parentRoot := t.TempDir()
+	parentLink := filepath.Join(parentRoot, "linked-root")
+	if err := os.Symlink(root, parentLink); err != nil {
+		t.Skipf("directory symlinks unavailable: %v", err)
+	}
+	if _, err := ReadLadder(filepath.Join(parentLink, "plan.json")); err == nil {
+		t.Fatal("ReadLadder() accepted a symlink ancestor")
+	}
+}

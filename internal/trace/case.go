@@ -971,13 +971,8 @@ func readCase(path string) ([]byte, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, errors.New("case path is required")
 	}
-	file, err := os.Open(path)
+	data, err := readSourceAdapterFile(path, maxCaseBytes)
 	if err != nil {
-		return nil, errors.New("read case")
-	}
-	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, maxCaseBytes+1))
-	if err != nil || len(data) > maxCaseBytes {
 		return nil, errors.New("read case")
 	}
 	return data, nil

@@ -202,3 +202,33 @@ func writeSessionBindingBytes(t *testing.T, root, kind string, data []byte) {
 		t.Fatal(err)
 	}
 }
+
+func TestReadSessionBindingRejectsUnsafePaths(t *testing.T) {
+	if _, err := readSessionBinding(t.TempDir(), "../outside"); err == nil {
+		t.Fatal("readSessionBinding() accepted an unsafe session kind")
+	}
+
+	record := sessionBindingRecordForTest("baseline")
+	outside := t.TempDir()
+	writeSessionBindingRecord(t, outside, "baseline", record)
+
+	leafRoot := t.TempDir()
+	leafDir := filepath.Join(leafRoot, "baseline")
+	if err := os.MkdirAll(leafDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outside, "baseline", "session.json"), filepath.Join(leafDir, "session.json")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if _, err := readSessionBinding(leafRoot, "baseline"); err == nil {
+		t.Fatal("readSessionBinding() accepted a symlinked session file")
+	}
+
+	ancestorRoot := t.TempDir()
+	if err := os.Symlink(filepath.Join(outside, "baseline"), filepath.Join(ancestorRoot, "baseline")); err != nil {
+		t.Skipf("directory symlinks unavailable: %v", err)
+	}
+	if _, err := readSessionBinding(ancestorRoot, "baseline"); err == nil {
+		t.Fatal("readSessionBinding() accepted a symlinked session directory")
+	}
+}

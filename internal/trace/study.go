@@ -360,13 +360,8 @@ func readReplicationStudy(path string) ([]byte, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, errors.New("study path is required")
 	}
-	file, err := os.Open(path)
+	data, err := readSourceAdapterFile(path, maxReplicationStudyBytes)
 	if err != nil {
-		return nil, errors.New("read study")
-	}
-	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, maxReplicationStudyBytes+1))
-	if err != nil || len(data) > maxReplicationStudyBytes {
 		return nil, errors.New("read study")
 	}
 	return data, nil

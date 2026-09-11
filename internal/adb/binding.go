@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/jackkayser2005/ariadne/internal/jsoncheck"
 	"github.com/jackkayser2005/ariadne/internal/provenance"
@@ -139,18 +140,13 @@ func ReplicatedBindingSHA256(record ReplicatedRunRecord) (string, error) {
 }
 
 func readSessionBinding(sessionDir, kind string) (string, error) {
+	if kind != "baseline" && kind != "treatment" {
+		return "", errors.New("authenticated session kind is invalid")
+	}
 	path := filepath.Join(sessionDir, kind, "session.json")
-	file, err := os.Open(path)
+	data, err := readSessionBindingFile(path, maxOutputBytes)
 	if err != nil {
 		return "", fmt.Errorf("read %s session: %w", kind, err)
-	}
-	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, maxOutputBytes+1))
-	if err != nil {
-		return "", fmt.Errorf("read %s session: %w", kind, err)
-	}
-	if len(data) > maxOutputBytes {
-		return "", errors.New("session metadata exceeds 65536-byte limit")
 	}
 	if err := jsoncheck.RejectDuplicateKeys(data); err != nil {
 		return "", errors.New("session metadata is invalid")
@@ -174,6 +170,71 @@ func readSessionBinding(sessionDir, kind string) (string, error) {
 	}
 	return record.BindingSHA256, nil
 }
+
+func readSessionBindingFile(path string, limit int64) ([]byte, error) {
+	if limit < 0 {
+		return nil, errors.New("session metadata limit is invalid")
+	}
+	info, err := lstatSessionPath(path)
+	if err != nil {
+		return nil, errors.New("session metadata is unavailable")
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("session metadata must be a regular file")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, errors.New("session metadata is unavailable")
+	}
+	defer file.Close()
+	openedInfo, err := file.Stat()
+	if err != nil || !os.SameFile(info, openedInfo) {
+		return nil, errors.New("session metadata changed during verification")
+	}
+	currentInfo, err := lstatSessionPath(path)
+	if err != nil || !currentInfo.Mode().IsRegular() || !os.SameFile(currentInfo, openedInfo) {
+		return nil, errors.New("session metadata changed during verification")
+	}
+	data, err := io.ReadAll(io.LimitReader(file, limit+1))
+	if err != nil || int64(len(data)) > limit {
+		return nil, fmt.Errorf("session metadata exceeds %d-byte limit", limit)
+	}
+	return data, nil
+}
+
+func lstatSessionPath(path string) (os.FileInfo, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	volume := filepath.VolumeName(absolute)
+	remainder := strings.TrimPrefix(absolute, volume)
+	current := volume
+	separator := string(filepath.Separator)
+	if strings.HasPrefix(remainder, separator) {
+		current += separator
+		remainder = strings.TrimPrefix(remainder, separator)
+	}
+	if remainder == "" {
+		return os.Lstat(current)
+	}
+	var info os.FileInfo
+	for _, component := range strings.Split(remainder, separator) {
+		if component == "" || component == "." {
+			continue
+		}
+		current = filepath.Join(current, component)
+		info, err = os.Lstat(current)
+		if err != nil {
+			return nil, err
+		}
+		if info.Mode()&os.ModeSymlink != 0 || info.Mode()&os.ModeIrregular != 0 {
+			return nil, errors.New("unsafe session metadata path")
+		}
+	}
+	return info, nil
+}
+
 func bindReplicatedPair(outputDir string, record ReplicatedRunRecord, pair ReplicatedPairRecord) (ReplicatedPairRecord, error) {
 	first, err := readSessionBinding(filepath.Join(outputDir, pair.Directory), pair.FirstSession)
 	if err != nil {

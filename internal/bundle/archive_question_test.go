@@ -101,7 +101,7 @@ func TestAskArchiveCountsUnknownAndUnavailable(t *testing.T) {
 
 	storageRun := makeStorageFailureRun(t, "")
 	storageDir := filepath.Join(root, "storage-gap")
-	if err := os.Rename(storageRun, storageDir); err != nil {
+	if err := renameArchivePath(storageRun, storageDir); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Write(storageDir); err != nil {
@@ -110,7 +110,7 @@ func TestAskArchiveCountsUnknownAndUnavailable(t *testing.T) {
 
 	legacyDir := filepath.Join(root, "legacy")
 	legacyRun := makeRun(t, runOptions{sessionSchemaVersion: 5})
-	if err := os.Rename(legacyRun, legacyDir); err != nil {
+	if err := renameArchivePath(legacyRun, legacyDir); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Write(legacyDir); err != nil {

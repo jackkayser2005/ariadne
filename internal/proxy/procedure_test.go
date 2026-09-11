@@ -107,3 +107,30 @@ func TestReadProcedureBoundsAndIdentity(t *testing.T) {
 		t.Fatal("ProcedureSHA256() accepted invalid procedure")
 	}
 }
+
+func TestReadProcedureRejectsSymlinkPaths(t *testing.T) {
+	root := t.TempDir()
+	realDir := filepath.Join(root, "real")
+	if err := os.Mkdir(realDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(realDir, "procedure.json")
+	data := []byte("{\"schema_version\":1,\"procedure_id\":\"proxy-connect-v1\",\"scope\":\"outbound\",\"duration_ms\":500,\"max_events\":8,\"target_authority\":\"example.com:443\"}")
+	if err := os.WriteFile(target, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	leaf := filepath.Join(root, "leaf.json")
+	if err := os.Symlink(target, leaf); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if _, _, err := ReadProcedure(leaf); err == nil {
+		t.Fatal("ReadProcedure() accepted a symlink leaf")
+	}
+	parent := filepath.Join(root, "parent")
+	if err := os.Symlink(realDir, parent); err != nil {
+		t.Skipf("directory symlinks unavailable: %v", err)
+	}
+	if _, _, err := ReadProcedure(filepath.Join(parent, "procedure.json")); err == nil {
+		t.Fatal("ReadProcedure() accepted a symlink ancestor")
+	}
+}

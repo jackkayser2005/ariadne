@@ -6,11 +6,11 @@ import (
 	"errors"
 	"io"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/jackkayser2005/ariadne/internal/bundle"
 	"github.com/jackkayser2005/ariadne/internal/jsoncheck"
 )
 
@@ -74,13 +74,8 @@ func ReadProcedure(path string) (Procedure, []byte, error) {
 	if strings.TrimSpace(path) == "" {
 		return Procedure{}, nil, errors.New("browser procedure path is required")
 	}
-	file, err := os.Open(path)
+	data, err := bundle.ReadBoundedFile(path, maxProcedureBytes)
 	if err != nil {
-		return Procedure{}, nil, errors.New("read procedure")
-	}
-	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, maxProcedureBytes+1))
-	if err != nil || len(data) > maxProcedureBytes {
 		return Procedure{}, nil, errors.New("read procedure")
 	}
 	procedure, err := DecodeProcedure(data)

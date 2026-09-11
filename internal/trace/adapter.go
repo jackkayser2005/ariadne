@@ -47,6 +47,7 @@ const (
 	maxSourceAdapterDurationMS      = 5 * 60 * 1000
 	sourceAdapterWaitDelay          = time.Second
 	sourceAdapterTerminateTimeout   = time.Second
+	sourceAdapterCleanupGrace       = 25 * time.Millisecond
 	maxSourceAdapterIDBytes         = 64
 	maxSourceAdapterArgs            = 64
 	maxSourceAdapterArgBytes        = 4 << 10
@@ -274,6 +275,14 @@ func runSourceAdapterWithRunner(procedurePath, executable string, args []string,
 	if err != nil {
 		return SourceAdapterRunSummary{}, errors.New("source adapter executable identity failed")
 	}
+	// Reject an occupied output path before invoking the external adapter.
+	// This prevents a bad destination from causing an unnecessary or recursive process.
+	cleanOutputDir := filepath.Clean(outputDir)
+	if _, err := os.Lstat(cleanOutputDir); err == nil {
+		return SourceAdapterRunSummary{}, errors.New("source adapter output already exists")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return SourceAdapterRunSummary{}, errors.New("source adapter output is unavailable")
+	}
 	challenge, challengeSHA256, err := newSourceAdapterChallenge()
 	if err != nil {
 		return SourceAdapterRunSummary{}, errors.New("source adapter challenge failed")
@@ -321,12 +330,6 @@ func runSourceAdapterWithRunner(procedurePath, executable string, args []string,
 		return SourceAdapterRunSummary{}, errors.New("source adapter trace identity failed")
 	}
 
-	cleanOutputDir := filepath.Clean(outputDir)
-	if _, err := os.Lstat(cleanOutputDir); err == nil {
-		return SourceAdapterRunSummary{}, errors.New("source adapter output already exists")
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return SourceAdapterRunSummary{}, errors.New("source adapter output is unavailable")
-	}
 	parent := filepath.Dir(cleanOutputDir)
 	if err := os.MkdirAll(parent, 0o700); err != nil {
 		return SourceAdapterRunSummary{}, errors.New("source adapter output directory failed")
@@ -700,6 +703,9 @@ func terminateSourceAdapterProcess(process *os.Process) {
 		return
 	}
 	if runtime.GOOS == "windows" {
+		// Give a just-started descendant a bounded moment to join the tree before
+		// taskkill snapshots it.
+		time.Sleep(sourceAdapterCleanupGrace)
 		cleanupContext, cancel := context.WithTimeout(context.Background(), sourceAdapterTerminateTimeout)
 		defer cancel()
 		if taskkillPath := sourceAdapterTaskkillPath(); taskkillPath != "" {

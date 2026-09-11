@@ -8,10 +8,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/jackkayser2005/ariadne/internal/browser"
 	"github.com/jackkayser2005/ariadne/internal/bundle"
 	"github.com/jackkayser2005/ariadne/internal/evidence"
 	"github.com/jackkayser2005/ariadne/internal/experiment"
 	"github.com/jackkayser2005/ariadne/internal/minimize"
+	"github.com/jackkayser2005/ariadne/internal/trace"
 )
 
 // SchemaVersion is the validation report schema supported by this build.
@@ -29,6 +31,16 @@ const (
 	KindAndroidReplication ArtifactKind = "android-replication"
 	// KindAndroidMinimization identifies an Android minimization directory.
 	KindAndroidMinimization ArtifactKind = "android-minimization"
+	// KindBrowserWeather identifies a verified browser weather investigation.
+	KindBrowserWeather ArtifactKind = "browser-weather"
+	// KindTraceArchive identifies a verified source-neutral trace archive.
+	KindTraceArchive ArtifactKind = "trace-archive"
+	// KindTraceReplication identifies a verified source-neutral replication ledger.
+	KindTraceReplication ArtifactKind = "trace-replication"
+	// KindTraceCase identifies a verified cross-source trace case.
+	KindTraceCase ArtifactKind = "trace-case"
+	// KindTraceStudy identifies a verified cross-run replication study.
+	KindTraceStudy ArtifactKind = "trace-study"
 )
 
 // Tier identifies one independent validation guarantee.
@@ -123,14 +135,74 @@ func Validate(path string) Report {
 	if filepath.Base(path) != "manifest.json" && !strings.EqualFold(filepath.Ext(path), ".json") {
 		return unavailableReport(KindUnknown, ReasonUnsupportedArtifact)
 	}
+	if summary, err := trace.VerifyArchive(path); err == nil {
+		return reportFromTraceArchive(summary)
+	}
+	if looksLikeTraceArchivePath(path) {
+		return rejectedReport(KindTraceArchive)
+	}
+	if summary, err := trace.VerifyReplicationLedger(path); err == nil {
+		return reportFromTraceReplication(summary)
+	}
+	if looksLikeTraceReplicationPath(path) {
+		return rejectedReport(KindTraceReplication)
+	}
+	if summary, err := trace.VerifyCase(path); err == nil {
+		return reportFromTraceCase(summary)
+	}
+	if looksLikeTraceCasePath(path) {
+		return rejectedReport(KindTraceCase)
+	}
+	if summary, err := trace.VerifyReplicationStudy(path); err == nil {
+		return reportFromTraceStudy(summary)
+	}
+	if looksLikeTraceStudyPath(path) {
+		return rejectedReport(KindTraceStudy)
+	}
 	return validateManifest(path)
 }
 
+func looksLikeTraceArchivePath(path string) bool {
+	base := strings.ToLower(filepath.Base(path))
+	return base == "archive.json" || strings.HasSuffix(base, "-archive.json")
+}
+
+func looksLikeTraceCasePath(path string) bool {
+	base := strings.ToLower(filepath.Base(path))
+	return base == "case.json" || base == "trace-case.json" || base == "case-package.json" || strings.HasSuffix(base, "-case.json")
+}
+
+func looksLikeTraceStudyPath(path string) bool {
+	base := strings.ToLower(filepath.Base(path))
+	return base == "study.json" || base == "trace-study.json" || base == "replication-study.json" || strings.HasSuffix(base, "-study.json")
+}
+
+func looksLikeTraceReplicationPath(path string) bool {
+	base := strings.ToLower(filepath.Base(path))
+	return base == "ledger.json" || base == "trace-replication.json" ||
+		base == "replication-ledger.json" || strings.HasSuffix(base, "-replication.json") ||
+		strings.HasSuffix(base, "-ledger.json")
+}
+
 func validateDirectory(path string) Report {
+	weather, weatherErr := inspectMarker(path, "weather.json")
 	replication, replicationErr := inspectMarker(path, "replication.json")
 	minimization, minimizationErr := inspectMarker(path, "minimization.json")
-	if replicationErr != nil || minimizationErr != nil {
+	if weatherErr != nil || replicationErr != nil || minimizationErr != nil {
 		return unavailableReport(KindUnknown, ReasonArtifactUnavailable)
+	}
+	if weather.present && replication.present {
+		return rejectedReport(KindUnknown)
+	}
+	if weather.present {
+		if !weather.regular {
+			return rejectedReport(KindBrowserWeather)
+		}
+		review, err := browser.VerifyWeather(path)
+		if err != nil {
+			return rejectedReport(KindBrowserWeather)
+		}
+		return reportFromWeather(review)
 	}
 	if replication.present && minimization.present {
 		return rejectedReport(KindUnknown)
@@ -214,6 +286,95 @@ func reportFromReplication(summary bundle.ReplicatedExperimentSummary) Report {
 		setTier(&report, TierReplay, StatusUnknown, ReasonIncompleteCapture)
 	} else {
 		setTier(&report, TierReplay, StatusPass, ReasonVerified)
+	}
+	return finalize(report)
+}
+
+func reportFromTraceArchive(summary trace.ArchiveVerificationSummary) Report {
+	report := verifiedReport(KindTraceArchive)
+	report.Identity = summary.ArchiveSHA256
+	if summary.Partial == 0 {
+		report.EvidenceState = evidence.Observed
+		setTier(&report, TierReplay, StatusPass, ReasonVerified)
+	} else {
+		report.EvidenceState = evidence.Unknown
+		setTier(&report, TierReplay, StatusUnknown, ReasonIncompleteCapture)
+	}
+	if summary.SchemaVersion >= 2 {
+		setTier(&report, TierBoundary, StatusPass, ReasonVerified)
+	} else {
+		setTier(&report, TierBoundary, StatusUnavailable, ReasonProvenanceUnavailable)
+	}
+	return finalize(report)
+}
+
+func reportFromTraceReplication(summary trace.ReplicationLedgerVerificationSummary) Report {
+	report := verifiedReport(KindTraceReplication)
+	report.Identity = summary.LedgerSHA256
+	report.Outcome = string(summary.Outcome)
+	report.EvidenceState = summary.EvidenceState
+	setTier(&report, TierBoundary, StatusUnavailable, ReasonProvenanceUnavailable)
+	if summary.OrderBalanced &&
+		summary.ResetConfirmedPairs == summary.Pairs &&
+		summary.CompletePairs == summary.Pairs &&
+		summary.UnknownPairs == 0 &&
+		summary.EvidenceState == evidence.Observed &&
+		summary.Outcome != trace.ReplicationUnknown {
+		setTier(&report, TierReplay, StatusPass, ReasonVerified)
+	} else {
+		setTier(&report, TierReplay, StatusUnknown, ReasonIncompleteCapture)
+	}
+	return finalize(report)
+}
+
+func reportFromTraceCase(summary trace.CaseVerificationSummary) Report {
+	report := verifiedReport(KindTraceCase)
+	report.Identity = summary.CaseSHA256
+	setTier(&report, TierBoundary, StatusUnavailable, ReasonProvenanceUnavailable)
+	if summary.Entries > 0 && summary.UnknownEntries == 0 {
+		report.EvidenceState = evidence.Observed
+		setTier(&report, TierReplay, StatusPass, ReasonVerified)
+	} else {
+		report.EvidenceState = evidence.Unknown
+		setTier(&report, TierReplay, StatusUnknown, ReasonIncompleteCapture)
+	}
+	return finalize(report)
+}
+
+func reportFromTraceStudy(summary trace.StudyVerificationSummary) Report {
+	report := verifiedReport(KindTraceStudy)
+	report.Identity = summary.StudySHA256
+	report.Outcome = string(summary.Outcome)
+	report.EvidenceState = summary.EvidenceState
+	setTier(&report, TierBoundary, StatusUnavailable, ReasonProvenanceUnavailable)
+	if summary.Runs > 0 &&
+		summary.SupportedRuns == summary.Runs &&
+		summary.UnknownRuns == 0 &&
+		summary.BalancedRuns == summary.Runs &&
+		summary.CompletePairs == summary.Pairs &&
+		summary.UnknownPairs == 0 &&
+		summary.EvidenceState == evidence.Observed &&
+		summary.Outcome != trace.ReplicationUnknown {
+		setTier(&report, TierReplay, StatusPass, ReasonVerified)
+	} else {
+		setTier(&report, TierReplay, StatusUnknown, ReasonIncompleteCapture)
+	}
+	return finalize(report)
+}
+
+func reportFromWeather(review browser.WeatherReview) Report {
+	report := verifiedReport(KindBrowserWeather)
+	report.Identity = review.ReceiptSHA256
+	report.EvidenceState = review.Ladder.EvidenceState
+	report.SelectionState = string(review.Ladder.SelectionState)
+	if review.Ladder.SelectionState == minimize.SelectionSelected {
+		report.SelectedCandidate = review.Ladder.SelectedCandidate
+	}
+	setTier(&report, TierBoundary, StatusPass, ReasonVerified)
+	if review.Ladder.SelectionState == minimize.SelectionSelected && review.Ladder.EvidenceState == evidence.Observed {
+		setTier(&report, TierReplay, StatusPass, ReasonVerified)
+	} else {
+		setTier(&report, TierReplay, StatusUnknown, ReasonIncompleteCapture)
 	}
 	return finalize(report)
 }

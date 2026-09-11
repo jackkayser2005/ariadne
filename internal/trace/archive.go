@@ -588,13 +588,8 @@ func readArchive(path string) ([]byte, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, errors.New("archive path is required")
 	}
-	file, err := os.Open(path)
+	data, err := readSourceAdapterFile(path, maxArchiveBytes)
 	if err != nil {
-		return nil, errors.New("read archive")
-	}
-	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, maxArchiveBytes+1))
-	if err != nil || len(data) > maxArchiveBytes {
 		return nil, errors.New("read archive")
 	}
 	return data, nil

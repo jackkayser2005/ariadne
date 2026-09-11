@@ -65,13 +65,8 @@ func ReadCaseAssemblyPlan(path string) (CaseAssemblyPlan, error) {
 	if strings.TrimSpace(path) == "" {
 		return CaseAssemblyPlan{}, errors.New("trace case assembly plan path is required")
 	}
-	file, err := os.Open(path)
+	data, err := readSourceAdapterFile(path, maxCaseAssemblyPlanBytes)
 	if err != nil {
-		return CaseAssemblyPlan{}, errors.New("read trace case assembly plan")
-	}
-	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, maxCaseAssemblyPlanBytes+1))
-	if err != nil || len(data) > maxCaseAssemblyPlanBytes {
 		return CaseAssemblyPlan{}, errors.New("read trace case assembly plan")
 	}
 	return DecodeCaseAssemblyPlan(data)

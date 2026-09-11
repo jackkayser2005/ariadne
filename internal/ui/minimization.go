@@ -17,6 +17,11 @@ import (
 // ReviewOptions configures the optional, read-only artifacts exposed by the
 // loopback review server.
 type ReviewOptions struct {
+	HARSecondPath             string
+	HARTestValuesPath         string
+	HARPath                   string
+	HAROrigin                 string
+	WeatherPath               string
 	ArchiveRoot               string
 	HistoryPath               string
 	ReflectionPath            string
@@ -45,6 +50,11 @@ type ReviewOptions struct {
 
 func reviewHandler(options ReviewOptions) http.Handler {
 	h := archiveHandler(options.ArchiveRoot)
+	h.weatherPath = options.WeatherPath
+	h.harPath = options.HARPath
+	h.harSecondPath = options.HARSecondPath
+	h.harOrigin = options.HAROrigin
+	h.harRulesPath = options.HARTestValuesPath
 	if options.HistoryPath != "" {
 		h.history = func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error) {
 			return bundle.ReadArchiveQuestionTransitionHistory(options.HistoryPath)

@@ -56,6 +56,24 @@ func TestRunValidate(t *testing.T) {
 	}
 }
 
+func TestRunValidateHumanTraceArtifactReport(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "archive.json")
+	if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+
+	if exitCode := run([]string{"validate", path}, &stdout, &stderr); exitCode != 1 {
+		t.Fatalf("run() exit code = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "artifact: trace-archive") || !strings.Contains(stdout.String(), "overall: fail") {
+		t.Fatalf("human trace report = %q", stdout.String())
+	}
+	if stderr.Len() != 0 || strings.Contains(stdout.String(), path) {
+		t.Fatalf("trace report leaked path or stderr: stdout=%q, stderr=%q", stdout.String(), stderr.String())
+	}
+}
+
 func TestRunUsage(t *testing.T) {
 	tests := [][]string{
 		nil,
@@ -198,6 +216,7 @@ func TestWriteValidationReportIncludesSafeFields(t *testing.T) {
 	for _, want := range []string{
 		"artifact: android-minimization",
 		"overall: pass",
+		"meaning: The saved evidence passed its checks",
 		"identity: " + strings.Repeat("a", 64),
 		"outcome: no-change-observed",
 		"evidence_state: observed",
@@ -214,6 +233,26 @@ func TestWriteValidationReportIncludesSafeFields(t *testing.T) {
 		}
 	}
 }
+func TestValidationMeaningCoversStatuses(t *testing.T) {
+	for _, test := range []struct {
+		status validation.Status
+		want   string
+	}{
+		{validation.StatusPass, "passed its checks"},
+		{validation.StatusWarning, "part of the check is unavailable"},
+		{validation.StatusUnknown, "evidence is incomplete"},
+		{validation.StatusFail, "rejected this artifact"},
+		{validation.StatusUnavailable, "could not read enough"},
+		{validation.Status("other"), "could not interpret"},
+	} {
+		t.Run(string(test.status), func(t *testing.T) {
+			if got := validationMeaning(test.status); !strings.Contains(got, test.want) {
+				t.Fatalf("validationMeaning(%q) = %q, want %q", test.status, got, test.want)
+			}
+		})
+	}
+}
+
 func TestRunValidateArgumentErrors(t *testing.T) {
 	for _, args := range [][]string{
 		{"validate", "--json"},

@@ -663,13 +663,8 @@ func sessionVerificationSummary(session Session, sessionSHA256 string) SessionVe
 }
 
 func readSession(path string) ([]byte, error) {
-	file, err := os.Open(path)
+	data, err := readSourceAdapterFile(path, maxSessionBytes)
 	if err != nil {
-		return nil, errors.New("read input")
-	}
-	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, maxSessionBytes+1))
-	if err != nil || len(data) > maxSessionBytes {
 		return nil, errors.New("read input")
 	}
 	return data, nil

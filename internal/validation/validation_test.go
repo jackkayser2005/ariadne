@@ -7,10 +7,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackkayser2005/ariadne/internal/browser"
 	"github.com/jackkayser2005/ariadne/internal/bundle"
 	"github.com/jackkayser2005/ariadne/internal/evidence"
 	"github.com/jackkayser2005/ariadne/internal/experiment"
 	"github.com/jackkayser2005/ariadne/internal/minimize"
+	"github.com/jackkayser2005/ariadne/internal/trace"
 )
 
 const testManifest = `{
@@ -95,6 +97,49 @@ func TestValidateRejectsMalformedAndAmbiguousArtifacts(t *testing.T) {
 		assertRejected(t, report, KindAndroidMinimization)
 	})
 
+	t.Run("malformed weather", func(t *testing.T) {
+		root := filepath.Join(t.TempDir(), "weather")
+		if err := os.Mkdir(root, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "weather.json"), []byte("{"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		report := Validate(root)
+		assertRejected(t, report, KindBrowserWeather)
+	})
+
+	t.Run("malformed trace archive", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "trace-archive.json")
+		if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		assertRejected(t, Validate(path), KindTraceArchive)
+	})
+
+	t.Run("malformed trace replication", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "trace-replication.json")
+		if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		assertRejected(t, Validate(path), KindTraceReplication)
+	})
+
+	t.Run("malformed trace case", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "trace-case.json")
+		if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		assertRejected(t, Validate(path), KindTraceCase)
+	})
+
+	t.Run("malformed trace study", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "trace-study.json")
+		if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		assertRejected(t, Validate(path), KindTraceStudy)
+	})
 	t.Run("nonregular replication marker", func(t *testing.T) {
 		root := t.TempDir()
 		if err := os.Mkdir(filepath.Join(root, "replication.json"), 0o700); err != nil {
@@ -106,6 +151,17 @@ func TestValidateRejectsMalformedAndAmbiguousArtifacts(t *testing.T) {
 	t.Run("ambiguous directory", func(t *testing.T) {
 		root := t.TempDir()
 		for _, name := range []string{"replication.json", "minimization.json"} {
+			if err := os.WriteFile(filepath.Join(root, name), []byte("{}"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		report := Validate(root)
+		assertRejected(t, report, KindUnknown)
+	})
+
+	t.Run("weather and replication are ambiguous", func(t *testing.T) {
+		root := t.TempDir()
+		for _, name := range []string{"weather.json", "replication.json"} {
 			if err := os.WriteFile(filepath.Join(root, name), []byte("{}"), 0o600); err != nil {
 				t.Fatal(err)
 			}
@@ -181,6 +237,407 @@ func TestValidateRejectsAncestorSymlink(t *testing.T) {
 	report := Validate(filepath.Join(linkParent, "manifest.json"))
 	assertRejected(t, report, KindManifest)
 }
+
+func TestValidateTraceArchive(t *testing.T) {
+	root := t.TempDir()
+	tracePath := filepath.Join(root, "trace.json")
+	sessionPath := filepath.Join(root, "session.json")
+	archivePath := filepath.Join(root, "trace-archive.json")
+	document := trace.Document{
+		SchemaVersion: 1,
+		Redacted:      true,
+		Scope:         "outbound",
+		Completeness:  trace.Complete,
+		Events: []trace.Event{{
+			Source:      "browser",
+			Channel:     "network",
+			Kind:        "request",
+			Destination: "analytics",
+			Fields:      []string{"region"},
+		}},
+	}
+	data, err := json.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(tracePath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := trace.SaveSession(tracePath, sessionPath, trace.SessionInput{
+		Adapter:         "browser-redacted-audit",
+		AdapterVersion:  1,
+		ProcedureSHA256: strings.Repeat("a", 64),
+		Role:            trace.RoleStandalone,
+		Order:           trace.OrderStandalone,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := trace.SaveArchive([]trace.ArchiveInput{{TracePath: tracePath, SessionPath: sessionPath}}, archivePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := Validate(archivePath)
+	if report.ArtifactKind != KindTraceArchive ||
+		report.Overall != StatusWarning ||
+		report.Identity != saved.ArchiveSHA256 ||
+		report.EvidenceState != evidence.Observed ||
+		report.Reason != ReasonProvenanceUnavailable ||
+		tierStatus(report, TierBoundary) != StatusUnavailable ||
+		tierStatus(report, TierReplay) != StatusPass {
+		t.Fatalf("report = %#v", report)
+	}
+}
+
+func TestReportFromTraceArchive(t *testing.T) {
+	summary := trace.ArchiveVerificationSummary{
+		SchemaVersion: 2,
+		OrderBasis:    "caller",
+		Entries:       2,
+		Complete:      2,
+		ArchiveSHA256: strings.Repeat("b", 64),
+	}
+	report := reportFromTraceArchive(summary)
+	if report.ArtifactKind != KindTraceArchive ||
+		report.Overall != StatusPass ||
+		report.Identity != summary.ArchiveSHA256 ||
+		report.EvidenceState != evidence.Observed ||
+		tierStatus(report, TierBoundary) != StatusPass ||
+		tierStatus(report, TierReplay) != StatusPass {
+		t.Fatalf("complete report = %#v", report)
+	}
+
+	summary.SchemaVersion = 1
+	report = reportFromTraceArchive(summary)
+	if report.Overall != StatusWarning || tierStatus(report, TierBoundary) != StatusUnavailable {
+		t.Fatalf("legacy report = %#v", report)
+	}
+
+	summary.Partial = 1
+	summary.Complete = 1
+	report = reportFromTraceArchive(summary)
+	if report.Overall != StatusUnknown ||
+		report.EvidenceState != evidence.Unknown ||
+		tierStatus(report, TierReplay) != StatusUnknown ||
+		report.Reason != ReasonIncompleteCapture {
+		t.Fatalf("partial report = %#v", report)
+	}
+}
+
+func TestValidateTraceReplication(t *testing.T) {
+	root := t.TempDir()
+	first := writeValidationReplicationPair(t, root, "first", trace.OrderBaselineTreatment)
+	second := writeValidationReplicationPair(t, root, "second", trace.OrderTreatmentBaseline)
+	ledgerPath := filepath.Join(root, "trace-replication.json")
+	saved, err := trace.SaveReplicationLedger([]trace.ReplicationPairInput{first, second}, ledgerPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := Validate(ledgerPath)
+	if report.ArtifactKind != KindTraceReplication ||
+		report.Overall != StatusWarning ||
+		report.Identity != saved.LedgerSHA256 ||
+		report.Outcome != string(trace.ReplicatedChange) ||
+		report.EvidenceState != evidence.Observed ||
+		report.Reason != ReasonProvenanceUnavailable ||
+		tierStatus(report, TierBoundary) != StatusUnavailable ||
+		tierStatus(report, TierReplay) != StatusPass {
+		t.Fatalf("report = %#v", report)
+	}
+}
+
+func TestValidateTraceCase(t *testing.T) {
+	root := t.TempDir()
+	tracePath := filepath.Join(root, "trace.json")
+	sessionPath := filepath.Join(root, "session.json")
+	archivePath := filepath.Join(root, "archive.json")
+	archiveRoundPath := filepath.Join(root, "archive-round.json")
+	casePath := filepath.Join(root, "trace-case.json")
+	document := trace.Document{
+		SchemaVersion: 1,
+		Redacted:      true,
+		Scope:         "outbound",
+		Completeness:  trace.Complete,
+		Events: []trace.Event{{
+			Source:      "browser",
+			Channel:     "network",
+			Kind:        "request",
+			Destination: "analytics",
+			Fields:      []string{"region"},
+		}},
+	}
+	data, err := json.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(tracePath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := trace.SaveSession(tracePath, sessionPath, trace.SessionInput{
+		Adapter:         "browser-redacted-audit",
+		AdapterVersion:  1,
+		ProcedureSHA256: strings.Repeat("a", 64),
+		Role:            trace.RoleStandalone,
+		Order:           trace.OrderStandalone,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := trace.SaveArchive([]trace.ArchiveInput{{TracePath: tracePath, SessionPath: sessionPath}, {TracePath: tracePath, SessionPath: sessionPath}}, archivePath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := trace.SaveArchiveQuestionRound(archivePath, archiveRoundPath); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := trace.SaveCase([]trace.CaseInput{{
+		Kind:              trace.CaseEntryTraceArchive,
+		ArtifactPath:      archivePath,
+		QuestionRoundPath: archiveRoundPath,
+	}}, casePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := Validate(casePath)
+	if report.ArtifactKind != KindTraceCase ||
+		report.Overall != StatusWarning ||
+		report.Identity != saved.CaseSHA256 ||
+		report.EvidenceState != evidence.Observed ||
+		report.Reason != ReasonProvenanceUnavailable ||
+		tierStatus(report, TierBoundary) != StatusUnavailable ||
+		tierStatus(report, TierReplay) != StatusPass {
+		t.Fatalf("report = %#v", report)
+	}
+}
+
+func TestReportFromTraceCase(t *testing.T) {
+	summary := trace.CaseVerificationSummary{
+		SchemaVersion: 1,
+		OrderBasis:    "caller",
+		Entries:       2,
+		Archives:      1,
+		Replications:  1,
+		CaseSHA256:    strings.Repeat("d", 64),
+	}
+	report := reportFromTraceCase(summary)
+	if report.ArtifactKind != KindTraceCase ||
+		report.Overall != StatusWarning ||
+		report.Identity != summary.CaseSHA256 ||
+		report.EvidenceState != evidence.Observed ||
+		tierStatus(report, TierBoundary) != StatusUnavailable ||
+		tierStatus(report, TierReplay) != StatusPass {
+		t.Fatalf("complete report = %#v", report)
+	}
+
+	summary.UnknownEntries = 1
+	report = reportFromTraceCase(summary)
+	if report.Overall != StatusUnknown ||
+		report.EvidenceState != evidence.Unknown ||
+		tierStatus(report, TierReplay) != StatusUnknown ||
+		report.Reason != ReasonIncompleteCapture {
+		t.Fatalf("incomplete report = %#v", report)
+	}
+}
+
+func TestReportFromTraceReplication(t *testing.T) {
+	summary := trace.ReplicationLedgerVerificationSummary{
+		SchemaVersion:          1,
+		Pairs:                  2,
+		BaselineTreatmentPairs: 1,
+		TreatmentBaselinePairs: 1,
+		ResetConfirmedPairs:    2,
+		CompletePairs:          2,
+		ChangedPairs:           2,
+		OrderBalanced:          true,
+		Outcome:                trace.ReplicatedChange,
+		EvidenceState:          evidence.Observed,
+		LedgerSHA256:           strings.Repeat("c", 64),
+	}
+	report := reportFromTraceReplication(summary)
+	if report.ArtifactKind != KindTraceReplication ||
+		report.Overall != StatusWarning ||
+		report.Identity != summary.LedgerSHA256 ||
+		report.Outcome != string(trace.ReplicatedChange) ||
+		report.EvidenceState != evidence.Observed ||
+		tierStatus(report, TierBoundary) != StatusUnavailable ||
+		tierStatus(report, TierReplay) != StatusPass {
+		t.Fatalf("complete report = %#v", report)
+	}
+
+	summary.UnknownPairs = 1
+	summary.CompletePairs = 1
+	summary.ResetConfirmedPairs = 1
+	summary.Outcome = trace.ReplicationUnknown
+	summary.EvidenceState = evidence.Unknown
+	report = reportFromTraceReplication(summary)
+	if report.Overall != StatusUnknown ||
+		report.EvidenceState != evidence.Unknown ||
+		tierStatus(report, TierReplay) != StatusUnknown ||
+		report.Reason != ReasonIncompleteCapture {
+		t.Fatalf("incomplete report = %#v", report)
+	}
+}
+
+func TestValidateTraceStudy(t *testing.T) {
+	root := t.TempDir()
+	firstBaseline := writeValidationReplicationPair(t, root, "first-a", trace.OrderBaselineTreatment)
+	firstTreatment := writeValidationReplicationPair(t, root, "first-b", trace.OrderTreatmentBaseline)
+	secondBaseline := writeValidationReplicationPair(t, root, "second-a", trace.OrderBaselineTreatment)
+	secondTreatment := writeValidationReplicationPair(t, root, "second-b", trace.OrderTreatmentBaseline)
+	firstLedgerPath := filepath.Join(root, "first-ledger.json")
+	secondLedgerPath := filepath.Join(root, "second-ledger.json")
+	firstRoundPath := filepath.Join(root, "first-round.json")
+	secondRoundPath := filepath.Join(root, "second-round.json")
+	if _, err := trace.SaveReplicationLedger([]trace.ReplicationPairInput{firstBaseline, firstTreatment}, firstLedgerPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := trace.SaveReplicationLedger([]trace.ReplicationPairInput{secondBaseline, secondTreatment}, secondLedgerPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := trace.SaveReplicationQuestionRound(firstLedgerPath, firstRoundPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := trace.SaveReplicationQuestionRound(secondLedgerPath, secondRoundPath); err != nil {
+		t.Fatal(err)
+	}
+	studyPath := filepath.Join(root, "trace-study.json")
+	saved, err := trace.SaveReplicationStudy(strings.Repeat("e", 64), []trace.StudyInput{
+		{LedgerPath: firstLedgerPath, RoundPath: firstRoundPath},
+		{LedgerPath: secondLedgerPath, RoundPath: secondRoundPath},
+	}, studyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := Validate(studyPath)
+	if report.ArtifactKind != KindTraceStudy ||
+		report.Overall != StatusWarning ||
+		report.Identity != saved.StudySHA256 ||
+		report.Outcome != string(trace.ReplicatedChange) ||
+		report.EvidenceState != evidence.Observed ||
+		report.Reason != ReasonProvenanceUnavailable ||
+		tierStatus(report, TierBoundary) != StatusUnavailable ||
+		tierStatus(report, TierReplay) != StatusPass {
+		t.Fatalf("report = %#v", report)
+	}
+}
+
+func TestReportFromTraceStudy(t *testing.T) {
+	summary := trace.StudyVerificationSummary{
+		Runs:          2,
+		Pairs:         4,
+		SupportedRuns: 2,
+		BalancedRuns:  2,
+		CompletePairs: 4,
+		Outcome:       trace.ReplicatedChange,
+		EvidenceState: evidence.Observed,
+		StudySHA256:   strings.Repeat("f", 64),
+	}
+	report := reportFromTraceStudy(summary)
+	if report.ArtifactKind != KindTraceStudy ||
+		report.Overall != StatusWarning ||
+		report.Identity != summary.StudySHA256 ||
+		report.Outcome != string(trace.ReplicatedChange) ||
+		report.EvidenceState != evidence.Observed ||
+		tierStatus(report, TierBoundary) != StatusUnavailable ||
+		tierStatus(report, TierReplay) != StatusPass {
+		t.Fatalf("complete report = %#v", report)
+	}
+
+	summary.UnknownRuns = 1
+	summary.SupportedRuns = 1
+	summary.EvidenceState = evidence.Unknown
+	summary.Outcome = trace.ReplicationUnknown
+	report = reportFromTraceStudy(summary)
+	if report.Overall != StatusUnknown ||
+		report.EvidenceState != evidence.Unknown ||
+		tierStatus(report, TierReplay) != StatusUnknown ||
+		report.Reason != ReasonIncompleteCapture {
+		t.Fatalf("incomplete report = %#v", report)
+	}
+}
+func writeValidationReplicationPair(t testing.TB, root, name, order string) trace.ReplicationPairInput {
+	t.Helper()
+	baselinePath := filepath.Join(root, name+"-baseline-trace.json")
+	treatmentPath := filepath.Join(root, name+"-treatment-trace.json")
+	baselineSessionPath := filepath.Join(root, name+"-baseline-session.json")
+	treatmentSessionPath := filepath.Join(root, name+"-treatment-session.json")
+	makeDocument := func(fields []string) trace.Document {
+		return trace.Document{
+			SchemaVersion: 1,
+			Redacted:      true,
+			Scope:         "outbound",
+			Completeness:  trace.Complete,
+			Events: []trace.Event{{
+				Source:      "browser",
+				Channel:     "network",
+				Kind:        "request",
+				Destination: "analytics",
+				Fields:      fields,
+			}},
+		}
+	}
+	treatmentFields := []string{"region", "consent"}
+	if strings.HasPrefix(name, "second") {
+		treatmentFields = []string{"region", "location"}
+	}
+	for path, document := range map[string]trace.Document{
+		baselinePath:  makeDocument([]string{"region"}),
+		treatmentPath: makeDocument(treatmentFields),
+	} {
+		data, err := json.Marshal(document)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := trace.SaveSessionPair(
+		baselinePath,
+		treatmentPath,
+		baselineSessionPath,
+		treatmentSessionPath,
+		trace.SessionPairInput{
+			Adapter:         "browser-redacted-audit",
+			AdapterVersion:  1,
+			ProcedureSHA256: strings.Repeat("a", 64),
+			Scope:           "outbound",
+			Order:           order,
+		},
+	); err != nil {
+		t.Fatal(err)
+	}
+	return trace.ReplicationPairInput{
+		BaselineTracePath:    baselinePath,
+		TreatmentTracePath:   treatmentPath,
+		BaselineSessionPath:  baselineSessionPath,
+		TreatmentSessionPath: treatmentSessionPath,
+		ResetConfirmed:       true,
+	}
+}
+
+func TestReportFromWeather(t *testing.T) {
+	review := browser.WeatherReview{
+		ReceiptSHA256: strings.Repeat("a", 64),
+		Ladder: minimize.LadderSummary{
+			EvidenceState:  evidence.Unknown,
+			SelectionState: minimize.SelectionUnknown,
+		},
+	}
+	report := reportFromWeather(review)
+	if report.ArtifactKind != KindBrowserWeather || report.Identity != strings.Repeat("a", 64) ||
+		report.Overall != StatusUnknown || report.SelectionState != string(minimize.SelectionUnknown) ||
+		tierStatus(report, TierBoundary) != StatusPass || tierStatus(report, TierReplay) != StatusUnknown {
+		t.Fatalf("unknown weather report = %#v", report)
+	}
+
+	review.Ladder.EvidenceState = evidence.Observed
+	review.Ladder.SelectionState = minimize.SelectionSelected
+	review.Ladder.SelectedCandidate = "coarse"
+	report = reportFromWeather(review)
+	if report.Overall != StatusPass || report.SelectionState != string(minimize.SelectionSelected) ||
+		report.SelectedCandidate != "coarse" || tierStatus(report, TierReplay) != StatusPass {
+		t.Fatalf("selected weather report = %#v", report)
+	}
+}
+
 func TestReportFromReplication(t *testing.T) {
 	base := bundle.ReplicatedExperimentSummary{
 		ReceiptSHA256:    strings.Repeat("a", 64),
