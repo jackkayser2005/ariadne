@@ -357,6 +357,13 @@ func shiftSession(t *testing.T, path string, delta time.Duration) {
 		record.Steps[index].StartedAt = record.Steps[index].StartedAt.Add(delta)
 		record.Steps[index].FinishedAt = record.Steps[index].FinishedAt.Add(delta)
 	}
+	if record.SchemaVersion == adb.AuthenticatedSessionSchemaVersion {
+		binding, err := adb.SessionBindingSHA256(record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		record.BindingSHA256 = binding
+	}
 	data, err = json.MarshalIndent(record, "", "  ")
 	if err != nil {
 		t.Fatal(err)
@@ -686,5 +693,84 @@ func TestVerifyReplicatedBindsCanonicalProvenanceDigest(t *testing.T) {
 	writeReplicatedRecordForTest(t, root, record)
 	if _, err := VerifyReplicated(root); err == nil {
 		t.Fatal("VerifyReplicated() accepted a mismatched provenance digest")
+	}
+}
+
+func TestVerifyReplicatedAuthenticatedEnvelopeBindsEvidence(t *testing.T) {
+	root := makeAuthenticatedAcceptanceReplication(t)
+	summary, err := VerifyReplicated(root)
+	if err != nil {
+		t.Fatalf("VerifyReplicated() error = %v", err)
+	}
+	if summary.SchemaVersion != adb.AuthenticatedReplicatedRunSchemaVersion || summary.BindingSHA256 == "" {
+		t.Fatalf("authenticated summary = %#v", summary)
+	}
+	data, err := os.ReadFile(filepath.Join(root, "replication.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record adb.ReplicatedRunRecord
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatal(err)
+	}
+	expected, err := replicatedEvidenceBindingSHA256(record, data, summary.PairSummaries)
+	if err != nil || summary.BindingSHA256 != expected {
+		t.Fatalf("evidence binding = %q, expected %q, error = %v", summary.BindingSHA256, expected, err)
+	}
+
+	record.Pairs[0].BindingSHA256 = strings.Repeat("0", 64)
+	writeReplicatedRecordForTest(t, root, record)
+	if _, err := VerifyReplicated(root); err == nil {
+		t.Fatal("VerifyReplicated() accepted a tampered pair binding")
+	}
+}
+
+func TestVerifyReplicatedAuthenticatedEnvelopeRejectsSessionTamper(t *testing.T) {
+	root := makeAuthenticatedAcceptanceReplication(t)
+	path := filepath.Join(root, "pair-001-baseline-treatment", "baseline", "session.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record adb.SessionRecord
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatal(err)
+	}
+	record.FinishedAt = record.FinishedAt.Add(time.Second)
+	data, err = json.MarshalIndent(record, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(data, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyReplicated(root); err == nil {
+		t.Fatal("VerifyReplicated() accepted a tampered session binding")
+	}
+}
+
+func TestVerifyReplicatedRejectsLegacySessionInAuthenticatedPair(t *testing.T) {
+	root := makeAuthenticatedAcceptanceReplication(t)
+	path := filepath.Join(root, "pair-001-baseline-treatment", "baseline", "session.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record adb.SessionRecord
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatal(err)
+	}
+	record.SchemaVersion = 8
+	record.ResetPolicy = ""
+	record.BindingSHA256 = ""
+	data, err = json.MarshalIndent(record, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(data, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyReplicated(root); err == nil || !strings.Contains(err.Error(), "binding is unavailable") {
+		t.Fatalf("VerifyReplicated() error = %v, want unavailable session binding", err)
 	}
 }

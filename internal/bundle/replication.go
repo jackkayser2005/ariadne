@@ -14,6 +14,7 @@ import (
 	"github.com/jackkayser2005/ariadne/internal/adb"
 	"github.com/jackkayser2005/ariadne/internal/evidence"
 	"github.com/jackkayser2005/ariadne/internal/jsoncheck"
+	"github.com/jackkayser2005/ariadne/internal/provenance"
 	portabletrace "github.com/jackkayser2005/ariadne/internal/trace"
 )
 
@@ -42,6 +43,7 @@ type ReplicatedPairSummary struct {
 	Differences    int            `json:"differences"`
 	Unknowns       int            `json:"unknowns"`
 	EvidenceSHA256 string         `json:"evidence_sha256,omitempty"`
+	BindingSHA256  string         `json:"binding_sha256,omitempty"`
 }
 
 // ReplicatedExperimentSummary is a raw-value-free aggregate verification result.
@@ -51,6 +53,7 @@ type ReplicatedExperimentSummary struct {
 	DeclaredVariable       string                  `json:"declared_variable"`
 	ReceiptSHA256          string                  `json:"receipt_sha256"`
 	ProvenanceSHA256       string                  `json:"provenance_sha256,omitempty"`
+	BindingSHA256          string                  `json:"binding_sha256,omitempty"`
 	Pairs                  int                     `json:"pairs"`
 	PairsPerOrder          int                     `json:"pairs_per_order"`
 	BaselineTreatmentPairs int                     `json:"baseline_treatment_pairs"`
@@ -103,6 +106,15 @@ func VerifyReplicated(rootDir string) (ReplicatedExperimentSummary, error) {
 			if err != nil {
 				return ReplicatedExperimentSummary{}, err
 			}
+			if record.SchemaVersion == adb.AuthenticatedReplicatedRunSchemaVersion {
+				if summary.ManifestContractSHA256 != record.ManifestContractSHA256 {
+					return ReplicatedExperimentSummary{}, errors.New("replication pair manifest contract disagrees")
+				}
+				expectedPairBinding, err := adb.ReplicatedPairBindingSHA256(record, pair)
+				if err != nil || expectedPairBinding != pair.BindingSHA256 {
+					return ReplicatedExperimentSummary{}, errors.New("replication pair binding does not match metadata")
+				}
+			}
 			if summary.ManifestName != record.ManifestName ||
 				summary.DeclaredVariable != record.DeclaredVariable {
 				return ReplicatedExperimentSummary{}, errors.New("replication pair manifest metadata disagrees")
@@ -122,6 +134,7 @@ func VerifyReplicated(rootDir string) (ReplicatedExperimentSummary, error) {
 			result.Differences = summary.Differences
 			result.Unknowns = summary.Unknowns
 			result.EvidenceSHA256 = summary.EvidenceSHA256
+			result.BindingSHA256 = pair.BindingSHA256
 			result.EvidenceState = replicatedEvidenceState(summary)
 			if result.Unknowns > 0 || result.EvidenceState == evidence.Unknown {
 				result.Outcome = replicatedPairOutcomeUnknown
@@ -157,7 +170,7 @@ func VerifyReplicated(rootDir string) (ReplicatedExperimentSummary, error) {
 		verifiedProvenanceSHA256 = record.ProvenanceSHA256
 	}
 	result := ReplicatedExperimentSummary{
-		SchemaVersion:          adb.ReplicatedRunSchemaVersion,
+		SchemaVersion:          record.SchemaVersion,
 		ManifestName:           record.ManifestName,
 		DeclaredVariable:       record.DeclaredVariable,
 		ReceiptSHA256:          digestSHA256(receiptData),
@@ -183,9 +196,53 @@ func VerifyReplicated(rootDir string) (ReplicatedExperimentSummary, error) {
 	result.ChangedPairs = classification.ChangedPairs
 	result.NoChangePairs = classification.NoChangePairs
 	result.UnknownPairs = classification.UnknownPairs
+	if record.SchemaVersion == adb.AuthenticatedReplicatedRunSchemaVersion &&
+		record.Status == adb.ReplicationStatusComplete {
+		binding, err := replicatedEvidenceBindingSHA256(record, receiptData, pairSummaries)
+		if err != nil {
+			return ReplicatedExperimentSummary{}, err
+		}
+		result.BindingSHA256 = binding
+	}
 	return result, nil
 }
 
+func replicatedEvidenceBindingSHA256(
+	record adb.ReplicatedRunRecord,
+	receiptData []byte,
+	pairs []ReplicatedPairSummary,
+) (string, error) {
+	references := make([]provenance.EvidencePairReference, 0, len(pairs))
+	for _, pair := range pairs {
+		references = append(references, provenance.EvidencePairReference{
+			Pair:              pair.Pair,
+			Order:             pair.Order,
+			PairBindingSHA256: pair.BindingSHA256,
+			EvidenceSHA256:    pair.EvidenceSHA256,
+		})
+	}
+	binding := provenance.EvidenceBinding{
+		SchemaVersion:          provenance.BindingSchemaVersion,
+		Kind:                   provenance.EvidenceBindingKind,
+		Source:                 adb.ReplicationSource,
+		Adapter:                adb.ReplicationAdapter,
+		AdapterVersion:         adb.ReplicationAdapterVersion,
+		Scope:                  adb.ReplicationScope,
+		ManifestName:           record.ManifestName,
+		DeclaredVariable:       record.DeclaredVariable,
+		ManifestContractSHA256: record.ManifestContractSHA256,
+		ProvenanceSHA256:       record.ProvenanceSHA256,
+		ResetPolicy:            record.ResetPolicy,
+		RootBindingSHA256:      record.BindingSHA256,
+		ReceiptSHA256:          digestSHA256(receiptData),
+		Pairs:                  references,
+	}
+	digest, err := binding.SHA256()
+	if err != nil {
+		return "", fmt.Errorf("replication evidence binding: %w", err)
+	}
+	return digest, nil
+}
 func readReplicatedRecord(rootDir string) (adb.ReplicatedRunRecord, []byte, error) {
 	if strings.TrimSpace(rootDir) == "" {
 		return adb.ReplicatedRunRecord{}, nil, errors.New("replicated run directory is required")
@@ -211,13 +268,23 @@ func readReplicatedRecord(rootDir string) (adb.ReplicatedRunRecord, []byte, erro
 }
 
 func validateReplicatedRecord(rootDir string, record adb.ReplicatedRunRecord) error {
-	if record.SchemaVersion != adb.ReplicatedRunSchemaVersion ||
+	if (record.SchemaVersion != adb.ReplicatedRunSchemaVersion &&
+		record.SchemaVersion != adb.AuthenticatedReplicatedRunSchemaVersion) ||
 		!validMetadataValue(record.ManifestName) ||
 		!validMetadataValue(record.DeclaredVariable) {
 		return errors.New("replication metadata is invalid")
 	}
-	if record.ProvenanceSHA256 != "" && !validDigest(record.ProvenanceSHA256) {
-		return errors.New("replication metadata provenance is invalid")
+	if record.SchemaVersion == adb.AuthenticatedReplicatedRunSchemaVersion {
+		if !validDigest(record.ManifestContractSHA256) || !validDigest(record.ProvenanceSHA256) {
+			return errors.New("authenticated replication provenance is invalid")
+		}
+	} else {
+		if record.ManifestContractSHA256 != "" || record.BindingSHA256 != "" {
+			return errors.New("legacy replication binding fields are invalid")
+		}
+		if record.ProvenanceSHA256 != "" && !validDigest(record.ProvenanceSHA256) {
+			return errors.New("replication metadata provenance is invalid")
+		}
 	}
 	if record.PairsPerOrder < 1 || record.PairsPerOrder > 8 ||
 		record.ResetPolicy != adb.ReplicationResetPolicy {
@@ -231,10 +298,13 @@ func validateReplicatedRecord(rootDir string, record adb.ReplicatedRunRecord) er
 	if record.CompletedPairs < 0 || record.CompletedPairs > record.PairsPerOrder*2 {
 		return errors.New("replication metadata completed_pairs is invalid")
 	}
+	if record.Status == adb.ReplicationStatusIncomplete && record.BindingSHA256 != "" {
+		return errors.New("incomplete replication binding is invalid")
+	}
 	seen := make(map[string]struct{}, len(record.Pairs))
 	completeCount := 0
 	failureMatches := false
-	for _, pair := range record.Pairs {
+	for index, pair := range record.Pairs {
 		if pair.Pair < 1 || pair.Pair > record.PairsPerOrder ||
 			(pair.Order != adb.ReplicationOrderBaselineTreatment &&
 				pair.Order != adb.ReplicationOrderTreatmentBaseline) {
@@ -246,6 +316,33 @@ func validateReplicatedRecord(rootDir string, record adb.ReplicatedRunRecord) er
 			(pair.Status != adb.ReplicationStatusComplete &&
 				pair.Status != adb.ReplicationStatusIncomplete) {
 			return errors.New("replication pair metadata is invalid")
+		}
+		if record.Status == adb.ReplicationStatusComplete {
+			expectedPair := index/2 + 1
+			expectedOrder := adb.ReplicationOrderBaselineTreatment
+			if index%2 == 1 {
+				expectedOrder = adb.ReplicationOrderTreatmentBaseline
+			}
+			if pair.Pair != expectedPair || pair.Order != expectedOrder {
+				return errors.New("replication pair ordering is invalid")
+			}
+		}
+		if record.SchemaVersion == adb.AuthenticatedReplicatedRunSchemaVersion {
+			if pair.Status == adb.ReplicationStatusComplete {
+				if !validDigest(pair.FirstSessionBindingSHA256) ||
+					!validDigest(pair.SecondSessionBindingSHA256) ||
+					!validDigest(pair.BindingSHA256) {
+					return errors.New("authenticated replication pair binding is invalid")
+				}
+			} else if pair.FirstSessionBindingSHA256 != "" ||
+				pair.SecondSessionBindingSHA256 != "" ||
+				pair.BindingSHA256 != "" {
+				return errors.New("incomplete replication pair binding is invalid")
+			}
+		} else if pair.FirstSessionBindingSHA256 != "" ||
+			pair.SecondSessionBindingSHA256 != "" ||
+			pair.BindingSHA256 != "" {
+			return errors.New("legacy replication pair binding fields are invalid")
 		}
 		key := replicatedPairKey(pair.Pair, pair.Order)
 		if _, ok := seen[key]; ok {
@@ -274,6 +371,12 @@ func validateReplicatedRecord(rootDir string, record adb.ReplicatedRunRecord) er
 			record.FailurePair != 0 || record.FailureOrder != "" {
 			return errors.New("complete replication metadata is incomplete")
 		}
+		if record.SchemaVersion == adb.AuthenticatedReplicatedRunSchemaVersion {
+			expectedBinding, err := adb.ReplicatedBindingSHA256(record)
+			if err != nil || expectedBinding != record.BindingSHA256 {
+				return errors.New("authenticated replication binding does not match metadata")
+			}
+		}
 	} else {
 		if record.FailurePair < 1 || record.FailurePair > record.PairsPerOrder ||
 			!failureMatches {
@@ -282,7 +385,6 @@ func validateReplicatedRecord(rootDir string, record adb.ReplicatedRunRecord) er
 	}
 	return nil
 }
-
 func validPairSessions(pair adb.ReplicatedPairRecord) bool {
 	if pair.Order == adb.ReplicationOrderBaselineTreatment {
 		return pair.FirstSession == "baseline" && pair.SecondSession == "treatment"
@@ -298,6 +400,22 @@ func verifyReplicatedPair(pairDir string, pair adb.ReplicatedPairRecord) (Summar
 	second, err := loadSession(pairDir, pair.SecondSession)
 	if err != nil {
 		return Summary{}, fmt.Errorf("replication pair %d %s: %w", pair.Pair, pair.Order, err)
+	}
+	if pair.FirstSessionBindingSHA256 != "" ||
+		pair.SecondSessionBindingSHA256 != "" ||
+		pair.BindingSHA256 != "" {
+		if first.record.SchemaVersion != adb.AuthenticatedSessionSchemaVersion ||
+			second.record.SchemaVersion != adb.AuthenticatedSessionSchemaVersion {
+			return Summary{}, errors.New("replication pair session binding is unavailable")
+		}
+		firstBinding, err := adb.SessionBindingSHA256(first.record)
+		if err != nil || firstBinding != pair.FirstSessionBindingSHA256 {
+			return Summary{}, errors.New("replication pair first session binding disagrees")
+		}
+		secondBinding, err := adb.SessionBindingSHA256(second.record)
+		if err != nil || secondBinding != pair.SecondSessionBindingSHA256 {
+			return Summary{}, errors.New("replication pair second session binding disagrees")
+		}
 	}
 	if first.record.SchemaVersion >= 8 &&
 		(first.record.Order != pair.Order || second.record.Order != pair.Order) {

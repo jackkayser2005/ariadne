@@ -1789,11 +1789,21 @@ func writeSession(
 	if schemaVersion >= 6 {
 		record.ManifestContractSHA256 = strings.Repeat("c", 64)
 	}
+	if schemaVersion >= adb.AuthenticatedSessionSchemaVersion {
+		record.ResetPolicy = adb.ReplicationResetPolicy
+	}
 	if schemaVersion >= 3 {
 		record.Status = "complete"
 	}
 	if mutate != nil {
 		mutate(&record)
+	}
+	if schemaVersion == adb.AuthenticatedSessionSchemaVersion {
+		binding, err := adb.SessionBindingSHA256(record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		record.BindingSHA256 = binding
 	}
 	data, err := json.MarshalIndent(record, "", "  ")
 	if err != nil {

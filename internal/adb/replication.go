@@ -18,6 +18,8 @@ import (
 const (
 	// ReplicatedRunSchemaVersion is the root replication receipt schema.
 	ReplicatedRunSchemaVersion = 1
+	// AuthenticatedReplicatedRunSchemaVersion is the root schema with execution bindings.
+	AuthenticatedReplicatedRunSchemaVersion = 2
 	// ReplicationOrderBaselineTreatment records baseline-first execution.
 	ReplicationOrderBaselineTreatment = "baseline-treatment"
 	// ReplicationOrderTreatmentBaseline records treatment-first execution.
@@ -42,17 +44,19 @@ const (
 // ReplicatedRunRecord records the safe execution contract for a replicated run.
 // It contains no persona values or captured observations.
 type ReplicatedRunRecord struct {
-	SchemaVersion    int                    `json:"schema_version"`
-	ManifestName     string                 `json:"manifest_name"`
-	DeclaredVariable string                 `json:"declared_variable"`
-	PairsPerOrder    int                    `json:"pairs_per_order"`
-	ResetPolicy      string                 `json:"reset_policy"`
-	ProvenanceSHA256 string                 `json:"provenance_sha256,omitempty"`
-	Status           string                 `json:"status"`
-	CompletedPairs   int                    `json:"completed_pairs"`
-	FailurePair      int                    `json:"failure_pair,omitempty"`
-	FailureOrder     string                 `json:"failure_order,omitempty"`
-	Pairs            []ReplicatedPairRecord `json:"pairs"`
+	SchemaVersion          int                    `json:"schema_version"`
+	ManifestName           string                 `json:"manifest_name"`
+	DeclaredVariable       string                 `json:"declared_variable"`
+	ManifestContractSHA256 string                 `json:"manifest_contract_sha256,omitempty"`
+	PairsPerOrder          int                    `json:"pairs_per_order"`
+	ResetPolicy            string                 `json:"reset_policy"`
+	ProvenanceSHA256       string                 `json:"provenance_sha256,omitempty"`
+	BindingSHA256          string                 `json:"binding_sha256,omitempty"`
+	Status                 string                 `json:"status"`
+	CompletedPairs         int                    `json:"completed_pairs"`
+	FailurePair            int                    `json:"failure_pair,omitempty"`
+	FailureOrder           string                 `json:"failure_order,omitempty"`
+	Pairs                  []ReplicatedPairRecord `json:"pairs"`
 }
 
 // ReplicationProvenance returns the canonical adapter boundary for an
@@ -84,12 +88,15 @@ func ReplicationProvenanceSHA256(manifestContractSHA256 string) (string, error) 
 
 // ReplicatedPairRecord identifies one matched pair and its execution order.
 type ReplicatedPairRecord struct {
-	Pair          int    `json:"pair"`
-	Order         string `json:"order"`
-	Directory     string `json:"directory"`
-	FirstSession  string `json:"first_session"`
-	SecondSession string `json:"second_session"`
-	Status        string `json:"status"`
+	Pair                       int    `json:"pair"`
+	Order                      string `json:"order"`
+	Directory                  string `json:"directory"`
+	FirstSession               string `json:"first_session"`
+	SecondSession              string `json:"second_session"`
+	FirstSessionBindingSHA256  string `json:"first_session_binding_sha256,omitempty"`
+	SecondSessionBindingSHA256 string `json:"second_session_binding_sha256,omitempty"`
+	BindingSHA256              string `json:"binding_sha256,omitempty"`
+	Status                     string `json:"status"`
 }
 
 // RunReplicated executes matched pairs in both orders, resetting before each session.
@@ -191,8 +198,12 @@ func runReplicatedWithMode(
 	); err != nil {
 		return err
 	}
+	recordSchemaVersion := ReplicatedRunSchemaVersion
+	manifestContractSHA256 := ""
 	provenanceSHA256 := ""
 	if authDependencies != nil {
+		recordSchemaVersion = AuthenticatedReplicatedRunSchemaVersion
+		manifestContractSHA256 = manifest.ContractDigest()
 		var err error
 		provenanceSHA256, err = ReplicationProvenanceSHA256(manifest.ContractDigest())
 		if err != nil {
@@ -207,14 +218,15 @@ func runReplicatedWithMode(
 	}
 
 	record := ReplicatedRunRecord{
-		SchemaVersion:    ReplicatedRunSchemaVersion,
-		ManifestName:     manifest.Name,
-		DeclaredVariable: manifest.Variable,
-		PairsPerOrder:    pairs,
-		ResetPolicy:      ReplicationResetPolicy,
-		ProvenanceSHA256: provenanceSHA256,
-		Status:           ReplicationStatusIncomplete,
-		Pairs:            make([]ReplicatedPairRecord, 0, pairs*2),
+		SchemaVersion:          recordSchemaVersion,
+		ManifestName:           manifest.Name,
+		DeclaredVariable:       manifest.Variable,
+		ManifestContractSHA256: manifestContractSHA256,
+		PairsPerOrder:          pairs,
+		ResetPolicy:            ReplicationResetPolicy,
+		ProvenanceSHA256:       provenanceSHA256,
+		Status:                 ReplicationStatusIncomplete,
+		Pairs:                  make([]ReplicatedPairRecord, 0, pairs*2),
 	}
 	orders := []struct {
 		name          string
@@ -274,6 +286,9 @@ func runReplicatedWithMode(
 					now,
 				)
 			}
+			if err == nil && authDependencies != nil {
+				pairRecord, err = bindReplicatedPair(outputDir, record, pairRecord)
+			}
 			if err != nil {
 				record.FailurePair = pair
 				record.FailureOrder = order.name
@@ -287,6 +302,13 @@ func runReplicatedWithMode(
 			pairRecord.Status = ReplicationStatusComplete
 			record.Pairs = append(record.Pairs, pairRecord)
 			record.CompletedPairs = completedPairCount(record.Pairs)
+		}
+	}
+	if authDependencies != nil {
+		var err error
+		record.BindingSHA256, err = ReplicatedBindingSHA256(record)
+		if err != nil {
+			return fmt.Errorf("replication provenance: %w", err)
 		}
 	}
 	record.Status = ReplicationStatusComplete
@@ -320,10 +342,54 @@ func completedPairCount(pairs []ReplicatedPairRecord) int {
 }
 
 func writeReplicatedRecord(outputDir string, record ReplicatedRunRecord) error {
+	if record.SchemaVersion != ReplicatedRunSchemaVersion &&
+		record.SchemaVersion != AuthenticatedReplicatedRunSchemaVersion {
+		return errors.New("replication schema version is invalid")
+	}
 	if !validReplicationMetadata(record.ManifestName) ||
-		!validReplicationMetadata(record.DeclaredVariable) ||
-		(record.ProvenanceSHA256 != "" && !validSHA256(record.ProvenanceSHA256)) {
+		!validReplicationMetadata(record.DeclaredVariable) {
 		return errors.New("replication metadata is invalid")
+	}
+	if record.SchemaVersion == AuthenticatedReplicatedRunSchemaVersion {
+		if !validSHA256(record.ManifestContractSHA256) ||
+			!validSHA256(record.ProvenanceSHA256) ||
+			(record.Status == ReplicationStatusComplete && !validSHA256(record.BindingSHA256)) ||
+			(record.Status == ReplicationStatusIncomplete && record.BindingSHA256 != "") {
+			return errors.New("authenticated replication binding is invalid")
+		}
+	} else if record.ManifestContractSHA256 != "" || record.BindingSHA256 != "" {
+		return errors.New("legacy replication binding fields are invalid")
+	} else if record.ProvenanceSHA256 != "" && !validSHA256(record.ProvenanceSHA256) {
+		return errors.New("replication metadata provenance is invalid")
+	}
+	for _, pair := range record.Pairs {
+		expectedDirectory := fmt.Sprintf("pair-%03d-%s", pair.Pair, pair.Order)
+		if pair.Pair < 1 || pair.Pair > maxReplicatedPairs ||
+			(pair.Order != ReplicationOrderBaselineTreatment &&
+				pair.Order != ReplicationOrderTreatmentBaseline) ||
+			pair.Directory != expectedDirectory ||
+			!validPairSessionsForOrder(pair) ||
+			(pair.Status != ReplicationStatusComplete && pair.Status != ReplicationStatusIncomplete) {
+			return errors.New("replication pair metadata is invalid")
+		}
+		if record.SchemaVersion == AuthenticatedReplicatedRunSchemaVersion {
+			if pair.Status == ReplicationStatusComplete &&
+				(!validSHA256(pair.FirstSessionBindingSHA256) ||
+					!validSHA256(pair.SecondSessionBindingSHA256) ||
+					!validSHA256(pair.BindingSHA256)) {
+				return errors.New("authenticated replication pair binding is invalid")
+			}
+			if pair.Status == ReplicationStatusIncomplete &&
+				(pair.FirstSessionBindingSHA256 != "" ||
+					pair.SecondSessionBindingSHA256 != "" ||
+					pair.BindingSHA256 != "") {
+				return errors.New("incomplete replication pair binding is invalid")
+			}
+		} else if pair.FirstSessionBindingSHA256 != "" ||
+			pair.SecondSessionBindingSHA256 != "" ||
+			pair.BindingSHA256 != "" {
+			return errors.New("legacy replication pair binding fields are invalid")
+		}
 	}
 	data, _ := json.MarshalIndent(record, "", "  ")
 	data = append(data, '\n')
@@ -352,6 +418,12 @@ func writeReplicatedRecord(outputDir string, record ReplicatedRunRecord) error {
 	return nil
 }
 
+func validPairSessionsForOrder(pair ReplicatedPairRecord) bool {
+	if pair.Order == ReplicationOrderBaselineTreatment {
+		return pair.FirstSession == "baseline" && pair.SecondSession == "treatment"
+	}
+	return pair.FirstSession == "treatment" && pair.SecondSession == "baseline"
+}
 func validReplicationMetadata(value string) bool {
 	return value != "" &&
 		len(value) <= 1024 &&

@@ -48,6 +48,8 @@ type SessionRecord struct {
 	Role                   string       `json:"role,omitempty"`
 	Order                  string       `json:"order,omitempty"`
 	ProcedureSHA256        string       `json:"procedure_sha256,omitempty"`
+	ResetPolicy            string       `json:"reset_policy,omitempty"`
+	BindingSHA256          string       `json:"binding_sha256,omitempty"`
 	ADBVersion             string       `json:"adb_version"`
 	Device                 string       `json:"device"`
 	Package                string       `json:"package"`
@@ -386,6 +388,7 @@ func runSessionWithAuth(
 		record.Role = kind
 		record.Order = auth.order
 		record.ProcedureSHA256 = record.ManifestContractSHA256
+		record.ResetPolicy = ReplicationResetPolicy
 	}
 
 	reset, output, err := runStep(
@@ -917,6 +920,13 @@ func finishSession(
 		record.FailureStage = failureStage
 	}
 	record.FinishedAt = now().UTC()
+	if record.SchemaVersion >= authenticatedSessionSchema {
+		binding, err := SessionBindingSHA256(*record)
+		if err != nil {
+			return fmt.Errorf("canonicalize session binding: %w", err)
+		}
+		record.BindingSHA256 = binding
+	}
 	data, err := json.MarshalIndent(record, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode session metadata: %w", err)

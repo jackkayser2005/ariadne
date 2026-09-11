@@ -46,6 +46,7 @@ type AndroidAcceptanceRecord struct {
 	RunUnknowns                    int               `json:"run_unknowns"`
 	ReplicationReceiptSHA256       string            `json:"replication_receipt_sha256"`
 	ReplicationProvenanceSHA256    string            `json:"replication_provenance_sha256"`
+	ReplicationBindingSHA256       string            `json:"replication_binding_sha256,omitempty"`
 	Outcome                        ReplicatedOutcome `json:"outcome"`
 	EvidenceState                  evidence.State    `json:"evidence_state"`
 	PairsPerOrder                  int               `json:"pairs_per_order"`
@@ -75,6 +76,7 @@ type AndroidAcceptanceVerificationSummary struct {
 	RunEvidenceSHA256           string            `json:"run_evidence_sha256"`
 	ReplicationReceiptSHA256    string            `json:"replication_receipt_sha256"`
 	ReplicationProvenanceSHA256 string            `json:"replication_provenance_sha256"`
+	ReplicationBindingSHA256    string            `json:"replication_binding_sha256,omitempty"`
 	Outcome                     ReplicatedOutcome `json:"outcome"`
 	EvidenceState               evidence.State    `json:"evidence_state"`
 	QuestionID                  string            `json:"question_id"`
@@ -191,6 +193,7 @@ func SaveAndroidAcceptanceRecord(runDir, replicationDir, exportPath, reflectionP
 		RunUnknowns:                    runSummary.Unknowns,
 		ReplicationReceiptSHA256:       replicationSummary.ReceiptSHA256,
 		ReplicationProvenanceSHA256:    replicationSummary.ProvenanceSHA256,
+		ReplicationBindingSHA256:       replicationSummary.BindingSHA256,
 		Outcome:                        replicationSummary.Outcome,
 		EvidenceState:                  replicationSummary.EvidenceState,
 		PairsPerOrder:                  replicationSummary.PairsPerOrder,
@@ -276,6 +279,9 @@ func validateAndroidAcceptanceRecord(record AndroidAcceptanceRecord) error {
 			return fmt.Errorf("%s is invalid", name)
 		}
 	}
+	if record.ReplicationBindingSHA256 != "" && !validDigest(record.ReplicationBindingSHA256) {
+		return errors.New("replication_binding_sha256 is invalid")
+	}
 	if record.RunDifferences != 1 || record.RunUnknowns != 0 ||
 		record.Outcome != ReplicatedChange ||
 		record.EvidenceState != evidence.Observed ||
@@ -339,6 +345,10 @@ func validateAndroidAcceptanceInputs(
 	if err != nil || replication.ProvenanceSHA256 != expectedProvenance {
 		return errors.New("android acceptance replication provenance does not match the run")
 	}
+	if replication.SchemaVersion == adb.AuthenticatedReplicatedRunSchemaVersion &&
+		!validDigest(replication.BindingSHA256) {
+		return errors.New("android acceptance replication binding is unavailable")
+	}
 	if export.SourceEvidenceSHA256 != run.EvidenceSHA256 ||
 		!validDigest(export.ExportSHA256) {
 		return errors.New("android acceptance export does not match the run")
@@ -388,20 +398,33 @@ func requireAuthenticatedAndroidReplication(rootDir string) error {
 	if err != nil {
 		return fmt.Errorf("authenticated replication metadata: %w", err)
 	}
-	if record.ProvenanceSHA256 == "" {
+	if record.SchemaVersion != adb.AuthenticatedReplicatedRunSchemaVersion {
+		return errors.New("authenticated replication binding is unavailable")
+	}
+	if !validDigest(record.ManifestContractSHA256) {
+		return errors.New("authenticated replication binding is unavailable")
+	}
+	if record.ProvenanceSHA256 == "" || !validDigest(record.ProvenanceSHA256) {
 		return errors.New("authenticated replication provenance is unavailable")
+	}
+	if !validDigest(record.BindingSHA256) {
+		return errors.New("authenticated replication binding is unavailable")
+	}
+	expectedBinding, err := adb.ReplicatedBindingSHA256(record)
+	if err != nil || expectedBinding != record.BindingSHA256 {
+		return errors.New("authenticated replication binding is invalid")
 	}
 	seen := make(map[string]struct{}, len(record.Pairs)*2)
 	for _, pair := range record.Pairs {
 		if pair.Status != adb.ReplicationStatusComplete {
-			continue
+			return errors.New("authenticated replication is incomplete")
 		}
 		for _, kind := range []string{pair.FirstSession, pair.SecondSession} {
 			session, err := loadSession(filepath.Join(rootDir, pair.Directory), kind)
 			if err != nil {
 				return fmt.Errorf("authenticated replication session: %w", err)
 			}
-			if session.record.SchemaVersion < 8 {
+			if session.record.SchemaVersion != adb.AuthenticatedSessionSchemaVersion {
 				return errors.New("authenticated replication session boundary is unavailable")
 			}
 			if _, exists := seen[session.record.ChallengeCommitment]; exists {
@@ -412,7 +435,6 @@ func requireAuthenticatedAndroidReplication(rootDir string) error {
 	}
 	return nil
 }
-
 func requireAndroidAcceptanceReplicationBinding(rootDir string, run Summary) error {
 	record, _, err := readReplicatedRecord(rootDir)
 	if err != nil {
@@ -456,6 +478,7 @@ func androidAcceptanceVerificationSummary(record AndroidAcceptanceRecord, accept
 		RunEvidenceSHA256:           record.RunEvidenceSHA256,
 		ReplicationReceiptSHA256:    record.ReplicationReceiptSHA256,
 		ReplicationProvenanceSHA256: record.ReplicationProvenanceSHA256,
+		ReplicationBindingSHA256:    record.ReplicationBindingSHA256,
 		Outcome:                     record.Outcome,
 		EvidenceState:               record.EvidenceState,
 		QuestionID:                  record.QuestionID,

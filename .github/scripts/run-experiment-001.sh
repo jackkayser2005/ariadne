@@ -46,8 +46,8 @@ replicated_verify_json="${RUNNER_TEMP}/ariadne-replicated-verify.json"
 "${ariadne}" experiment replicate verify --json \
   "${replicated_dir}" >"${replicated_verify_json}"
 jq -e '
-  (keys_unsorted == ["schema_version", "manifest_name", "declared_variable", "receipt_sha256", "provenance_sha256", "pairs", "pairs_per_order", "baseline_treatment_pairs", "treatment_baseline_pairs", "outcome", "evidence_state", "completed_pairs", "changed_pairs", "no_change_pairs", "unknown_pairs", "pair_summaries"]) and
-  (.schema_version == 1) and
+  (keys_unsorted == ["schema_version", "manifest_name", "declared_variable", "receipt_sha256", "provenance_sha256", "binding_sha256", "pairs", "pairs_per_order", "baseline_treatment_pairs", "treatment_baseline_pairs", "outcome", "evidence_state", "completed_pairs", "changed_pairs", "no_change_pairs", "unknown_pairs", "pair_summaries"]) and
+  (.schema_version == 2) and
   (.manifest_name == "experiment-001-email") and
   (.declared_variable == "email") and
   (.receipt_sha256 | test("^[0-9a-f]{64}$")) and
@@ -63,7 +63,7 @@ jq -e '
   (.no_change_pairs == 0) and
   (.unknown_pairs == 0) and
   (.pair_summaries | length == 2) and
-  (all(.pair_summaries[]; .outcome == "changed" and .evidence_state == "observed" and .differences == 1 and .unknowns == 0 and (.evidence_sha256 | test("^[0-9a-f]{64}$"))))
+  (all(.pair_summaries[]; .outcome == "changed" and .evidence_state == "observed" and .differences == 1 and .unknowns == 0 and (.evidence_sha256 | test("^[0-9a-f]{64}$")) and (.binding_sha256 | test("^[0-9a-f]{64}$"))))
 ' "${replicated_verify_json}"
 if grep -F -q \
   -e "baseline@example.invalid" \
@@ -78,15 +78,23 @@ if grep -F -q \
 fi
 replication_json="${replicated_dir}/replication.json"
 jq -e '
-  (keys_unsorted == ["schema_version", "manifest_name", "declared_variable", "pairs_per_order", "reset_policy", "provenance_sha256", "status", "completed_pairs", "pairs"]) and
-  (.schema_version == 1) and
+  (keys_unsorted == ["schema_version", "manifest_name", "declared_variable", "manifest_contract_sha256", "pairs_per_order", "reset_policy", "provenance_sha256", "binding_sha256", "status", "completed_pairs", "pairs"]) and
+  (.schema_version == 2) and
+  (.manifest_contract_sha256 | test("^[0-9a-f]{64}$")) and
+  (.provenance_sha256 | test("^[0-9a-f]{64}$")) and
+  (.binding_sha256 | test("^[0-9a-f]{64}$")) and
   (.reset_policy == "reset-before-each-session") and
   (.status == "complete") and
   (.completed_pairs == 2) and
   (.pairs | length == 2) and
   (.pairs[0].order == "baseline-treatment" and .pairs[0].first_session == "baseline" and .pairs[0].second_session == "treatment") and
-  (.pairs[1].order == "treatment-baseline" and .pairs[1].first_session == "treatment" and .pairs[1].second_session == "baseline")
-' "${replication_json}"
+  (.pairs[1].order == "treatment-baseline" and .pairs[1].first_session == "treatment" and .pairs[1].second_session == "baseline") and
+   (.pairs[0].first_session_binding_sha256 | test("^[0-9a-f]{64}$")) and
+   (.pairs[0].second_session_binding_sha256 | test("^[0-9a-f]{64}$")) and
+   (.pairs[0].binding_sha256 | test("^[0-9a-f]{64}$")) and
+   (.pairs[1].first_session_binding_sha256 | test("^[0-9a-f]{64}$")) and
+   (.pairs[1].second_session_binding_sha256 | test("^[0-9a-f]{64}$")) and
+   (.pairs[1].binding_sha256 | test("^[0-9a-f]{64}$"))' "${replication_json}"
 
 minimization_dir=".ariadne/ci-minimization/android-location"
 "${ariadne}" experiment minimize \
@@ -112,7 +120,7 @@ jq -e '
   (.candidate_results | length == 2) and
   (.receipt_sha256 | test("^[0-9a-f]{64}$")) and
   ([.candidate_results[].id] == ["city", "omitted"]) and
-  (all(.candidate_results[]; .classification == "sufficient" and .outcome == "no-change-observed" and .evidence_state == "observed" and .pairs == 2 and .pairs_per_order == 1 and .completed_pairs == 2 and .changed_pairs == 0 and .no_change_pairs == 2 and .unknown_pairs == 0 and (.receipt_sha256 | test("^[0-9a-f]{64}$"))))
+  (all(.candidate_results[]; .classification == "sufficient" and .outcome == "no-change-observed" and .evidence_state == "observed" and .pairs == 2 and .pairs_per_order == 1 and .completed_pairs == 2 and .changed_pairs == 0 and .no_change_pairs == 2 and .unknown_pairs == 0 and (.receipt_sha256 | test("^[0-9a-f]{64}$")) and (.binding_sha256 | test("^[0-9a-f]{64}$"))))
 ' "${minimization_verify_json}"
 if grep -F -q \
   -e "37.7749-122.4194" \
@@ -373,7 +381,7 @@ acceptance_save_summary_json="${RUNNER_TEMP}/ariadne-acceptance-save-summary.jso
   "${archive_question_json}" \
   "${acceptance_artifact}" >"${acceptance_save_summary_json}"
 jq -e '
-  (keys_unsorted == ["schema_version", "workflow", "manifest_name", "declared_variable", "manifest_contract_sha256", "run_evidence_sha256", "replication_receipt_sha256", "replication_provenance_sha256", "outcome", "evidence_state", "question_id", "question_state", "review_method", "review_path", "review_status", "acceptance_sha256"]) and
+  (keys_unsorted == ["schema_version", "workflow", "manifest_name", "declared_variable", "manifest_contract_sha256", "run_evidence_sha256", "replication_receipt_sha256", "replication_provenance_sha256", "replication_binding_sha256", "outcome", "evidence_state", "question_id", "question_state", "review_method", "review_path", "review_status", "acceptance_sha256"]) and
   (.schema_version == 1) and
   (.workflow == "experiment-001-emulator") and
   (.manifest_name == "experiment-001-email") and
@@ -382,6 +390,7 @@ jq -e '
   (.run_evidence_sha256 == $source_evidence_sha256) and
   (.replication_receipt_sha256 | test("^[0-9a-f]{64}$")) and
   (.replication_provenance_sha256 | test("^[0-9a-f]{64}$")) and
+   (.replication_binding_sha256 | test("^[0-9a-f]{64}$")) and
   (.outcome == "replicated-change") and
   (.evidence_state == "observed") and
   (.question_id == "counterfactual-change") and
@@ -760,9 +769,11 @@ for session in baseline treatment; do
     --arg tap_resource_id "${tap_resource_id}" \
     --arg contract_digest "${contract_digest}" \
     '
-    (.schema_version == 8) and
+    (.schema_version == 9) and
     (.tap_resource_id == $tap_resource_id) and
     (.manifest_contract_sha256 == $contract_digest) and
+    (.reset_policy == "reset-before-each-session") and
+    (.binding_sha256 | test("^[0-9a-f]{64}$")) and
     (.status == "complete") and
     any(.steps[]; .name == "interact" and .status == "ok" and .exit_code == 0 and (.ui_hierarchy_sha256 | test("^[0-9a-f]{64}$")))
     ' "${run_dir}/${session}/session.json"
@@ -966,9 +977,11 @@ jq -e \
   --arg contract_digest "${storage_gap_contract_digest}" \
   '
   (.status == "complete") and
-  (.schema_version == 8) and
+  (.schema_version == 9) and
   (.tap_resource_id == "dev.ariadne.fixture:id/observe_button") and
   (.manifest_contract_sha256 == $contract_digest) and
+  (.reset_policy == "reset-before-each-session") and
+  (.binding_sha256 | test("^[0-9a-f]{64}$")) and
   any(.steps[]; .name == "interact" and .status == "ok" and .exit_code == 0 and (.ui_hierarchy_sha256 | test("^[0-9a-f]{64}$"))) and
   (.artifacts | length == 2)
 ' "${storage_gap_dir}/baseline/session.json"
@@ -976,9 +989,11 @@ jq -e \
   --arg contract_digest "${storage_gap_contract_digest}" \
   '
   (.status == "incomplete") and
-  (.schema_version == 8) and
+  (.schema_version == 9) and
   (.tap_resource_id == "dev.ariadne.fixture:id/observe_button") and
   (.manifest_contract_sha256 == $contract_digest) and
+  (.reset_policy == "reset-before-each-session") and
+  (.binding_sha256 | test("^[0-9a-f]{64}$")) and
   any(.steps[]; .name == "interact" and .status == "ok" and .exit_code == 0 and (.ui_hierarchy_sha256 | test("^[0-9a-f]{64}$"))) and
   (.failure_stage == "capture_storage") and
   (.artifacts | length == 1) and

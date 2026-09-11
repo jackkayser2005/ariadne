@@ -53,16 +53,18 @@ assurance. A missing authenticated network capture is also represented as an
 incomplete unknown, never as evidence of no change. Legacy bundles remain
 readable, but they do not receive invented authentication or outcome semantics.
 
-The current provenance hardening adds an optional provenance_sha256 to new
-generic adapter receipts and authenticated Android replication roots. It is
-the SHA-256 of a canonical raw-value-free contract containing the schema
-version, source, adapter, adapter version, reviewed procedure identity, and
-scope. Replication verification cross-checks it against each complete Android
-pair before returning it in the safe summary; minimization candidate receipts
-and question projections carry the same reference. Older artifacts without
-the field remain readable and keep the field unavailable. This is a
-consistency and session-binding identity, not a signature, external
-authenticity proof, reset proof, or causal claim.
+The authenticated Android execution envelope is now explicit and versioned:
+session receipts use schema 9 and authenticated replication roots use schema 2.
+Each session binding covers the safe target identity, reset policy, manifest and
+procedure identity, challenge commitment, ordered steps, and artifact hashes;
+each pair binds both session bindings and its execution order; the root binds
+all ordered pairs. Replication verification then returns an evidence-bound
+summary binding that includes the verified evidence identities. Raw persona
+values, challenges, payloads, and device serials remain out of portable
+receipts. These SHA-256 identities prove canonical consistency and session
+binding; they are not signatures, external authenticity proof, reset proof, or
+causal truth. Legacy schema 1/8 artifacts remain readable with binding
+semantics unavailable.
 
 ## Golden Android acceptance
 
@@ -213,12 +215,12 @@ The source-neutral tracking trace contract is documented in
 
 The focused golden Android acceptance slice is implemented in the CLI and
 hosted workflow under [issue #122](https://github.com/jackkayser2005/ariadne/issues/122);
-its real-emulator run remains the acceptance evidence gate. The canonical
-provenance intersection and tiered validation slices from
-[issue #121](https://github.com/jackkayser2005/ariadne/issues/121) and
+its real-emulator run remains the acceptance evidence gate. The authenticated
+Android envelope from [issue #121](https://github.com/jackkayser2005/ariadne/issues/121)
+and the initial tiered validation surface from
 [issue #123](https://github.com/jackkayser2005/ariadne/issues/123) are present
-in the current line; their broader envelope and wider artifact-family mapping
-remain follow-up work.
+in the current line. Wider artifact-family mapping, emulator evidence, and
+future signed verification remain follow-up work.
 
 Ariadne now verifies and compares raw-value-free tracking traces from an
 authorized source adapter:

@@ -383,6 +383,24 @@ func TestAuthenticatedReplicationRecordsCanonicalProvenance(t *testing.T) {
 	if err := json.Unmarshal(data, &record); err != nil {
 		t.Fatal(err)
 	}
+	if record.SchemaVersion != AuthenticatedReplicatedRunSchemaVersion ||
+		record.ManifestContractSHA256 != manifest.ContractDigest() ||
+		record.BindingSHA256 == "" {
+		t.Fatalf("authenticated replication envelope = %#v", record)
+	}
+	expectedBinding, err := ReplicatedBindingSHA256(record)
+	if err != nil || record.BindingSHA256 != expectedBinding {
+		t.Fatalf("root binding = %q, expected %q, error = %v", record.BindingSHA256, expectedBinding, err)
+	}
+	for _, pair := range record.Pairs {
+		expectedPairBinding, err := ReplicatedPairBindingSHA256(record, pair)
+		if err != nil ||
+			pair.FirstSessionBindingSHA256 == "" ||
+			pair.SecondSessionBindingSHA256 == "" ||
+			pair.BindingSHA256 != expectedPairBinding {
+			t.Fatalf("pair binding = %#v, expected %q, error = %v", pair, expectedPairBinding, err)
+		}
+	}
 	if record.ProvenanceSHA256 != expected {
 		t.Fatalf("provenance_sha256 = %q, want %q", record.ProvenanceSHA256, expected)
 	}
@@ -390,5 +408,54 @@ func TestAuthenticatedReplicationRecordsCanonicalProvenance(t *testing.T) {
 		if strings.Contains(string(data), secret) {
 			t.Fatalf("replication metadata exposed %q: %s", secret, data)
 		}
+	}
+}
+
+func TestWriteAuthenticatedReplicatedRecordRejectsBindingGaps(t *testing.T) {
+	digest := strings.Repeat("a", 64)
+	base := func() ReplicatedRunRecord {
+		return ReplicatedRunRecord{
+			SchemaVersion:          AuthenticatedReplicatedRunSchemaVersion,
+			ManifestName:           "manifest",
+			DeclaredVariable:       "variable",
+			ManifestContractSHA256: digest,
+			ResetPolicy:            ReplicationResetPolicy,
+			ProvenanceSHA256:       strings.Repeat("b", 64),
+			PairsPerOrder:          1,
+			Status:                 ReplicationStatusIncomplete,
+			FailurePair:            1,
+			FailureOrder:           ReplicationOrderBaselineTreatment,
+			Pairs: []ReplicatedPairRecord{{
+				Pair:          1,
+				Order:         ReplicationOrderBaselineTreatment,
+				Directory:     "pair-001-baseline-treatment",
+				FirstSession:  "baseline",
+				SecondSession: "treatment",
+				Status:        ReplicationStatusIncomplete,
+			}},
+		}
+	}
+	tests := []struct {
+		name   string
+		mutate func(*ReplicatedRunRecord)
+	}{
+		{"manifest contract", func(record *ReplicatedRunRecord) { record.ManifestContractSHA256 = "bad" }},
+		{"provenance", func(record *ReplicatedRunRecord) { record.ProvenanceSHA256 = "bad" }},
+		{"complete root binding", func(record *ReplicatedRunRecord) { record.Status = ReplicationStatusComplete }},
+		{"incomplete root binding", func(record *ReplicatedRunRecord) { record.BindingSHA256 = digest }},
+		{"complete pair binding", func(record *ReplicatedRunRecord) { record.Pairs[0].Status = ReplicationStatusComplete }},
+		{"incomplete pair binding", func(record *ReplicatedRunRecord) {
+			record.Pairs[0].FirstSessionBindingSHA256 = digest
+		}},
+		{"pair directory", func(record *ReplicatedRunRecord) { record.Pairs[0].Directory = "pair-001-other" }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			record := base()
+			test.mutate(&record)
+			if err := writeReplicatedRecord(t.TempDir(), record); err == nil {
+				t.Fatal("writeReplicatedRecord() accepted an invalid authenticated envelope")
+			}
+		})
 	}
 }

@@ -184,7 +184,7 @@ func acceptanceObservationBody(challenge, variant string) string {
 
 func acceptanceRunOptions(order, baselineChallenge, treatmentChallenge string) runOptions {
 	return runOptions{
-		sessionSchemaVersion: 8,
+		sessionSchemaVersion: 9,
 		baselineStorage:      acceptanceObservationBody(baselineChallenge, "standard"),
 		baselineNetworkBody:  acceptanceObservationBody(baselineChallenge, "standard"),
 		treatmentStorage:     acceptanceObservationBody(treatmentChallenge, "personalized"),
@@ -266,20 +266,54 @@ func makeAuthenticatedAcceptanceReplication(t *testing.T) string {
 	)
 
 	record := adb.ReplicatedRunRecord{
-		SchemaVersion:    adb.ReplicatedRunSchemaVersion,
-		ManifestName:     "experiment-001-email",
-		DeclaredVariable: "email",
-		PairsPerOrder:    1,
-		ResetPolicy:      adb.ReplicationResetPolicy,
-		ProvenanceSHA256: provenance,
-		Status:           adb.ReplicationStatusComplete,
-		CompletedPairs:   2,
-		Pairs:            pairs,
+		SchemaVersion:          adb.AuthenticatedReplicatedRunSchemaVersion,
+		ManifestName:           "experiment-001-email",
+		ManifestContractSHA256: contract,
+		DeclaredVariable:       "email",
+		PairsPerOrder:          1,
+		ResetPolicy:            adb.ReplicationResetPolicy,
+		ProvenanceSHA256:       provenance,
+		Status:                 adb.ReplicationStatusComplete,
+		CompletedPairs:         2,
+		Pairs:                  pairs,
+	}
+	for index := range record.Pairs {
+		bindAcceptancePair(t, root, &record, index)
+	}
+	record.BindingSHA256, err = adb.ReplicatedBindingSHA256(record)
+	if err != nil {
+		t.Fatal(err)
 	}
 	writeReplicatedRecordForTest(t, root, record)
 	return root
 }
 
+func bindAcceptancePair(t *testing.T, root string, record *adb.ReplicatedRunRecord, index int) {
+	t.Helper()
+	pair := &record.Pairs[index]
+	bindings := make([]string, 0, 2)
+	for _, kind := range []string{pair.FirstSession, pair.SecondSession} {
+		data, err := os.ReadFile(filepath.Join(root, pair.Directory, kind, "session.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var session adb.SessionRecord
+		if err := json.Unmarshal(data, &session); err != nil {
+			t.Fatal(err)
+		}
+		if session.BindingSHA256 == "" {
+			t.Fatal("authenticated session binding is missing")
+		}
+		bindings = append(bindings, session.BindingSHA256)
+	}
+	pair.FirstSessionBindingSHA256 = bindings[0]
+	pair.SecondSessionBindingSHA256 = bindings[1]
+	var err error
+	pair.BindingSHA256, err = adb.ReplicatedPairBindingSHA256(*record, *pair)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
 func TestSaveAndroidAcceptanceRecord(t *testing.T) {
 	archiveRoot := t.TempDir()
 	runDir := makeAuthenticatedAcceptanceRun(
@@ -428,6 +462,10 @@ func TestRequireAuthenticatedAndroidReplicationRejectsMissingOrReusedBoundary(t 
 		t.Fatal(err)
 	}
 	session.ChallengeCommitment = challengeCommitmentForTest(strings.Repeat("d", 64))
+	session.BindingSHA256, err = adb.SessionBindingSHA256(session)
+	if err != nil {
+		t.Fatal(err)
+	}
 	sessionData, err = json.Marshal(session)
 	if err != nil {
 		t.Fatal(err)
@@ -435,6 +473,12 @@ func TestRequireAuthenticatedAndroidReplicationRejectsMissingOrReusedBoundary(t 
 	if err := os.WriteFile(sessionPath, append(sessionData, '\n'), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	bindAcceptancePair(t, root, &record, 1)
+	record.BindingSHA256, err = adb.ReplicatedBindingSHA256(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeReplicatedRecordForTest(t, root, record)
 	if err := requireAuthenticatedAndroidReplication(root); err == nil || !strings.Contains(err.Error(), "reused") {
 		t.Fatalf("reused challenge error = %v", err)
 	}

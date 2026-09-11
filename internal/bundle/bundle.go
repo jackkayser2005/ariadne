@@ -1201,21 +1201,24 @@ func decodeSession(data []byte, record *adb.SessionRecord) error {
 			"role":                     {},
 			"order":                    {},
 			"procedure_sha256":         {},
-			"adb_version":              {},
-			"device":                   {},
-			"package":                  {},
-			"android_api":              {},
-			"architecture":             {},
-			"package_version_code":     {},
-			"package_sha256":           {},
-			"ariadne_revision":         {},
-			"ariadne_modified":         {},
-			"status":                   {},
-			"failure_stage":            {},
-			"started_at":               {},
-			"finished_at":              {},
-			"steps":                    {},
-			"artifacts":                {},
+
+			"reset_policy":         {},
+			"binding_sha256":       {},
+			"adb_version":          {},
+			"device":               {},
+			"package":              {},
+			"android_api":          {},
+			"architecture":         {},
+			"package_version_code": {},
+			"package_sha256":       {},
+			"ariadne_revision":     {},
+			"ariadne_modified":     {},
+			"status":               {},
+			"failure_stage":        {},
+			"started_at":           {},
+			"finished_at":          {},
+			"steps":                {},
+			"artifacts":            {},
 		}
 		for field := range fields {
 			if _, ok := allowed[field]; !ok {
@@ -1243,7 +1246,8 @@ func validateSession(record adb.SessionRecord, kind string) error {
 		record.SchemaVersion != 5 &&
 		record.SchemaVersion != 6 &&
 		record.SchemaVersion != 7 &&
-		record.SchemaVersion != 8) ||
+		record.SchemaVersion != 8 &&
+		record.SchemaVersion != adb.AuthenticatedSessionSchemaVersion) ||
 		record.Kind != kind {
 		return errors.New("schema_version or kind is invalid")
 	}
@@ -1381,6 +1385,19 @@ func validateSession(record adb.SessionRecord, kind string) error {
 			}
 		}
 		previous = step.FinishedAt
+	}
+	if record.SchemaVersion < adb.AuthenticatedSessionSchemaVersion {
+		if record.ResetPolicy != "" || record.BindingSHA256 != "" {
+			return errors.New("legacy session binding fields are invalid")
+		}
+	} else {
+		if record.ResetPolicy != adb.ReplicationResetPolicy || !validDigest(record.BindingSHA256) {
+			return errors.New("authenticated session binding is invalid")
+		}
+		expectedBinding, err := adb.SessionBindingSHA256(record)
+		if err != nil || expectedBinding != record.BindingSHA256 {
+			return errors.New("authenticated session binding does not match metadata")
+		}
 	}
 	return nil
 }

@@ -456,16 +456,18 @@ leave no destination on failed input, publish only after re-verifying the
 generated case and disclosure round, preserve caller order, and keep plan paths
 out of generated artifacts and summaries.
 
-**Current canonical provenance intersection slice.** New generic adapter
-receipts and authenticated Android replication roots now carry an optional
-canonical provenance digest. The shared contract is deliberately the small
-intersection of source, adapter, adapter version, reviewed procedure identity,
-and scope; environment, reset, package, challenge, and evidence identities
-remain adjacent bindings until their dedicated envelope work lands. Bundle
-verification cross-checks the Android digest against every complete pair, and
-minimization candidate/question projections carry it forward without raw
-values. Legacy artifacts remain readable without synthesized provenance. This
-is consistency and session binding, not a signature or causal assurance.
+**Current authenticated Android provenance envelope.** Authenticated Android
+session receipts use schema 9 and replication roots use schema 2. A session
+binding covers safe target identity, reset policy, manifest and procedure
+identity, challenge commitment, ordered steps, and artifact hashes; pair
+bindings cover both session bindings and explicit order; the root binding
+covers every ordered pair. Replication verification adds an evidence-bound
+summary binding over the verified pair evidence. Portable outputs retain only
+safe identities and digests: raw persona values, challenges, payloads, and
+device serials stay out. These identities prove canonical consistency and
+session binding, not signatures, external authenticity, reset proof, or
+causal truth. Legacy schema 1/8 artifacts remain readable with binding
+semantics unavailable.
 
 
 **Current tiered validation slice.** `ariadne validate [--json] <artifact>`
