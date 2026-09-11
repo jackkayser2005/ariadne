@@ -103,6 +103,47 @@ func TestReadSessionBindingRejectsMalformedOrTamperedMetadata(t *testing.T) {
 	}
 }
 
+func TestAuthenticatedBindingFailurePaths(t *testing.T) {
+	invalid := sessionBindingRecordForTest("baseline")
+	invalid.ManifestContractSHA256 = "bad"
+	if _, err := SessionBindingSHA256(invalid); err == nil {
+		t.Fatal("SessionBindingSHA256() accepted an invalid manifest contract")
+	}
+
+	record := ReplicatedRunRecord{
+		ManifestName:           "experiment-001-email",
+		DeclaredVariable:       "email",
+		ManifestContractSHA256: strings.Repeat("a", 64),
+		ProvenanceSHA256:       strings.Repeat("b", 64),
+		ResetPolicy:            ReplicationResetPolicy,
+	}
+	pair := ReplicatedPairRecord{
+		Pair:          1,
+		Order:         ReplicationOrderBaselineTreatment,
+		Directory:     "pair-001-baseline-treatment",
+		FirstSession:  "baseline",
+		SecondSession: "treatment",
+	}
+	root := t.TempDir()
+	if _, err := bindReplicatedPair(root, record, pair); err == nil {
+		t.Fatal("bindReplicatedPair() accepted a missing first session")
+	}
+
+	writeSessionBindingRecord(t, filepath.Join(root, pair.Directory), "baseline", sessionBindingRecordForTest("baseline"))
+	if _, err := bindReplicatedPair(root, record, pair); err == nil {
+		t.Fatal("bindReplicatedPair() accepted a missing second session")
+	}
+
+	writeSessionBindingRecord(t, filepath.Join(root, pair.Directory), "treatment", sessionBindingRecordForTest("treatment"))
+	record.ManifestContractSHA256 = "bad"
+	got, err := bindReplicatedPair(root, record, pair)
+	if err == nil {
+		t.Fatal("bindReplicatedPair() accepted an invalid pair provenance")
+	}
+	if got.Pair != pair.Pair || got.Directory != pair.Directory {
+		t.Fatalf("bindReplicatedPair() returned %#v, want original pair metadata", got)
+	}
+}
 func sessionBindingRecordForTest(kind string) SessionRecord {
 	started := time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC)
 	record := SessionRecord{
