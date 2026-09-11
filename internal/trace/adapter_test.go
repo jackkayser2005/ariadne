@@ -312,6 +312,34 @@ func TestRunSourceAdapterProcessTimeoutDoesNotWaitForDescendant(t *testing.T) {
 	}
 }
 
+func TestSourceAdapterTaskkillPathRequiresValidatedSystemRoot(t *testing.T) {
+	root := t.TempDir()
+	system32 := filepath.Join(root, "System32")
+	if err := os.Mkdir(system32, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	taskkill := filepath.Join(system32, "taskkill.exe")
+	if err := os.WriteFile(taskkill, []byte("fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := sourceAdapterTaskkillPathForRoot(root); got != taskkill {
+		t.Fatalf("sourceAdapterTaskkillPathForRoot() = %q, want %q", got, taskkill)
+	}
+	if got := sourceAdapterTaskkillPathForRoot(""); got != "" {
+		t.Fatalf("sourceAdapterTaskkillPathForRoot(empty) = %q", got)
+	}
+	if got := sourceAdapterTaskkillPathForRoot(filepath.Join(root, "missing")); got != "" {
+		t.Fatalf("sourceAdapterTaskkillPathForRoot(missing) = %q", got)
+	}
+
+	linkRoot := filepath.Join(t.TempDir(), "root")
+	if err := os.Symlink(root, linkRoot); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if got := sourceAdapterTaskkillPathForRoot(linkRoot); got != "" {
+		t.Fatalf("sourceAdapterTaskkillPathForRoot(symlink) = %q", got)
+	}
+}
 func TestDecodeSourceAdapterContractsRejectHostileData(t *testing.T) {
 	validProcedure := string(sourceAdapterProcedureJSON(1000, 2))
 	for _, data := range []string{

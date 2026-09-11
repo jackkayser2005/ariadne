@@ -675,6 +675,26 @@ func sourceAdapterEnvironment() []string {
 	return result
 }
 
+func sourceAdapterTaskkillPath() string {
+	if runtime.GOOS != "windows" {
+		return ""
+	}
+	return sourceAdapterTaskkillPathForRoot(os.Getenv("SystemRoot"))
+}
+
+func sourceAdapterTaskkillPathForRoot(root string) string {
+	root = strings.TrimSpace(root)
+	if root == "" || !filepath.IsAbs(root) {
+		return ""
+	}
+	path := filepath.Join(root, "System32", "taskkill.exe")
+	info, err := sourceAdapterLstatNoSymlinkPath(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return ""
+	}
+	return path
+}
+
 func terminateSourceAdapterProcess(process *os.Process) {
 	if process == nil {
 		return
@@ -682,12 +702,14 @@ func terminateSourceAdapterProcess(process *os.Process) {
 	if runtime.GOOS == "windows" {
 		cleanupContext, cancel := context.WithTimeout(context.Background(), sourceAdapterTerminateTimeout)
 		defer cancel()
-		command := exec.CommandContext(cleanupContext, "taskkill.exe", "/PID", strconv.Itoa(process.Pid), "/T", "/F")
-		command.WaitDelay = sourceAdapterWaitDelay
-		command.Stdout = io.Discard
-		command.Stderr = io.Discard
-		if err := command.Run(); err == nil {
-			return
+		if taskkillPath := sourceAdapterTaskkillPath(); taskkillPath != "" {
+			command := exec.CommandContext(cleanupContext, taskkillPath, "/PID", strconv.Itoa(process.Pid), "/T", "/F")
+			command.WaitDelay = sourceAdapterWaitDelay
+			command.Stdout = io.Discard
+			command.Stderr = io.Discard
+			if err := command.Run(); err == nil {
+				return
+			}
 		}
 	}
 	_ = process.Kill()
