@@ -168,6 +168,68 @@ func TestValidateRejectsMalformedArchiveQuestion(t *testing.T) {
 	assertRejected(t, Validate(path), KindArchiveQuestion)
 }
 
+func writeArchiveQuestionTransitionHistoryValidationRecord(t *testing.T) (string, bundle.ArchiveQuestionTransitionVerificationSummary) {
+	t.Helper()
+	history := bundle.ArchiveQuestionTransitionHistory{
+		SchemaVersion:   2,
+		HistoryID:       "answer-state-transitions",
+		HistoryQuestion: "At which supplied boundaries did the bounded answer state change?",
+		QuestionID:      "counterfactual-change",
+		Question:        "Did changing the declared variable influence an observed output?",
+		OrderBasis:      "caller",
+		Snapshots:       2,
+		Transitions: []bundle.ArchiveQuestionTransition{{
+			FromReflectionSHA256: strings.Repeat("a", 64),
+			ToReflectionSHA256:   strings.Repeat("b", 64),
+			Result:               "changed",
+			Compared:             1,
+			Changed:              1,
+			StateChanges: []bundle.ArchiveQuestionStateChange{{
+				Directory:  "run-001",
+				OlderState: "observed",
+				NewerState: "unknown",
+			}},
+		}},
+	}
+	data, err := json.Marshal(history)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "archive-question-transitions.json")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	summary, err := bundle.VerifyArchiveQuestionTransitionHistory(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return path, summary
+}
+
+func TestValidateArchiveQuestionTransitionHistory(t *testing.T) {
+	path, summary := writeArchiveQuestionTransitionHistoryValidationRecord(t)
+	report := Validate(path)
+	if report.ArtifactKind != KindArchiveQuestionTransitionHistory ||
+		report.Overall != StatusWarning ||
+		report.Identity != summary.TransitionHistorySHA256 ||
+		report.EvidenceState != evidence.Unknown ||
+		report.Reason != ReasonProvenanceUnavailable ||
+		tierStatus(report, TierStructural) != StatusPass ||
+		tierStatus(report, TierIntegrity) != StatusPass ||
+		tierStatus(report, TierBoundary) != StatusUnavailable ||
+		tierStatus(report, TierReplay) != StatusUnavailable {
+		t.Fatalf("report = %#v", report)
+	}
+}
+
+func TestValidateRejectsMalformedArchiveQuestionTransitionHistory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "transition-history.json")
+	if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	assertRejected(t, Validate(path), KindArchiveQuestionTransitionHistory)
+}
+
 func TestValidateAndroidAcceptance(t *testing.T) {
 	path, record := writeAndroidAcceptanceValidationRecord(t)
 	summary, err := bundle.VerifyAndroidAcceptanceRecord(path)

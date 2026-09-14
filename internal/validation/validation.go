@@ -44,6 +44,8 @@ const (
 	KindBrowserHAR ArtifactKind = "browser-har"
 	// KindArchiveQuestion identifies a saved raw-value-free archive-question reflection.
 	KindArchiveQuestion ArtifactKind = "archive-question"
+	// KindArchiveQuestionTransitionHistory identifies a saved raw-value-free archive-question transition history.
+	KindArchiveQuestionTransitionHistory ArtifactKind = "archive-question-transition-history"
 	// KindTrace identifies a standalone redacted trace document.
 	KindTrace ArtifactKind = "trace"
 	// KindTraceArchive identifies a verified source-neutral trace archive.
@@ -171,6 +173,12 @@ func Validate(path string) Report {
 	if looksLikeArchiveQuestionPath(path) {
 		return rejectedReport(KindArchiveQuestion)
 	}
+	if summary, err := bundle.VerifyArchiveQuestionTransitionHistory(path); err == nil {
+		return reportFromArchiveQuestionTransitionHistory(summary)
+	}
+	if looksLikeArchiveQuestionTransitionHistoryPath(path) {
+		return rejectedReport(KindArchiveQuestionTransitionHistory)
+	}
 	if summary, err := trace.VerifyArchive(path); err == nil {
 		return reportFromTraceArchive(summary)
 	}
@@ -232,6 +240,14 @@ func looksLikeAndroidAcceptancePath(path string) bool {
 func looksLikeArchiveQuestionPath(path string) bool {
 	base := strings.ToLower(filepath.Base(path))
 	return base == "reflection.json" || base == "archive-question.json" || base == "archive-question-report.json"
+}
+
+func looksLikeArchiveQuestionTransitionHistoryPath(path string) bool {
+	base := strings.ToLower(filepath.Base(path))
+	return base == "history.json" || base == "archive-question-history.json" ||
+		base == "archive-question-transitions.json" || base == "transition-history.json" ||
+		base == "transitions.json" || strings.HasSuffix(base, "-history.json") ||
+		strings.HasSuffix(base, "-transitions.json")
 }
 
 func looksLikeTraceReplicationPath(path string) bool {
@@ -367,6 +383,17 @@ func reportFromArchiveQuestion(summary bundle.ArchiveQuestionVerificationSummary
 	report.EvidenceState = evidence.Unknown
 	setTier(&report, TierBoundary, StatusUnavailable, ReasonProvenanceUnavailable)
 	// A saved reflection is contract-verified only; it does not reopen the archive.
+	setTier(&report, TierReplay, StatusUnavailable, ReasonNotApplicable)
+	return finalize(report)
+}
+
+func reportFromArchiveQuestionTransitionHistory(summary bundle.ArchiveQuestionTransitionVerificationSummary) Report {
+	report := verifiedReport(KindArchiveQuestionTransitionHistory)
+	report.Identity = summary.TransitionHistorySHA256
+	report.EvidenceState = evidence.Unknown
+	setTier(&report, TierBoundary, StatusUnavailable, ReasonProvenanceUnavailable)
+	// A saved transition history is contract-verified only; it does not reopen
+	// source reflections or establish chronology.
 	setTier(&report, TierReplay, StatusUnavailable, ReasonNotApplicable)
 	return finalize(report)
 }

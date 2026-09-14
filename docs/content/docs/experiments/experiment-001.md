@@ -84,6 +84,7 @@ go run ./cmd/ariadne validate --json <replicated-directory>
 go run ./cmd/ariadne validate --json <minimization-directory>
 go run ./cmd/ariadne validate --json <acceptance.json>
 go run ./cmd/ariadne validate --json <reflection.json>
+go run ./cmd/ariadne validate --json <history.json>
 ~~~
 
 The report always lists the four tiers `structural`, `integrity`, `boundary`,
@@ -555,7 +556,10 @@ evidence.
   adjacent count contract, contiguous safe reflection identities, safe
   snapshot summaries, bounded state-change entries, and deterministic content
   identity without requiring the source reflections. This is structural
-  verification, not proof of the underlying evidence or chronology.
+  verification, not proof of the underlying evidence or chronology. The common
+  validate command recognizes the saved history as a contract-only artifact;
+  it reports the history identity while leaving evidence state unknown and
+  replay unavailable.
 - `experiment ask-archive verify [--json] <report.json>` checks a saved
   archive-reflection report offline for its schema, fixed question catalog,
   safe metadata, answer states, provenance digests, and deterministic ordering.
