@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackkayser2005/ariadne/internal/adb"
 	"github.com/jackkayser2005/ariadne/internal/browser"
 	"github.com/jackkayser2005/ariadne/internal/bundle"
 	"github.com/jackkayser2005/ariadne/internal/evidence"
@@ -23,6 +24,60 @@ const testManifest = `{
 	"baseline": {"location": "exact", "region": "us-east"},
 	"treatment": {"location": "city", "region": "us-east"}
 }`
+
+func writeAndroidAcceptanceValidationRecord(t *testing.T) (string, bundle.AndroidAcceptanceRecord) {
+	t.Helper()
+	contract := strings.Repeat("c", 64)
+	provenance, err := adb.ReplicationProvenanceSHA256(contract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidenceSHA256 := strings.Repeat("d", 64)
+	record := bundle.AndroidAcceptanceRecord{
+		SchemaVersion:                  1,
+		Workflow:                       "experiment-001-emulator",
+		ManifestName:                   "experiment-001-email",
+		DeclaredVariable:               "email",
+		ManifestContractSHA256:         contract,
+		Package:                        "dev.ariadne.fixture",
+		AndroidAPI:                     35,
+		Architecture:                   "x86_64",
+		PackageVersionCode:             1,
+		PackageSHA256:                  strings.Repeat("a", 64),
+		AriadneRevision:                strings.Repeat("b", 40),
+		RunEvidenceSHA256:              evidenceSHA256,
+		RunReportSHA256:                strings.Repeat("e", 64),
+		RunDifferences:                 1,
+		RunUnknowns:                    0,
+		ReplicationReceiptSHA256:       strings.Repeat("f", 64),
+		ReplicationProvenanceSHA256:    provenance,
+		Outcome:                        bundle.ReplicatedChange,
+		EvidenceState:                  evidence.Observed,
+		PairsPerOrder:                  1,
+		CompletedPairs:                 2,
+		ChangedPairs:                   2,
+		NoChangePairs:                  0,
+		UnknownPairs:                   0,
+		ExportSourceEvidenceSHA256:     evidenceSHA256,
+		ExportSHA256:                   strings.Repeat("9", 64),
+		ReflectionSHA256:               strings.Repeat("7", 64),
+		ReflectionSourceEvidenceSHA256: evidenceSHA256,
+		QuestionID:                     "counterfactual-change",
+		QuestionState:                  evidence.Observed,
+		ReviewMethod:                   "GET",
+		ReviewPath:                     "/",
+		ReviewStatus:                   "self-attested",
+	}
+	data, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "experiment-001-acceptance.json")
+	if err := os.WriteFile(path, append(data, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path, record
+}
 
 func TestValidateManifest(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "manifest.json")
@@ -62,6 +117,35 @@ func TestValidateManifest(t *testing.T) {
 	if strings.Contains(string(data), "exact") || strings.Contains(string(data), "city") {
 		t.Fatalf("report exposed persona values: %s", data)
 	}
+}
+
+func TestValidateAndroidAcceptance(t *testing.T) {
+	path, record := writeAndroidAcceptanceValidationRecord(t)
+	summary, err := bundle.VerifyAndroidAcceptanceRecord(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := Validate(path)
+	if report.ArtifactKind != KindAndroidAcceptance ||
+		report.Overall != StatusWarning ||
+		report.Identity != summary.AcceptanceSHA256 ||
+		report.Outcome != string(record.Outcome) ||
+		report.EvidenceState != evidence.Observed ||
+		report.Reason != ReasonValidationIncomplete ||
+		tierStatus(report, TierStructural) != StatusPass ||
+		tierStatus(report, TierIntegrity) != StatusPass ||
+		tierStatus(report, TierBoundary) != StatusPass ||
+		tierStatus(report, TierReplay) != StatusUnavailable {
+		t.Fatalf("report = %#v", report)
+	}
+}
+
+func TestValidateRejectsMalformedAndroidAcceptance(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "android-acceptance.json")
+	if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	assertRejected(t, Validate(path), KindAndroidAcceptance)
 }
 
 func TestValidateHAR(t *testing.T) {

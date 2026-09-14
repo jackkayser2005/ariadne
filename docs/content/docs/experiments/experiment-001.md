@@ -76,12 +76,13 @@ manifest_contract_sha256: <64 lowercase hexadecimal characters>
 ## Unified artifact validation
 
 Use the unified command when you want one safe status summary across the
-current manifest and Android bundle boundaries:
+current manifest, Android bundle, and raw-value-free acceptance boundaries:
 
 ~~~console
 go run ./cmd/ariadne validate --json examples/experiment-001.json
 go run ./cmd/ariadne validate --json <replicated-directory>
 go run ./cmd/ariadne validate --json <minimization-directory>
+go run ./cmd/ariadne validate --json <acceptance.json>
 ~~~
 
 The report always lists the four tiers `structural`, `integrity`, `boundary`,
@@ -94,8 +95,7 @@ replay or reproducibility review; it does not run anything. Only pass exits succ
 The JSON and human modes are raw-value-free. They contain no local paths,
 persona values, captured payloads, secrets, device serials, or driver
 arguments. Android replication `outcome` and `evidence_state` remain separate,
-and minimization reports retain the separate candidate selection state. This
-command composes the existing verifiers; it does not replace the specialized
+and minimization reports retain the separate candidate selection state. An Android acceptance receipt is checked as a contract-only handoff: its outcome and evidence state are preserved, but replay is unavailable because validation does not reopen the source artifacts. This command composes the existing verifiers; it does not replace the specialized
 trace, browser, proxy, case, study, or question verification commands.
 
 ## Android target preflight

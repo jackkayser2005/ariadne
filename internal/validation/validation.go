@@ -32,6 +32,8 @@ const (
 	KindAndroidReplication ArtifactKind = "android-replication"
 	// KindAndroidMinimization identifies an Android minimization directory.
 	KindAndroidMinimization ArtifactKind = "android-minimization"
+	// KindAndroidAcceptance identifies a raw-value-free Android acceptance receipt.
+	KindAndroidAcceptance ArtifactKind = "android-acceptance"
 	// KindBrowserMinimization identifies a verified browser fixture minimization directory.
 	KindBrowserMinimization ArtifactKind = "browser-minimization"
 	// KindBrowserWeather identifies a verified browser weather investigation.
@@ -155,6 +157,12 @@ func Validate(path string) Report {
 	if filepath.Base(path) != "manifest.json" && !strings.EqualFold(filepath.Ext(path), ".json") {
 		return unavailableReport(KindUnknown, ReasonUnsupportedArtifact)
 	}
+	if summary, err := bundle.VerifyAndroidAcceptanceRecord(path); err == nil {
+		return reportFromAndroidAcceptance(summary)
+	}
+	if looksLikeAndroidAcceptancePath(path) {
+		return rejectedReport(KindAndroidAcceptance)
+	}
 	if summary, err := trace.VerifyArchive(path); err == nil {
 		return reportFromTraceArchive(summary)
 	}
@@ -206,6 +214,11 @@ func looksLikeTraceStudyPath(path string) bool {
 func looksLikeTracePath(path string) bool {
 	base := strings.ToLower(filepath.Base(path))
 	return base == "trace.json" || strings.HasSuffix(base, "-trace.json")
+}
+
+func looksLikeAndroidAcceptancePath(path string) bool {
+	base := strings.ToLower(filepath.Base(path))
+	return base == "android-acceptance.json" || base == "experiment-001-acceptance.json"
 }
 
 func looksLikeTraceReplicationPath(path string) bool {
@@ -331,6 +344,18 @@ func validateManifest(path string) Report {
 	report := verifiedReport(KindManifest)
 	report.Identity = manifest.ContractDigest()
 	setTier(&report, TierBoundary, StatusUnavailable, ReasonNotApplicable)
+	setTier(&report, TierReplay, StatusUnavailable, ReasonNotApplicable)
+	return finalize(report)
+}
+
+func reportFromAndroidAcceptance(summary bundle.AndroidAcceptanceVerificationSummary) Report {
+	report := verifiedReport(KindAndroidAcceptance)
+	report.Identity = summary.AcceptanceSHA256
+	report.Outcome = string(summary.Outcome)
+	report.EvidenceState = summary.EvidenceState
+	setTier(&report, TierBoundary, StatusPass, ReasonVerified)
+	// The receipt verifier intentionally does not reopen the source artifacts or
+	// launch the emulator, so this report cannot claim replay readiness.
 	setTier(&report, TierReplay, StatusUnavailable, ReasonNotApplicable)
 	return finalize(report)
 }
