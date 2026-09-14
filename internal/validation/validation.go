@@ -42,6 +42,8 @@ const (
 	KindBrowserReplication ArtifactKind = "browser-replication"
 	// KindBrowserHAR identifies a bounded HAR export inventory.
 	KindBrowserHAR ArtifactKind = "browser-har"
+	// KindArchiveQuestion identifies a saved raw-value-free archive-question reflection.
+	KindArchiveQuestion ArtifactKind = "archive-question"
 	// KindTrace identifies a standalone redacted trace document.
 	KindTrace ArtifactKind = "trace"
 	// KindTraceArchive identifies a verified source-neutral trace archive.
@@ -163,6 +165,12 @@ func Validate(path string) Report {
 	if looksLikeAndroidAcceptancePath(path) {
 		return rejectedReport(KindAndroidAcceptance)
 	}
+	if summary, err := bundle.VerifyArchiveQuestionReport(path); err == nil {
+		return reportFromArchiveQuestion(summary)
+	}
+	if looksLikeArchiveQuestionPath(path) {
+		return rejectedReport(KindArchiveQuestion)
+	}
 	if summary, err := trace.VerifyArchive(path); err == nil {
 		return reportFromTraceArchive(summary)
 	}
@@ -219,6 +227,11 @@ func looksLikeTracePath(path string) bool {
 func looksLikeAndroidAcceptancePath(path string) bool {
 	base := strings.ToLower(filepath.Base(path))
 	return base == "acceptance.json" || base == "android-acceptance.json" || base == "experiment-001-acceptance.json"
+}
+
+func looksLikeArchiveQuestionPath(path string) bool {
+	base := strings.ToLower(filepath.Base(path))
+	return base == "reflection.json" || base == "archive-question.json" || base == "archive-question-report.json"
 }
 
 func looksLikeTraceReplicationPath(path string) bool {
@@ -344,6 +357,16 @@ func validateManifest(path string) Report {
 	report := verifiedReport(KindManifest)
 	report.Identity = manifest.ContractDigest()
 	setTier(&report, TierBoundary, StatusUnavailable, ReasonNotApplicable)
+	setTier(&report, TierReplay, StatusUnavailable, ReasonNotApplicable)
+	return finalize(report)
+}
+
+func reportFromArchiveQuestion(summary bundle.ArchiveQuestionVerificationSummary) Report {
+	report := verifiedReport(KindArchiveQuestion)
+	report.Identity = summary.ReflectionSHA256
+	report.EvidenceState = evidence.Unknown
+	setTier(&report, TierBoundary, StatusUnavailable, ReasonProvenanceUnavailable)
+	// A saved reflection is contract-verified only; it does not reopen the archive.
 	setTier(&report, TierReplay, StatusUnavailable, ReasonNotApplicable)
 	return finalize(report)
 }

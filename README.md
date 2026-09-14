@@ -188,6 +188,7 @@ go run ./cmd/ariadne validate --json .ariadne/browser-export.har
 go run ./cmd/ariadne validate --json .ariadne/proxy-replicated
 go run ./cmd/ariadne validate --json .ariadne/proxy-trace.json
 go run ./cmd/ariadne validate --json .ariadne/experiment-001-acceptance.json
+go run ./cmd/ariadne validate --json .ariadne/archive-question.json
 go run ./cmd/ariadne validate --json .ariadne/browser-fixture-replicated
 go run ./cmd/ariadne validate --json .ariadne/browser-account-minimize
 ~~~
@@ -219,7 +220,7 @@ status is a universal causal claim.
 
 This is a composition layer, not a second verifier or capture backend.
 Trace archive, replication, case, and study verification now join the same entry point as the first
-browser investigation. Verified browser fixture replication and minimization directories plus proxy replication directories now join the entry point as well; standalone redacted trace documents now join the common validator with provenance unavailable when they lack a session envelope; Android acceptance receipts now join it as raw-value-free contract checks with outcome and evidence state preserved, while replay remains unavailable because source artifacts are not reopened; HAR exports and question artifacts continue
+browser investigation. Verified browser fixture replication and minimization directories plus proxy replication directories now join the entry point as well; standalone redacted trace documents now join the common validator with provenance unavailable when they lack a session envelope; Android acceptance receipts now join it as raw-value-free contract checks with outcome and evidence state preserved, while replay remains unavailable because source artifacts are not reopened; archive-question reflections now join as contract-only checks with evidence_state unknown and replay unavailable; HAR exports and question transition/receipt artifacts continue
 to use their specialized verification commands until their own mapping slices
 are reviewed.
 

@@ -120,6 +120,54 @@ func TestValidateManifest(t *testing.T) {
 	}
 }
 
+func writeArchiveQuestionValidationReport(t *testing.T) (string, bundle.ArchiveQuestionVerificationSummary) {
+	t.Helper()
+	report := bundle.ArchiveQuestionReport{
+		SchemaVersion: 2,
+		QuestionID:    "counterfactual-change",
+		Question:      "Did changing the declared variable influence an observed output?",
+		Summary:       bundle.ArchiveQuestionSummary{},
+		Results:       []bundle.ArchiveQuestionResult{},
+	}
+	data, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "reflection.json")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	summary, err := bundle.VerifyArchiveQuestionReport(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return path, summary
+}
+
+func TestValidateArchiveQuestion(t *testing.T) {
+	path, summary := writeArchiveQuestionValidationReport(t)
+	report := Validate(path)
+	if report.ArtifactKind != KindArchiveQuestion ||
+		report.Overall != StatusWarning ||
+		report.Identity != summary.ReflectionSHA256 ||
+		report.EvidenceState != evidence.Unknown ||
+		report.Reason != ReasonProvenanceUnavailable ||
+		tierStatus(report, TierStructural) != StatusPass ||
+		tierStatus(report, TierIntegrity) != StatusPass ||
+		tierStatus(report, TierBoundary) != StatusUnavailable ||
+		tierStatus(report, TierReplay) != StatusUnavailable {
+		t.Fatalf("report = %#v", report)
+	}
+}
+
+func TestValidateRejectsMalformedArchiveQuestion(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "archive-question.json")
+	if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	assertRejected(t, Validate(path), KindArchiveQuestion)
+}
+
 func TestValidateAndroidAcceptance(t *testing.T) {
 	path, record := writeAndroidAcceptanceValidationRecord(t)
 	summary, err := bundle.VerifyAndroidAcceptanceRecord(path)
