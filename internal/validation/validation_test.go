@@ -51,6 +51,7 @@ func writeAndroidAcceptanceValidationRecord(t *testing.T) (string, bundle.Androi
 		RunUnknowns:                    0,
 		ReplicationReceiptSHA256:       strings.Repeat("f", 64),
 		ReplicationProvenanceSHA256:    provenance,
+		ReplicationBindingSHA256:       strings.Repeat("8", 64),
 		Outcome:                        bundle.ReplicatedChange,
 		EvidenceState:                  evidence.Observed,
 		PairsPerOrder:                  1,
@@ -140,8 +141,23 @@ func TestValidateAndroidAcceptance(t *testing.T) {
 	}
 }
 
+func TestReportFromAndroidAcceptanceWithoutBinding(t *testing.T) {
+	report := reportFromAndroidAcceptance(bundle.AndroidAcceptanceVerificationSummary{
+		AcceptanceSHA256: strings.Repeat("a", 64),
+		Outcome:          bundle.ReplicatedChange,
+		EvidenceState:    evidence.Observed,
+	})
+	if report.Overall != StatusWarning ||
+		report.EvidenceState != evidence.Observed ||
+		tierStatus(report, TierBoundary) != StatusUnavailable ||
+		tierStatus(report, TierReplay) != StatusUnavailable ||
+		report.Reason != ReasonProvenanceUnavailable {
+		t.Fatalf("report = %#v", report)
+	}
+}
+
 func TestValidateRejectsMalformedAndroidAcceptance(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "android-acceptance.json")
+	path := filepath.Join(t.TempDir(), "acceptance.json")
 	if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {
 		t.Fatal(err)
 	}

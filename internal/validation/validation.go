@@ -218,7 +218,7 @@ func looksLikeTracePath(path string) bool {
 
 func looksLikeAndroidAcceptancePath(path string) bool {
 	base := strings.ToLower(filepath.Base(path))
-	return base == "android-acceptance.json" || base == "experiment-001-acceptance.json"
+	return base == "acceptance.json" || base == "android-acceptance.json" || base == "experiment-001-acceptance.json"
 }
 
 func looksLikeTraceReplicationPath(path string) bool {
@@ -353,7 +353,11 @@ func reportFromAndroidAcceptance(summary bundle.AndroidAcceptanceVerificationSum
 	report.Identity = summary.AcceptanceSHA256
 	report.Outcome = string(summary.Outcome)
 	report.EvidenceState = summary.EvidenceState
-	setTier(&report, TierBoundary, StatusPass, ReasonVerified)
+	if summary.ReplicationBindingSHA256 == "" {
+		setTier(&report, TierBoundary, StatusUnavailable, ReasonProvenanceUnavailable)
+	} else {
+		setTier(&report, TierBoundary, StatusPass, ReasonVerified)
+	}
 	// The receipt verifier intentionally does not reopen the source artifacts or
 	// launch the emulator, so this report cannot claim replay readiness.
 	setTier(&report, TierReplay, StatusUnavailable, ReasonNotApplicable)
