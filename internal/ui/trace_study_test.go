@@ -41,6 +41,7 @@ func TestHandlerRendersTraceStudyReflection(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Replication study reflection",
+		"Start with the simple version", "In this study:", "See the fixed study questions", "technical details",
 		"Verified replication study identity",
 		"contrast commitment SHA-256",
 		"caller",

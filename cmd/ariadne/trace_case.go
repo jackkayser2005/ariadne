@@ -366,7 +366,20 @@ func writeTraceCaseRoundSummary(stdout io.Writer, heading string, summary trace.
 }
 
 func writeTraceCaseMap(stdout io.Writer, result trace.CaseDisclosureMap) error {
-	if _, err := fmt.Fprintf(stdout, "trace case disclosure map\nschema_version: %d\ncase_sha256: %s\ntraces: %d\ncoverage_state: %s\n", result.SchemaVersion, result.CaseSHA256, result.Traces, result.CoverageState); err != nil {
+	if err := writeCLIStatus(stdout, "trace case disclosure map\n"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(stdout, "what this shows: reviewed category labels and the boundaries where they appeared.\nread each path as: source -> reviewed category -> destination.\nwhat this cannot show: the underlying value, server-side storage, or onward sharing.\n"); err != nil {
+		return err
+	}
+	if result.CoverageState == "unknown" {
+		if _, err := io.WriteString(stdout, "coverage note: an unlisted path may still be outside the captured view.\n"); err != nil {
+			return err
+		}
+	} else if _, err := io.WriteString(stdout, "coverage note: every contributing trace reported complete coverage for its reviewed channels.\n"); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(stdout, "schema_version: %d\ncase_sha256: %s\ntraces: %d\ncoverage_state: %s\n", result.SchemaVersion, result.CaseSHA256, result.Traces, result.CoverageState); err != nil {
 		return err
 	}
 	for _, category := range result.Categories {
@@ -374,7 +387,7 @@ func writeTraceCaseMap(stdout io.Writer, result trace.CaseDisclosureMap) error {
 			return err
 		}
 		for _, observation := range category.Observations {
-			if _, err := fmt.Fprintf(stdout, "  source: %s\n  adapter: %s\n  channel: %s\n  kind: %s\n  destination: %s\n  trace_count: %d\n  evidence_state: %s\n", observation.Source, observation.Adapter, observation.Channel, observation.Kind, observation.Destination, observation.TraceCount, observation.EvidenceState); err != nil {
+			if _, err := fmt.Fprintf(stdout, "  path: %s -> %s -> %s\n  source: %s\n  adapter: %s\n  channel: %s\n  kind: %s\n  destination: %s\n  trace_count: %d\n  evidence_state: %s\n", observation.Source, category.Category, observation.Destination, observation.Source, observation.Adapter, observation.Channel, observation.Kind, observation.Destination, observation.TraceCount, observation.EvidenceState); err != nil {
 				return err
 			}
 		}

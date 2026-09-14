@@ -283,6 +283,7 @@ func TestHandlerRendersTraceArchiveReflection(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Trace archive reflection",
+		"Start with the simple version", "In this archive:", "See the fixed questions", "technical details",
 		"Verified archive identity",
 		"caller",
 		"archive SHA-256",
@@ -383,6 +384,7 @@ func TestHandlerRendersTraceReplicationLedger(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Replicated trace reflection",
+		"Start with the simple version", "In this ledger:", "See the fixed questions", "technical details",
 		"Verified replication identity",
 		"baseline &rarr; treatment",
 		"treatment &rarr; baseline",

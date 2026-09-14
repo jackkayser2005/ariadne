@@ -287,8 +287,9 @@ The loopback review server can expose one verified source-adapter run:
 go run ./cmd/ariadne experiment serve --source-adapter .ariadne/source-adapter-run <archive-root>
 
 The read-only /source-adapter route re-verifies the receipt, trace, and session
-on every GET and shows only safe labels, completeness, and identities. It does
-not render the run path, procedure, executable, challenge, payloads, URLs, or
+on every GET and leads with a plain-language source → category → destination
+path view. It shows only safe labels, completeness, and identities. It does not
+render the run path, procedure, executable, challenge, payloads, URLs, or
 captured values.
 
 These local boundaries are fail-closed: malformed collector requests do not
@@ -559,7 +560,10 @@ embedded trace and reports reviewed source, adapter, channel, event kind,
 destination, and retained-trace count. Aggregate `coverage_state` becomes
 `unknown` when any contributing trace is partial; directly retained
 observations remain `observed`. The map is recomputed from the verified case
-and is not persisted as a second evidence store.
+and is not persisted as a second evidence store. In human-readable output the
+command starts with a short explanation of what the labels do and do not mean;
+`--json` remains the stable machine-readable form. Set `ARIADNE_COLOR=1` when
+you want successful status headings colored green in an interactive terminal.
 `trace case map compare` is the next cross-case reflection boundary. It
 re-verifies both assembled workspaces, requires the same caller-supplied
 private investigation commitment and compatible reviewed source provenance,
@@ -609,7 +613,9 @@ order, safe source summaries, child identities, fixed case answers, and
 separate question `result`, replicated child `outcome`, and `evidence_state`
 fields. It also renders the derived cross-source disclosure map and its two
 fixed disclosure questions using only safe category, destination, and
-source/adapter boundary labels plus retained-trace counts. Each question card
+source/adapter boundary labels plus retained-trace counts. The page leads with
+a plain-language path view; verifier identities, fixed questions, and child
+entries remain available as expandable technical detail. Each question card
 links to a selected raw-value-free receipt projection through
 `disclosure_question_id`; durable rounds and receipts are created with the
 CLI. A case question result such as `available`, `supported`, or `unknown`
@@ -1109,8 +1115,10 @@ It never renders configured paths, payloads, URLs, or captured values, and
 remains GET-only.
 When `--trace-case` is supplied, `/trace-case` shows the verified case identity,
 caller-ordered child archive/ledger summaries, safe reviewed source boundaries,
-the fixed case questions, and separate outcome/evidence-state fields. Caller
-order is not chronology, and the route does not establish cross-source
+the fixed case questions, and separate outcome/evidence-state fields. The
+reader-first page puts the recorded category paths up front and keeps verifier
+identities and entry metadata expandable. Caller order is not chronology, and
+the route does not establish cross-source
 causality. It is also GET-only and fails closed without disclosing the input
 path or detailed verification error.
 When `--trace-study` is supplied, `/trace-study` shows the verified study
@@ -1160,8 +1168,10 @@ candidate IDs and verifier-derived metadata; it never renders the minimization
 directory, plan values, personas, manifests, URLs, challenges, or captured
 observations. A selected result is labeled **minimum tested sufficient
 disclosure**. Mixed, incomplete, or unknown evidence leaves the selection
-unestablished. The loopback server requires the canonical configured loopback authority
-and sends no-store/security headers; it remains GET-only.
+unestablished. The page starts with a plain-language answer, then keeps the
+receipt identity, fixed questions, and candidate ladder behind clearly labeled
+technical details. The loopback server requires the canonical configured loopback
+authority and sends no-store/security headers; it remains GET-only.
 When `--minimization-round <round.json>` is supplied with
 `--minimization <run-directory>`, the page rechecks the saved fixed-question
 round against the current minimization identity and renders its durable

@@ -57,6 +57,7 @@ func TestHandlerRendersTraceStudyComparison(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Compare retained study reflections",
+		"Start with the simple version", "In this comparison:", "See changed questions", "technical details",
 		"same",
 		"changed",
 		"incomparable",

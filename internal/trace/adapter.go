@@ -113,6 +113,7 @@ type SourceAdapterRunSummary struct {
 	ReceiptSHA256 string                     `json:"receipt_sha256"`
 	Receipt       SourceAdapterReceipt       `json:"receipt"`
 	Trace         VerificationSummary        `json:"trace"`
+	TraceEvents   []Event                    `json:"trace_events,omitempty"`
 	Session       SessionVerificationSummary `json:"session"`
 }
 
@@ -434,6 +435,7 @@ func verifySourceAdapterRun(rootDir string) (SourceAdapterRunSummary, error) {
 		ReceiptSHA256: run.ReceiptSHA256,
 		Receipt:       run.Receipt,
 		Trace:         run.TraceSummary,
+		TraceEvents:   append([]Event(nil), run.Trace.Events...),
 		Session:       run.SessionSummary,
 	}, nil
 }
