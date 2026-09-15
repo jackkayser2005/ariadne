@@ -190,6 +190,9 @@ go run ./cmd/ariadne validate --json .ariadne/proxy-trace.json
 go run ./cmd/ariadne validate --json .ariadne/experiment-001-acceptance.json
 go run ./cmd/ariadne validate --json .ariadne/archive-question.json
 go run ./cmd/ariadne validate --json .ariadne/archive-question-transitions.json
+go run ./cmd/ariadne validate --json .ariadne/archive-question-history-round.json
+go run ./cmd/ariadne validate --json .ariadne/archive-question-history-receipt.json
+go run ./cmd/ariadne validate --json .ariadne/archive-question-history-acceptance.json
 go run ./cmd/ariadne validate --json .ariadne/browser-fixture-replicated
 go run ./cmd/ariadne validate --json .ariadne/browser-account-minimize
 ~~~
@@ -199,7 +202,7 @@ summary when `--json` is omitted; JSON remains available for scripts and the loc
 review server.
 
 The validation surface recognizes a JSON experiment manifest (including `manifest.json`),
-verified source-neutral trace archives, replication ledgers, cross-source cases, studies, generic source-adapter runs, bounded HAR exports, and verified browser fixture replication and minimization directories plus proxy replication directories; Android replication and minimization
+verified source-neutral trace archives, replication ledgers, cross-source cases, studies, generic source-adapter runs, bounded HAR exports, and verified browser fixture replication and minimization directories plus proxy replication directories; portable fixed-question rounds, selected receipts, and acceptance records; Android replication and minimization
 directories, and a verified browser weather investigation directory containing
 `weather.json`. Every report lists
 `structural`, `integrity`, `boundary`, and `replay` tiers. Structural and
@@ -221,9 +224,9 @@ status is a universal causal claim.
 
 This is a composition layer, not a second verifier or capture backend.
 Trace archive, replication, case, and study verification now join the same entry point as the first
-browser investigation. Verified browser fixture replication and minimization directories plus proxy replication directories now join the entry point as well; standalone redacted trace documents now join the common validator with provenance unavailable when they lack a session envelope; Android acceptance receipts now join it as raw-value-free contract checks with outcome and evidence state preserved, while replay remains unavailable because source artifacts are not reopened; archive-question reflections and transition histories now join as contract-only checks with evidence_state unknown and replay unavailable; HAR exports and question rounds/receipts continue
-to use their specialized verification commands until their own mapping slices
-are reviewed.
+browser investigation. Verified browser fixture replication and minimization directories plus proxy replication directories now join the entry point as well; standalone redacted trace documents now join the common validator with provenance unavailable when they lack a session envelope; Android acceptance receipts now join it as raw-value-free contract checks with outcome and evidence state preserved, while replay remains unavailable because source artifacts are not reopened; archive-question reflections and transition histories now join as contract-only checks with evidence_state unknown and replay unavailable; portable fixed-question rounds, selected receipts, and acceptance records now join as contract-only checks with source provenance unavailable and replay unavailable; HAR exports continue
+to use their specialized verification commands until their own mapping slice
+is reviewed.
 
 The detailed design and experiment log live in [`docs/`](docs/).
 The evidence-backed first-year path is tracked in

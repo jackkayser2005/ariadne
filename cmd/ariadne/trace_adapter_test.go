@@ -29,7 +29,12 @@ func TestRunTraceAdapter(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(decoded, summary) || gotProcedure != "procedure.json" || gotDriver != "driver.exe" || gotOutput != "run" || strings.Join(gotArgs, ",") != "one,two" {
+	if strings.Contains(stdout.String(), "trace_events") {
+		t.Fatalf("CLI JSON exposed UI-only trace events: %s", stdout.String())
+	}
+	expected := summary
+	expected.TraceEvents = nil
+	if !reflect.DeepEqual(decoded, expected) || gotProcedure != "procedure.json" || gotDriver != "driver.exe" || gotOutput != "run" || strings.Join(gotArgs, ",") != "one,two" {
 		t.Fatalf("decoded = %#v, args = %q %q %q %#v", decoded, gotProcedure, gotDriver, gotOutput, gotArgs)
 	}
 
@@ -79,8 +84,13 @@ func TestRunTraceAdapterVerify(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(decoded, summary) {
-		t.Fatalf("decoded = %#v, want %#v", decoded, summary)
+	if strings.Contains(stdout.String(), "trace_events") {
+		t.Fatalf("CLI JSON exposed UI-only trace events: %s", stdout.String())
+	}
+	expected := summary
+	expected.TraceEvents = nil
+	if !reflect.DeepEqual(decoded, expected) {
+		t.Fatalf("decoded = %#v, want %#v", decoded, expected)
 	}
 
 	stdout.Reset()
@@ -125,6 +135,7 @@ func TestRunTraceAdapterVerify(t *testing.T) {
 func sourceAdapterCLISummary() trace.SourceAdapterRunSummary {
 	return trace.SourceAdapterRunSummary{
 		ReceiptSHA256: strings.Repeat("a", 64),
+		TraceEvents:   []trace.Event{{Source: "desktop", Channel: "network", Kind: "request", Destination: "analytics", Fields: []string{"location"}}},
 		Receipt: trace.SourceAdapterReceipt{
 			Adapter: "external-desktop-v1", Source: "desktop", Scope: "outbound", Completeness: trace.Complete,
 			ProcedureSHA256: strings.Repeat("b", 64), ExecutableSHA256: strings.Repeat("c", 64), ChallengeSHA256: strings.Repeat("d", 64),

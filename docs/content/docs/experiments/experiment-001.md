@@ -85,6 +85,9 @@ go run ./cmd/ariadne validate --json <minimization-directory>
 go run ./cmd/ariadne validate --json <acceptance.json>
 go run ./cmd/ariadne validate --json <reflection.json>
 go run ./cmd/ariadne validate --json <history.json>
+go run ./cmd/ariadne validate --json <history-round.json>
+go run ./cmd/ariadne validate --json <history-receipt.json>
+go run ./cmd/ariadne validate --json <history-acceptance.json>
 ~~~
 
 The report always lists the four tiers `structural`, `integrity`, `boundary`,
@@ -97,7 +100,7 @@ replay or reproducibility review; it does not run anything. Only pass exits succ
 The JSON and human modes are raw-value-free. They contain no local paths,
 persona values, captured payloads, secrets, device serials, or driver
 arguments. Android replication `outcome` and `evidence_state` remain separate,
-and minimization reports retain the separate candidate selection state. An Android acceptance receipt is checked as a contract-only handoff: its outcome and evidence state are preserved, but replay is unavailable because validation does not reopen the source artifacts. This command composes the existing verifiers; it does not replace the specialized
+and minimization reports retain the separate candidate selection state. An Android acceptance receipt is checked as a contract-only handoff: its outcome and evidence state are preserved, but replay is unavailable because validation does not reopen the source artifacts. Transition histories, fixed question rounds, selected receipts, and acceptance records are also recognized as contract-only artifacts; source provenance and replay remain unavailable because validation does not reopen source reflections or perform UI selection. This command composes the existing verifiers; it does not replace the specialized
 trace, browser, proxy, case, study, or question transition and receipt verification commands.
 
 ## Android target preflight

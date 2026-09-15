@@ -46,6 +46,16 @@ const (
 	KindArchiveQuestion ArtifactKind = "archive-question"
 	// KindArchiveQuestionTransitionHistory identifies a saved raw-value-free archive-question transition history.
 	KindArchiveQuestionTransitionHistory ArtifactKind = "archive-question-transition-history"
+	// KindArchiveQuestionTransitionHistoryQuestionRound identifies a saved fixed question round for a transition history.
+	KindArchiveQuestionTransitionHistoryQuestionRound ArtifactKind = "archive-question-history-round"
+	// KindArchiveQuestionTransitionHistoryAnswerReceipt identifies a saved fixed answer receipt for a transition history.
+	KindArchiveQuestionTransitionHistoryAnswerReceipt ArtifactKind = "archive-question-history-receipt"
+	// KindArchiveQuestionTransitionHistoryAcceptance identifies a saved question acceptance record for a transition history.
+	KindArchiveQuestionTransitionHistoryAcceptance ArtifactKind = "archive-question-history-acceptance"
+	// KindQuestionRound identifies a saved raw-value-free fixed-question round.
+	KindQuestionRound ArtifactKind = "question-round"
+	// KindQuestionReceipt identifies a saved raw-value-free selected-question receipt.
+	KindQuestionReceipt ArtifactKind = "question-receipt"
 	// KindTrace identifies a standalone redacted trace document.
 	KindTrace ArtifactKind = "trace"
 	// KindTraceArchive identifies a verified source-neutral trace archive.
@@ -161,6 +171,12 @@ func Validate(path string) Report {
 	if filepath.Base(path) != "manifest.json" && !strings.EqualFold(filepath.Ext(path), ".json") {
 		return unavailableReport(KindUnknown, ReasonUnsupportedArtifact)
 	}
+	if summary, err := bundle.VerifyArchiveQuestionTransitionHistoryAcceptanceRecord(path); err == nil {
+		return reportFromArchiveQuestionTransitionHistoryAcceptance(summary)
+	}
+	if looksLikeArchiveQuestionTransitionHistoryAcceptancePath(path) {
+		return rejectedReport(KindArchiveQuestionTransitionHistoryAcceptance)
+	}
 	if summary, err := bundle.VerifyAndroidAcceptanceRecord(path); err == nil {
 		return reportFromAndroidAcceptance(summary)
 	}
@@ -178,6 +194,18 @@ func Validate(path string) Report {
 	}
 	if looksLikeArchiveQuestionTransitionHistoryPath(path) {
 		return rejectedReport(KindArchiveQuestionTransitionHistory)
+	}
+	if summary, err := bundle.VerifyArchiveQuestionTransitionHistoryQuestionRound(path); err == nil {
+		return reportFromArchiveQuestionTransitionHistoryQuestionRound(summary)
+	}
+	if looksLikeArchiveQuestionTransitionHistoryQuestionRoundPath(path) {
+		return rejectedReport(KindArchiveQuestionTransitionHistoryQuestionRound)
+	}
+	if summary, err := bundle.VerifyArchiveQuestionTransitionHistoryAnswerReceipt(path); err == nil {
+		return reportFromArchiveQuestionTransitionHistoryAnswerReceipt(summary)
+	}
+	if looksLikeArchiveQuestionTransitionHistoryAnswerReceiptPath(path) {
+		return rejectedReport(KindArchiveQuestionTransitionHistoryAnswerReceipt)
 	}
 	if summary, err := trace.VerifyArchive(path); err == nil {
 		return reportFromTraceArchive(summary)
@@ -208,6 +236,18 @@ func Validate(path string) Report {
 	}
 	if looksLikeTracePath(path) {
 		return rejectedReport(KindTrace)
+	}
+	if identity, ok := verifyQuestionRound(path); ok {
+		return reportFromQuestionArtifact(KindQuestionRound, identity)
+	}
+	if looksLikeQuestionRoundPath(path) {
+		return rejectedReport(KindQuestionRound)
+	}
+	if identity, ok := verifyQuestionReceipt(path); ok {
+		return reportFromQuestionArtifact(KindQuestionReceipt, identity)
+	}
+	if looksLikeQuestionReceiptPath(path) {
+		return rejectedReport(KindQuestionReceipt)
 	}
 	return validateManifest(path)
 }
@@ -248,6 +288,87 @@ func looksLikeArchiveQuestionTransitionHistoryPath(path string) bool {
 		base == "archive-question-transitions.json" || base == "transition-history.json" ||
 		base == "transitions.json" || strings.HasSuffix(base, "-history.json") ||
 		strings.HasSuffix(base, "-transitions.json")
+}
+
+func looksLikeQuestionRoundPath(path string) bool {
+	base := strings.ToLower(filepath.Base(path))
+	return base == "round.json" || base == "question-round.json" ||
+		strings.HasSuffix(base, "-round.json")
+}
+
+func looksLikeQuestionReceiptPath(path string) bool {
+	base := strings.ToLower(filepath.Base(path))
+	return base == "question-receipt.json" ||
+		(base != "receipt.json" && strings.HasSuffix(base, "-receipt.json"))
+}
+
+func verifyQuestionRound(path string) (string, bool) {
+	if summary, err := trace.VerifyArchiveQuestionRound(path); err == nil {
+		return summary.RoundSHA256, true
+	}
+	if summary, err := trace.VerifyReplicationQuestionRound(path); err == nil {
+		return summary.RoundSHA256, true
+	}
+	if summary, err := trace.VerifyCaseQuestionRound(path); err == nil {
+		return summary.RoundSHA256, true
+	}
+	if summary, err := trace.VerifyCaseDisclosureQuestionRound(path); err == nil {
+		return summary.RoundSHA256, true
+	}
+	if summary, err := trace.VerifyReplicationStudyQuestionRound(path); err == nil {
+		return summary.RoundSHA256, true
+	}
+	if summary, err := minimize.VerifyMinimizationQuestionRound(path); err == nil {
+		return summary.RoundSHA256, true
+	}
+	if summary, err := bundle.VerifyArchiveQuestionTransitionHistoryQuestionRound(path); err == nil {
+		return summary.RoundSHA256, true
+	}
+	return "", false
+}
+
+func verifyQuestionReceipt(path string) (string, bool) {
+	if summary, err := trace.VerifyArchiveQuestionReceipt(path); err == nil {
+		return summary.ReceiptSHA256, true
+	}
+	if summary, err := trace.VerifyReplicationQuestionReceipt(path); err == nil {
+		return summary.ReceiptSHA256, true
+	}
+	if summary, err := trace.VerifyCaseDisclosureQuestionReceipt(path); err == nil {
+		return summary.ReceiptSHA256, true
+	}
+	if summary, err := trace.VerifyReplicationStudyQuestionReceipt(path); err == nil {
+		return summary.ReceiptSHA256, true
+	}
+	if summary, err := minimize.VerifyMinimizationQuestionReceipt(path); err == nil {
+		return summary.ReceiptSHA256, true
+	}
+	if summary, err := bundle.VerifyArchiveQuestionTransitionHistoryAnswerReceipt(path); err == nil {
+		return summary.ReceiptSHA256, true
+	}
+	return "", false
+}
+
+func looksLikeArchiveQuestionTransitionHistoryQuestionRoundPath(path string) bool {
+	base := strings.ToLower(filepath.Base(path))
+	return base == "archive-question-history-round.json" ||
+		base == "archive-question-transition-round.json" ||
+		base == "transition-history-round.json" ||
+		base == "history-round.json"
+}
+
+func looksLikeArchiveQuestionTransitionHistoryAnswerReceiptPath(path string) bool {
+	base := strings.ToLower(filepath.Base(path))
+	return base == "archive-question-history-receipt.json" ||
+		base == "archive-question-transition-receipt.json" ||
+		base == "transition-history-receipt.json"
+}
+
+func looksLikeArchiveQuestionTransitionHistoryAcceptancePath(path string) bool {
+	base := strings.ToLower(filepath.Base(path))
+	return base == "archive-question-history-acceptance.json" ||
+		base == "archive-question-transition-acceptance.json" ||
+		base == "transition-history-acceptance.json"
 }
 
 func looksLikeTraceReplicationPath(path string) bool {
@@ -394,6 +515,44 @@ func reportFromArchiveQuestionTransitionHistory(summary bundle.ArchiveQuestionTr
 	setTier(&report, TierBoundary, StatusUnavailable, ReasonProvenanceUnavailable)
 	// A saved transition history is contract-verified only; it does not reopen
 	// source reflections or establish chronology.
+	setTier(&report, TierReplay, StatusUnavailable, ReasonNotApplicable)
+	return finalize(report)
+}
+
+func reportFromQuestionArtifact(kind ArtifactKind, identity string) Report {
+	report := verifiedReport(kind)
+	report.Identity = identity
+	report.EvidenceState = evidence.Unknown
+	// Portable question artifacts bind a bounded answer to a source identity,
+	// but they do not reopen that source or authenticate the original capture.
+	setTier(&report, TierBoundary, StatusUnavailable, ReasonProvenanceUnavailable)
+	setTier(&report, TierReplay, StatusUnavailable, ReasonNotApplicable)
+	return finalize(report)
+}
+
+func reportFromArchiveQuestionTransitionHistoryQuestionRound(summary bundle.ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary) Report {
+	report := verifiedReport(KindArchiveQuestionTransitionHistoryQuestionRound)
+	report.Identity = summary.RoundSHA256
+	report.EvidenceState = evidence.Unknown
+	setTier(&report, TierBoundary, StatusUnavailable, ReasonProvenanceUnavailable)
+	setTier(&report, TierReplay, StatusUnavailable, ReasonNotApplicable)
+	return finalize(report)
+}
+
+func reportFromArchiveQuestionTransitionHistoryAnswerReceipt(summary bundle.ArchiveQuestionTransitionHistoryAnswerReceiptVerificationSummary) Report {
+	report := verifiedReport(KindArchiveQuestionTransitionHistoryAnswerReceipt)
+	report.Identity = summary.ReceiptSHA256
+	report.EvidenceState = evidence.Unknown
+	setTier(&report, TierBoundary, StatusUnavailable, ReasonProvenanceUnavailable)
+	setTier(&report, TierReplay, StatusUnavailable, ReasonNotApplicable)
+	return finalize(report)
+}
+
+func reportFromArchiveQuestionTransitionHistoryAcceptance(summary bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary) Report {
+	report := verifiedReport(KindArchiveQuestionTransitionHistoryAcceptance)
+	report.Identity = summary.AcceptanceSHA256
+	report.EvidenceState = evidence.Unknown
+	setTier(&report, TierBoundary, StatusUnavailable, ReasonProvenanceUnavailable)
 	setTier(&report, TierReplay, StatusUnavailable, ReasonNotApplicable)
 	return finalize(report)
 }

@@ -113,7 +113,7 @@ type SourceAdapterRunSummary struct {
 	ReceiptSHA256 string                     `json:"receipt_sha256"`
 	Receipt       SourceAdapterReceipt       `json:"receipt"`
 	Trace         VerificationSummary        `json:"trace"`
-	TraceEvents   []Event                    `json:"trace_events,omitempty"`
+	TraceEvents   []Event                    `json:"-"`
 	Session       SessionVerificationSummary `json:"session"`
 }
 

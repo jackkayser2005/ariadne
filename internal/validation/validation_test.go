@@ -230,6 +230,160 @@ func TestValidateRejectsMalformedArchiveQuestionTransitionHistory(t *testing.T) 
 	assertRejected(t, Validate(path), KindArchiveQuestionTransitionHistory)
 }
 
+func writeArchiveQuestionTransitionHistoryQuestionArtifacts(t *testing.T) (
+	string,
+	bundle.ArchiveQuestionTransitionHistoryQuestionRoundVerificationSummary,
+	string,
+	bundle.ArchiveQuestionTransitionHistoryAnswerReceiptVerificationSummary,
+	string,
+	bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary,
+) {
+	t.Helper()
+	root := t.TempDir()
+	history := bundle.ArchiveQuestionTransitionHistory{
+		SchemaVersion:   2,
+		HistoryID:       "answer-state-transitions",
+		HistoryQuestion: "At which supplied boundaries did the bounded answer state change?",
+		QuestionID:      "counterfactual-change",
+		Question:        "Did changing the declared variable influence an observed output?",
+		OrderBasis:      "caller",
+		Snapshots:       2,
+		Transitions: []bundle.ArchiveQuestionTransition{{
+			FromReflectionSHA256: strings.Repeat("a", 64),
+			ToReflectionSHA256:   strings.Repeat("b", 64),
+			Result:               "changed",
+			Compared:             1,
+			Changed:              1,
+			StateChanges: []bundle.ArchiveQuestionStateChange{{
+				Directory:  "run-001",
+				OlderState: "observed",
+				NewerState: "unknown",
+			}},
+		}},
+	}
+	historyData, err := json.Marshal(history)
+	if err != nil {
+		t.Fatal(err)
+	}
+	historyPath := filepath.Join(root, "source-history.json")
+	if err := os.WriteFile(historyPath, historyData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	historySummary, err := bundle.VerifyArchiveQuestionTransitionHistory(historyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	round := bundle.AnswerArchiveQuestionTransitionHistoryQuestionRound(history, historySummary.TransitionHistorySHA256)
+	roundData, err := json.Marshal(round)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roundPath := filepath.Join(root, "archive-question-history-round.json")
+	if err := os.WriteFile(roundPath, roundData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	roundSummary, err := bundle.VerifyArchiveQuestionTransitionHistoryQuestionRound(roundPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	receipt, err := bundle.AnswerArchiveQuestionTransitionHistoryReceipt(history, historySummary.TransitionHistorySHA256, "answer-state-transitions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	receiptData, err := json.Marshal(receipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receiptPath := filepath.Join(root, "archive-question-history-receipt.json")
+	if err := os.WriteFile(receiptPath, receiptData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	receiptSummary, err := bundle.VerifyArchiveQuestionTransitionHistoryAnswerReceipt(receiptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	acceptance := bundle.ArchiveQuestionTransitionHistoryAcceptanceRecord{
+		SchemaVersion:           1,
+		TransitionHistorySHA256: historySummary.TransitionHistorySHA256,
+		QuestionRoundSHA256:     roundSummary.RoundSHA256,
+		QuestionID:              receipt.QuestionID,
+		ReceiptSHA256:           receiptSummary.ReceiptSHA256,
+	}
+	acceptanceData, err := json.Marshal(acceptance)
+	if err != nil {
+		t.Fatal(err)
+	}
+	acceptancePath := filepath.Join(root, "acceptance.json")
+	if err := os.WriteFile(acceptancePath, acceptanceData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	acceptanceSummary, err := bundle.VerifyArchiveQuestionTransitionHistoryAcceptanceRecord(acceptancePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return roundPath, roundSummary, receiptPath, receiptSummary, acceptancePath, acceptanceSummary
+}
+
+func TestValidateArchiveQuestionTransitionHistoryQuestionArtifacts(t *testing.T) {
+	roundPath, roundSummary, receiptPath, receiptSummary, acceptancePath, acceptanceSummary := writeArchiveQuestionTransitionHistoryQuestionArtifacts(t)
+	tests := []struct {
+		name     string
+		path     string
+		kind     ArtifactKind
+		identity string
+	}{
+		{name: "question round", path: roundPath, kind: KindArchiveQuestionTransitionHistoryQuestionRound, identity: roundSummary.RoundSHA256},
+		{name: "answer receipt", path: receiptPath, kind: KindArchiveQuestionTransitionHistoryAnswerReceipt, identity: receiptSummary.ReceiptSHA256},
+		{name: "acceptance record", path: acceptancePath, kind: KindArchiveQuestionTransitionHistoryAcceptance, identity: acceptanceSummary.AcceptanceSHA256},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			report := Validate(test.path)
+			if report.ArtifactKind != test.kind ||
+				report.Overall != StatusWarning ||
+				report.Identity != test.identity ||
+				report.EvidenceState != evidence.Unknown ||
+				report.Reason != ReasonProvenanceUnavailable ||
+				tierStatus(report, TierStructural) != StatusPass ||
+				tierStatus(report, TierIntegrity) != StatusPass ||
+				tierStatus(report, TierBoundary) != StatusUnavailable ||
+				tierStatus(report, TierReplay) != StatusUnavailable {
+				t.Fatalf("report = %#v", report)
+			}
+			data, err := json.Marshal(report)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(data), "standard") || strings.Contains(string(data), "personalized") {
+				t.Fatalf("report exposed a captured value: %s", data)
+			}
+		})
+	}
+}
+
+func TestValidateRejectsMalformedArchiveQuestionTransitionHistoryQuestionArtifacts(t *testing.T) {
+	tests := []struct {
+		name string
+		kind ArtifactKind
+	}{
+		{name: "archive-question-history-round.json", kind: KindArchiveQuestionTransitionHistoryQuestionRound},
+		{name: "archive-question-history-receipt.json", kind: KindArchiveQuestionTransitionHistoryAnswerReceipt},
+		{name: "archive-question-history-acceptance.json", kind: KindArchiveQuestionTransitionHistoryAcceptance},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), test.name)
+			if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			assertRejected(t, Validate(path), test.kind)
+		})
+	}
+}
+
 func TestValidateAndroidAcceptance(t *testing.T) {
 	path, record := writeAndroidAcceptanceValidationRecord(t)
 	summary, err := bundle.VerifyAndroidAcceptanceRecord(path)
