@@ -567,6 +567,8 @@ and is not persisted as a second evidence store. In human-readable output the
 command starts with a short explanation of what the labels do and do not mean;
 `--json` remains the stable machine-readable form. Set `ARIADNE_COLOR=1` when
 you want successful status headings colored green in an interactive terminal.
+Human `validate` output now starts with a plain-language answer before the
+artifact identity, tier statuses, and reason; `--json` is unchanged.
 `trace case map compare` is the next cross-case reflection boundary. It
 re-verifies both assembled workspaces, requires the same caller-supplied
 private investigation commitment and compatible reviewed source provenance,

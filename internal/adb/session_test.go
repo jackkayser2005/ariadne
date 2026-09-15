@@ -839,9 +839,14 @@ func TestRunPairRejectsUnexpectedResetOutput(t *testing.T) {
 }
 
 func TestFinishSessionReportsWriteFailure(t *testing.T) {
+	root := t.TempDir()
+	blocked := filepath.Join(root, "blocked")
+	if err := os.WriteFile(blocked, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	record := SessionRecord{}
 	err := finishSession(
-		filepath.Join(t.TempDir(), "missing"),
+		blocked,
 		&record,
 		time.Now,
 		"",

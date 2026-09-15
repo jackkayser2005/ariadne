@@ -2,6 +2,7 @@ package bundle
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -363,7 +364,7 @@ func TestSaveAndroidAcceptanceRecord(t *testing.T) {
 			t.Fatalf("saved acceptance exposed %q: %s", secret, data)
 		}
 	}
-	if _, err := SaveAndroidAcceptanceRecord(runDir, replicationRoot, exportPath, reflectionPath, recordPath, true); err == nil || !strings.Contains(err.Error(), "file exists") {
+	if _, err := SaveAndroidAcceptanceRecord(runDir, replicationRoot, exportPath, reflectionPath, recordPath, true); err == nil || !errors.Is(err, os.ErrExist) {
 		t.Fatalf("second save error = %v", err)
 	}
 	if _, err := SaveAndroidAcceptanceRecord(runDir, replicationRoot, exportPath, reflectionPath, filepath.Join(t.TempDir(), "other.json"), false); err == nil || !strings.Contains(err.Error(), "review") {

@@ -21,7 +21,7 @@ go test ./...
 go test -race -covermode=atomic -coverprofile=coverage.out ./...
 ~~~
 
-The race-enabled run passed for all 15 Go packages and produced 90.1% total
+The race-enabled run passed for all 16 Go packages and produced 90.1% total
 statement coverage. Package coverage is not a proof of complete behavior: the
 regression tests still target hostile files, malformed and oversized input,
 redaction, path replacement, timeouts, cleanup, redirects, undeclared browser
@@ -40,6 +40,7 @@ The dependency baseline was checked with `go run golang.org/x/vuln/cmd/govulnche
 | High | Proxy process execution | A program path could be validated through a symlink and opened again during staging. | Validation now walks with `Lstat`, requires a regular file, and rechecks the opened identity before hashing or copying. `TestProxyProgramRejectsSymlinkPaths` covers leaf and ancestor links. |
 | High | Source-adapter process execution | Hashing a requested executable before launching its path left a replacement window. | Real source-adapter runs now stage a bounded copy from a verified handle and execute that copy; the staged digest is rechecked before publication. TestStageSourceAdapterExecutableBindsBytesAndRejectsSymlinkPaths covers byte binding and cleanup. |
 | High | Artifact and procedure reads | A path replacement could make a parser follow a symlink or reparse point. | Shared bounded reads reject symlink and irregular components and compare the opened file identity. Browser, proxy, ladder, plan, Android binding, and trace readers use this contract; package tests cover hostile paths. |
+| High | Output publication | A writer could create or replace an artifact through a changed parent or leaf path. | The shared `internal/securefs` publication boundary validates existing parents, creates new directories component by component, opens new leaves exclusively, and rechecks identities before and after writing. Writers across trace, Android, browser, proxy, minimization, bundle, question, and adapter paths use it; tests cover existing-parent, symlink, duplicate-output, and replacement cases. |
 | High | Evidence binding | A copied receipt could be presented without proving that its child artifacts still matched. | Verification recomputes receipt, child, session, procedure, and binding identities before review. Mismatches fail closed and remain visible in the CLI and local UI. |
 | Medium | Browser network scope | A live page could redirect or call an undeclared destination. | The weather driver pins reviewed HTTPS origins, blocks undeclared destinations, records the resulting gap, and never silently expands the allowlist. |
 | Medium | Output and parser bounds | Hostile captures, driver output, request bodies, and plans could consume unbounded memory or time. | Readers and process pipes enforce size limits; procedures enforce duration and event limits; unsupported or truncated channels become `unknown`. |
@@ -63,6 +64,19 @@ The existing HAR benchmarks provide reproducible local baselines:
 
 These are synthetic, machine-local measurements. They cover parser and report
 work, not browser layout, concurrent reviews, or remote network time.
+
+The bounded trace benchmarks were also run on the same Windows amd64 machine:
+~~~console
+go test ./internal/trace ./internal/browser ./internal/ui -run '^$' -bench 'Benchmark(TraceCompare|TraceVerify|CaseAssembly|WeatherVerify|WeatherReviewRequest|SourceAdapterReviewRequest|ReviewRequest)$' -benchmem -benchtime=3x
+~~~
+The three-iteration sample reported large trace comparison at 1.66 ms and 1.71 MB
+allocated per operation, large trace verification at 6.26 ms and 3.26 MB, case
+assembly at 12.75 ms and 0.81 MB, eight-session weather verification at 7.66 ms
+and 0.22 MB, weather review at 7.64 ms and 0.27 MB, source-adapter review at
+0.025 ms and 0.03 MB, and the empty archive review request at 0.28 ms and
+0.04 MB. These measurements include Go allocation counts;
+isolated peak working-set measurements remain recorded only for the HAR report
+above.
 See [browser capture review](browser-capture-review.md) for the commands and
 fixture details.
 
@@ -83,8 +97,8 @@ apply to the run, so Ariadne withholds a minimum-disclosure recommendation.
 The forecast result is kept separate from exact weather-content equality, and
 the driver cannot observe server-side storage or onward sharing.
 
-The local GET-only pages at `/weather` and `/source-adapter` re-verify their saved artifacts on each request and
-start with plain-language explanations. The CLI's default output reports the
+The local GET-only pages at `/weather`, `/source-adapter`, and `/trace-case` re-verify their saved artifacts on each request.
+They start with plain-language explanations. The CLI's default output reports the
 same counts and limits without printing coordinates or URLs. The technical
 identities remain available under the collapsed evidence section.
 

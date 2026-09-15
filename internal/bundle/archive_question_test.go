@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -84,7 +85,7 @@ func TestSaveArchiveQuestionReport(t *testing.T) {
 			t.Fatalf("SaveArchiveQuestionReport() exposed raw value %q: %s", rawValue, data)
 		}
 	}
-	if _, err := SaveArchiveQuestionReport(root, "counterfactual-change", reportPath); err == nil || !strings.Contains(err.Error(), "file exists") {
+	if _, err := SaveArchiveQuestionReport(root, "counterfactual-change", reportPath); err == nil || !errors.Is(err, os.ErrExist) {
 		t.Fatalf("second SaveArchiveQuestionReport() error = %v", err)
 	}
 }

@@ -697,6 +697,9 @@ func runLegacyManifestValidate(path string, stdout, stderr io.Writer) int {
 }
 
 func writeValidationReport(report validation.Report, stdout io.Writer) error {
+	if err := writeValidationHeadline(report.Overall, stdout); err != nil {
+		return err
+	}
 	if _, err := fmt.Fprintf(stdout, "artifact: %s\n", report.ArtifactKind); err != nil {
 		return err
 	}
@@ -740,6 +743,32 @@ func writeValidationReport(report validation.Report, stdout io.Writer) error {
 		}
 	}
 	return nil
+}
+
+func writeValidationHeadline(status validation.Status, stdout io.Writer) error {
+	headline := validationHeadline(status)
+	if status == validation.StatusPass {
+		return writeCLIStatus(stdout, headline+"\n")
+	}
+	_, err := fmt.Fprintln(stdout, headline)
+	return err
+}
+
+func validationHeadline(status validation.Status) string {
+	switch status {
+	case validation.StatusPass:
+		return "Ariadne: checks passed"
+	case validation.StatusWarning:
+		return "Ariadne: evidence is valid, with limits"
+	case validation.StatusUnknown:
+		return "Ariadne: more evidence is needed"
+	case validation.StatusFail:
+		return "Ariadne: this artifact was rejected"
+	case validation.StatusUnavailable:
+		return "Ariadne: there was not enough to check"
+	default:
+		return "Ariadne: the result could not be interpreted"
+	}
 }
 
 func validationMeaning(status validation.Status) string {

@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -199,7 +200,7 @@ func TestExportIsVerifiedAndRawValueFree(t *testing.T) {
 		t.Fatalf("VerifyExport() formatted content = %#v, error = %v", formattedVerification, err)
 	}
 
-	if _, err := Export(runDir, exportPath); err == nil || !strings.Contains(err.Error(), "file exists") {
+	if _, err := Export(runDir, exportPath); err == nil || !errors.Is(err, os.ErrExist) {
 		t.Fatalf("second Export() error = %v", err)
 	}
 }

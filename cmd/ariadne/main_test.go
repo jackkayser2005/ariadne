@@ -214,6 +214,7 @@ func TestWriteValidationReportIncludesSafeFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
+		"Ariadne: checks passed",
 		"artifact: android-minimization",
 		"overall: pass",
 		"meaning: The saved evidence passed its checks",
@@ -248,6 +249,9 @@ func TestValidationMeaningCoversStatuses(t *testing.T) {
 		t.Run(string(test.status), func(t *testing.T) {
 			if got := validationMeaning(test.status); !strings.Contains(got, test.want) {
 				t.Fatalf("validationMeaning(%q) = %q, want %q", test.status, got, test.want)
+			}
+			if got := validationHeadline(test.status); strings.TrimSpace(got) == "" {
+				t.Fatalf("validationHeadline(%q) is empty", test.status)
 			}
 		})
 	}
