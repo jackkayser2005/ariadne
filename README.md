@@ -207,8 +207,9 @@ directories, and a verified browser weather investigation directory containing
 `weather.json`. Every report lists
 `structural`, `integrity`, `boundary`, and `replay` tiers. Structural and
 integrity checks delegate to the existing specialized verifiers; boundary
-checks require the canonical provenance already present in new authenticated
-artifacts; replay reports readiness from recorded complete pairs but never
+checks require both canonical provenance and an authenticated execution
+binding in new Android artifacts; provenance alone is not an authentication or
+evidence-boundary guarantee. Replay reports readiness from recorded complete pairs but never
 launches a device or adapter.
 
 The aggregate status is `pass` when all applicable tiers pass, `warning` when

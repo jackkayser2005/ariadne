@@ -579,7 +579,10 @@ func reportFromReplication(summary bundle.ReplicatedExperimentSummary) Report {
 	report.Outcome = string(summary.Outcome)
 	report.EvidenceState = summary.EvidenceState
 
-	if summary.ProvenanceSHA256 == "" {
+	// The adapter provenance digest identifies the reviewed boundary; the
+	// authenticated root binding additionally proves that the checked sessions,
+	// ordered pairs, and root receipt agree with that boundary.
+	if summary.ProvenanceSHA256 == "" || summary.BindingSHA256 == "" {
 		setTier(&report, TierBoundary, StatusUnavailable, ReasonProvenanceUnavailable)
 	} else {
 		setTier(&report, TierBoundary, StatusPass, ReasonVerified)
