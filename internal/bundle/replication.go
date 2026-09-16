@@ -122,20 +122,20 @@ func VerifyReplicated(rootDir string) (ReplicatedExperimentSummary, error) {
 				if summary.EnvironmentSHA256 == "" {
 					return ReplicatedExperimentSummary{}, errors.New("authenticated replication environment identity is unavailable")
 				}
-			if summary.EnvironmentSHA256 != "" {
-				if environmentSHA256 == "" {
-					environmentSHA256 = summary.EnvironmentSHA256
-				} else if environmentSHA256 != summary.EnvironmentSHA256 {
-					return ReplicatedExperimentSummary{}, errors.New("replication environment identity disagrees")
+				if summary.EnvironmentSHA256 != "" {
+					if environmentSHA256 == "" {
+						environmentSHA256 = summary.EnvironmentSHA256
+					} else if environmentSHA256 != summary.EnvironmentSHA256 {
+						return ReplicatedExperimentSummary{}, errors.New("replication environment identity disagrees")
+					}
 				}
-			}
-			if summary.ManifestContractSHA256 != record.ManifestContractSHA256 {
-				return ReplicatedExperimentSummary{}, errors.New("replication pair manifest contract disagrees")
-			}
-			expectedPairBinding, err := adb.ReplicatedPairBindingSHA256(record, pair)
-			if err != nil || expectedPairBinding != pair.BindingSHA256 {
-				return ReplicatedExperimentSummary{}, errors.New("replication pair binding does not match metadata")
-			}
+				if summary.ManifestContractSHA256 != record.ManifestContractSHA256 {
+					return ReplicatedExperimentSummary{}, errors.New("replication pair manifest contract disagrees")
+				}
+				expectedPairBinding, err := adb.ReplicatedPairBindingSHA256(record, pair)
+				if err != nil || expectedPairBinding != pair.BindingSHA256 {
+					return ReplicatedExperimentSummary{}, errors.New("replication pair binding does not match metadata")
+				}
 			}
 			if summary.ManifestName != record.ManifestName ||
 				summary.DeclaredVariable != record.DeclaredVariable {
