@@ -1385,14 +1385,14 @@ func TestReportFromWeather(t *testing.T) {
 
 func TestReportFromReplication(t *testing.T) {
 	base := bundle.ReplicatedExperimentSummary{
-		ReceiptSHA256:    strings.Repeat("a", 64),
+		ReceiptSHA256:     strings.Repeat("a", 64),
 		ProvenanceSHA256:  strings.Repeat("b", 64),
 		BindingSHA256:     strings.Repeat("c", 64),
 		EnvironmentSHA256: strings.Repeat("d", 64),
-		Pairs:            2,
-		CompletedPairs:   2,
-		Outcome:          bundle.ReplicatedChange,
-		EvidenceState:    evidence.Observed,
+		Pairs:             2,
+		CompletedPairs:    2,
+		Outcome:           bundle.ReplicatedChange,
+		EvidenceState:     evidence.Observed,
 	}
 	report := reportFromReplication(base)
 	if report.Overall != StatusPass ||
