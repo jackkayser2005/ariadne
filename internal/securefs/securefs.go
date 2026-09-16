@@ -50,6 +50,56 @@ func MkdirExclusive(path string, perm os.FileMode) error {
 	return nil
 }
 
+// PublishDirectoryExclusive atomically moves sourceDir to destinationDir
+// without replacing an existing destination. Both paths must share a validated
+// parent filesystem; unsupported platforms fail closed.
+func PublishDirectoryExclusive(sourceDir, destinationDir string) error {
+	if strings.TrimSpace(sourceDir) == "" || strings.TrimSpace(destinationDir) == "" {
+		return errors.New("source and destination directories are required")
+	}
+	source, err := filepath.Abs(sourceDir)
+	if err != nil {
+		return fmt.Errorf("resolve source directory: %w", err)
+	}
+	destination, err := filepath.Abs(destinationDir)
+	if err != nil {
+		return fmt.Errorf("resolve destination directory: %w", err)
+	}
+	if source == destination {
+		return errors.New("source and destination directories must differ")
+	}
+	sourceInfo, err := requireDirectory(source)
+	if err != nil {
+		return fmt.Errorf("validate source directory: %w", err)
+	}
+	parent := filepath.Dir(destination)
+	parentInfo, err := requireDirectory(parent)
+	if err != nil {
+		return fmt.Errorf("validate destination parent: %w", err)
+	}
+	if err := RequireAbsent(destination); err != nil {
+		return fmt.Errorf("validate destination: %w", err)
+	}
+	if err := renameNoReplace(source, destination); err != nil {
+		return fmt.Errorf("publish directory without replacement: %w", err)
+	}
+	currentParent, err := requireDirectory(parent)
+	if err != nil {
+		return fmt.Errorf("verify destination parent: %w", err)
+	}
+	if !os.SameFile(parentInfo, currentParent) {
+		return fmt.Errorf("destination parent changed during publication: %w", errUnsafePath)
+	}
+	destinationInfo, err := requireDirectory(destination)
+	if err != nil {
+		return fmt.Errorf("verify published directory: %w", err)
+	}
+	if !os.SameFile(sourceInfo, destinationInfo) {
+		return fmt.Errorf("published directory identity changed: %w", errUnsafePath)
+	}
+	return nil
+}
+
 // ValidateDirectory verifies that path is an existing directory with no
 // symlink, reparse-point, or irregular component.
 func ValidateDirectory(path string) error {

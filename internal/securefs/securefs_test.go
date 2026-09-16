@@ -27,6 +27,63 @@ func TestValidateDirectoryAndRequireAbsent(t *testing.T) {
 	}
 }
 
+
+func TestPublishDirectoryExclusivePublishesWithoutReplacement(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "staging")
+	destination := filepath.Join(root, "published")
+	if err := MkdirExclusive(source, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "artifact.json"), []byte("safe"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := PublishDirectoryExclusive(source, destination); err != nil {
+		if errors.Is(err, errAtomicRenameUnsupported) {
+			t.Skipf("atomic no-replace publication is unsupported: %v", err)
+		}
+		t.Fatalf("PublishDirectoryExclusive() error = %v", err)
+	}
+	if _, err := os.Stat(source); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("source still exists, err = %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(destination, "artifact.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "safe" {
+		t.Fatalf("published data = %q, want safe", data)
+	}
+}
+
+func TestPublishDirectoryExclusiveRejectsExistingDestination(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "staging")
+	destination := filepath.Join(root, "published")
+	if err := MkdirExclusive(source, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "artifact.json"), []byte("safe"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(destination, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := PublishDirectoryExclusive(source, destination); !errors.Is(err, os.ErrExist) {
+		t.Fatalf("PublishDirectoryExclusive() error = %v, want os.ErrExist", err)
+	}
+	if _, err := os.Stat(filepath.Join(source, "artifact.json")); err != nil {
+		t.Fatalf("source changed after collision: %v", err)
+	}
+	entries, err := os.ReadDir(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("existing destination changed: %#v", entries)
+	}
+}
+
 func TestWriteExclusiveCreatesNestedOutput(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "nested", "artifact.json")

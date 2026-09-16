@@ -32,7 +32,7 @@ type CaseAssemblyPlanEntry struct {
 }
 
 // CaseAssemblyPlan is the local-only input for assembling a portable case and
-// its disclosure-map question round in one atomic workspace.
+// its disclosure-map question round in one atomically published workspace.
 type CaseAssemblyPlan struct {
 	SchemaVersion                 int                     `json:"schema_version"`
 	OrderBasis                    string                  `json:"order_basis"`
@@ -109,7 +109,7 @@ func DecodeCaseAssemblyPlan(data []byte) (CaseAssemblyPlan, error) {
 
 // AssembleCase verifies the local plan, creates a portable case and derives
 // its disclosure question round from that newly written case. The destination
-// must not exist; the final workspace becomes visible only after both files
+// is published with an OS-level atomic no-replace operation after both files
 // have been generated and re-verified.
 func AssembleCase(planPath, outputDir string) (CaseAssemblySummary, error) {
 	if strings.TrimSpace(planPath) == "" {
@@ -132,59 +132,18 @@ func AssembleCase(planPath, outputDir string) (CaseAssemblySummary, error) {
 	}
 	parent := filepath.Dir(outputDir)
 	if err := securefs.ValidateDirectory(parent); err != nil {
-		return CaseAssemblySummary{}, errors.New("trace case assembly output parent is unavailable")
+		return CaseAssemblySummary{}, errors.New("publish trace case assembly workspace")
 	}
-	stagingDir, err := os.MkdirTemp(parent, ".ariadne-case-assembly-")
-	if err != nil {
-		return CaseAssemblySummary{}, errors.New("create trace case assembly workspace")
-	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = os.RemoveAll(stagingDir)
+	// RequireAbsent is only an early, user-friendly check. The no-replace
+	// publication primitive is the authoritative race-safe reservation.
+	if err := securefs.PublishDirectoryExclusive(stagingDir, outputDir); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return CaseAssemblySummary{}, errors.New("trace case assembly output directory already exists")
 		}
-	}()
-
-	inputs := make([]CaseInput, 0, len(plan.Entries))
-	for _, entry := range plan.Entries {
-		inputs = append(inputs, CaseInput{
-			Kind:              entry.Kind,
-			ArtifactPath:      entry.ArtifactPath,
-			QuestionRoundPath: entry.QuestionRoundPath,
-		})
-	}
-	casePath := filepath.Join(stagingDir, "case.json")
-	var caseErr error
-	if plan.InvestigationCommitmentSHA256 == "" {
-		_, caseErr = SaveCase(inputs, casePath)
-	} else {
-		_, caseErr = SaveCaseWithCommitment(plan.InvestigationCommitmentSHA256, inputs, casePath)
-	}
-	if caseErr != nil {
-		return CaseAssemblySummary{}, fmt.Errorf("trace case assembly case: %w", caseErr)
-	}
-	roundPath := filepath.Join(stagingDir, "disclosure-round.json")
-	if _, err := SaveCaseDisclosureQuestionRound(casePath, roundPath); err != nil {
-		return CaseAssemblySummary{}, fmt.Errorf("trace case assembly disclosure round: %w", err)
-	}
-
-	summary, err := VerifyCaseAssembly(stagingDir)
-	if err != nil {
-		return CaseAssemblySummary{}, fmt.Errorf("trace case assembly generated files: %w", err)
-	}
-
-	if err := securefs.ValidateDirectory(parent); err != nil {
-		return CaseAssemblySummary{}, errors.New("publish trace case assembly workspace")
-	}
-	if err := securefs.RequireAbsent(outputDir); err != nil {
-		return CaseAssemblySummary{}, errors.New("publish trace case assembly workspace")
-	}
-	if err := os.Rename(stagingDir, outputDir); err != nil {
 		return CaseAssemblySummary{}, errors.New("publish trace case assembly workspace")
 	}
 	committed = true
 	return summary, nil
-}
 
 // VerifyCaseAssembly verifies the fixed files in one assembled workspace and
 // confirms that its durable disclosure round is derived from its case.
