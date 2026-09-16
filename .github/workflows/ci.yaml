@@ -27,6 +27,10 @@ jobs:
       - name: Format check
         run: test -z "$(gofmt -l .)"
 
+      - name: Format diagnostics
+        if: ${{ failure() }}
+        run: gofmt -d .
+
       - name: Vet
         run: go vet ./...
 
