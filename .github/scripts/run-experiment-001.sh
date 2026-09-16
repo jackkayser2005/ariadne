@@ -46,12 +46,14 @@ replicated_verify_json="${RUNNER_TEMP}/ariadne-replicated-verify.json"
 "${ariadne}" experiment replicate verify --json \
   "${replicated_dir}" >"${replicated_verify_json}"
 jq -e '
-  (keys_unsorted == ["schema_version", "manifest_name", "declared_variable", "receipt_sha256", "provenance_sha256", "binding_sha256", "pairs", "pairs_per_order", "baseline_treatment_pairs", "treatment_baseline_pairs", "outcome", "evidence_state", "completed_pairs", "changed_pairs", "no_change_pairs", "unknown_pairs", "pair_summaries"]) and
+  (keys_unsorted == ["schema_version", "manifest_name", "declared_variable", "receipt_sha256", "provenance_sha256", "binding_sha256", "environment_sha256", "pairs", "pairs_per_order", "baseline_treatment_pairs", "treatment_baseline_pairs", "outcome", "evidence_state", "completed_pairs", "changed_pairs", "no_change_pairs", "unknown_pairs", "pair_summaries"]) and
   (.schema_version == 2) and
   (.manifest_name == "experiment-001-email") and
   (.declared_variable == "email") and
   (.receipt_sha256 | test("^[0-9a-f]{64}$")) and
   (.provenance_sha256 | test("^[0-9a-f]{64}$")) and
+  (.binding_sha256 | test("^[0-9a-f]{64}$")) and
+  (.environment_sha256 | test("^[0-9a-f]{64}$")) and
   (.pairs == 2) and
   (.pairs_per_order == 1) and
   (.baseline_treatment_pairs == 1) and
@@ -120,7 +122,7 @@ minimization_verify_json="${RUNNER_TEMP}/ariadne-minimization-verify.json"
   "${minimization_dir}" >"${minimization_verify_json}"
 jq -e '
   (keys_unsorted == ["schema_version", "plan_name", "variable", "reference_candidate", "functionality_criterion", "pairs_per_order", "evidence_state", "selection_state", "selected_candidate", "candidate_results", "receipt_sha256"]) and
-  (.schema_version == 1) and
+  (.schema_version == 2) and
   (.plan_name == "android-location-minimize") and
   (.variable == "location") and
   (.reference_candidate == "exact") and
@@ -132,7 +134,7 @@ jq -e '
   (.candidate_results | length == 2) and
   (.receipt_sha256 | test("^[0-9a-f]{64}$")) and
   ([.candidate_results[].id] == ["city", "omitted"]) and
-  (all(.candidate_results[]; .classification == "sufficient" and .outcome == "no-change-observed" and .evidence_state == "observed" and .pairs == 2 and .pairs_per_order == 1 and .completed_pairs == 2 and .changed_pairs == 0 and .no_change_pairs == 2 and .unknown_pairs == 0 and (.receipt_sha256 | test("^[0-9a-f]{64}$")) and (.binding_sha256 | test("^[0-9a-f]{64}$"))))
+  (all(.candidate_results[]; .classification == "sufficient" and .outcome == "no-change-observed" and .evidence_state == "observed" and (.environment_sha256 | test("^[0-9a-f]{64}$")) and .pairs == 2 and .pairs_per_order == 1 and .completed_pairs == 2 and .changed_pairs == 0 and .no_change_pairs == 2 and .unknown_pairs == 0 and (.receipt_sha256 | test("^[0-9a-f]{64}$")) and (.binding_sha256 | test("^[0-9a-f]{64}$"))))
 ' "${minimization_verify_json}"
 minimization_validate_json="${RUNNER_TEMP}/ariadne-minimization-validate.json"
 "${ariadne}" validate --json "${minimization_dir}" >"${minimization_validate_json}"
