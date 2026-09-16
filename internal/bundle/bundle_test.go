@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -199,7 +200,7 @@ func TestExportIsVerifiedAndRawValueFree(t *testing.T) {
 		t.Fatalf("VerifyExport() formatted content = %#v, error = %v", formattedVerification, err)
 	}
 
-	if _, err := Export(runDir, exportPath); err == nil || !strings.Contains(err.Error(), "file exists") {
+	if _, err := Export(runDir, exportPath); err == nil || !errors.Is(err, os.ErrExist) {
 		t.Fatalf("second Export() error = %v", err)
 	}
 }
@@ -1789,11 +1790,21 @@ func writeSession(
 	if schemaVersion >= 6 {
 		record.ManifestContractSHA256 = strings.Repeat("c", 64)
 	}
+	if schemaVersion >= adb.AuthenticatedSessionSchemaVersion {
+		record.ResetPolicy = adb.ReplicationResetPolicy
+	}
 	if schemaVersion >= 3 {
 		record.Status = "complete"
 	}
 	if mutate != nil {
 		mutate(&record)
+	}
+	if schemaVersion == adb.AuthenticatedSessionSchemaVersion {
+		binding, err := adb.SessionBindingSHA256(record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		record.BindingSHA256 = binding
 	}
 	data, err := json.MarshalIndent(record, "", "  ")
 	if err != nil {

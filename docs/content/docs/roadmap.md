@@ -90,6 +90,54 @@ authority, and uses no-store/security headers. This closes the first
 observe/authenticate/reduce/replay/compare/verify slice into a usable local
 inspection surface without turning the desktop page into a capture service.
 
+**Current generic source-adapter boundary slice.** The source-neutral trace now
+has a reusable process handoff for explicitly authorized source adapters. A
+bounded procedure declares only an external-* adapter ID, fixed source label,
+scope, duration, and event limit. Ariadne sends a one-shot random challenge and
+procedure digest over stdin, invokes the absolute executable without a shell,
+limits stdout/stderr and runtime, and accepts only one redacted trace response
+bound to that request. A successful run publishes exactly trace, session, and
+portable receipt artifacts atomically; the receipt retains only safe labels and
+procedure/executable/challenge-commitment/trace/session identities. Offline
+verification rechecks the three artifacts without reopening the adapter. This
+is a consistency and session-binding boundary, not external authenticity,
+authorization proof, universal traffic capture, or causal evidence.
+
+**Current adapter-run archive bridge.** The generic source-adapter handoff now
+flows into the existing source-neutral archive, question-round, and case
+workflow without discarding its portable receipt. A repeated --run archive
+input verifies each three-artifact run into memory once, preserves the safe
+receipt beside its normalized trace and session, emits archive schema version
+2, rejects duplicate receipt identities, and rechecks all receipt-to-artifact
+bindings offline. Loose trace/session archives remain schema version 1 and
+readable. This is still structural consistency and process-session provenance:
+the receipt is not a signature, authorization proof, capture-truth claim,
+chronology model, universal tracer, or causal result.
+The loopback review surface now exposes one verified run at /source-adapter
+with the same raw-value-free receipt, trace, session, completeness, and replay
+limitations.
+
+The adjacent hardening keeps this bridge fail-closed under local hostile input:
+invalid collector requests do not consume the valid observation slot, adapter
+artifact and executable reads reject symlink/reparse/path replacement, a
+post-run executable hash change aborts the run, and Android package selectors are
+restricted before ADB shell use.
+
+Output publication now follows the same fail-closed boundary. The shared
+internal/securefs helper validates every parent component without following
+symlinks or reparse points, creates directories one component at a time, opens
+new leaves exclusively, and rechecks the opened identity. Trace, Android, browser,
+proxy, minimization, question, bundle, and adapter writers use it so a redirected
+or replaced output path cannot silently become the published evidence.
+
+**Current receipt trust-boundary slice.** Android and browser minimization
+verification now exposes the canonical root receipt identity in both human and
+JSON output and accepts an independently retained `--expect-sha256` trust
+anchor. This makes a copied run directory independently checkable without
+reopening the original plan or values; a mismatch fails closed. The digest
+binds the raw-value-free receipt and verified child identities, but it is not a
+signature and does not make the underlying evidence universally causal.
+
 **Current reflection slice (minimization questions).** The minimum-disclosure
 ladder now has a fixed question catalog for selection and support. A verified
 run can produce a portable question round, and a selected answer can be
@@ -152,6 +200,9 @@ tracing.
    `replicated-change`, `no-change-observed`, `mixed-inconsistent`, or
    `unknown`, with `evidence_state` kept separate. This is a deterministic
    smoke path, not a user-browser adapter.
+
+**Current website location slice.** The versioned `browser-weather-location-v1` procedure runs eight fresh-profile sessions against the National Weather Service beta site with synthetic precise, city-center, and denied candidates. The driver pins the HTTPS origin, blocks undeclared requests, bounds supported path/query/body inspection, and publishes only redacted labels and verifier-derived identities. The 2026-09-11 live run rendered precise and coarse forecasts and denied access as unavailable; blocked-origin, capture-incomplete, unsupported-channel, and server-side-unobservable gaps kept the ladder selection `unknown`. Its independently verified receipt is `4f3cf95a01ad0d413e979281a405561690cc2997b23d8617a4800f85bdf1d820`. Permission configuration, network observations, and functionality remain separate; the driver cannot observe server-side onward sharing. The local `/weather` page re-verifies the bundle on every GET and shows verifier-derived per-candidate functionality counts plus fixed explanations for visibility gaps; the same projection is available in CLI JSON. The unified `ariadne validate` command also recognizes this verified weather directory and reports its receipt identity, selection state, and replay readiness without reopening source values. This is a bounded website procedure, not universal browser capture or a completed repository audit.
+
 10. **Source-neutral trace archive questions.** Caller-ordered standalone
     sessions from reviewed adapters can now be retained in one portable,
     raw-value-free archive. Fixed questions report complete versus partial
@@ -292,6 +343,34 @@ tracing.
     canonical identities, and internal binding without reopening source inputs;
     it does not authenticate the original case unless that case is separately
     verified.
+23. **Verified case assembly.** A bounded local-only `CaseAssemblyPlan` now
+coordinates already verified trace archives or replication ledgers, creates the
+portable case, derives its disclosure-map question round from that newly
+verified case, and atomically publishes a new workspace containing only
+`case.json` and `disclosure-round.json`. The CLI summary exposes only safe
+identities, coverage, and fixed question results. The combined assembly
+verification command rechecks the published case and disclosure round before
+the existing `/trace-case`
+review surface can consume that durable round and an optional selected receipt
+after re-deriving and matching their case, round, and question identities. This
+improves the usable cross-source workflow without adding a capture adapter,
+evidence store, authorization proof, chronology model, or causal claim.
+
+24. **Commitment-bound case-map comparison.** Two assembled case workspaces can
+    now be re-verified and compared in caller order under one private
+    investigation commitment embedded in both assembly plans. The caller's
+    digest is cross-checked against both packages; legacy unbound cases remain
+    readable but are `incomparable`. The comparison requires compatible reviewed
+    source/adapter/version/procedure/scope provenance and reports `same`,
+    `changed`, or `incomparable` with added and removed safe category and
+    source/adapter/channel/kind/destination boundary labels. Partial coverage
+    preserves positive observations but turns unsupported absence into explicit
+    `unknown` categories/boundaries and an unknown comparison evidence state.
+    Both case and disclosure-round identities remain visible alongside the
+    commitment digest; paths, URLs, arguments, identifiers, and captured values
+    remain outside the projection. This is a cross-case reflection boundary,
+    not chronology, causal attribution, authorization proof, or universal
+    tracing.
 The local review page is intentionally read-only. Its compact question round
 and receipt links, including stable history and receipt identities, are a
 bounded UI-control surface for a computer-use driver;
@@ -385,10 +464,88 @@ promoting repeated outcomes into causal claims. Its fixed question round and
 selected receipt now provide the durable handoff for asking those bounded
 questions again without reopening source paths or captured values.
 
+The case assembly command must reject malformed or unsupported local plans,
+leave no destination on failed input, publish only after re-verifying the
+generated case and disclosure round, preserve caller order, and keep plan paths
+out of generated artifacts and summaries.
+
+**Current authenticated Android provenance envelope.** Authenticated Android
+session receipts use schema 9 and replication roots use schema 2. A session
+binding covers safe target identity, reset policy, manifest and procedure
+identity, challenge commitment, ordered steps, and artifact hashes; pair
+bindings cover both session bindings and explicit order; the root binding
+covers every ordered pair. Replication verification adds an evidence-bound
+summary binding over the verified pair evidence. Portable outputs retain only
+safe identities and digests: raw persona values, challenges, payloads, and
+device serials stay out. These identities prove canonical consistency and
+session binding, not signatures, external authenticity, reset proof, or
+causal truth. Legacy schema 1/8 artifacts remain readable with binding
+semantics unavailable.
+
+
+**Current tiered validation slice.** `ariadne validate [--json] <artifact>` now composes the existing manifest, Android replication, Android minimization, trace archive, trace replication, trace case, trace study, browser weather, generic source-adapter, and bounded HAR verifiers into one raw-value-free report. It identifies the artifact family and returns four fixed tiers: structural schema validity, canonical-content and child-artifact integrity, provenance/boundary consistency, and replay/reproducibility readiness. The last tier is a readiness check only; validation never launches an adapter or device. `pass`, `warning`, `unknown`, `fail`, and `unavailable` remain distinct: legacy artifacts can be structurally valid while provenance is unavailable, and incomplete captures remain unknown. The report's counterfactual outcome, where present, remains separate from `evidence_state`, and no report status makes a causal claim. The initial surface recognizes JSON experiment manifests, Android `replication.json` and `minimization.json` roots, verified source-neutral trace archives, replication ledgers, cross-source cases, and replication studies, plus the verified browser weather and generic source-adapter run directories, and bounded HAR export files; verified browser fixture replication and minimization directories plus proxy replication directories now join the common validator; standalone redacted trace documents now join the common validator with provenance unavailable when they lack a session envelope; raw-value-free Android acceptance receipts now join it as contract-only checks with replay unavailable; archive-question reflections and transition histories now join as contract-only checks with evidence state unknown and replay unavailable; portable fixed-question rounds, selected receipts, and acceptance records now join as contract-only checks with source provenance unavailable and replay unavailable; HAR exports remain on their specialized verifier until their own mapping slice is reviewed. At the CLI, only an aggregate pass exits successfully; every other aggregate status is nonzero so unavailable evidence cannot be mistaken for a clean validation.
+
+**Current golden Android acceptance slice.** The Android acceptance receipt
+now joins the verified standalone run, authenticated two-order replication,
+redacted export, bounded reflection, and GET-only review smoke into one
+raw-value-free handoff. It accepts only the current Experiment 001 target
+fingerprint and complete observed results, keeps counterfactual outcome separate
+from evidence state, rejects reused or unavailable authenticated boundaries,
+and publishes only safe identities, counts, and fixed review metadata. Offline
+receipt verification checks the supplied contract and canonical identity; the
+hosted API 35 emulator workflow remains the proof that the target behavior and
+review projection actually ran. Raw run directories and reports remain
+authoritative inputs, not portable publication artifacts.
+
+## Browser capture explanation
+
+The local `/capture` view now reviews an authorized HAR export alongside the
+fixed weather investigation. It distinguishes field-name clues from exact
+supplied test-value matches, groups requests by report-local origin labels,
+and links matches to their source entry positions. Supported matching includes
+Whole decoded URL path segments, URL query values, exported form parameters,
+bounded JSON strings, textual
+form bodies, complete request header values, and exported request cookie
+values. Category summaries deduplicate matching requests across channels.
+Unsupported or missing bodies remain visibility gaps. Raw values
+and domains are omitted from the explanation.
+
+This is an inventory of an editable export, not an authenticated capture or a
+minimum-disclosure experiment. Paired capture review now uses one private origin resolver and shared test
+rules, while keeping references scoped to each file and missing observations
+inconclusive. Connecting those observations to controlled functionality
+comparisons remains follow-up work. Universal device monitoring, server
+sharing attribution, and geographic infrastructure enrichment remain outside
+this implemented slice. See [capture review](../browser-capture-review/).
+
+## Next tracked slices
+
+The focused golden Android acceptance slice is implemented in the CLI and
+hosted workflow under [issue #122](https://github.com/jackkayser2005/ariadne/issues/122);
+its real-emulator run remains the acceptance evidence gate. The authenticated
+Android envelope from [issue #121](https://github.com/jackkayser2005/ariadne/issues/121)
+and the initial tiered validation surface from
+[issue #123](https://github.com/jackkayser2005/ariadne/issues/123) are present
+in the current line. The verified browser fixture replication and minimization directories plus proxy replication directories and standalone redacted trace documents now participate in that common validation surface; Android acceptance receipts and archive-question reflections, transition histories, fixed question rounds, selected receipts, and acceptance records now participate as contract-only checks with replay unavailable; emulator evidence, wider artifact-family mapping, and
+future signed verification remain follow-up work. These slices extend the
+current contracts without adding a second evidence store, remote control plane,
+or universal capture claim.
+
 ## Acceptance gates
 
 - Go changes pass formatting, build, vet, race-enabled tests, and at least 90%
   statement coverage.
+- Generic source-adapter runs reject duplicate, unknown, trailing, oversized,
+  mismatched-challenge, mismatched-procedure, source/scope/event-drift, unsafe
+  driver path or argument, output/diagnostic overflow, and timeout cases.
+  Successful runs publish exactly three raw-value-free artifacts whose receipt
+  and session identities verify offline; no failure becomes a privacy assurance.
+- The hosted Android acceptance path proves the pinned fixture fingerprint,
+  standalone observed change, authenticated replication in both orders,
+  redacted export/reflection identity binding, GET-only review behavior, and
+  raw-value-free publication. Its acceptance receipt is a bounded handoff, not
+  a universal causal claim.
+
 - Fixture or runner changes pass the hosted real-emulator workflow when local
   Android tooling is unavailable.
 - The local browser fixture producer and its two-order replication pass the
@@ -450,6 +607,10 @@ questions again without reopening source paths or captured values.
   is GET-only, renders only bounded comparison projections, escapes dynamic
   output, and fails closed without paths, payloads, URLs, captured values, or
   detailed errors.
+- Case assembly accepts only bounded local plans, requires a new destination,
+  re-verifies the generated case and disclosure round before publication,
+  preserves caller order, and never renders or persists plan paths in its
+  safe summary or portable artifacts.
 - UI changes pass deterministic handler tests; use computer-use only when a
   concrete rendered-flow check is needed and the host supports it.
 - No review page, answer, export, or log exposes captured values, secrets, or

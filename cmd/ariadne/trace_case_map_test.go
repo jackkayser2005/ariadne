@@ -30,13 +30,19 @@ func TestRunTraceCaseMap(t *testing.T) {
 	}
 
 	var stdout, stderr strings.Builder
-	if exitCode := runTraceCaseMap([]string{"case.json"}, &stdout, &stderr, mapper); exitCode != 0 || stderr.Len() != 0 || !strings.Contains(stdout.String(), "trace case disclosure map") || !strings.Contains(stdout.String(), "coverage_state: unknown") || !strings.Contains(stdout.String(), "category: location") || !strings.Contains(stdout.String(), "trace_count: 2") {
+	if exitCode := runTraceCaseMap([]string{"case.json"}, &stdout, &stderr, mapper); exitCode != 0 || stderr.Len() != 0 || !strings.Contains(stdout.String(), "trace case disclosure map") || !strings.Contains(stdout.String(), "what this shows: reviewed category labels") || !strings.Contains(stdout.String(), "read each path as: source -> reviewed category -> destination.") || !strings.Contains(stdout.String(), "what this cannot show: the underlying value") || !strings.Contains(stdout.String(), "path: browser -> location -> analytics") || !strings.Contains(stdout.String(), "coverage note: an unlisted path may still be outside the captured view.") || !strings.Contains(stdout.String(), "coverage_state: unknown") || !strings.Contains(stdout.String(), "category: location") || !strings.Contains(stdout.String(), "trace_count: 2") {
 		t.Fatalf("human map = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
 	}
 
 	stdout.Reset()
 	if exitCode := runTraceCaseMap([]string{"--json", "case.json"}, &stdout, &stderr, mapper); exitCode != 0 || stderr.Len() != 0 || !strings.Contains(stdout.String(), `"coverage_state":"unknown"`) || !strings.Contains(stdout.String(), `"category":"location"`) {
 		t.Fatalf("JSON map = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+
+	stdout.Reset()
+	result.CoverageState = evidence.Observed
+	if exitCode := runTraceCaseMap([]string{"case.json"}, &stdout, &stderr, mapper); exitCode != 0 || stderr.Len() != 0 || !strings.Contains(stdout.String(), "coverage note: every contributing trace reported complete coverage for its reviewed channels.") {
+		t.Fatalf("complete human map = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
 	}
 }
 

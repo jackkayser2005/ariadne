@@ -60,6 +60,38 @@ func TestLadderPlanDecodeAndValidate(t *testing.T) {
 	}
 }
 
+func TestLooksLikeLadderUsesOnlyTheBoundedAdapterMarker(t *testing.T) {
+	root := t.TempDir()
+	receiptPath := filepath.Join(root, "minimization.json")
+	tests := []struct {
+		name string
+		data string
+		want bool
+	}{
+		{name: "browser", data: "{\"adapter\":\"browser-local-fixture\"}", want: true},
+		{name: "other adapter", data: "{\"adapter\":\"other\"}", want: false},
+		{name: "malformed", data: "{", want: false},
+		{name: "trailing", data: "{\"adapter\":\"browser-local-fixture\"}{}", want: false},
+		{name: "duplicate", data: "{\"adapter\":\"browser-local-fixture\",\"adapter\":\"browser-local-fixture\"}", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := os.WriteFile(receiptPath, []byte(test.data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if got := LooksLikeLadder(root, "browser-local-fixture"); got != test.want {
+				t.Fatalf("LooksLikeLadder() = %t, want %t", got, test.want)
+			}
+		})
+	}
+	if err := os.Remove(receiptPath); err != nil {
+		t.Fatal(err)
+	}
+	if LooksLikeLadder(root, "browser-local-fixture") || LooksLikeLadder("", "browser-local-fixture") || LooksLikeLadder(root, "") {
+		t.Fatal("LooksLikeLadder() accepted an unavailable input")
+	}
+}
+
 func TestReadLadderAndClassifyLadderCandidateBoundaries(t *testing.T) {
 	plan := testLadderPlan()
 	data, err := json.Marshal(plan)
@@ -392,5 +424,34 @@ func ladderResult(id string, outcome portabletrace.ReplicatedOutcome, state evid
 		ChangedPairs:   changed,
 		NoChangePairs:  noChange,
 		UnknownPairs:   unknown,
+	}
+}
+
+func TestReadLadderRejectsSymlinkPaths(t *testing.T) {
+	root := t.TempDir()
+	plan := testLadderPlan()
+	data, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root, "plan.json")
+	if err := os.WriteFile(target, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	leaf := filepath.Join(root, "leaf.json")
+	if err := os.Symlink(target, leaf); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if _, err := ReadLadder(leaf); err == nil {
+		t.Fatal("ReadLadder() accepted a symlink leaf")
+	}
+
+	parentRoot := t.TempDir()
+	parentLink := filepath.Join(parentRoot, "linked-root")
+	if err := os.Symlink(root, parentLink); err != nil {
+		t.Skipf("directory symlinks unavailable: %v", err)
+	}
+	if _, err := ReadLadder(filepath.Join(parentLink, "plan.json")); err == nil {
+		t.Fatal("ReadLadder() accepted a symlink ancestor")
 	}
 }

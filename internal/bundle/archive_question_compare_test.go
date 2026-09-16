@@ -2,6 +2,7 @@ package bundle
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -621,7 +622,7 @@ func TestSaveArchiveQuestionTransitionHistory(t *testing.T) {
 			t.Fatalf("SaveArchiveQuestionTransitionHistory() exposed raw value %q: %s", rawValue, data)
 		}
 	}
-	if _, err := SaveArchiveQuestionTransitionHistory([]string{olderPath, newerPath}, historyPath); err == nil || !strings.Contains(err.Error(), "file exists") {
+	if _, err := SaveArchiveQuestionTransitionHistory([]string{olderPath, newerPath}, historyPath); err == nil || !errors.Is(err, os.ErrExist) {
 		t.Fatalf("second SaveArchiveQuestionTransitionHistory() error = %v", err)
 	}
 }

@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/jackkayser2005/ariadne/internal/minimize"
+	"github.com/jackkayser2005/ariadne/internal/securefs"
 	portabletrace "github.com/jackkayser2005/ariadne/internal/trace"
 )
 
@@ -50,10 +50,10 @@ func runFixtureMinimizationWith(ctx context.Context, input FixtureMinimizationIn
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if err := os.MkdirAll(filepath.Dir(input.OutputDir), 0o700); err != nil {
+	if err := securefs.MkdirAll(filepath.Dir(input.OutputDir), 0o700); err != nil {
 		return errors.New("create browser minimization parent")
 	}
-	if err := os.Mkdir(input.OutputDir, 0o700); err != nil {
+	if err := securefs.MkdirExclusive(input.OutputDir, 0o700); err != nil {
 		return errors.New("create browser minimization output")
 	}
 

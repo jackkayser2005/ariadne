@@ -192,3 +192,29 @@ func writeAudit(t *testing.T) string {
 	}
 	return path
 }
+
+func TestSaveTraceRejectsSymlinkInputPaths(t *testing.T) {
+	root := t.TempDir()
+	realDir := filepath.Join(root, "real")
+	if err := os.Mkdir(realDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(realDir, "audit.json")
+	if err := os.WriteFile(target, validAudit(t), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	leaf := filepath.Join(root, "leaf.json")
+	if err := os.Symlink(target, leaf); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if _, err := SaveTrace(leaf, filepath.Join(root, "leaf-trace.json")); err == nil {
+		t.Fatal("SaveTrace() accepted a symlink leaf")
+	}
+	parent := filepath.Join(root, "parent")
+	if err := os.Symlink(realDir, parent); err != nil {
+		t.Skipf("directory symlinks unavailable: %v", err)
+	}
+	if _, err := SaveTrace(filepath.Join(parent, "audit.json"), filepath.Join(root, "ancestor-trace.json")); err == nil {
+		t.Fatal("SaveTrace() accepted a symlink ancestor")
+	}
+}

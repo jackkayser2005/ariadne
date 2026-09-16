@@ -15,6 +15,7 @@ import (
 
 	"github.com/jackkayser2005/ariadne/internal/evidence"
 	"github.com/jackkayser2005/ariadne/internal/jsoncheck"
+	"github.com/jackkayser2005/ariadne/internal/securefs"
 	portabletrace "github.com/jackkayser2005/ariadne/internal/trace"
 )
 
@@ -147,10 +148,10 @@ func runReplicatedWith(ctx context.Context, input ReplicationInput, capture prox
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if err := os.MkdirAll(filepath.Dir(input.OutputDir), 0o700); err != nil {
+	if err := securefs.MkdirAll(filepath.Dir(input.OutputDir), 0o700); err != nil {
 		return errors.New("create proxy replication parent")
 	}
-	if err := os.Mkdir(input.OutputDir, 0o700); err != nil {
+	if err := securefs.MkdirExclusive(input.OutputDir, 0o700); err != nil {
 		return errors.New("create proxy replication output")
 	}
 
@@ -188,13 +189,13 @@ func runReplicatedWith(ctx context.Context, input ReplicationInput, capture prox
 				Status:        ProxyReplicationStatusIncomplete,
 			}
 			pairDirectory := filepath.Join(input.OutputDir, directory)
-			if err := os.Mkdir(pairDirectory, 0o700); err != nil {
+			if err := securefs.MkdirExclusive(pairDirectory, 0o700); err != nil {
 				return writeReplicationFailure(input.OutputDir, record, pairRecord, err)
 			}
-			if err := os.Mkdir(filepath.Join(pairDirectory, "baseline"), 0o700); err != nil {
+			if err := securefs.MkdirExclusive(filepath.Join(pairDirectory, "baseline"), 0o700); err != nil {
 				return writeReplicationFailure(input.OutputDir, record, pairRecord, errors.New("create proxy replication baseline"))
 			}
-			if err := os.Mkdir(filepath.Join(pairDirectory, "treatment"), 0o700); err != nil {
+			if err := securefs.MkdirExclusive(filepath.Join(pairDirectory, "treatment"), 0o700); err != nil {
 				return writeReplicationFailure(input.OutputDir, record, pairRecord, errors.New("create proxy replication treatment"))
 			}
 			if err := ctx.Err(); err != nil {
@@ -217,6 +218,30 @@ func runReplicatedWith(ctx context.Context, input ReplicationInput, capture prox
 	}
 	record.Status = ProxyReplicationStatusComplete
 	return writeReplicationRecord(input.OutputDir, record)
+}
+
+// LooksLikeReplication reports whether a bounded receipt names the proxy
+// adapter. It is only a dispatch hint; VerifyReplicated remains authoritative.
+func LooksLikeReplication(rootDir string) bool {
+	if strings.TrimSpace(rootDir) == "" {
+		return false
+	}
+	data, err := readReplicationFile(filepath.Join(rootDir, "replication.json"), maxProxyReplicationBytes)
+	if err != nil || jsoncheck.RejectDuplicateKeys(data) != nil {
+		return false
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	var marker struct {
+		Adapter string
+	}
+	if err := decoder.Decode(&marker); err != nil {
+		return false
+	}
+	var trailing json.RawMessage
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return false
+	}
+	return marker.Adapter == Adapter
 }
 
 // VerifyReplicated verifies a proxy replication receipt and recomputes every
@@ -497,27 +522,9 @@ func writeReplicationRecord(rootDir string, record ReplicatedRunRecord) error {
 	}
 	data = append(data, '\n')
 	path := filepath.Join(rootDir, "replication.json")
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return errors.New("create proxy replication metadata")
+	if err := securefs.WriteExclusiveExistingParent(path, data, 0o600); err != nil {
+		return fmt.Errorf("create proxy replication metadata: %w", err)
 	}
-	remove := true
-	defer func() {
-		_ = file.Close()
-		if remove {
-			_ = os.Remove(path)
-		}
-	}()
-	if _, err := file.Write(data); err != nil {
-		return errors.New("write proxy replication metadata")
-	}
-	if err := file.Sync(); err != nil {
-		return errors.New("sync proxy replication metadata")
-	}
-	if err := file.Close(); err != nil {
-		return errors.New("close proxy replication metadata")
-	}
-	remove = false
 	return nil
 }
 
@@ -688,7 +695,7 @@ func lstatReplicationPath(path string) (os.FileInfo, error) {
 }
 
 func hashExecutable(path string) (string, error) {
-	file, err := os.Open(path)
+	file, err := openExecutable(path)
 	if err != nil {
 		return "", err
 	}
@@ -698,6 +705,28 @@ func hashExecutable(path string) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func openExecutable(path string) (*os.File, error) {
+	info, err := lstatReplicationPath(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return nil, errors.New("proxy executable is unavailable")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, errors.New("proxy executable is unavailable")
+	}
+	openedInfo, err := file.Stat()
+	if err != nil || !os.SameFile(info, openedInfo) {
+		_ = file.Close()
+		return nil, errors.New("proxy executable changed during verification")
+	}
+	currentInfo, err := lstatReplicationPath(path)
+	if err != nil || !currentInfo.Mode().IsRegular() || !os.SameFile(currentInfo, openedInfo) {
+		_ = file.Close()
+		return nil, errors.New("proxy executable changed during verification")
+	}
+	return file, nil
 }
 
 func stageExecutable(path string) (string, string, func(), error) {
@@ -714,7 +743,7 @@ func stageExecutable(path string) (string, string, func(), error) {
 		_ = os.Remove(temporaryDirectory)
 	}
 	stagedPath := filepath.Join(temporaryDirectory, stagedName)
-	source, err := os.Open(path)
+	source, err := openExecutable(path)
 	if err != nil {
 		cleanup()
 		return "", "", func() {}, errors.New("open proxy executable")

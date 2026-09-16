@@ -23,6 +23,7 @@ import (
 	"github.com/jackkayser2005/ariadne/internal/evidence"
 	"github.com/jackkayser2005/ariadne/internal/experiment"
 	"github.com/jackkayser2005/ariadne/internal/jsoncheck"
+	"github.com/jackkayser2005/ariadne/internal/securefs"
 )
 
 const (
@@ -90,19 +91,21 @@ const (
 
 // CandidateResult is a raw-value-free result for one replicated candidate.
 type CandidateResult struct {
-	ID             string                   `json:"id"`
-	ManifestName   string                   `json:"manifest_name,omitempty"`
-	Directory      string                   `json:"directory"`
-	Classification CandidateClassification  `json:"classification"`
-	Outcome        bundle.ReplicatedOutcome `json:"outcome"`
-	EvidenceState  evidence.State           `json:"evidence_state"`
-	ReceiptSHA256  string                   `json:"receipt_sha256"`
-	Pairs          int                      `json:"pairs"`
-	PairsPerOrder  int                      `json:"pairs_per_order"`
-	CompletedPairs int                      `json:"completed_pairs"`
-	ChangedPairs   int                      `json:"changed_pairs"`
-	NoChangePairs  int                      `json:"no_change_pairs"`
-	UnknownPairs   int                      `json:"unknown_pairs"`
+	ID               string                   `json:"id"`
+	ManifestName     string                   `json:"manifest_name,omitempty"`
+	Directory        string                   `json:"directory"`
+	Classification   CandidateClassification  `json:"classification"`
+	Outcome          bundle.ReplicatedOutcome `json:"outcome"`
+	EvidenceState    evidence.State           `json:"evidence_state"`
+	ReceiptSHA256    string                   `json:"receipt_sha256"`
+	ProvenanceSHA256 string                   `json:"provenance_sha256,omitempty"`
+	BindingSHA256    string                   `json:"binding_sha256,omitempty"`
+	Pairs            int                      `json:"pairs"`
+	PairsPerOrder    int                      `json:"pairs_per_order"`
+	CompletedPairs   int                      `json:"completed_pairs"`
+	ChangedPairs     int                      `json:"changed_pairs"`
+	NoChangePairs    int                      `json:"no_change_pairs"`
+	UnknownPairs     int                      `json:"unknown_pairs"`
 }
 
 // MinimizationSummary is the raw-value-free receipt for one complete ladder
@@ -174,6 +177,17 @@ func Decode(reader io.Reader) (MinimizationPlan, error) {
 
 // Validate reports whether the plan is safe to turn into authenticated
 // Android manifests.
+// ReadPlan reads one minimization plan through the bounded, no-symlink artifact reader.
+func ReadPlan(path string) (MinimizationPlan, error) {
+	if strings.TrimSpace(path) == "" {
+		return MinimizationPlan{}, errors.New("minimization plan path is required")
+	}
+	data, err := bundle.ReadBoundedFile(path, maxPlanBytes)
+	if err != nil {
+		return MinimizationPlan{}, fmt.Errorf("open plan: %w", err)
+	}
+	return Decode(bytes.NewReader(data))
+}
 func (plan MinimizationPlan) Validate() error {
 	if plan.SchemaVersion != CurrentSchemaVersion {
 		return fmt.Errorf("schema_version: unsupported value %d", plan.SchemaVersion)
@@ -330,10 +344,10 @@ func execute(
 	if runner == nil || reporter == nil || verifier == nil {
 		return MinimizationSummary{}, errors.New("minimization dependencies are required")
 	}
-	if err := os.MkdirAll(filepath.Dir(outputDir), 0o700); err != nil {
+	if err := securefs.MkdirAll(filepath.Dir(outputDir), 0o700); err != nil {
 		return MinimizationSummary{}, fmt.Errorf("create output parent: %w", err)
 	}
-	if err := os.Mkdir(outputDir, 0o700); err != nil {
+	if err := securefs.MkdirExclusive(outputDir, 0o700); err != nil {
 		return MinimizationSummary{}, fmt.Errorf("create output directory: %w", err)
 	}
 
@@ -447,7 +461,8 @@ func completedPairDirectories(candidateDir string, pairs int) (map[string]struct
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 		return nil, errors.New("replication metadata: trailing data")
 	}
-	if record.SchemaVersion != adb.ReplicatedRunSchemaVersion || record.PairsPerOrder != pairs {
+	if (record.SchemaVersion != adb.ReplicatedRunSchemaVersion &&
+		record.SchemaVersion != adb.AuthenticatedReplicatedRunSchemaVersion) || record.PairsPerOrder != pairs {
 		return nil, errors.New("replication metadata configuration disagrees")
 	}
 	completed := make(map[string]struct{}, len(record.Pairs))
@@ -471,19 +486,21 @@ func candidateDirectory(index int, id string) string {
 
 func candidateResult(id, directory string, summary bundle.ReplicatedExperimentSummary) CandidateResult {
 	return CandidateResult{
-		ID:             id,
-		ManifestName:   summary.ManifestName,
-		Directory:      directory,
-		Classification: classify(summary.Outcome, summary.EvidenceState),
-		Outcome:        summary.Outcome,
-		EvidenceState:  summary.EvidenceState,
-		ReceiptSHA256:  summary.ReceiptSHA256,
-		Pairs:          summary.Pairs,
-		PairsPerOrder:  summary.PairsPerOrder,
-		CompletedPairs: summary.CompletedPairs,
-		ChangedPairs:   summary.ChangedPairs,
-		NoChangePairs:  summary.NoChangePairs,
-		UnknownPairs:   summary.UnknownPairs,
+		ID:               id,
+		ManifestName:     summary.ManifestName,
+		Directory:        directory,
+		Classification:   classify(summary.Outcome, summary.EvidenceState),
+		Outcome:          summary.Outcome,
+		EvidenceState:    summary.EvidenceState,
+		ReceiptSHA256:    summary.ReceiptSHA256,
+		ProvenanceSHA256: summary.ProvenanceSHA256,
+		BindingSHA256:    summary.BindingSHA256,
+		Pairs:            summary.Pairs,
+		PairsPerOrder:    summary.PairsPerOrder,
+		CompletedPairs:   summary.CompletedPairs,
+		ChangedPairs:     summary.ChangedPairs,
+		NoChangePairs:    summary.NoChangePairs,
+		UnknownPairs:     summary.UnknownPairs,
 	}
 }
 
@@ -588,27 +605,9 @@ func Save(rootDir string, summary MinimizationSummary) error {
 		return fmt.Errorf("minimization receipt exceeds %d-byte limit", maxSummaryBytes)
 	}
 	path := filepath.Join(rootDir, "minimization.json")
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
+	if err := securefs.WriteExclusiveExistingParent(path, data, 0o600); err != nil {
 		return fmt.Errorf("create minimization receipt: %w", err)
 	}
-	remove := true
-	defer func() {
-		_ = file.Close()
-		if remove {
-			_ = os.Remove(path)
-		}
-	}()
-	if _, err := file.Write(data); err != nil {
-		return fmt.Errorf("write minimization receipt: %w", err)
-	}
-	if err := file.Sync(); err != nil {
-		return fmt.Errorf("sync minimization receipt: %w", err)
-	}
-	if err := file.Close(); err != nil {
-		return fmt.Errorf("close minimization receipt: %w", err)
-	}
-	remove = false
 	return nil
 }
 
@@ -764,6 +763,12 @@ func validateSummary(summary MinimizationSummary) error {
 		}
 		if !validDigest(result.ReceiptSHA256) {
 			return errors.New("candidate result receipt_sha256 is invalid")
+		}
+		if result.ProvenanceSHA256 != "" && !validDigest(result.ProvenanceSHA256) {
+			return errors.New("candidate result provenance_sha256 is invalid")
+		}
+		if result.BindingSHA256 != "" && !validDigest(result.BindingSHA256) {
+			return errors.New("candidate result binding_sha256 is invalid")
 		}
 		if result.Pairs != result.PairsPerOrder*2 ||
 			result.PairsPerOrder != summary.PairsPerOrder ||

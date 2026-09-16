@@ -17,6 +17,12 @@ import (
 // ReviewOptions configures the optional, read-only artifacts exposed by the
 // loopback review server.
 type ReviewOptions struct {
+	HARSecondPath             string
+	HARTestValuesPath         string
+	HARPath                   string
+	HAROrigin                 string
+	WeatherPath               string
+	SourceAdapterPath         string
 	ArchiveRoot               string
 	HistoryPath               string
 	ReflectionPath            string
@@ -28,6 +34,8 @@ type ReviewOptions struct {
 	TraceRoundPath            string
 	TraceReplicationPath      string
 	TraceCasePath             string
+	TraceCaseRoundPath        string
+	TraceCaseReceiptPath      string
 	TraceStudyPath            string
 	TraceStudyRoundPath       string
 	TraceStudyReceiptPath     string
@@ -43,6 +51,15 @@ type ReviewOptions struct {
 
 func reviewHandler(options ReviewOptions) http.Handler {
 	h := archiveHandler(options.ArchiveRoot)
+	h.weatherPath = options.WeatherPath
+	if options.SourceAdapterPath != "" {
+		h.sourceAdapterPath = options.SourceAdapterPath
+		h.sourceAdapterVerify = trace.VerifySourceAdapterRun
+	}
+	h.harPath = options.HARPath
+	h.harSecondPath = options.HARSecondPath
+	h.harOrigin = options.HAROrigin
+	h.harRulesPath = options.HARTestValuesPath
 	if options.HistoryPath != "" {
 		h.history = func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error) {
 			return bundle.ReadArchiveQuestionTransitionHistory(options.HistoryPath)
@@ -83,6 +100,14 @@ func reviewHandler(options ReviewOptions) http.Handler {
 	if options.TraceCasePath != "" {
 		h.traceCasePath = options.TraceCasePath
 		h.traceCaseRead = trace.ReadCase
+	}
+	if options.TraceCaseRoundPath != "" {
+		h.traceCaseRoundPath = options.TraceCaseRoundPath
+		h.traceCaseRoundRead = trace.ReadCaseDisclosureQuestionRound
+	}
+	if options.TraceCaseReceiptPath != "" {
+		h.traceCaseReceiptPath = options.TraceCaseReceiptPath
+		h.traceCaseReceiptRead = trace.ReadCaseDisclosureQuestionReceipt
 	}
 	if options.TraceStudyPath != "" {
 		h.traceStudyPath = options.TraceStudyPath

@@ -93,6 +93,41 @@ func TestRunReplicatedRecordsBothOrdersAndSafeMetadata(t *testing.T) {
 	}
 }
 
+func TestLooksLikeReplicationUsesOnlyTheBoundedAdapterMarker(t *testing.T) {
+	root := t.TempDir()
+	receiptPath := filepath.Join(root, "replication.json")
+	tests := []struct {
+		name string
+		data string
+		want bool
+	}{
+		{name: "proxy", data: "{\"adapter\":\"proxy-connect\"}", want: true},
+		{name: "other adapter", data: "{\"adapter\":\"other\"}", want: false},
+		{name: "malformed", data: "{", want: false},
+		{name: "trailing", data: "{\"adapter\":\"proxy-connect\"}{}", want: false},
+		{name: "duplicate", data: "{\"adapter\":\"proxy-connect\",\"adapter\":\"proxy-connect\"}", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := os.WriteFile(receiptPath, []byte(test.data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if got := LooksLikeReplication(root); got != test.want {
+				t.Fatalf("LooksLikeReplication() = %t, want %t", got, test.want)
+			}
+		})
+	}
+	if err := os.Remove(receiptPath); err != nil {
+		t.Fatal(err)
+	}
+	if LooksLikeReplication(root) {
+		t.Fatal("LooksLikeReplication() accepted a missing receipt")
+	}
+	if LooksLikeReplication("") {
+		t.Fatal("LooksLikeReplication() accepted an empty root")
+	}
+}
+
 func TestVerifyReplicatedPreservesPartialOutcomeState(t *testing.T) {
 	procedurePath := writeProxyProcedure(t, "example.com:443")
 	procedure, _, err := ReadProcedure(procedurePath)
@@ -565,4 +600,35 @@ func writeReplicationTrace(t *testing.T, path, variant, completeness string) por
 		t.Fatal(err)
 	}
 	return summary
+}
+
+func TestProxyProgramRejectsSymlinkPaths(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "program.exe")
+	if err := os.WriteFile(target, []byte("program"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	leaf := filepath.Join(root, "leaf.exe")
+	if err := os.Symlink(target, leaf); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if err := validateProgram(leaf, nil); err == nil {
+		t.Fatal("validateProgram() accepted a symlink leaf")
+	}
+	if _, err := hashExecutable(leaf); err == nil {
+		t.Fatal("hashExecutable() accepted a symlink leaf")
+	}
+	if _, _, _, err := stageExecutable(leaf); err == nil {
+		t.Fatal("stageExecutable() accepted a symlink leaf")
+	}
+
+	parentRoot := t.TempDir()
+	parentLink := filepath.Join(parentRoot, "linked-root")
+	if err := os.Symlink(root, parentLink); err != nil {
+		t.Skipf("directory symlinks unavailable: %v", err)
+	}
+	ancestor := filepath.Join(parentLink, "program.exe")
+	if err := validateProgram(ancestor, nil); err == nil {
+		t.Fatal("validateProgram() accepted a symlink ancestor")
+	}
 }

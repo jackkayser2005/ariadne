@@ -618,8 +618,7 @@ func validateDisclosureCategories(categories []CaseDisclosureCategorySummary) er
 			if !validSource(boundary.Source) {
 				return errors.New("disclosure category source is invalid")
 			}
-			adapterSourceName, ok := adapterSource(boundary.Adapter)
-			if !ok || adapterSourceName != boundary.Source {
+			if !validAdapterSource(boundary.Adapter, boundary.Source) {
 				return errors.New("disclosure category adapter is invalid")
 			}
 			if boundaryIndex > 0 && category.Boundaries[boundaryIndex-1] == boundary {

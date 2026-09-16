@@ -43,12 +43,13 @@ func TestHandlerRendersTraceCaseReflection(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Trace case reflection",
+		"Start with the simple version", "In this case:", "category label appeared", "value itself", "See the recorded paths", "technical details",
 		"Verified case identity",
 		"caller",
 		"archives",
 		"replicated ledgers",
 		"unknown entries",
-		"case SHA-256", "Cross-source disclosure map", "coverage state", "retained traces", "trace-case-disclosure-map", "location", "consent", "traces",
+		"case SHA-256", "Cross-source disclosure map", "coverage state", "retained traces", "trace-case-disclosure-map", "Recorded category path", "Reviewed category", "Destination", "location", "consent", "traces",
 		"browser-redacted-audit",
 		trace.CaseQuestionSources,
 		trace.CaseQuestionOutcomes,

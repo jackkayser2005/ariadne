@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/jackkayser2005/ariadne/internal/jsoncheck"
+	"github.com/jackkayser2005/ariadne/internal/securefs"
 )
 
 const (
@@ -58,10 +59,12 @@ type Session struct {
 }
 
 // SessionInput contains the reviewed metadata needed to create a session
-// envelope. The adapter catalog supplies the source label.
+// envelope. Known adapters supply the source label; generic adapters declare it explicitly.
 type SessionInput struct {
-	Adapter         string
-	AdapterVersion  int
+	Adapter        string
+	AdapterVersion int
+	// Source supplies the fixed trace source for generic external adapters.
+	Source          string
 	ProcedureSHA256 string
 	Role            string
 	Order           string
@@ -72,8 +75,10 @@ type SessionInput struct {
 // The pair identity is derived from this metadata and both verified trace
 // identities.
 type SessionPairInput struct {
-	Adapter         string
-	AdapterVersion  int
+	Adapter        string
+	AdapterVersion int
+	// Source supplies the fixed trace source for generic external adapters.
+	Source          string
 	ProcedureSHA256 string
 	Scope           string
 	Order           string
@@ -196,6 +201,7 @@ func saveSessionPair(baselineTracePath, treatmentTracePath, baselineSessionPath,
 	pairSHA256, err := SessionPairSHA256(baselineTraceSHA256, treatmentTraceSHA256, SessionPairInput{
 		Adapter:         input.Adapter,
 		AdapterVersion:  input.AdapterVersion,
+		Source:          input.Source,
 		ProcedureSHA256: input.ProcedureSHA256,
 		Scope:           baselineDocument.Scope,
 		Order:           input.Order,
@@ -207,6 +213,7 @@ func saveSessionPair(baselineTracePath, treatmentTracePath, baselineSessionPath,
 	baselineSession, err := newSession(baselineDocument, baselineTraceSHA256, SessionInput{
 		Adapter:         input.Adapter,
 		AdapterVersion:  input.AdapterVersion,
+		Source:          input.Source,
 		ProcedureSHA256: input.ProcedureSHA256,
 		Role:            RoleBaseline,
 		Order:           input.Order,
@@ -218,6 +225,7 @@ func saveSessionPair(baselineTracePath, treatmentTracePath, baselineSessionPath,
 	treatmentSession, err := newSession(treatmentDocument, treatmentTraceSHA256, SessionInput{
 		Adapter:         input.Adapter,
 		AdapterVersion:  input.AdapterVersion,
+		Source:          input.Source,
 		ProcedureSHA256: input.ProcedureSHA256,
 		Role:            RoleTreatment,
 		Order:           input.Order,
@@ -309,6 +317,7 @@ func VerifySessionPairWithCandidate(baselineSessionPath, baselineTracePath, trea
 	expectedPairSHA256, err := SessionPairSHA256(baseline.TraceSHA256, treatment.TraceSHA256, SessionPairInput{
 		Adapter:         baseline.Adapter,
 		AdapterVersion:  baseline.AdapterVersion,
+		Source:          baseline.Source,
 		ProcedureSHA256: baseline.ProcedureSHA256,
 		Scope:           baseline.Scope,
 		Order:           baseline.Order,
@@ -341,7 +350,7 @@ func VerifySessionPairWithCandidate(baselineSessionPath, baselineTracePath, trea
 // SessionPairSHA256 returns the canonical identity of a matched pair's
 // reviewed metadata and two verified trace identities.
 func SessionPairSHA256(baselineTraceSHA256, treatmentTraceSHA256 string, input SessionPairInput) (string, error) {
-	source, ok := adapterSource(input.Adapter)
+	source, ok := sessionSourceForAdapter(input.Adapter, input.Source)
 	if !ok {
 		return "", errors.New("trace session adapter is invalid")
 	}
@@ -514,7 +523,7 @@ func SessionSHA256(session Session) (string, error) {
 }
 
 func newSession(document Document, traceSHA256 string, input SessionInput) (Session, error) {
-	source, ok := adapterSource(input.Adapter)
+	source, ok := sessionSourceForAdapter(input.Adapter, input.Source)
 	if !ok {
 		return Session{}, errors.New("trace session adapter is invalid")
 	}
@@ -544,7 +553,7 @@ func validateSession(session Session) error {
 	if !ValidSHA256(session.TraceSHA256) {
 		return errors.New("session trace_sha256 is invalid")
 	}
-	source, ok := adapterSource(session.Adapter)
+	source, ok := sessionSourceForAdapter(session.Adapter, session.Source)
 	if !ok || session.Source != source {
 		return errors.New("session adapter or source is invalid")
 	}
@@ -606,9 +615,28 @@ func adapterSource(adapter string) (string, bool) {
 		return "browser", true
 	case "proxy-connect":
 		return "proxy", true
-	default:
+	}
+	if validExternalAdapter(adapter) {
+		return "", true
+	}
+	return "", false
+}
+
+func sessionSourceForAdapter(adapter, supplied string) (string, bool) {
+	expected, ok := adapterSource(adapter)
+	if !ok {
 		return "", false
 	}
+	if expected != "" {
+		if supplied != "" && supplied != expected {
+			return "", false
+		}
+		return expected, true
+	}
+	if !validSource(supplied) {
+		return "", false
+	}
+	return supplied, true
 }
 
 func validAdapterVersion(adapter string, version int) bool {
@@ -636,13 +664,8 @@ func sessionVerificationSummary(session Session, sessionSHA256 string) SessionVe
 }
 
 func readSession(path string) ([]byte, error) {
-	file, err := os.Open(path)
+	data, err := readSourceAdapterFile(path, maxSessionBytes)
 	if err != nil {
-		return nil, errors.New("read input")
-	}
-	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, maxSessionBytes+1))
-	if err != nil || len(data) > maxSessionBytes {
 		return nil, errors.New("read input")
 	}
 	return data, nil
@@ -652,29 +675,8 @@ func writeSessionExclusive(path string, data []byte) error {
 	if strings.TrimSpace(path) == "" {
 		return errors.New("output path is required")
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return errors.New("create output directory")
+	if err := securefs.WriteExclusive(path, data, 0o600); err != nil {
+		return fmt.Errorf("create output: %w", err)
 	}
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return errors.New("create output")
-	}
-	remove := true
-	defer func() {
-		_ = file.Close()
-		if remove {
-			_ = os.Remove(path)
-		}
-	}()
-	if _, err := file.Write(data); err != nil {
-		return errors.New("write output")
-	}
-	if err := file.Sync(); err != nil {
-		return errors.New("sync output")
-	}
-	if err := file.Close(); err != nil {
-		return errors.New("close output")
-	}
-	remove = false
 	return nil
 }

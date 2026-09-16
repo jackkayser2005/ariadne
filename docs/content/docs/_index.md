@@ -12,3 +12,9 @@ next reflection slices, and acceptance gates.
 
 The [source-neutral tracking trace](tracking-trace/) documents the portable,
 raw-value-free contract for comparing authorized capture sources.
+
+The [website location investigation](weather-investigation/) documents the fixed
+weather workflow, its verified live result, and explicit visibility limits.
+
+The [audit and verification report](audit-report/) records the current security
+baseline, measured performance, dependency scan, and remaining gaps.

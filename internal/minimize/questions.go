@@ -8,14 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/jackkayser2005/ariadne/internal/bundle"
 	"github.com/jackkayser2005/ariadne/internal/evidence"
 	"github.com/jackkayser2005/ariadne/internal/jsoncheck"
+	"github.com/jackkayser2005/ariadne/internal/securefs"
 )
 
 const (
@@ -41,17 +40,18 @@ type MinimizationQuestion struct {
 // by a question round. It omits local directories, manifest names, and input
 // values while preserving the result and its support counts.
 type MinimizationCandidateProjection struct {
-	ID             string                   `json:"id"`
-	Classification CandidateClassification  `json:"classification"`
-	Outcome        bundle.ReplicatedOutcome `json:"outcome"`
-	EvidenceState  evidence.State           `json:"evidence_state"`
-	ReceiptSHA256  string                   `json:"receipt_sha256"`
-	Pairs          int                      `json:"pairs"`
-	PairsPerOrder  int                      `json:"pairs_per_order"`
-	CompletedPairs int                      `json:"completed_pairs"`
-	ChangedPairs   int                      `json:"changed_pairs"`
-	NoChangePairs  int                      `json:"no_change_pairs"`
-	UnknownPairs   int                      `json:"unknown_pairs"`
+	ID               string                   `json:"id"`
+	Classification   CandidateClassification  `json:"classification"`
+	Outcome          bundle.ReplicatedOutcome `json:"outcome"`
+	EvidenceState    evidence.State           `json:"evidence_state"`
+	ReceiptSHA256    string                   `json:"receipt_sha256"`
+	ProvenanceSHA256 string                   `json:"provenance_sha256,omitempty"`
+	Pairs            int                      `json:"pairs"`
+	PairsPerOrder    int                      `json:"pairs_per_order"`
+	CompletedPairs   int                      `json:"completed_pairs"`
+	ChangedPairs     int                      `json:"changed_pairs"`
+	NoChangePairs    int                      `json:"no_change_pairs"`
+	UnknownPairs     int                      `json:"unknown_pairs"`
 }
 
 // MinimizationQuestionAnswer is a safe answer bound to a verified
@@ -600,17 +600,18 @@ func minimizationQuestionReason(answer MinimizationQuestionAnswer) string {
 
 func candidateProjection(result CandidateResult) MinimizationCandidateProjection {
 	return MinimizationCandidateProjection{
-		ID:             result.ID,
-		Classification: result.Classification,
-		Outcome:        result.Outcome,
-		EvidenceState:  result.EvidenceState,
-		ReceiptSHA256:  result.ReceiptSHA256,
-		Pairs:          result.Pairs,
-		PairsPerOrder:  result.PairsPerOrder,
-		CompletedPairs: result.CompletedPairs,
-		ChangedPairs:   result.ChangedPairs,
-		NoChangePairs:  result.NoChangePairs,
-		UnknownPairs:   result.UnknownPairs,
+		ID:               result.ID,
+		Classification:   result.Classification,
+		Outcome:          result.Outcome,
+		EvidenceState:    result.EvidenceState,
+		ReceiptSHA256:    result.ReceiptSHA256,
+		ProvenanceSHA256: result.ProvenanceSHA256,
+		Pairs:            result.Pairs,
+		PairsPerOrder:    result.PairsPerOrder,
+		CompletedPairs:   result.CompletedPairs,
+		ChangedPairs:     result.ChangedPairs,
+		NoChangePairs:    result.NoChangePairs,
+		UnknownPairs:     result.UnknownPairs,
 	}
 }
 
@@ -730,6 +731,9 @@ func validateCandidateProjection(candidate MinimizationCandidateProjection) erro
 	}
 	if !validDigest(candidate.ReceiptSHA256) {
 		return errors.New("receipt_sha256 is invalid")
+	}
+	if candidate.ProvenanceSHA256 != "" && !validDigest(candidate.ProvenanceSHA256) {
+		return errors.New("provenance_sha256 is invalid")
 	}
 	if candidate.PairsPerOrder < 1 || candidate.PairsPerOrder > 8 || candidate.Pairs != candidate.PairsPerOrder*2 || candidate.CompletedPairs < 0 || candidate.CompletedPairs > candidate.Pairs || candidate.ChangedPairs < 0 || candidate.NoChangePairs < 0 || candidate.UnknownPairs < 0 || candidate.ChangedPairs+candidate.NoChangePairs+candidate.UnknownPairs != candidate.Pairs {
 		return errors.New("counts are invalid")
@@ -882,29 +886,8 @@ func writeQuestionArtifact(path string, data []byte, kind string) error {
 	if len(data) > questionArtifactMaxBytes {
 		return fmt.Errorf("%s exceeds %d-byte limit", kind, questionArtifactMaxBytes)
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return fmt.Errorf("%s: create output directory: %w", kind, err)
-	}
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
+	if err := securefs.WriteExclusive(path, data, 0o600); err != nil {
 		return fmt.Errorf("%s: create output: %w", kind, err)
 	}
-	remove := true
-	defer func() {
-		_ = file.Close()
-		if remove {
-			_ = os.Remove(path)
-		}
-	}()
-	if _, err := file.Write(data); err != nil {
-		return fmt.Errorf("%s: write output: %w", kind, err)
-	}
-	if err := file.Sync(); err != nil {
-		return fmt.Errorf("%s: sync output: %w", kind, err)
-	}
-	if err := file.Close(); err != nil {
-		return fmt.Errorf("%s: close output: %w", kind, err)
-	}
-	remove = false
 	return nil
 }

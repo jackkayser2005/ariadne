@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
@@ -19,12 +18,13 @@ import (
 
 	"github.com/jackkayser2005/ariadne/internal/collector"
 	"github.com/jackkayser2005/ariadne/internal/experiment"
+	"github.com/jackkayser2005/ariadne/internal/securefs"
 )
 
 const sessionSchemaVersion = 7
 const networkObservationTimeout = 5 * time.Second
 const networkCleanupTimeout = 5 * time.Second
-const uiHierarchySettleTimeout = 10 * time.Second
+const uiHierarchySettleTimeout = 30 * time.Second
 const uiHierarchyRetryInterval = 100 * time.Millisecond
 
 var errFixtureControlNotUnique = errors.New("fixture control was not found uniquely")
@@ -48,6 +48,8 @@ type SessionRecord struct {
 	Role                   string       `json:"role,omitempty"`
 	Order                  string       `json:"order,omitempty"`
 	ProcedureSHA256        string       `json:"procedure_sha256,omitempty"`
+	ResetPolicy            string       `json:"reset_policy,omitempty"`
+	BindingSHA256          string       `json:"binding_sha256,omitempty"`
 	ADBVersion             string       `json:"adb_version"`
 	Device                 string       `json:"device"`
 	Package                string       `json:"package"`
@@ -201,10 +203,10 @@ func runPairWithOrderAndAuth(
 	if err := validatePairConfig(binary, target, manifest, outputDir, sessions); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(outputDir), 0o700); err != nil {
+	if err := securefs.MkdirAll(filepath.Dir(outputDir), 0o700); err != nil {
 		return fmt.Errorf("create output parent: %w", err)
 	}
-	if err := os.Mkdir(outputDir, 0o700); err != nil {
+	if err := securefs.MkdirExclusive(outputDir, 0o700); err != nil {
 		return fmt.Errorf("create output directory: %w", err)
 	}
 	if authDependencies != nil && (authDependencies.writeInput == nil || authDependencies.challenge == nil) {
@@ -250,7 +252,7 @@ func validatePairConfig(
 	if !validSelection(target.Device) {
 		return errors.New("device is invalid")
 	}
-	if !validSelection(target.Package) {
+	if !validPackageName(target.Package) {
 		return errors.New("package is invalid")
 	}
 	if !validSelection(target.Version) {
@@ -334,7 +336,7 @@ func runSessionWithAuth(
 	auth *sessionAuth,
 ) error {
 	sessionDir := filepath.Join(outputDir, kind)
-	if err := os.Mkdir(sessionDir, 0o700); err != nil {
+	if err := securefs.MkdirExclusive(sessionDir, 0o700); err != nil {
 		return fmt.Errorf("%s: create session directory: %w", kind, err)
 	}
 
@@ -386,6 +388,7 @@ func runSessionWithAuth(
 		record.Role = kind
 		record.Order = auth.order
 		record.ProcedureSHA256 = record.ManifestContractSHA256
+		record.ResetPolicy = ReplicationResetPolicy
 	}
 
 	reset, output, err := runStep(
@@ -691,11 +694,12 @@ func writeArtifact(
 	sessionDir, relativePath, kind, source string,
 	data []byte,
 ) (Artifact, error) {
-	directory := filepath.Dir(filepath.Join(sessionDir, filepath.FromSlash(relativePath)))
-	if err := os.MkdirAll(directory, 0o700); err != nil {
+	path := filepath.Join(sessionDir, filepath.FromSlash(relativePath))
+	directory := filepath.Dir(path)
+	if err := securefs.MkdirAll(directory, 0o700); err != nil {
 		return Artifact{}, fmt.Errorf("create observation directory: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(sessionDir, filepath.FromSlash(relativePath)), data, 0o600); err != nil {
+	if err := securefs.WriteExclusiveExistingParent(path, data, 0o600); err != nil {
 		return Artifact{}, fmt.Errorf("write observation: %w", err)
 	}
 
@@ -917,12 +921,19 @@ func finishSession(
 		record.FailureStage = failureStage
 	}
 	record.FinishedAt = now().UTC()
+	if record.SchemaVersion >= authenticatedSessionSchema {
+		binding, err := SessionBindingSHA256(*record)
+		if err != nil {
+			return fmt.Errorf("canonicalize session binding: %w", err)
+		}
+		record.BindingSHA256 = binding
+	}
 	data, err := json.MarshalIndent(record, "", "  ")
 	if err != nil {
 		return fmt.Errorf("encode session metadata: %w", err)
 	}
 	data = append(data, '\n')
-	if err := os.WriteFile(filepath.Join(sessionDir, "session.json"), data, 0o600); err != nil {
+	if err := securefs.WriteExclusive(filepath.Join(sessionDir, "session.json"), data, 0o600); err != nil {
 		return fmt.Errorf("write session metadata: %w", err)
 	}
 	return sessionErr

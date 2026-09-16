@@ -5,24 +5,35 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
 	"unicode"
 
 	"github.com/jackkayser2005/ariadne/internal/experiment"
+	"github.com/jackkayser2005/ariadne/internal/provenance"
+	"github.com/jackkayser2005/ariadne/internal/securefs"
 )
 
 const (
 	// ReplicatedRunSchemaVersion is the root replication receipt schema.
 	ReplicatedRunSchemaVersion = 1
+	// AuthenticatedReplicatedRunSchemaVersion is the root schema with execution bindings.
+	AuthenticatedReplicatedRunSchemaVersion = 2
 	// ReplicationOrderBaselineTreatment records baseline-first execution.
 	ReplicationOrderBaselineTreatment = "baseline-treatment"
 	// ReplicationOrderTreatmentBaseline records treatment-first execution.
 	ReplicationOrderTreatmentBaseline = "treatment-baseline"
 	// ReplicationResetPolicy records the reset applied before every session.
 	ReplicationResetPolicy = "reset-before-each-session"
+	// ReplicationSource is the canonical source identity for Android runs.
+	ReplicationSource = "android"
+	// ReplicationAdapter is the canonical adapter identity for Android runs.
+	ReplicationAdapter = "android-experiment-001"
+	// ReplicationAdapterVersion is the canonical Android adapter version.
+	ReplicationAdapterVersion = 1
+	// ReplicationScope is the fixed scope captured by the Android fixture.
+	ReplicationScope = "all"
 	// ReplicationStatusComplete records a successful pair or root.
 	ReplicationStatusComplete = "complete"
 	// ReplicationStatusIncomplete records a partial pair or root.
@@ -33,26 +44,59 @@ const (
 // ReplicatedRunRecord records the safe execution contract for a replicated run.
 // It contains no persona values or captured observations.
 type ReplicatedRunRecord struct {
-	SchemaVersion    int                    `json:"schema_version"`
-	ManifestName     string                 `json:"manifest_name"`
-	DeclaredVariable string                 `json:"declared_variable"`
-	PairsPerOrder    int                    `json:"pairs_per_order"`
-	ResetPolicy      string                 `json:"reset_policy"`
-	Status           string                 `json:"status"`
-	CompletedPairs   int                    `json:"completed_pairs"`
-	FailurePair      int                    `json:"failure_pair,omitempty"`
-	FailureOrder     string                 `json:"failure_order,omitempty"`
-	Pairs            []ReplicatedPairRecord `json:"pairs"`
+	SchemaVersion          int                    `json:"schema_version"`
+	ManifestName           string                 `json:"manifest_name"`
+	DeclaredVariable       string                 `json:"declared_variable"`
+	ManifestContractSHA256 string                 `json:"manifest_contract_sha256,omitempty"`
+	PairsPerOrder          int                    `json:"pairs_per_order"`
+	ResetPolicy            string                 `json:"reset_policy"`
+	ProvenanceSHA256       string                 `json:"provenance_sha256,omitempty"`
+	BindingSHA256          string                 `json:"binding_sha256,omitempty"`
+	Status                 string                 `json:"status"`
+	CompletedPairs         int                    `json:"completed_pairs"`
+	FailurePair            int                    `json:"failure_pair,omitempty"`
+	FailureOrder           string                 `json:"failure_order,omitempty"`
+	Pairs                  []ReplicatedPairRecord `json:"pairs"`
+}
+
+// ReplicationProvenance returns the canonical adapter boundary for an
+// authenticated Android replication run.
+func ReplicationProvenance(manifestContractSHA256 string) (provenance.Contract, error) {
+	contract := provenance.Contract{
+		SchemaVersion:   provenance.SchemaVersion,
+		Source:          ReplicationSource,
+		Adapter:         ReplicationAdapter,
+		AdapterVersion:  ReplicationAdapterVersion,
+		ProcedureSHA256: manifestContractSHA256,
+		Scope:           ReplicationScope,
+	}
+	if err := contract.Validate(); err != nil {
+		return provenance.Contract{}, err
+	}
+	return contract, nil
+}
+
+// ReplicationProvenanceSHA256 returns the canonical adapter-boundary identity
+// for an authenticated Android replication run.
+func ReplicationProvenanceSHA256(manifestContractSHA256 string) (string, error) {
+	contract, err := ReplicationProvenance(manifestContractSHA256)
+	if err != nil {
+		return "", err
+	}
+	return contract.SHA256()
 }
 
 // ReplicatedPairRecord identifies one matched pair and its execution order.
 type ReplicatedPairRecord struct {
-	Pair          int    `json:"pair"`
-	Order         string `json:"order"`
-	Directory     string `json:"directory"`
-	FirstSession  string `json:"first_session"`
-	SecondSession string `json:"second_session"`
-	Status        string `json:"status"`
+	Pair                       int    `json:"pair"`
+	Order                      string `json:"order"`
+	Directory                  string `json:"directory"`
+	FirstSession               string `json:"first_session"`
+	SecondSession              string `json:"second_session"`
+	FirstSessionBindingSHA256  string `json:"first_session_binding_sha256,omitempty"`
+	SecondSessionBindingSHA256 string `json:"second_session_binding_sha256,omitempty"`
+	BindingSHA256              string `json:"binding_sha256,omitempty"`
+	Status                     string `json:"status"`
 }
 
 // RunReplicated executes matched pairs in both orders, resetting before each session.
@@ -154,21 +198,35 @@ func runReplicatedWithMode(
 	); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(outputDir), 0o700); err != nil {
+	recordSchemaVersion := ReplicatedRunSchemaVersion
+	manifestContractSHA256 := ""
+	provenanceSHA256 := ""
+	if authDependencies != nil {
+		recordSchemaVersion = AuthenticatedReplicatedRunSchemaVersion
+		manifestContractSHA256 = manifest.ContractDigest()
+		var err error
+		provenanceSHA256, err = ReplicationProvenanceSHA256(manifest.ContractDigest())
+		if err != nil {
+			return fmt.Errorf("replication provenance: %w", err)
+		}
+	}
+	if err := securefs.MkdirAll(filepath.Dir(outputDir), 0o700); err != nil {
 		return fmt.Errorf("create output parent: %w", err)
 	}
-	if err := os.Mkdir(outputDir, 0o700); err != nil {
+	if err := securefs.MkdirExclusive(outputDir, 0o700); err != nil {
 		return fmt.Errorf("create output directory: %w", err)
 	}
 
 	record := ReplicatedRunRecord{
-		SchemaVersion:    ReplicatedRunSchemaVersion,
-		ManifestName:     manifest.Name,
-		DeclaredVariable: manifest.Variable,
-		PairsPerOrder:    pairs,
-		ResetPolicy:      ReplicationResetPolicy,
-		Status:           ReplicationStatusIncomplete,
-		Pairs:            make([]ReplicatedPairRecord, 0, pairs*2),
+		SchemaVersion:          recordSchemaVersion,
+		ManifestName:           manifest.Name,
+		DeclaredVariable:       manifest.Variable,
+		ManifestContractSHA256: manifestContractSHA256,
+		PairsPerOrder:          pairs,
+		ResetPolicy:            ReplicationResetPolicy,
+		ProvenanceSHA256:       provenanceSHA256,
+		Status:                 ReplicationStatusIncomplete,
+		Pairs:                  make([]ReplicatedPairRecord, 0, pairs*2),
 	}
 	orders := []struct {
 		name          string
@@ -228,6 +286,9 @@ func runReplicatedWithMode(
 					now,
 				)
 			}
+			if err == nil && authDependencies != nil {
+				pairRecord, err = bindReplicatedPair(outputDir, record, pairRecord)
+			}
 			if err != nil {
 				record.FailurePair = pair
 				record.FailureOrder = order.name
@@ -241,6 +302,13 @@ func runReplicatedWithMode(
 			pairRecord.Status = ReplicationStatusComplete
 			record.Pairs = append(record.Pairs, pairRecord)
 			record.CompletedPairs = completedPairCount(record.Pairs)
+		}
+	}
+	if authDependencies != nil {
+		var err error
+		record.BindingSHA256, err = ReplicatedBindingSHA256(record)
+		if err != nil {
+			return fmt.Errorf("replication provenance: %w", err)
 		}
 	}
 	record.Status = ReplicationStatusComplete
@@ -274,37 +342,70 @@ func completedPairCount(pairs []ReplicatedPairRecord) int {
 }
 
 func writeReplicatedRecord(outputDir string, record ReplicatedRunRecord) error {
+	if record.SchemaVersion != ReplicatedRunSchemaVersion &&
+		record.SchemaVersion != AuthenticatedReplicatedRunSchemaVersion {
+		return errors.New("replication schema version is invalid")
+	}
 	if !validReplicationMetadata(record.ManifestName) ||
 		!validReplicationMetadata(record.DeclaredVariable) {
 		return errors.New("replication metadata is invalid")
 	}
+	if record.SchemaVersion == AuthenticatedReplicatedRunSchemaVersion {
+		if !validSHA256(record.ManifestContractSHA256) ||
+			!validSHA256(record.ProvenanceSHA256) ||
+			(record.Status == ReplicationStatusComplete && !validSHA256(record.BindingSHA256)) ||
+			(record.Status == ReplicationStatusIncomplete && record.BindingSHA256 != "") {
+			return errors.New("authenticated replication binding is invalid")
+		}
+	} else if record.ManifestContractSHA256 != "" || record.BindingSHA256 != "" {
+		return errors.New("legacy replication binding fields are invalid")
+	} else if record.ProvenanceSHA256 != "" && !validSHA256(record.ProvenanceSHA256) {
+		return errors.New("replication metadata provenance is invalid")
+	}
+	for _, pair := range record.Pairs {
+		expectedDirectory := fmt.Sprintf("pair-%03d-%s", pair.Pair, pair.Order)
+		if pair.Pair < 1 || pair.Pair > maxReplicatedPairs ||
+			(pair.Order != ReplicationOrderBaselineTreatment &&
+				pair.Order != ReplicationOrderTreatmentBaseline) ||
+			pair.Directory != expectedDirectory ||
+			!validPairSessionsForOrder(pair) ||
+			(pair.Status != ReplicationStatusComplete && pair.Status != ReplicationStatusIncomplete) {
+			return errors.New("replication pair metadata is invalid")
+		}
+		if record.SchemaVersion == AuthenticatedReplicatedRunSchemaVersion {
+			if pair.Status == ReplicationStatusComplete &&
+				(!validSHA256(pair.FirstSessionBindingSHA256) ||
+					!validSHA256(pair.SecondSessionBindingSHA256) ||
+					!validSHA256(pair.BindingSHA256)) {
+				return errors.New("authenticated replication pair binding is invalid")
+			}
+			if pair.Status == ReplicationStatusIncomplete &&
+				(pair.FirstSessionBindingSHA256 != "" ||
+					pair.SecondSessionBindingSHA256 != "" ||
+					pair.BindingSHA256 != "") {
+				return errors.New("incomplete replication pair binding is invalid")
+			}
+		} else if pair.FirstSessionBindingSHA256 != "" ||
+			pair.SecondSessionBindingSHA256 != "" ||
+			pair.BindingSHA256 != "" {
+			return errors.New("legacy replication pair binding fields are invalid")
+		}
+	}
 	data, _ := json.MarshalIndent(record, "", "  ")
 	data = append(data, '\n')
 	path := filepath.Join(outputDir, "replication.json")
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
+	if err := securefs.WriteExclusiveExistingParent(path, data, 0o600); err != nil {
 		return fmt.Errorf("create replication metadata: %w", err)
 	}
-	remove := true
-	defer func() {
-		_ = file.Close()
-		if remove {
-			_ = os.Remove(path)
-		}
-	}()
-	if _, err := file.Write(data); err != nil {
-		return fmt.Errorf("write replication metadata: %w", err)
-	}
-	if err := file.Sync(); err != nil {
-		return fmt.Errorf("sync replication metadata: %w", err)
-	}
-	if err := file.Close(); err != nil {
-		return fmt.Errorf("close replication metadata: %w", err)
-	}
-	remove = false
 	return nil
 }
 
+func validPairSessionsForOrder(pair ReplicatedPairRecord) bool {
+	if pair.Order == ReplicationOrderBaselineTreatment {
+		return pair.FirstSession == "baseline" && pair.SecondSession == "treatment"
+	}
+	return pair.FirstSession == "treatment" && pair.SecondSession == "baseline"
+}
 func validReplicationMetadata(value string) bool {
 	return value != "" &&
 		len(value) <= 1024 &&

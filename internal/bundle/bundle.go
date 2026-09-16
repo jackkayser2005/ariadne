@@ -24,6 +24,7 @@ import (
 	"github.com/jackkayser2005/ariadne/internal/evidence"
 	"github.com/jackkayser2005/ariadne/internal/experiment"
 	"github.com/jackkayser2005/ariadne/internal/jsoncheck"
+	"github.com/jackkayser2005/ariadne/internal/securefs"
 )
 
 const (
@@ -1201,21 +1202,24 @@ func decodeSession(data []byte, record *adb.SessionRecord) error {
 			"role":                     {},
 			"order":                    {},
 			"procedure_sha256":         {},
-			"adb_version":              {},
-			"device":                   {},
-			"package":                  {},
-			"android_api":              {},
-			"architecture":             {},
-			"package_version_code":     {},
-			"package_sha256":           {},
-			"ariadne_revision":         {},
-			"ariadne_modified":         {},
-			"status":                   {},
-			"failure_stage":            {},
-			"started_at":               {},
-			"finished_at":              {},
-			"steps":                    {},
-			"artifacts":                {},
+
+			"reset_policy":         {},
+			"binding_sha256":       {},
+			"adb_version":          {},
+			"device":               {},
+			"package":              {},
+			"android_api":          {},
+			"architecture":         {},
+			"package_version_code": {},
+			"package_sha256":       {},
+			"ariadne_revision":     {},
+			"ariadne_modified":     {},
+			"status":               {},
+			"failure_stage":        {},
+			"started_at":           {},
+			"finished_at":          {},
+			"steps":                {},
+			"artifacts":            {},
 		}
 		for field := range fields {
 			if _, ok := allowed[field]; !ok {
@@ -1243,7 +1247,8 @@ func validateSession(record adb.SessionRecord, kind string) error {
 		record.SchemaVersion != 5 &&
 		record.SchemaVersion != 6 &&
 		record.SchemaVersion != 7 &&
-		record.SchemaVersion != 8) ||
+		record.SchemaVersion != 8 &&
+		record.SchemaVersion != adb.AuthenticatedSessionSchemaVersion) ||
 		record.Kind != kind {
 		return errors.New("schema_version or kind is invalid")
 	}
@@ -1382,6 +1387,19 @@ func validateSession(record adb.SessionRecord, kind string) error {
 		}
 		previous = step.FinishedAt
 	}
+	if record.SchemaVersion < adb.AuthenticatedSessionSchemaVersion {
+		if record.ResetPolicy != "" || record.BindingSHA256 != "" {
+			return errors.New("legacy session binding fields are invalid")
+		}
+	} else {
+		if record.ResetPolicy != adb.ReplicationResetPolicy || !validDigest(record.BindingSHA256) {
+			return errors.New("authenticated session binding is invalid")
+		}
+		expectedBinding, err := adb.SessionBindingSHA256(record)
+		if err != nil || expectedBinding != record.BindingSHA256 {
+			return errors.New("authenticated session binding does not match metadata")
+		}
+	}
 	return nil
 }
 
@@ -1478,14 +1496,22 @@ func artifactByPath(artifacts []adb.Artifact, path string) (adb.Artifact, bool) 
 	return found, count == 1
 }
 
+var errUnsafePath = errors.New("unsafe path")
+
 func pathSafetyError(info os.FileInfo) error {
 	if info.Mode()&os.ModeSymlink != 0 {
-		return errors.New("symbolic links are not allowed")
+		return fmt.Errorf("symbolic links are not allowed: %w", errUnsafePath)
 	}
 	if info.Mode()&os.ModeIrregular != 0 {
-		return errors.New("reparse points and other irregular path components are not allowed")
+		return fmt.Errorf("reparse points and other irregular path components are not allowed: %w", errUnsafePath)
 	}
 	return nil
+}
+
+// IsPathSafetyError reports whether err indicates a rejected symlink, reparse
+// point, or path replacement during safe file opening.
+func IsPathSafetyError(err error) bool {
+	return errors.Is(err, errUnsafePath)
 }
 
 func lstatNoSymlinkPath(path string) (os.FileInfo, error) {
@@ -1528,7 +1554,7 @@ func readFileBounded(path string, limit int64) ([]byte, error) {
 		return nil, fmt.Errorf("open: %w", err)
 	}
 	if !info.Mode().IsRegular() {
-		return nil, errors.New("open: regular file required")
+		return nil, fmt.Errorf("open: regular file required: %w", errUnsafePath)
 	}
 	file, err := os.Open(path)
 	if err != nil {
@@ -1540,7 +1566,14 @@ func readFileBounded(path string, limit int64) ([]byte, error) {
 		return nil, fmt.Errorf("stat after open: %w", err)
 	}
 	if !os.SameFile(info, openedInfo) {
-		return nil, errors.New("open: path changed during verification")
+		return nil, fmt.Errorf("open: path changed during verification: %w", errUnsafePath)
+	}
+	currentInfo, err := lstatNoSymlinkPath(path)
+	if err != nil {
+		return nil, fmt.Errorf("recheck after open: %w", err)
+	}
+	if !currentInfo.Mode().IsRegular() || !os.SameFile(currentInfo, openedInfo) {
+		return nil, fmt.Errorf("open: path changed during verification: %w", errUnsafePath)
 	}
 	data, err := io.ReadAll(io.LimitReader(file, limit+1))
 	if err != nil {
@@ -1713,26 +1746,8 @@ func writeOutputs(runDir string, evidence, report []byte) error {
 }
 
 func writeExclusive(path string, data []byte) error {
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return fmt.Errorf("create %s: %w", filepath.Base(path), err)
-	}
-	remove := true
-	defer func() {
-		_ = file.Close()
-		if remove {
-			_ = os.Remove(path)
-		}
-	}()
-	if _, err := file.Write(data); err != nil {
+	if err := securefs.WriteExclusiveExistingParent(path, data, 0o600); err != nil {
 		return fmt.Errorf("write %s: %w", filepath.Base(path), err)
 	}
-	if err := file.Sync(); err != nil {
-		return fmt.Errorf("sync %s: %w", filepath.Base(path), err)
-	}
-	if err := file.Close(); err != nil {
-		return fmt.Errorf("close %s: %w", filepath.Base(path), err)
-	}
-	remove = false
 	return nil
 }

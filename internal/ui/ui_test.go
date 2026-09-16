@@ -74,7 +74,7 @@ func TestHandlerRendersReadOnlyReview(t *testing.T) {
 		path string
 		want []string
 	}{
-		{name: "index", path: "/", want: []string{"Archived bundles", "Ask across this archive", "Did it change?", "run-001", "&lt;manifest&gt;"}},
+		{name: "index", path: "/", want: []string{"Archived bundles", "Ask across this archive", "Investigate", "Compare", "Trace", "Keep evidence", "Ariadne investigation workflow", "Did it change?", "run-001", "&lt;manifest&gt;"}},
 		{name: "archive question lens", path: "/?question_id=counterfactual-change", want: []string{"Question lens", "oldest first", "Dated results are ordered", "Archive question summary", "Did it change?", "observed", "unknown", "unavailable", "checked", "Verified provenance", "recorded (UTC)", "2026-07-25T12:00:00Z", "target package", "&lt;package&gt;", "Android API", "35", "architecture", "&lt;architecture&gt;", "package version", "7", "package SHA-256", strings.Repeat("d", 64), "normalization", "&lt;normalization&gt;", "second normalization", strings.Repeat("c", 64), "&lt;revision&gt;", "clean", "Open answer details", "run-001", "&lt;manifest&gt;"}},
 		{name: "run", path: "/run?directory=run-001", want: []string{"Verified provenance", "recorded (UTC)", "2026-07-25T12:00:00Z", "target package", "&lt;package&gt;", "Bounded question board", "Did it change?", "Open answer details", findingID, strings.Repeat("c", 64), "&lt;revision&gt;", "clean"}},
 		{name: "ask", path: "/ask?directory=run-001&question_id=counterfactual-change", want: []string{"Question result", "observed", findingID, "Verified provenance", "recorded (UTC)", "2026-07-25T12:00:00Z", "target package", "&lt;package&gt;", strings.Repeat("d", 64), strings.Repeat("c", 64), "&lt;revision&gt;", "clean"}},
@@ -283,6 +283,7 @@ func TestHandlerRendersTraceArchiveReflection(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Trace archive reflection",
+		"Start with the simple version", "In this archive:", "See the fixed questions", "technical details",
 		"Verified archive identity",
 		"caller",
 		"archive SHA-256",
@@ -383,6 +384,7 @@ func TestHandlerRendersTraceReplicationLedger(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Replicated trace reflection",
+		"Start with the simple version", "In this ledger:", "See the fixed questions", "technical details",
 		"Verified replication identity",
 		"baseline &rarr; treatment",
 		"treatment &rarr; baseline",
@@ -1511,6 +1513,15 @@ func TestHandlerEmptyArchive(t *testing.T) {
 	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
 	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "No verified bundles") {
 		t.Fatalf("status = %d, body=%q", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestHandlerWithHistoryServesFavicon(t *testing.T) {
+	h := HandlerWithHistory(t.TempDir(), "")
+	recorder := httptest.NewRecorder()
+	h.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/favicon.ico", nil))
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("favicon status = %d, body=%q", recorder.Code, recorder.Body.String())
 	}
 }
 

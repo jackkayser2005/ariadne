@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
@@ -16,6 +15,7 @@ import (
 	"github.com/jackkayser2005/ariadne/internal/bundle"
 	"github.com/jackkayser2005/ariadne/internal/evidence"
 	"github.com/jackkayser2005/ariadne/internal/jsoncheck"
+	"github.com/jackkayser2005/ariadne/internal/securefs"
 	portabletrace "github.com/jackkayser2005/ariadne/internal/trace"
 )
 
@@ -119,12 +119,11 @@ func ReadLadder(path string) (LadderPlan, error) {
 	if strings.TrimSpace(path) == "" {
 		return LadderPlan{}, errors.New("ladder plan path is required")
 	}
-	file, err := os.Open(path)
+	data, err := bundle.ReadBoundedFile(path, maxLadderPlanBytes)
 	if err != nil {
 		return LadderPlan{}, errors.New("read ladder plan")
 	}
-	defer file.Close()
-	return DecodeLadder(file)
+	return DecodeLadder(bytes.NewReader(data))
 }
 
 // Validate reports whether the ladder can be handed to a source adapter.
@@ -141,7 +140,7 @@ func (plan LadderPlan) Validate() error {
 	if plan.ReferenceCandidate == "" {
 		return errors.New("reference_candidate: required")
 	}
-	if plan.FunctionalityCriterion != FunctionalityCriterionAllNonDisclosureFields {
+	if plan.FunctionalityCriterion != FunctionalityCriterionAllNonDisclosureFields && plan.FunctionalityCriterion != "local-forecast-available-v1" {
 		return errors.New("functionality_criterion: unsupported value")
 	}
 	if len(plan.Candidates) < 2 || len(plan.Candidates) > maxLadderCandidates {
@@ -241,7 +240,7 @@ func SummarizeLadder(plan LadderPlan, provenance LadderProvenance, pairs int, re
 func (summary LadderSummary) Validate() error {
 	if summary.SchemaVersion != LadderSummarySchemaVersion || !validIdentifier(summary.PlanName, maxPlanName) ||
 		!validIdentifier(summary.Variable, maxVariableBytes) || !validIdentifier(summary.ReferenceCandidate, maxCandidateID) ||
-		summary.FunctionalityCriterion != FunctionalityCriterionAllNonDisclosureFields || summary.PairsPerOrder < 1 || summary.PairsPerOrder > 8 {
+		(summary.FunctionalityCriterion != FunctionalityCriterionAllNonDisclosureFields && summary.FunctionalityCriterion != "local-forecast-available-v1") || summary.PairsPerOrder < 1 || summary.PairsPerOrder > 8 {
 		return errors.New("ladder summary is invalid")
 	}
 	if err := (LadderProvenance{
@@ -309,28 +308,34 @@ func SaveLadder(rootDir string, summary LadderSummary) error {
 		return fmt.Errorf("ladder receipt exceeds %d-byte limit", maxLadderSummaryBytes)
 	}
 	path := filepath.Join(rootDir, "minimization.json")
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
+	if err := securefs.WriteExclusiveExistingParent(path, data, 0o600); err != nil {
 		return fmt.Errorf("create ladder receipt: %w", err)
 	}
-	remove := true
-	defer func() {
-		_ = file.Close()
-		if remove {
-			_ = os.Remove(path)
-		}
-	}()
-	if _, err := file.Write(data); err != nil {
-		return fmt.Errorf("write ladder receipt: %w", err)
-	}
-	if err := file.Sync(); err != nil {
-		return fmt.Errorf("sync ladder receipt: %w", err)
-	}
-	if err := file.Close(); err != nil {
-		return fmt.Errorf("close ladder receipt: %w", err)
-	}
-	remove = false
 	return nil
+}
+
+// LooksLikeLadder reports whether a bounded ladder receipt names the supplied
+// adapter. It is only a dispatch hint; VerifyLadder remains authoritative.
+func LooksLikeLadder(rootDir, adapter string) bool {
+	if strings.TrimSpace(rootDir) == "" || strings.TrimSpace(adapter) == "" {
+		return false
+	}
+	data, err := bundle.ReadBoundedFile(filepath.Join(rootDir, "minimization.json"), maxLadderSummaryBytes)
+	if err != nil || jsoncheck.RejectDuplicateKeys(data) != nil {
+		return false
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	var marker struct {
+		Adapter string
+	}
+	if err := decoder.Decode(&marker); err != nil {
+		return false
+	}
+	var trailing json.RawMessage
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return false
+	}
+	return marker.Adapter == adapter
 }
 
 // VerifyLadder verifies the canonical receipt and delegates each child to its

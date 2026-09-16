@@ -8,13 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/jackkayser2005/ariadne/internal/bundle"
 	"github.com/jackkayser2005/ariadne/internal/jsoncheck"
+	"github.com/jackkayser2005/ariadne/internal/securefs"
 	portabletrace "github.com/jackkayser2005/ariadne/internal/trace"
 )
 
@@ -207,13 +207,8 @@ func validField(value string) bool {
 }
 
 func readBounded(path string) ([]byte, error) {
-	file, err := os.Open(path)
+	data, err := bundle.ReadBoundedFile(path, maxAuditBytes)
 	if err != nil {
-		return nil, errors.New("read input")
-	}
-	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, maxAuditBytes+1))
-	if err != nil || len(data) > maxAuditBytes {
 		return nil, errors.New("read input")
 	}
 	return data, nil
@@ -223,29 +218,8 @@ func writeExclusive(path string, data []byte) error {
 	if strings.TrimSpace(path) == "" {
 		return errors.New("output path is required")
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return errors.New("create output directory")
+	if err := securefs.WriteExclusive(path, data, 0o600); err != nil {
+		return fmt.Errorf("create output: %w", err)
 	}
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return errors.New("create output")
-	}
-	remove := true
-	defer func() {
-		_ = file.Close()
-		if remove {
-			_ = os.Remove(path)
-		}
-	}()
-	if _, err := file.Write(data); err != nil {
-		return errors.New("write output")
-	}
-	if err := file.Sync(); err != nil {
-		return errors.New("sync output")
-	}
-	if err := file.Close(); err != nil {
-		return errors.New("close output")
-	}
-	remove = false
 	return nil
 }

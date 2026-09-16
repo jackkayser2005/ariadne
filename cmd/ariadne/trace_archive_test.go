@@ -77,6 +77,62 @@ func TestRunTraceArchiveCreate(t *testing.T) {
 	}
 }
 
+func TestRunTraceArchiveCreateAdapterRuns(t *testing.T) {
+	want := trace.ArchiveVerificationSummary{
+		SchemaVersion: 2,
+		OrderBasis:    "caller",
+		Entries:       2,
+		Complete:      2,
+		ArchiveSHA256: strings.Repeat("e", 64),
+	}
+	saveRuns := func(runDirs []string, output string) (trace.ArchiveVerificationSummary, error) {
+		if output != "adapter-archive.json" || !reflect.DeepEqual(runDirs, []string{"one-run", "two-run"}) {
+			t.Fatalf("SaveSourceAdapterArchive() inputs = %#v, output = %q", runDirs, output)
+		}
+		return want, nil
+	}
+	saveLegacy := func([]trace.ArchiveInput, string) (trace.ArchiveVerificationSummary, error) {
+		t.Fatal("SaveArchive called for adapter-run input")
+		return trace.ArchiveVerificationSummary{}, nil
+	}
+	args := []string{"--run", "one-run", "--run", "two-run", "adapter-archive.json"}
+	var stdout, stderr bytes.Buffer
+	if exitCode := runTraceArchiveCreate(args, &stdout, &stderr, saveLegacy, saveRuns); exitCode != 0 || stderr.Len() != 0 {
+		t.Fatalf("human adapter create = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+	for _, wantText := range []string{"schema_version: 2", "entries: 2", "archive_sha256: " + want.ArchiveSHA256} {
+		if !strings.Contains(stdout.String(), wantText) {
+			t.Fatalf("human adapter output missing %q: %s", wantText, stdout.String())
+		}
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if exitCode := runTraceArchiveCreate(append([]string{"--json"}, args...), &stdout, &stderr, saveLegacy, saveRuns); exitCode != 0 || stderr.Len() != 0 {
+		t.Fatalf("JSON adapter create = %d, stderr=%q", exitCode, stderr.String())
+	}
+	var got trace.ArchiveVerificationSummary
+	if err := json.Unmarshal(stdout.Bytes(), &got); err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("JSON adapter create = %#v, err=%v", got, err)
+	}
+	for _, invalid := range [][]string{
+		{"archive.json"},
+		{"--run", "one-run", "--trace", "trace.json", "--session", "session.json", "archive.json"},
+		{"--run", "one-run", "--session", "session.json", "archive.json"},
+	} {
+		stdout.Reset()
+		stderr.Reset()
+		if exitCode := runTraceArchiveCreate(invalid, &stdout, &stderr, saveLegacy, saveRuns); exitCode != 2 || stdout.Len() != 0 || stderr.Len() == 0 {
+			t.Fatalf("invalid adapter create %v = %d, stdout=%q, stderr=%q", invalid, exitCode, stdout.String(), stderr.String())
+		}
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if exitCode := runTraceArchiveCreate(args, &stdout, &stderr, saveLegacy, func([]string, string) (trace.ArchiveVerificationSummary, error) {
+		return trace.ArchiveVerificationSummary{}, errors.New("adapter archive save failed safely")
+	}); exitCode != 1 || stdout.Len() != 0 || !strings.Contains(stderr.String(), "adapter archive save failed safely") {
+		t.Fatalf("adapter create error = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+}
 func TestRunTraceArchiveVerify(t *testing.T) {
 	want := trace.ArchiveVerificationSummary{SchemaVersion: 1, OrderBasis: "caller", Entries: 2, ArchiveSHA256: strings.Repeat("b", 64)}
 	verify := func(path string) (trace.ArchiveVerificationSummary, error) {

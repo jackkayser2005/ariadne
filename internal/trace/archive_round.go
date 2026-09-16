@@ -444,7 +444,7 @@ func validateArchiveQuestionReceipt(receipt ArchiveQuestionReceipt) error {
 }
 
 func validateArchiveAnswer(answer ArchiveAnswer, question ArchiveQuestion, archiveSHA256 string, entries int, sources []ArchiveSourceSummary) error {
-	if answer.SchemaVersion != archiveSchemaVersion || answer.QuestionID != question.ID || answer.Question != question.Text {
+	if answer.SchemaVersion != archiveAnswerSchemaVersion || answer.QuestionID != question.ID || answer.Question != question.Text {
 		return errors.New("question identity is invalid")
 	}
 	if !ValidSHA256(answer.ArchiveSHA256) || answer.ArchiveSHA256 != archiveSHA256 {

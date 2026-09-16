@@ -1,3 +1,4 @@
+import { pathToFileURL } from "node:url";
 import { createServer as createHTTPServer } from "node:http";
 import { createServer as createTCPServer } from "node:net";
 import { spawn } from "node:child_process";
@@ -580,6 +581,7 @@ async function capture(procedure) {
   }
 }
 
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
 try {
   const procedure = await readProcedure();
   process.stdout.write(JSON.stringify(await capture(procedure)));
@@ -587,3 +589,6 @@ try {
   process.stderr.write(`browser driver failed at ${stage}\n`);
   process.exitCode = 1;
 }
+
+}
+export { DevTools, delay, freePort, waitForPage, stopBrowser, removeProfile, browserFailure };

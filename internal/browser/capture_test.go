@@ -280,3 +280,29 @@ func writeProcedure(t *testing.T, data []byte) string {
 var validProcedureData = []byte(`{"schema_version":1,"procedure_id":"browser-audit-v1","scope":"outbound","duration_ms":500,"max_events":2}`)
 
 var longProcedureData = []byte(`{"schema_version":1,"procedure_id":"browser-audit-v1","scope":"outbound","duration_ms":5000,"max_events":2}`)
+
+func TestReadProcedureRejectsSymlinkPaths(t *testing.T) {
+	root := t.TempDir()
+	realDir := filepath.Join(root, "real")
+	if err := os.Mkdir(realDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(realDir, "procedure.json")
+	if err := os.WriteFile(target, validProcedureData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	leaf := filepath.Join(root, "leaf.json")
+	if err := os.Symlink(target, leaf); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if _, _, err := ReadProcedure(leaf); err == nil {
+		t.Fatal("ReadProcedure() accepted a symlink leaf")
+	}
+	parent := filepath.Join(root, "parent")
+	if err := os.Symlink(realDir, parent); err != nil {
+		t.Skipf("directory symlinks unavailable: %v", err)
+	}
+	if _, _, err := ReadProcedure(filepath.Join(parent, "procedure.json")); err == nil {
+		t.Fatal("ReadProcedure() accepted a symlink ancestor")
+	}
+}

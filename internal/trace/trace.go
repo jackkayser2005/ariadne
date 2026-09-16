@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"maps"
-	"os"
 	"slices"
 	"unicode/utf8"
 
@@ -167,14 +166,9 @@ func ClassifyReplicatedPairs(pairs []ReplicatedPairObservation) ReplicatedClassi
 
 // Read verifies one trace file and returns its normalized document.
 func Read(path string) (Document, error) {
-	file, err := os.Open(path)
+	data, err := readSourceAdapterFile(path, maxDocumentBytes)
 	if err != nil {
-		return Document{}, fmt.Errorf("read trace: %w", err)
-	}
-	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, maxDocumentBytes+1))
-	if err != nil {
-		return Document{}, fmt.Errorf("read trace: %w", err)
+		return Document{}, errors.New("read trace")
 	}
 	document, err := Decode(data)
 	if err != nil {
@@ -243,6 +237,11 @@ func SHA256(document Document) (string, error) {
 	if err := validate(&document); err != nil {
 		return "", err
 	}
+	return normalizedSHA256(document)
+}
+
+// normalizedSHA256 is used only after validation in the same operation.
+func normalizedSHA256(document Document) (string, error) {
 	data, err := json.Marshal(document)
 	if err != nil {
 		return "", fmt.Errorf("encode trace: %w", err)
@@ -289,11 +288,11 @@ func Compare(baseline, treatment Document) (Comparison, error) {
 	if baseline.Scope != treatment.Scope {
 		return Comparison{}, errors.New("trace scopes disagree")
 	}
-	baselineSHA256, err := SHA256(baseline)
+	baselineSHA256, err := normalizedSHA256(baseline)
 	if err != nil {
 		return Comparison{}, err
 	}
-	treatmentSHA256, err := SHA256(treatment)
+	treatmentSHA256, err := normalizedSHA256(treatment)
 	if err != nil {
 		return Comparison{}, err
 	}

@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -84,7 +85,7 @@ func TestSaveArchiveQuestionReport(t *testing.T) {
 			t.Fatalf("SaveArchiveQuestionReport() exposed raw value %q: %s", rawValue, data)
 		}
 	}
-	if _, err := SaveArchiveQuestionReport(root, "counterfactual-change", reportPath); err == nil || !strings.Contains(err.Error(), "file exists") {
+	if _, err := SaveArchiveQuestionReport(root, "counterfactual-change", reportPath); err == nil || !errors.Is(err, os.ErrExist) {
 		t.Fatalf("second SaveArchiveQuestionReport() error = %v", err)
 	}
 }
@@ -101,7 +102,7 @@ func TestAskArchiveCountsUnknownAndUnavailable(t *testing.T) {
 
 	storageRun := makeStorageFailureRun(t, "")
 	storageDir := filepath.Join(root, "storage-gap")
-	if err := os.Rename(storageRun, storageDir); err != nil {
+	if err := renameArchivePath(storageRun, storageDir); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Write(storageDir); err != nil {
@@ -110,7 +111,7 @@ func TestAskArchiveCountsUnknownAndUnavailable(t *testing.T) {
 
 	legacyDir := filepath.Join(root, "legacy")
 	legacyRun := makeRun(t, runOptions{sessionSchemaVersion: 5})
-	if err := os.Rename(legacyRun, legacyDir); err != nil {
+	if err := renameArchivePath(legacyRun, legacyDir); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := Write(legacyDir); err != nil {

@@ -19,6 +19,13 @@ import (
 )
 
 type handler struct {
+	harSecondPath            string
+	harRulesPath             string
+	harPath                  string
+	harOrigin                string
+	weatherPath              string
+	sourceAdapterPath        string
+	sourceAdapterVerify      func(string) (trace.SourceAdapterRunSummary, error)
 	root                     string
 	index                    func(string) ([]bundle.ArchiveEntry, error)
 	verify                   func(string) (bundle.Summary, error)
@@ -41,6 +48,10 @@ type handler struct {
 	traceReplicationRead     func(string) (trace.ReplicationLedger, trace.ReplicationLedgerVerificationSummary, error)
 	traceCasePath            string
 	traceCaseRead            func(string) (trace.CasePackage, trace.CaseVerificationSummary, error)
+	traceCaseRoundPath       string
+	traceCaseRoundRead       func(string) (trace.CaseDisclosureQuestionRound, trace.CaseDisclosureQuestionRoundVerificationSummary, error)
+	traceCaseReceiptPath     string
+	traceCaseReceiptRead     func(string) (trace.CaseDisclosureQuestionReceipt, trace.CaseDisclosureQuestionReceiptVerificationSummary, error)
 	traceStudyPath           string
 	traceStudyRead           func(string) (trace.ReplicationStudy, trace.StudyVerificationSummary, error)
 	traceStudyRoundPath      string
@@ -152,9 +163,11 @@ type pageData struct {
 	TraceCaseAnswers                       []trace.CaseAnswer
 	TraceCaseDisclosureMap                 trace.CaseDisclosureMap
 	TraceCaseDisclosureQuestions           []trace.CaseDisclosureQuestionAnswer
+	TraceCaseDisclosureQuestionRoundSaved  bool
 	TraceCaseDisclosureQuestionRoundSHA256 string
 	TraceCaseDisclosureQuestionID          string
 	TraceCaseDisclosureReceiptAvailable    bool
+	TraceCaseDisclosureReceiptSaved        bool
 	TraceCaseDisclosureReceipt             trace.CaseDisclosureQuestionReceipt
 	TraceCaseDisclosureReceiptSHA256       string
 	TraceCaseDisclosureReceiptJSON         string
@@ -169,6 +182,10 @@ type pageData struct {
 	TraceStudyComparisonConfigured         bool
 	TraceStudyComparison                   trace.ReplicationStudyQuestionRoundComparison
 	TraceStudySelectedQuestionID           string
+	WeatherConfigured                      bool
+	SourceAdapterConfigured                bool
+	HARConfigured                          bool
+	HARComparisonConfigured                bool
 	MinimizationConfigured                 bool
 	Minimization                           minimizationReviewData
 }
@@ -309,6 +326,12 @@ func newHandlerWithHost(h handler, expectedHost string) http.Handler {
 	mux.HandleFunc("/trace-study", h.handleTraceStudy)
 	mux.HandleFunc("/trace-study-comparison", h.handleTraceStudyComparison)
 	mux.HandleFunc("/minimization", h.handleMinimization)
+	mux.HandleFunc("/weather", h.handleWeather)
+	mux.HandleFunc("/source-adapter", h.handleSourceAdapter)
+	mux.HandleFunc("/capture", h.handleHAR)
+	mux.HandleFunc("/capture-report", h.handleHAR)
+	mux.HandleFunc("/capture-compare", h.handleHARComparison)
+	mux.HandleFunc("/capture-comparison-report", h.handleHARComparison)
 	mux.HandleFunc("/favicon.ico", handleFavicon)
 	return secureReviewHandler(mux, expectedHost)
 }
@@ -520,6 +543,10 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		TraceCaseConfigured:                h.traceCaseConfigured(),
 		TraceStudyConfigured:               h.traceStudyConfigured(),
 		TraceStudyComparisonConfigured:     h.traceStudyComparison != nil,
+		WeatherConfigured:                  h.weatherPath != "",
+		SourceAdapterConfigured:            h.sourceAdapterPath != "",
+		HARConfigured:                      h.harPath != "" && h.harOrigin != "",
+		HARComparisonConfigured:            h.harPath != "" && h.harOrigin != "" && h.harSecondPath != "" && h.harRulesPath != "",
 		MinimizationConfigured:             h.minimizationPath != "",
 	})
 }
@@ -713,12 +740,50 @@ func (h handler) handleTraceCase(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
 		return
 	}
+	disclosureRoundSaved := false
+	if h.traceCaseRoundPath != "" {
+		if h.traceCaseRoundRead == nil {
+			http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		savedRound, savedRoundSummary, readErr := h.traceCaseRoundRead(h.traceCaseRoundPath)
+		if readErr != nil || savedRoundSummary.CaseSHA256 != summary.CaseSHA256 || savedRoundSummary.RoundSHA256 != disclosureRoundSHA256 {
+			http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		disclosureRound = savedRound
+		disclosureRoundSHA256 = savedRoundSummary.RoundSHA256
+		disclosureRoundSaved = true
+	}
 	disclosureQuestionID := r.URL.Query().Get("disclosure_question_id")
 	var disclosureReceipt trace.CaseDisclosureQuestionReceipt
 	disclosureReceiptAvailable := false
+	disclosureReceiptSaved := false
 	disclosureReceiptSHA256 := ""
 	disclosureReceiptJSON := ""
-	if disclosureQuestionID != "" {
+	if h.traceCaseReceiptPath != "" {
+		if h.traceCaseReceiptRead == nil {
+			http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		savedReceipt, savedReceiptSummary, readErr := h.traceCaseReceiptRead(h.traceCaseReceiptPath)
+		if readErr != nil || savedReceipt.CaseSHA256 != summary.CaseSHA256 || savedReceipt.RoundSHA256 != disclosureRoundSHA256 || (disclosureQuestionID != "" && disclosureQuestionID != savedReceipt.QuestionID) {
+			http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		disclosureQuestionID = savedReceipt.QuestionID
+		disclosureReceipt = savedReceipt
+		disclosureReceiptSHA256 = savedReceiptSummary.ReceiptSHA256
+		disclosureReceiptJSONBytes, marshalErr := json.MarshalIndent(disclosureReceipt, "", "  ")
+		if marshalErr != nil {
+			http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		disclosureReceiptJSON = string(disclosureReceiptJSONBytes)
+		disclosureReceiptAvailable = true
+		disclosureReceiptSaved = true
+	}
+	if disclosureQuestionID != "" && !disclosureReceiptSaved {
 		var selectedAnswer trace.CaseDisclosureQuestionAnswer
 		found := false
 		for _, answer := range disclosureRound.Answers {
@@ -758,9 +823,11 @@ func (h handler) handleTraceCase(w http.ResponseWriter, r *http.Request) {
 		TraceCaseAnswers:                       answers,
 		TraceCaseDisclosureMap:                 disclosureMap,
 		TraceCaseDisclosureQuestions:           disclosureRound.Answers,
+		TraceCaseDisclosureQuestionRoundSaved:  disclosureRoundSaved,
 		TraceCaseDisclosureQuestionRoundSHA256: disclosureRoundSHA256,
 		TraceCaseDisclosureQuestionID:          disclosureQuestionID,
 		TraceCaseDisclosureReceiptAvailable:    disclosureReceiptAvailable,
+		TraceCaseDisclosureReceiptSaved:        disclosureReceiptSaved,
 		TraceCaseDisclosureReceipt:             disclosureReceipt,
 		TraceCaseDisclosureReceiptSHA256:       disclosureReceiptSHA256,
 		TraceCaseDisclosureReceiptJSON:         disclosureReceiptJSON,
@@ -1182,14 +1249,16 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{.Title}}</title>
   <style>
-    :root { color-scheme: light; --ink: #16202a; --muted: #64717d; --line: #d8e0e5; --paper: #f7f9fa; --card: #fff; --accent: #0b6e69; --accent-soft: #e1f2ef; --warning: #8a5a00; --warning-soft: #fff3d5; }
+    :root { color-scheme: light; --ink: #13291f; --muted: #5e7167; --line: #d5e2d9; --paper: #f3f8f3; --card: #fffefa; --accent: #176341; --accent-strong: #0f4c32; --accent-soft: #dff1e5; --warning: #8a5a00; --warning-soft: #fff3d5; }
     * { box-sizing: border-box; }
-    body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.55 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { margin: 0; min-height: 100vh; background: linear-gradient(180deg, #e8f3ea 0, var(--paper) 360px); color: var(--ink); font: 16px/1.55 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     main { width: min(980px, calc(100% - 32px)); margin: 0 auto; padding: 28px 0 56px; }
-    header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding-bottom: 56px; }
-    .brand { color: var(--ink); font-size: 14px; font-weight: 800; letter-spacing: .16em; text-decoration: none; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 48px; }
+    .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--ink); font-size: 14px; font-weight: 800; letter-spacing: .16em; text-decoration: none; }
+    .brand::before { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 5px var(--accent-soft); content: ""; }
     .context, .eyebrow, .directory, .metric-label, footer { color: var(--muted); font-size: 13px; }
-    .hero { max-width: 680px; padding-bottom: 42px; }
+    .header-context { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.58); padding: 5px 10px; }
+    .hero { max-width: 680px; padding-bottom: 30px; }
     h1 { max-width: 760px; margin: 0 0 12px; font-size: clamp(34px, 6vw, 58px); letter-spacing: -.05em; line-height: 1.02; }
     h2 { margin: 0; font-size: 22px; letter-spacing: -.02em; }
     h3 { margin: 4px 0 2px; font-size: 20px; }
@@ -1197,22 +1266,38 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
     .lede { color: var(--muted); font-size: 19px; }
     .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin: 0 0 14px; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
-    .card, .panel { border: 1px solid var(--line); border-radius: 16px; background: var(--card); padding: 22px; box-shadow: 0 8px 24px rgba(22,32,42,.04); }
+    .card, .panel { border: 1px solid var(--line); border-radius: 16px; background: var(--card); padding: 22px; box-shadow: 0 10px 28px rgba(23,99,65,.08); }
     .card { display: flex; flex-direction: column; min-height: 230px; }
     .card .button { margin-top: auto; }
+    .panel + .panel { margin-top: 14px; }
+    .panel > summary { cursor: pointer; list-style: none; font-weight: 800; }
+    .panel > summary::-webkit-details-marker { display: none; }
+    .panel > summary::after { float: right; color: var(--accent); content: "＋"; font-size: 20px; line-height: 1; }
+    .panel[open] > summary::after { content: "−"; }
+    .panel > summary:focus-visible { outline: 3px solid #9ad6aa; outline-offset: 4px; }
     .directory { word-break: break-word; }
     .metrics { display: flex; gap: 22px; margin: 22px 0; }
     .metric { display: grid; gap: 2px; }
     .metric-value { font-size: 27px; font-weight: 750; line-height: 1; }
-    .button { display: inline-flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--accent); border-radius: 10px; color: var(--accent); background: transparent; padding: 10px 13px; font-weight: 700; text-decoration: none; }
-    .button:hover { color: #fff; background: var(--accent); }
+    .button { display: inline-flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--accent); border-radius: 10px; color: #fff; background: var(--accent); padding: 10px 13px; font-weight: 700; text-decoration: none; transition: background .15s ease, border-color .15s ease, transform .15s ease; }
+    .button:hover { color: #fff; background: var(--accent-strong); border-color: var(--accent-strong); transform: translateY(-1px); }
+    .button:focus-visible, .back:focus-visible, .brand:focus-visible { outline: 3px solid #9ad6aa; outline-offset: 3px; }
     .question-links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
     .question-list { display: grid; gap: 10px; margin-top: 18px; }
-    .back { display: inline-block; margin-bottom: 26px; color: var(--accent); font-weight: 700; text-decoration: none; }
+    .back { display: inline-block; margin-bottom: 26px; color: var(--accent-strong); font-weight: 700; text-decoration: none; }
     .status { display: inline-block; border-radius: 999px; background: var(--accent-soft); color: var(--accent); padding: 5px 11px; font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
     .status-unknown, .status-insufficient, .status-mixed-inconsistent, .status-no-sufficient-candidate { background: var(--warning-soft); color: var(--warning); }
     .status-unavailable { background: var(--line); color: var(--muted); }
     .question { max-width: 700px; margin: 20px 0 28px; font-size: 25px; letter-spacing: -.02em; }
+    .answer-line { max-width: 760px; margin: 2px 0 22px; font-size: 21px; letter-spacing: -.02em; }
+    .answer-line strong { color: var(--accent-strong); }
+    .path { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 18px 0 8px; padding: 0; list-style: none; }
+    .path li { position: relative; min-height: 92px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.72); padding: 13px; }
+    .path li + li::before { position: absolute; left: -9px; top: 35px; color: var(--accent); content: "→"; font-weight: 800; }
+    .path-label { display: block; color: var(--muted); font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+    .path strong, .path code { display: block; margin-top: 6px; overflow-wrap: anywhere; }
+    .path small { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
+    .path-meta { margin-bottom: 18px; }
     dl { display: grid; grid-template-columns: 150px 1fr; gap: 10px 18px; margin: 20px 0 30px; }
     dt { color: var(--muted); font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
     dd { margin: 0; overflow-wrap: anywhere; }
@@ -1222,14 +1307,21 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
     a.finding { color: var(--accent); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13px; }
     .empty { color: var(--muted); border: 1px dashed var(--line); border-radius: 14px; padding: 24px; }
     footer { border-top: 1px solid var(--line); margin-top: 52px; padding-top: 16px; }
-    @media (max-width: 560px) { header { display: block; padding-bottom: 38px; } .context { display: block; margin-top: 8px; } dl { grid-template-columns: 1fr; gap: 3px; } dd { margin-bottom: 10px; } }
+    .flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 0 0 28px; }
+    .flow-step { display: flex; align-items: flex-start; gap: 10px; min-height: 92px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.68); padding: 14px; }
+    .flow-index { display: grid; flex: 0 0 26px; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-strong); font-size: 13px; font-weight: 800; }
+    .flow-step strong, .flow-step span { display: block; }
+    .flow-step strong { margin-bottom: 3px; font-size: 14px; }
+    .flow-step div > span { color: var(--muted); font-size: 13px; line-height: 1.35; }
+    @media (max-width: 760px) { .flow { grid-template-columns: repeat(2, minmax(0, 1fr)); } .path { grid-template-columns: 1fr; } .path li + li::before { left: 15px; top: -12px; content: "↓"; } }
+    @media (max-width: 560px) { header { display: block; padding-bottom: 38px; } .header-context { display: flex; width: fit-content; margin-top: 10px; } dl { grid-template-columns: 1fr; gap: 3px; } dd { margin-bottom: 10px; } .flow { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
 <main>
   <header>
     <a class="brand" href="/">ARIADNE</a>
-    <span class="context">counterfactual evidence review · read only</span>
+    <span class="context header-context">counterfactual evidence review · read only</span>
   </header>
 
   {{define "provenance"}}
@@ -1269,10 +1361,20 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
 
   {{if eq .View "index"}}
     <section class="hero">
-      <p class="eyebrow">verified archive</p>
-      <h1>Review what changed.</h1>
-      <p class="lede">Start from a verified bundle, ask one bounded question, and follow its safe finding references. Captured values never appear here.</p>
+      <p class="eyebrow">local investigations</p>
+      <h1>Follow the information.</h1>
+      <p class="lede">See what was found, compare the results, and open the evidence behind each explanation. Private captured values stay out of these pages.</p>
     </section>
+    <section class="flow" aria-label="Ariadne investigation workflow">
+      <div class="flow-step"><span class="flow-index">1</span><div><strong>Investigate</strong><span>Run a test or open a saved capture.</span></div></div>
+      <div class="flow-step"><span class="flow-index">2</span><div><strong>Compare</strong><span>See what changed between runs.</span></div></div>
+      <div class="flow-step"><span class="flow-index">3</span><div><strong>Trace</strong><span>Follow information to a recorded destination.</span></div></div>
+      <div class="flow-step"><span class="flow-index">4</span><div><strong>Keep evidence</strong><span>Reopen a redacted explanation later.</span></div></div>
+    </section>
+    {{if .WeatherConfigured}}<section class="panel" aria-labelledby="start-here"><p class="eyebrow">Start here</p><h2 id="start-here">Understand where information goes.</h2><p>Follow a weather website test: what location left the browser, where it went, and whether sharing less still gave a forecast. No technical knowledge needed.</p><a class="button" href="/weather">Open weather investigation</a><p class="context">This is a saved test using synthetic locations. Ariadne is not monitoring your browsing or the rest of your device.</p></section>{{end}}
+    {{if .SourceAdapterConfigured}}<section class="panel" aria-labelledby="source-adapter-start"><p class="eyebrow">Redacted information trail</p><h2 id="source-adapter-start">Understand what an authorized source observed.</h2><p>See the safe labels, completeness, and evidence identities from one adapter run. Payloads and executable details stay out of the page.</p><a class="button" href="/source-adapter">Open source-adapter explanation</a><p class="context">This is a saved redacted trace, not a monitor of the rest of your device.</p></section>{{end}}
+    {{if .HARConfigured}}<section class="panel"><p class="eyebrow">Saved browser capture</p><h2>Explore a website's recorded activity.</h2><p>See request destinations and clues about personal information in the configured capture. The explanation omits captured values.</p><a class="button" href="/capture">Explain this capture</a><p class="context">An imported file is not a controlled experiment. Clues do not establish that personal information reached a server.</p></section>{{end}}
+    {{if .HARComparisonConfigured}}<section class="panel"><h2>Look at two captures together.</h2><p>Follow the same test values across two exported files. Missing observations remain unknown.</p><a class="button" href="/capture-compare">Compare these captures</a></section>{{end}}
     <section class="panel">
       <div class="section-head"><h2>Ask across this archive</h2><span class="context">fixed, read only</span></div>
       <p class="context">Choose one bounded question to re-check against every verified bundle.</p>
@@ -1316,6 +1418,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       {{if .TraceStudyComparisonConfigured}}<a class="button" href="/trace-study-comparison">Open retained study comparison <span aria-hidden="true">&rarr;</span></a>{{end}}
     </section>
     {{end}}
+
     {{if .MinimizationConfigured}}
     <section class="panel" id="minimization-orientation" aria-label="Minimum-disclosure experiment">
       <div class="section-head"><h2>Minimum-disclosure experiment</h2><span class="context">verified, read only</span></div>
@@ -1563,7 +1666,20 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
     <p class="eyebrow">portable trace archive &middot; verified</p>
     <h1>Trace archive reflection</h1>
     <p class="lede">Ask the same fixed questions across a caller-ordered sequence of standalone trace snapshots. This is a review surface for safe categories, not a chronology or raw-payload viewer.</p>
-    <section class="panel" aria-label="Verified trace archive identity">
+    <section class="panel answer" aria-label="How to read this archive">
+      <div class="section-head"><h2>Start with the simple version</h2><span class="context">labels, not payloads</span></div>
+      <p>This archive puts safe category labels side by side across saved snapshots. Read it as “what changed in the recorded labels?” The page does not reveal values or infer when anything happened.</p>
+      <p class="answer-line"><strong>In this archive:</strong> {{.TraceArchiveSummary.Entries}} snapshot(s); {{.TraceArchiveSummary.Complete}} complete and {{.TraceArchiveSummary.Partial}} partial.</p>
+      <div class="flow">
+        <div class="flow-step"><span class="flow-index">1</span><div><strong>Read the labels</strong><span>What kind of information was named?</span></div></div>
+        <div class="flow-step"><span class="flow-index">2</span><div><strong>Compare snapshots</strong><span>Which safe labels changed between the supplied entries?</span></div></div>
+        <div class="flow-step"><span class="flow-index">3</span><div><strong>Check the evidence</strong><span>Complete, partial, or unknown tells you how much the archive could show.</span></div></div>
+      </div>
+      <a class="button" href="#trace-archive-questions">See the fixed questions <span aria-hidden="true">&rarr;</span></a>
+      <p class="context">The archive preserves caller order only. A changed label is a bounded observation, not a timeline or proof of cause.</p>
+    </section>
+    <details class="panel" aria-label="Verified trace archive identity">
+      <summary>Verified archive identity <span class="context">technical details</span></summary>
       <div class="section-head"><h2>Verified archive identity</h2><span class="status">raw-value-free</span></div>
       <dl>
         <dt>order basis</dt><dd>{{.TraceArchiveSummary.OrderBasis}}</dd>
@@ -1578,8 +1694,9 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       {{range .TraceArchiveSummary.Sources}}<li>{{.Source}} / {{.Adapter}}: {{.Entries}} entries</li>{{else}}<li>none</li>{{end}}
       </ul>
       <p class="context">{{if .TraceArchiveRoundSaved}}This saved question round can be re-verified without reopening the source archive.{{else}}This question round was derived in memory from the verified archive.{{end}} The identities do not prove the underlying source or infer chronology.</p>
-    </section>
-    <section class="panel" aria-label="Trace archive question round">
+    </details>
+    <details class="panel" id="trace-archive-questions" aria-label="Trace archive question round">
+      <summary>Fixed trace questions <span class="context">technical details</span></summary>
       <div class="section-head"><h2>Fixed trace questions</h2><span class="context">caller-ordered, read only</span></div>
       <div class="question-list">
       {{range .TraceArchiveAnswers}}
@@ -1601,14 +1718,27 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       {{end}}
       </div>
       <p class="context">The outcome answers the bounded question; evidence state qualifies the support available for that answer. A result of <code>unknown</code> is not treated as no change.</p>
-    </section>
+    </details>
 
   {{else if eq .View "trace-replication"}}
     <a class="back" href="/">&larr; Review archive</a>
     <p class="eyebrow">source-neutral replicated trace ledger &middot; verified</p>
     <h1>Replicated trace reflection</h1>
     <p class="lede">Review already-produced matched pairs across both explicit orders. This is a bounded aggregate of safe trace comparisons, not a runner, chronology model, or causal proof.</p>
-    <section class="panel" aria-label="Verified replicated trace ledger identity">
+    <section class="panel answer" aria-label="How to read this replication">
+      <div class="section-head"><h2>Start with the simple version</h2><span class="context">outcome, then evidence</span></div>
+      <p>This page checks the same comparison in two recorded orders. The outcome says what the retained pairs reported; the evidence state says how much the runs could show.</p>
+      <p class="answer-line"><strong>In this ledger:</strong> {{.TraceReplicationSummary.Pairs}} matched pair(s), {{.TraceReplicationSummary.CompletePairs}} complete pair(s), outcome <span class="status status-{{.TraceReplicationSummary.Outcome}}">{{.TraceReplicationSummary.Outcome}}</span>.</p>
+      <div class="flow">
+        <div class="flow-step"><span class="flow-index">1</span><div><strong>Read the outcome</strong><span>Did the retained safe labels change?</span></div></div>
+        <div class="flow-step"><span class="flow-index">2</span><div><strong>Check both orders</strong><span>Was the comparison run baseline-first and treatment-first?</span></div></div>
+        <div class="flow-step"><span class="flow-index">3</span><div><strong>Check the evidence</strong><span>Unknown means the retained runs cannot support the stronger conclusion.</span></div></div>
+      </div>
+      <a class="button" href="#trace-replication-questions">See the fixed questions <span aria-hidden="true">&rarr;</span></a>
+      <p class="context">Repeated pairs are stronger repeat evidence, not proof of universal behavior or causality.</p>
+    </section>
+    <details class="panel" aria-label="Verified replicated trace ledger identity">
+      <summary>Verified replication identity <span class="context">technical details</span></summary>
       <div class="section-head"><h2>Verified replication identity</h2><span class="status status-raw-value-free">raw-value-free</span></div>
       <dl>
         <dt>pairs</dt><dd>{{.TraceReplicationSummary.Pairs}}</dd>
@@ -1622,8 +1752,9 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
         <dt>ledger SHA-256</dt><dd>{{.TraceReplicationSummary.LedgerSHA256}}</dd>
       </dl>
       <p class="context">{{.TraceReplicationSummary.Reason}} Reset policy: <code>{{.TraceReplicationSummary.ResetPolicy}}</code>. The recorded reset is a caller assertion, not proof that a source was reset.</p>
-    </section>
-    <section class="panel" aria-label="Replicated trace questions">
+    </details>
+    <details class="panel" id="trace-replication-questions" aria-label="Replicated trace questions">
+      <summary>Fixed questions <span class="context">technical details</span></summary>
       <div class="section-head"><h2>Fixed questions</h2><span class="context">re-verified now</span></div>
       <div class="question-list">
       {{range .TraceReplicationAnswers}}
@@ -1638,8 +1769,9 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       {{end}}
       </div>
       <p class="context">Question results remain separate from evidence state. The board is read-only and exposes no source paths or captured values.</p>
-    </section>
-    <section class="panel" aria-label="Replicated trace pairs">
+    </details>
+    <details class="panel" aria-label="Replicated trace pairs">
+      <summary>Matched pairs <span class="context">technical details</span></summary>
       <div class="section-head"><h2>Matched pairs</h2><span class="context">caller-recorded order</span></div>
       <div class="question-list">
       {{range .TraceReplicationPairs}}
@@ -1659,14 +1791,27 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       {{end}}
       </div>
       <p class="context">Each pair comparison is recomputed from the embedded normalized traces during verification. No source paths, payloads, URLs, or captured values are rendered.</p>
-    </section>
+    </details>
 
   {{else if eq .View "trace-case"}}
     <a class="back" href="/">&larr; Review archive</a>
     <p class="eyebrow">portable cross-source case &middot; verified</p>
     <h1>Trace case reflection</h1>
     <p class="lede">Review verified trace archives and replicated ledgers in caller order through a fixed question catalog. This is a durable reflection surface, not a chronology model, universal capture service, or cross-source causal proof.</p>
-    <section class="panel" aria-label="Verified trace case identity">
+    <section class="panel answer" aria-label="How to read this case">
+      <div class="section-head"><h2>Start with the simple version</h2><span class="context">labels, not payloads</span></div>
+      <p>Ariadne is showing where a reviewed category label appeared in the saved evidence. A label such as <code>region</code> or <code>consent</code> is a description of an observation, not the value itself.</p>
+      {{if .TraceCaseDisclosureMap.Categories}}<p class="answer-line"><strong>In this case:</strong> {{len .TraceCaseDisclosureMap.Categories}} reviewed category labels appear across {{.TraceCaseDisclosureMap.Traces}} retained traces.</p>{{else}}<p class="answer-line"><strong>In this case:</strong> no reviewed category labels were retained.</p>{{end}}
+      <div class="flow">
+        <div class="flow-step"><span class="flow-index">1</span><div><strong>Look for a category</strong><span>What kind of information was named?</span></div></div>
+        <div class="flow-step"><span class="flow-index">2</span><div><strong>Read the boundary</strong><span>Which reviewed source and destination category saw it?</span></div></div>
+        <div class="flow-step"><span class="flow-index">3</span><div><strong>Check the evidence state</strong><span>Complete, partial, or unknown tells you how much the test could see.</span></div></div>
+      </div>
+      <a class="button" href="#trace-case-disclosure-map">See the recorded paths <span aria-hidden="true">&rarr;</span></a>
+      <p class="context">A listed path means the label was retained in a verified trace. It does not prove the underlying value was sent, stored, shared onward, or linked across sources.</p>
+    </section>
+    <details class="panel" aria-label="Verified trace case identity">
+      <summary>Verified case identity <span class="context">technical details</span></summary>
       <div class="section-head"><h2>Verified case identity</h2><span class="status">raw-value-free</span></div>
       <dl>
         <dt>order basis</dt><dd>{{.TraceCaseSummary.OrderBasis}}</dd>
@@ -1681,8 +1826,9 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       {{range .TraceCaseSummary.Sources}}<li>{{.Source}} / {{.Adapter}}: {{.Entries}} entries</li>{{else}}<li>none</li>{{end}}
       </ul>
       <p class="context">The package preserves caller order only. It does not infer chronology, join source values, or attribute a result across source boundaries.</p>
-    </section>
-    <section class="panel" aria-label="Trace case questions">
+    </details>
+    <details class="panel" aria-label="Trace case questions">
+      <summary>Fixed case questions <span class="context">technical details</span></summary>
       <div class="section-head"><h2>Fixed case questions</h2><span class="context">re-verified now</span></div>
       <div class="question-list">
       {{range .TraceCaseAnswers}}
@@ -1702,7 +1848,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       {{end}}
       </div>
       <p class="context">The result answers the bounded question; evidence state qualifies the support available for that answer. Unknown is not treated as no change or as causal evidence.</p>
-    </section>
+    </details>
     <section class="panel" id="trace-case-disclosure-map" aria-label="Cross-source disclosure map">
       <div class="section-head"><h2>Cross-source disclosure map</h2><span class="context">derived from verified labels</span></div>
       <dl>
@@ -1712,13 +1858,20 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       <p class="context">Each row marks a category directly retained in a verified trace. Aggregate coverage is unknown when any contributing trace is partial; that does not turn retained labels into inferred values.</p>
       <div class="question-list">
       {{range .TraceCaseDisclosureMap.Categories}}
+        {{$category := .Category}}
         <article class="panel" id="trace-case-disclosure-{{.Category}}">
           <div class="section-head"><h3><code>{{.Category}}</code></h3><span class="context">{{len .Observations}} locations</span></div>
-          <ul aria-label="Disclosure locations for {{.Category}}">
+          <p class="context">This category label appeared at the reviewed boundaries below. The page does not contain the value itself.</p>
+          <div aria-label="Disclosure paths for {{.Category}}">
           {{range .Observations}}
-            <li>{{.Source}} / {{.Adapter}} &middot; {{.Channel}} / {{.Kind}} &rarr; {{.Destination}} &middot; {{.TraceCount}} traces &middot; <span class="status status-{{.EvidenceState}}">{{.EvidenceState}}</span></li>
+            <ol class="path" aria-label="Recorded category path">
+              <li><span class="path-label">Source</span><strong>{{.Source}}</strong><small>{{.Adapter}}</small></li>
+              <li><span class="path-label">Reviewed category</span><strong><code>{{$category}}</code></strong><small>label retained by the verifier</small></li>
+              <li><span class="path-label">Destination</span><strong>{{.Destination}}</strong><small>{{.Channel}} / {{.Kind}}</small></li>
+            </ol>
+            <p class="context path-meta">{{.TraceCount}} retained trace(s) &middot; <span class="status status-{{.EvidenceState}}">{{.EvidenceState}}</span></p>
           {{end}}
-          </ul>
+          </div>
         </article>
       {{else}}
         <p class="empty">No reviewed categories were retained.</p>
@@ -1729,6 +1882,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
     <section class="panel" id="trace-case-disclosure-questions" aria-label="Disclosure map questions">
       <div class="section-head"><h2>Disclosure map questions</h2><span class="context">re-verified now</span></div>
       <p class="context">question round SHA-256: {{.TraceCaseDisclosureQuestionRoundSHA256}}</p>
+      {{if .TraceCaseDisclosureQuestionRoundSaved}}<p class="context">saved question round: verified against the current case</p>{{else}}<p class="context">question round: derived from the verified case</p>{{end}}
       <p class="context">These fixed questions summarize safe category boundaries. Result and evidence state are separate; unknown means the retained evidence cannot support the stronger conclusion.</p>
       <div class="question-list">
       {{range .TraceCaseDisclosureQuestions}}
@@ -1757,7 +1911,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       </div>
       {{if .TraceCaseDisclosureReceiptAvailable}}
       <article class="panel" id="trace-case-disclosure-receipt" aria-label="Selected disclosure question receipt">
-        <div class="section-head"><h3>Selected receipt: <code>{{.TraceCaseDisclosureQuestionID}}</code></h3><span class="status status-raw-value-free">raw-value-free</span></div>
+        <div class="section-head"><h3>Selected receipt: <code>{{.TraceCaseDisclosureQuestionID}}</code></h3><span class="status status-raw-value-free">raw-value-free</span>{{if .TraceCaseDisclosureReceiptSaved}}<span class="status status-observed">saved and verified</span>{{end}}</div>
         <dl>
           <dt>result</dt><dd><span class="status status-{{.TraceCaseDisclosureReceipt.Result}}">{{.TraceCaseDisclosureReceipt.Result}}</span></dd>
           <dt>evidence state</dt><dd><span class="status status-{{.TraceCaseDisclosureReceipt.EvidenceState}}">{{.TraceCaseDisclosureReceipt.EvidenceState}}</span></dd>
@@ -1770,7 +1924,8 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       </article>
       {{end}}
     </section>
-    <section class="panel" aria-label="Trace case entries">
+    <details class="panel" aria-label="Trace case entries">
+      <summary>Verified case entries <span class="context">technical details</span></summary>
       <div class="section-head"><h2>Verified case entries</h2><span class="context">caller order</span></div>
       <div class="question-list">
       {{range .TraceCaseSummary.EntrySummaries}}
@@ -1798,14 +1953,27 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       {{end}}
       </div>
       <p class="context">Child artifacts and their matching question rounds were re-verified before rendering. No local input paths, target identifiers, process arguments, URLs, or captured values are shown.</p>
-    </section>
+    </details>
 
   {{else if eq .View "trace-study"}}
     <a class="back" href="/">&larr; Review archive</a>
     <p class="eyebrow">portable replication study &middot; verified</p>
     <h1>Replication study reflection</h1>
     <p class="lede">Review fixed questions across independently repeated matched ledgers. Outcome and evidence state are separate; this page preserves caller order and does not infer chronology or causality.</p>
-    <section class="panel" aria-label="Verified replication study identity">
+    <section class="panel answer" aria-label="How to read this study">
+      <div class="section-head"><h2>Start with the simple version</h2><span class="context">outcome, support, and order</span></div>
+      <p>This study brings independent repeated ledgers together under one reviewed comparison. Read the outcome first, then check how many runs supported it and whether any run remains unknown.</p>
+      <p class="answer-line"><strong>In this study:</strong> {{.TraceStudySummary.Runs}} independent run(s), {{.TraceStudySummary.SupportedRuns}} supported and {{.TraceStudySummary.UnknownRuns}} unknown; outcome <span class="status status-{{.TraceStudySummary.Outcome}}">{{.TraceStudySummary.Outcome}}</span>.</p>
+      <div class="flow">
+        <div class="flow-step"><span class="flow-index">1</span><div><strong>Read the outcome</strong><span>What did the repeated ledgers report?</span></div></div>
+        <div class="flow-step"><span class="flow-index">2</span><div><strong>Check the support</strong><span>How many independent runs could be compared?</span></div></div>
+        <div class="flow-step"><span class="flow-index">3</span><div><strong>Keep the limits</strong><span>Caller order is not chronology, and unknown stays unknown.</span></div></div>
+      </div>
+      <a class="button" href="#trace-study-questions">See the fixed study questions <span aria-hidden="true">&rarr;</span></a>
+      <p class="context">A repeated study is a bounded reflection of retained evidence, not a universal or causal claim.</p>
+    </section>
+    <details class="panel" aria-label="Verified replication study identity">
+      <summary>Verified replication study identity <span class="context">technical details</span></summary>
       <div class="section-head"><h2>Verified replication study identity</h2><span class="status status-raw-value-free">raw-value-free</span></div>
       <dl>
         <dt>contrast commitment SHA-256</dt><dd>{{.TraceStudySummary.ContrastSHA256}}</dd>
@@ -1826,8 +1994,9 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
         <dt>study SHA-256</dt><dd>{{.TraceStudySummary.StudySHA256}}</dd>
       </dl>
       <p class="context">{{.TraceStudySummary.Reason}} Caller order is not chronology. No source paths, payloads, URLs, or captured values are rendered.</p>
-    </section>
-    <section class="panel" aria-label="Replication study questions">
+    </details>
+    <details class="panel" id="trace-study-questions" aria-label="Replication study questions">
+      <summary>Fixed study questions <span class="context">technical details</span></summary>
       <div class="section-head"><h2>Fixed study questions</h2><span class="context">re-verified now</span></div>
       <div class="question-list">
       {{range .TraceStudyAnswers}}
@@ -1856,7 +2025,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       {{end}}
       </div>
       <p class="context">The result answers the fixed study question; evidence state qualifies the support available for that answer. Unknown is not treated as no change or causal evidence.</p>
-    </section>
+    </details>
     {{if .TraceStudyRoundSaved}}
     <section class="panel" aria-label="Saved replication study question round">
       <div class="section-head"><h2>Durable question round</h2><span class="context">verified offline</span></div>
@@ -1882,7 +2051,8 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       </dl>
       <p class="context">The selected receipt answers one fixed study question. A changed result is not a chronology, causality, or improvement claim.</p>
     </section>
-    {{end}}    <section class="panel" aria-label="Replication study runs">
+    {{end}}    <details class="panel" aria-label="Replication study runs">
+      <summary>Independent runs <span class="context">technical details</span></summary>
       <div class="section-head"><h2>Independent runs</h2><span class="context">caller order</span></div>
       <div class="question-list">
       {{range .TraceStudyRuns}}
@@ -1897,13 +2067,26 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       {{end}}
       </div>
       <p class="context">Each embedded ledger and matching question round was re-verified before rendering. The study does not infer chronology, expose local input paths, or render captured values.</p>
-    </section>
+    </details>
   {{else if eq .View "trace-study-comparison"}}
     <a class="back" href="/">&larr; Review archive</a>
     <p class="eyebrow">portable study reflection comparison &middot; verified</p>
     <h1>Compare retained study reflections</h1>
     <p class="lede">Compare two independently retained study question rounds in caller order. This page exposes bounded reflection changes only; it does not infer chronology, trend, improvement, regression, authorization, or causality.</p>
-    <section class="panel" aria-label="Verified study comparison identity">
+    <section class="panel answer" aria-label="How to read this study comparison">
+      <div class="section-head"><h2>Start with the simple version</h2><span class="context">bounded reflection</span></div>
+      <p>This page checks the same fixed study questions in two retained answer sets. The result says whether those bounded projections changed; it does not say why, when, or whether anything improved.</p>
+      <p class="answer-line"><strong>In this comparison:</strong> {{.TraceStudyComparison.Compared}} fixed question projection(s) checked, {{.TraceStudyComparison.Changed}} changed; result <span class="status status-{{.TraceStudyComparison.Result}}">{{.TraceStudyComparison.Result}}</span>.</p>
+      <div class="flow">
+        <div class="flow-step"><span class="flow-index">1</span><div><strong>Read the result</strong><span>Same, changed, or incomparable?</span></div></div>
+        <div class="flow-step"><span class="flow-index">2</span><div><strong>Inspect the questions</strong><span>Which fixed projection changed?</span></div></div>
+        <div class="flow-step"><span class="flow-index">3</span><div><strong>Keep the limits</strong><span>Caller order is not chronology or causality.</span></div></div>
+      </div>
+      <a class="button" href="#trace-study-comparison-changes">See changed questions <span aria-hidden="true">&rarr;</span></a>
+      <p class="context">An incomparable boundary withholds a stronger comparison instead of treating it as unchanged.</p>
+    </section>
+    <details class="panel" aria-label="Verified study comparison identity">
+      <summary>Verified study comparison <span class="context">technical details</span></summary>
       <div class="section-head"><h2>Verified study comparison</h2><span class="status status-raw-value-free">raw-value-free</span></div>
       <dl>
         <dt>comparison question</dt><dd>{{.TraceStudyComparison.ComparisonQuestion}}</dd>
@@ -1920,8 +2103,9 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
         {{with .TraceStudyComparison.IncomparableReason}}<dt>incomparable reason</dt><dd>{{.}}</dd>{{end}}
       </dl>
       <p class="context">The supplied order is caller order; it does not establish chronology. Matching commitments and reviewed provenance are compatibility checks, not target data or causal proof.</p>
-    </section>
-    <section class="panel" aria-label="Changed study questions">
+    </details>
+    <details class="panel" id="trace-study-comparison-changes" aria-label="Changed study questions">
+      <summary>Changed questions <span class="context">technical details</span></summary>
       <div class="section-head"><h2>Changed questions</h2><span class="context">fixed projection</span></div>
       <div class="question-list">
       {{range .TraceStudyComparison.ChangedQuestions}}
@@ -1946,13 +2130,30 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       {{end}}
       </div>
       <p class="context">Question result, aggregate outcome, and evidence state are shown separately. A changed projection is not a chronology or causal claim.</p>
-    </section>
+    </details>
   {{else if eq .View "minimization"}}
     <a class="back" href="/">&larr; Review archive</a>
     <p class="eyebrow">minimum-disclosure experiment &middot; verified</p>
     <h1>Review tested disclosure levels.</h1>
     <p class="lede">This page is a read-only projection of one verified minimization receipt. The ladder preserves its recorded candidate order, while functionality classification, counterfactual outcome, and evidence state remain separate.</p>
-    <section class="panel" aria-label="Verified minimization receipt">
+    <section class="panel answer" aria-label="How to read this minimization result">
+      <div class="section-head"><h2>Start with the simple version</h2><span class="context">tested candidates only</span></div>
+      <p>This experiment asks one practical question: could the app still work while sharing less? Ariadne compares each named candidate with the precise reference and keeps functionality separate from the strength of the evidence.</p>
+      {{if eq .Minimization.SelectionState "selected"}}
+      <p class="answer-line"><strong>What the test supports:</strong> <code>{{.Minimization.SelectedCandidate}}</code> is the least-disclosing candidate established by this tested ladder. Evidence state: <span class="status status-{{.Minimization.EvidenceState}}">{{.Minimization.EvidenceState}}</span>.</p>
+      {{else}}
+      <p class="answer-line"><strong>What the test supports:</strong> no candidate was selected. The ladder has mixed, unknown, or incomplete support, so Ariadne withholds a stronger privacy conclusion. Evidence state: <span class="status status-{{.Minimization.EvidenceState}}">{{.Minimization.EvidenceState}}</span>.</p>
+      {{end}}
+      <div class="flow">
+        <div class="flow-step"><span class="flow-index">1</span><div><strong>Read the tested answer</strong><span>Selected or withheld?</span></div></div>
+        <div class="flow-step"><span class="flow-index">2</span><div><strong>Check functionality</strong><span>Did the intended behavior remain available?</span></div></div>
+        <div class="flow-step"><span class="flow-index">3</span><div><strong>Check evidence</strong><span>Does the retained evidence support that conclusion?</span></div></div>
+      </div>
+      <a class="button" href="#minimization-candidate-ladder">See the tested candidate ladder <span aria-hidden="true">&rarr;</span></a>
+      <p class="context">This is the least-disclosing candidate established by this tested receipt, not an absolute minimum or a promise about future runs.</p>
+    </section>
+    <details class="panel" aria-label="Verified minimization receipt">
+      <summary>Verified minimization receipt <span class="context">technical details</span></summary>
       <div class="section-head"><h2>Verified minimization identity</h2><span class="status status-raw-value-free">raw-value-free</span></div>
       <dl>
         <dt>receipt schema</dt><dd>{{.Minimization.SchemaVersion}}</dd>
@@ -1979,8 +2180,10 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       <p class="context">No minimum tested sufficient disclosure was established. Mixed, unknown, or incomplete evidence is not treated as functionality equivalence.</p>
       {{end}}
       <p class="context">Verification re-checked the canonical receipt and every candidate replication before this page was rendered. The configured local directory, personas, candidate values, manifests, and captured observations are intentionally omitted.</p>
-    </section>
+    </details>
 {{if .Minimization.QuestionsAvailable}}
+    <details class="panel" aria-label="Minimization question round">
+      <summary>Fixed minimization questions <span class="context">technical details</span></summary>
     <section class="panel" aria-label="Minimization question round">
       <div class="section-head"><h2>Fixed minimization questions</h2><span class="context">{{if .Minimization.RoundSaved}}saved and verified{{else}}derived from the verified minimization receipt{{end}}</span></div>
       <div class="question-list">
@@ -2035,8 +2238,10 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       <p class="context">The selected receipt preserves one fixed answer and its verified round identity. It does not turn an observed result into a causal proof.</p>
     </section>
     {{end}}
+    </details>
 {{end}}
-    <section class="panel" aria-label="Tested candidate ladder">
+    <details class="panel" id="minimization-candidate-ladder" aria-label="Tested candidate ladder">
+      <summary>Tested candidate ladder <span class="context">technical details</span></summary>
       <div class="section-head"><h2>Tested candidate ladder</h2><span class="context">recorded order</span></div>
       <div class="question-list">
       {{range .Minimization.Candidates}}
@@ -2060,7 +2265,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       {{end}}
       </div>
       <p class="context">Candidate order is preserved from the receipt. Only safe identifiers, counts, classifications, outcomes, evidence states, and hashes are rendered.</p>
-    </section>
+    </details>
 
   {{else if eq .View "run"}}
     <a class="back" href="/">← All bundles</a>

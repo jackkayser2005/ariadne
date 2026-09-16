@@ -153,7 +153,15 @@ func TestRunPairWithAuthenticatedInputBoundary(t *testing.T) {
 			t.Fatal(err)
 		}
 		text := string(data)
-		if !strings.Contains(text, `"schema_version": 8`) ||
+		var record SessionRecord
+		if err := json.Unmarshal(data, &record); err != nil {
+			t.Fatal(err)
+		}
+		expectedBinding, err := SessionBindingSHA256(record)
+		if err != nil || record.ResetPolicy != ReplicationResetPolicy || record.BindingSHA256 != expectedBinding {
+			t.Fatalf("session binding = %q, expected %q, error = %v", record.BindingSHA256, expectedBinding, err)
+		}
+		if !strings.Contains(text, `"schema_version": 9`) ||
 			!strings.Contains(text, `"role": "`+kind+`"`) ||
 			!strings.Contains(text, `"order": "baseline-treatment"`) ||
 			!strings.Contains(text, `"procedure_sha256": "`+manifest.ContractDigest()+`"`) ||

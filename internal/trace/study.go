@@ -6,13 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 
 	"github.com/jackkayser2005/ariadne/internal/evidence"
 	"github.com/jackkayser2005/ariadne/internal/jsoncheck"
+	"github.com/jackkayser2005/ariadne/internal/securefs"
 )
 
 const (
@@ -360,13 +359,8 @@ func readReplicationStudy(path string) ([]byte, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, errors.New("study path is required")
 	}
-	file, err := os.Open(path)
+	data, err := readSourceAdapterFile(path, maxReplicationStudyBytes)
 	if err != nil {
-		return nil, errors.New("read study")
-	}
-	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, maxReplicationStudyBytes+1))
-	if err != nil || len(data) > maxReplicationStudyBytes {
 		return nil, errors.New("read study")
 	}
 	return data, nil
@@ -379,29 +373,8 @@ func writeReplicationStudyExclusive(path string, data []byte) error {
 	if strings.TrimSpace(path) == "" {
 		return errors.New("output path is required")
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return errors.New("create output directory")
+	if err := securefs.WriteExclusive(path, data, 0o600); err != nil {
+		return fmt.Errorf("create output: %w", err)
 	}
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return errors.New("create output")
-	}
-	remove := true
-	defer func() {
-		_ = file.Close()
-		if remove {
-			_ = os.Remove(path)
-		}
-	}()
-	if _, err := file.Write(data); err != nil {
-		return errors.New("write output")
-	}
-	if err := file.Sync(); err != nil {
-		return errors.New("sync output")
-	}
-	if err := file.Close(); err != nil {
-		return errors.New("close output")
-	}
-	remove = false
 	return nil
 }

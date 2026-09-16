@@ -47,6 +47,10 @@ func TestHandlerRendersMinimizationReview(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Review tested disclosure levels.",
+		"Start with the simple version",
+		"could the app still work while sharing less",
+		"See the tested candidate ladder",
+		"technical details",
 		"Verified minimization identity",
 		"raw-value-free",
 		"Minimum tested sufficient disclosure",

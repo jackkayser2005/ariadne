@@ -29,6 +29,8 @@ jobs:
         shell: pwsh
         run: |
           node --check cmd/browser-fixture-driver/browser_fixture_driver.mjs
+          node --check cmd/browser-fixture-driver/weather_driver.mjs
+          node --test cmd/browser-fixture-driver/weather_driver.test.mjs
 
       - name: Capture local browser fixture
         shell: pwsh
