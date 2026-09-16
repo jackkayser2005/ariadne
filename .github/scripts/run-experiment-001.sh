@@ -410,12 +410,13 @@ acceptance_save_summary_json="${RUNNER_TEMP}/ariadne-acceptance-save-summary.jso
   "${archive_question_json}" \
   "${acceptance_artifact}" >"${acceptance_save_summary_json}"
 jq -e '
-  (keys_unsorted == ["schema_version", "workflow", "manifest_name", "declared_variable", "manifest_contract_sha256", "run_evidence_sha256", "replication_receipt_sha256", "replication_provenance_sha256", "replication_binding_sha256", "outcome", "evidence_state", "question_id", "question_state", "review_method", "review_path", "review_status", "acceptance_sha256"]) and
-  (.schema_version == 1) and
+  (keys_unsorted == ["schema_version", "workflow", "manifest_name", "declared_variable", "manifest_contract_sha256", "environment_sha256", "run_evidence_sha256", "replication_receipt_sha256", "replication_provenance_sha256", "replication_binding_sha256", "outcome", "evidence_state", "question_id", "question_state", "review_method", "review_path", "review_status", "acceptance_sha256"]) and
+  (.schema_version == 2) and
   (.workflow == "experiment-001-emulator") and
   (.manifest_name == "experiment-001-email") and
   (.declared_variable == "email") and
   (.manifest_contract_sha256 | test("^[0-9a-f]{64}$")) and
+  (.environment_sha256 | test("^[0-9a-f]{64}$")) and
   (.run_evidence_sha256 == $source_evidence_sha256) and
   (.replication_receipt_sha256 | test("^[0-9a-f]{64}$")) and
   (.replication_provenance_sha256 | test("^[0-9a-f]{64}$")) and
