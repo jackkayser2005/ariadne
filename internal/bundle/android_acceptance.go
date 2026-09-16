@@ -15,7 +15,11 @@ import (
 )
 
 const (
-	androidAcceptanceSchemaVersion = 1
+	legacyAndroidAcceptanceSchemaVersion = 1
+	// AndroidAcceptanceSchemaVersion is the current raw-value-free acceptance
+	// receipt schema.
+	AndroidAcceptanceSchemaVersion = 2
+	androidAcceptanceSchemaVersion = AndroidAcceptanceSchemaVersion
 	androidAcceptanceWorkflow      = "experiment-001-emulator"
 	androidAcceptanceManifest      = "experiment-001-email"
 	androidAcceptanceVariable      = "email"
@@ -33,6 +37,7 @@ type AndroidAcceptanceRecord struct {
 	ManifestName                   string            `json:"manifest_name"`
 	DeclaredVariable               string            `json:"declared_variable"`
 	ManifestContractSHA256         string            `json:"manifest_contract_sha256"`
+	EnvironmentSHA256              string            `json:"environment_sha256,omitempty"`
 	Package                        string            `json:"package"`
 	AndroidAPI                     int               `json:"android_api"`
 	Architecture                   string            `json:"architecture"`
@@ -73,6 +78,7 @@ type AndroidAcceptanceVerificationSummary struct {
 	ManifestName                string            `json:"manifest_name"`
 	DeclaredVariable            string            `json:"declared_variable"`
 	ManifestContractSHA256      string            `json:"manifest_contract_sha256"`
+	EnvironmentSHA256           string            `json:"environment_sha256,omitempty"`
 	RunEvidenceSHA256           string            `json:"run_evidence_sha256"`
 	ReplicationReceiptSHA256    string            `json:"replication_receipt_sha256"`
 	ReplicationProvenanceSHA256 string            `json:"replication_provenance_sha256"`
@@ -180,6 +186,7 @@ func SaveAndroidAcceptanceRecord(runDir, replicationDir, exportPath, reflectionP
 		ManifestName:                   runSummary.ManifestName,
 		DeclaredVariable:               runSummary.DeclaredVariable,
 		ManifestContractSHA256:         runSummary.ManifestContractSHA256,
+		EnvironmentSHA256:              runSummary.EnvironmentSHA256,
 		Package:                        runSummary.TargetPackage,
 		AndroidAPI:                     runSummary.TargetAndroidAPI,
 		Architecture:                   runSummary.TargetArchitecture,
@@ -243,7 +250,8 @@ func decodeAndroidAcceptanceRecord(data []byte) (AndroidAcceptanceRecord, error)
 }
 
 func validateAndroidAcceptanceRecord(record AndroidAcceptanceRecord) error {
-	if record.SchemaVersion != androidAcceptanceSchemaVersion ||
+	if (record.SchemaVersion != legacyAndroidAcceptanceSchemaVersion &&
+		record.SchemaVersion != androidAcceptanceSchemaVersion) ||
 		record.Workflow != androidAcceptanceWorkflow ||
 		record.ManifestName != androidAcceptanceManifest ||
 		record.DeclaredVariable != androidAcceptanceVariable ||
@@ -257,6 +265,13 @@ func validateAndroidAcceptanceRecord(record AndroidAcceptanceRecord) error {
 		record.ReviewPath != androidAcceptanceReviewPath ||
 		record.ReviewStatus != androidAcceptanceReviewStatus {
 		return errors.New("android acceptance record contract is invalid")
+	}
+	if record.SchemaVersion == androidAcceptanceSchemaVersion {
+		if !validDigest(record.EnvironmentSHA256) {
+			return errors.New("environment_sha256 is invalid")
+		}
+	} else if record.EnvironmentSHA256 != "" {
+		return errors.New("legacy android acceptance record has environment identity")
 	}
 	for name, value := range map[string]string{
 		"manifest_contract_sha256":          record.ManifestContractSHA256,
@@ -310,6 +325,12 @@ func validateAndroidAcceptanceInputs(
 	reflectionSummary ArchiveQuestionVerificationSummary,
 	reportSHA256 string,
 ) error {
+	if !validDigest(run.EnvironmentSHA256) || !validDigest(replication.EnvironmentSHA256) {
+		return errors.New("android acceptance environment identity is unavailable")
+	}
+	if run.EnvironmentSHA256 != replication.EnvironmentSHA256 {
+		return errors.New("android acceptance environment identity does not match")
+	}
 	if run.ManifestName != androidAcceptanceManifest ||
 		run.DeclaredVariable != androidAcceptanceVariable ||
 		run.ManifestContractSHA256 == "" ||
@@ -475,6 +496,7 @@ func androidAcceptanceVerificationSummary(record AndroidAcceptanceRecord, accept
 		ManifestName:                record.ManifestName,
 		DeclaredVariable:            record.DeclaredVariable,
 		ManifestContractSHA256:      record.ManifestContractSHA256,
+		EnvironmentSHA256:           record.EnvironmentSHA256,
 		RunEvidenceSHA256:           record.RunEvidenceSHA256,
 		ReplicationReceiptSHA256:    record.ReplicationReceiptSHA256,
 		ReplicationProvenanceSHA256: record.ReplicationProvenanceSHA256,
