@@ -18,7 +18,7 @@ import (
 )
 
 // SchemaVersion is the validation report schema supported by this build.
-const SchemaVersion = 1
+const SchemaVersion = 2
 
 // ArtifactKind identifies the artifact family selected by Validate.
 type ArtifactKind string
