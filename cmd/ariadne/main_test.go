@@ -156,7 +156,8 @@ func TestRunValidateJSONReport(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
 		t.Fatal(err)
 	}
-	if report["artifact_kind"] != "manifest" ||
+	if report["schema_version"] != float64(validation.SchemaVersion) ||
+		report["artifact_kind"] != "manifest" ||
 		report["overall"] != "warning" ||
 		report["evidence_state"] != "unknown" {
 		t.Fatalf("report = %#v", report)
