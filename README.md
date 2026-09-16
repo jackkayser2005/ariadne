@@ -177,6 +177,7 @@ artifact guarantees:
 ~~~console
 go run ./cmd/ariadne validate --json examples/experiment-001.json
 go run ./cmd/ariadne validate --json .ariadne/runs/experiment-001-replicated
+go run ./cmd/ariadne validate --json .ariadne/runs/experiment-001
 go run ./cmd/ariadne validate .ariadne/runs/android-location-minimize
 go run ./cmd/ariadne validate --json .ariadne/runs/weather-location
 go run ./cmd/ariadne validate --json .ariadne/trace-archive.json
@@ -202,7 +203,7 @@ summary when `--json` is omitted; JSON remains available for scripts and the loc
 review server.
 
 The validation surface recognizes a JSON experiment manifest (including `manifest.json`),
-verified source-neutral trace archives, replication ledgers, cross-source cases, studies, generic source-adapter runs, bounded HAR exports, and verified browser fixture replication and minimization directories plus proxy replication directories; portable fixed-question rounds, selected receipts, and acceptance records; Android replication and minimization
+verified source-neutral trace archives, replication ledgers, cross-source cases, studies, generic source-adapter runs, bounded HAR exports, and verified browser fixture replication and minimization directories plus proxy replication directories; portable fixed-question rounds, selected receipts, and acceptance records; Android replication and minimization directories, standalone Android evidence-run
 directories, and a verified browser weather investigation directory containing
 `weather.json`. Every report lists
 `structural`, `integrity`, `boundary`, and `replay` tiers. Structural and
@@ -210,7 +211,9 @@ integrity checks delegate to the existing specialized verifiers; boundary
 checks require both canonical provenance and an authenticated execution
 binding in new Android replication and minimization artifacts; provenance alone is
 not an authentication or evidence-boundary guarantee. Replay reports readiness from recorded complete pairs but never
-launches a device or adapter.
+launches a device or adapter. Standalone Android runs remain readable across
+legacy bundle schemas, while boundary pass still requires the current
+authenticated session bindings.
 
 The aggregate status is `pass` when all applicable tiers pass, `warning` when
 the artifact is valid but a tier is unavailable (for example, a legacy receipt
