@@ -490,22 +490,22 @@ func candidateDirectory(index int, id string) string {
 
 func candidateResult(id, directory string, summary bundle.ReplicatedExperimentSummary) CandidateResult {
 	return CandidateResult{
-		ID:               id,
-		ManifestName:     summary.ManifestName,
-		Directory:        directory,
-		Classification:   classify(summary.Outcome, summary.EvidenceState),
-		Outcome:          summary.Outcome,
-		EvidenceState:    summary.EvidenceState,
-		ReceiptSHA256:    summary.ReceiptSHA256,
+		ID:                id,
+		ManifestName:      summary.ManifestName,
+		Directory:         directory,
+		Classification:    classify(summary.Outcome, summary.EvidenceState),
+		Outcome:           summary.Outcome,
+		EvidenceState:     summary.EvidenceState,
+		ReceiptSHA256:     summary.ReceiptSHA256,
 		ProvenanceSHA256:  summary.ProvenanceSHA256,
 		BindingSHA256:     summary.BindingSHA256,
 		EnvironmentSHA256: summary.EnvironmentSHA256,
 		Pairs:             summary.Pairs,
-		PairsPerOrder:    summary.PairsPerOrder,
-		CompletedPairs:   summary.CompletedPairs,
-		ChangedPairs:     summary.ChangedPairs,
-		NoChangePairs:    summary.NoChangePairs,
-		UnknownPairs:     summary.UnknownPairs,
+		PairsPerOrder:     summary.PairsPerOrder,
+		CompletedPairs:    summary.CompletedPairs,
+		ChangedPairs:      summary.ChangedPairs,
+		NoChangePairs:     summary.NoChangePairs,
+		UnknownPairs:      summary.UnknownPairs,
 	}
 }
 
