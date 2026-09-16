@@ -606,9 +606,12 @@ func reportFromAndroidRun(summary bundle.Summary) Report {
 func reportFromAndroidAcceptance(summary bundle.AndroidAcceptanceVerificationSummary) Report {
 	report := verifiedReport(KindAndroidAcceptance)
 	report.Identity = summary.AcceptanceSHA256
+	report.EnvironmentSHA256 = summary.EnvironmentSHA256
 	report.Outcome = string(summary.Outcome)
 	report.EvidenceState = summary.EvidenceState
-	if summary.ReplicationBindingSHA256 == "" {
+	if summary.SchemaVersion != bundle.AndroidAcceptanceSchemaVersion ||
+		summary.EnvironmentSHA256 == "" ||
+		summary.ReplicationBindingSHA256 == "" {
 		setTier(&report, TierBoundary, StatusUnavailable, ReasonProvenanceUnavailable)
 	} else {
 		setTier(&report, TierBoundary, StatusPass, ReasonVerified)
