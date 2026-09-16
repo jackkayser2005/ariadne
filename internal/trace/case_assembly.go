@@ -132,6 +132,48 @@ func AssembleCase(planPath, outputDir string) (CaseAssemblySummary, error) {
 	}
 	parent := filepath.Dir(outputDir)
 	if err := securefs.ValidateDirectory(parent); err != nil {
+		return CaseAssemblySummary{}, errors.New("trace case assembly output parent is unavailable")
+	}
+	stagingDir, err := os.MkdirTemp(parent, ".ariadne-case-assembly-")
+	if err != nil {
+		return CaseAssemblySummary{}, errors.New("create trace case assembly workspace")
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = os.RemoveAll(stagingDir)
+		}
+	}()
+
+	inputs := make([]CaseInput, 0, len(plan.Entries))
+	for _, entry := range plan.Entries {
+		inputs = append(inputs, CaseInput{
+			Kind:              entry.Kind,
+			ArtifactPath:      entry.ArtifactPath,
+			QuestionRoundPath: entry.QuestionRoundPath,
+		})
+	}
+	casePath := filepath.Join(stagingDir, "case.json")
+	var caseErr error
+	if plan.InvestigationCommitmentSHA256 == "" {
+		_, caseErr = SaveCase(inputs, casePath)
+	} else {
+		_, caseErr = SaveCaseWithCommitment(plan.InvestigationCommitmentSHA256, inputs, casePath)
+	}
+	if caseErr != nil {
+		return CaseAssemblySummary{}, fmt.Errorf("trace case assembly case: %w", caseErr)
+	}
+	roundPath := filepath.Join(stagingDir, "disclosure-round.json")
+	if _, err := SaveCaseDisclosureQuestionRound(casePath, roundPath); err != nil {
+		return CaseAssemblySummary{}, fmt.Errorf("trace case assembly disclosure round: %w", err)
+	}
+
+	summary, err := VerifyCaseAssembly(stagingDir)
+	if err != nil {
+		return CaseAssemblySummary{}, fmt.Errorf("trace case assembly generated files: %w", err)
+	}
+
+	if err := securefs.ValidateDirectory(parent); err != nil {
 		return CaseAssemblySummary{}, errors.New("publish trace case assembly workspace")
 	}
 	// RequireAbsent is only an early, user-friendly check. The no-replace

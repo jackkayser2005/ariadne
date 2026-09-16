@@ -12,9 +12,9 @@ import (
 var moveFileExW = syscall.NewLazyDLL("kernel32.dll").NewProc("MoveFileExW")
 
 const (
-	moveFileCopyAllowed  = uintptr(0x2)
-	moveFileWriteThrough = uintptr(0x8)
-	windowsErrorFileExists = syscall.Errno(80)
+	moveFileCopyAllowed       = uintptr(0x2)
+	moveFileWriteThrough      = uintptr(0x8)
+	windowsErrorFileExists    = syscall.Errno(80)
 	windowsErrorAlreadyExists = syscall.Errno(183)
 )
 
