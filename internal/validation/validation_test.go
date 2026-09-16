@@ -34,11 +34,12 @@ func writeAndroidAcceptanceValidationRecord(t *testing.T) (string, bundle.Androi
 	}
 	evidenceSHA256 := strings.Repeat("d", 64)
 	record := bundle.AndroidAcceptanceRecord{
-		SchemaVersion:                  1,
+		SchemaVersion:                  bundle.AndroidAcceptanceSchemaVersion,
 		Workflow:                       "experiment-001-emulator",
 		ManifestName:                   "experiment-001-email",
 		DeclaredVariable:               "email",
 		ManifestContractSHA256:         contract,
+		EnvironmentSHA256:              strings.Repeat("1", 64),
 		Package:                        "dev.ariadne.fixture",
 		AndroidAPI:                     35,
 		Architecture:                   "x86_64",
@@ -394,6 +395,7 @@ func TestValidateAndroidAcceptance(t *testing.T) {
 	if report.ArtifactKind != KindAndroidAcceptance ||
 		report.Overall != StatusWarning ||
 		report.Identity != summary.AcceptanceSHA256 ||
+		report.EnvironmentSHA256 != record.EnvironmentSHA256 ||
 		report.Outcome != string(record.Outcome) ||
 		report.EvidenceState != evidence.Observed ||
 		report.Reason != ReasonValidationIncomplete ||
@@ -402,6 +404,33 @@ func TestValidateAndroidAcceptance(t *testing.T) {
 		tierStatus(report, TierBoundary) != StatusPass ||
 		tierStatus(report, TierReplay) != StatusUnavailable {
 		t.Fatalf("report = %#v", report)
+	}
+}
+
+func TestValidateLegacyAndroidAcceptanceRemainsReadableWithoutBoundary(t *testing.T) {
+	path, record := writeAndroidAcceptanceValidationRecord(t)
+	record.SchemaVersion = 1
+	record.EnvironmentSHA256 = ""
+	data, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(data, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	summary, err := bundle.VerifyAndroidAcceptanceRecord(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := Validate(path)
+	if report.ArtifactKind != KindAndroidAcceptance ||
+		report.Identity != summary.AcceptanceSHA256 ||
+		report.EnvironmentSHA256 != "" ||
+		tierStatus(report, TierStructural) != StatusPass ||
+		tierStatus(report, TierIntegrity) != StatusPass ||
+		tierStatus(report, TierBoundary) != StatusUnavailable ||
+		report.Overall != StatusWarning {
+		t.Fatalf("legacy report = %#v", report)
 	}
 }
 

@@ -55,6 +55,9 @@ readable, but they do not receive invented authentication or outcome semantics.
 
 The authenticated Android execution envelope is now explicit and versioned:
 session receipts use schema 9 and authenticated replication roots use schema 2.
+The golden Android acceptance receipt uses schema 2 and carries the shared
+`environment_sha256` identity only after the standalone run and two-order
+replication agree on that environment.
 Each session binding covers the safe target identity, reset policy, manifest and
 procedure identity, challenge commitment, ordered steps, and artifact hashes;
 each pair binds both session bindings and its execution order; the root binds
@@ -104,11 +107,13 @@ Before passing --review-self-attested, inspect the local server with GET / and
 GET /run?directory=experiment-001, and confirm that POST returns 405 with
 Allow: GET. The hosted workflow performs this check itself. The acceptance
 receipt records only safe identities, fixed counts, the replicated outcome,
-separate evidence states, the selected question identity, and the GET-only
-review contract. It contains no personas, challenges, payloads, device serials,
+separate evidence states, the shared environment identity, the selected
+question identity, and the GET-only review contract. It contains no personas, challenges, payloads, device serials,
 paths, or URLs. Offline verification checks those identities and contracts; it
 does not rerun Android or turn the checked artifacts into a universal causal
-claim.
+claim. Legacy schema 1 acceptance receipts remain readable, but validation keeps
+their authenticated boundary unavailable because they never recorded the joined
+environment identity.
 
 The workflow uploads the acceptance JSON and text report, reflection, redacted
 export, and safe replication.json only. The authoritative run directories and

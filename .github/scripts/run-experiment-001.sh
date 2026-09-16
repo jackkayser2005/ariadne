@@ -5,6 +5,24 @@ trap 'echo "experiment-001 script failed at line ${LINENO}" >&2' ERR
 run_dir=".ariadne/ci/experiment-001"
 ariadne="${RUNNER_TEMP}/ariadne"
 
+# The emulator runner can expose the process before adb has a usable, booted
+# device. Keep this wait bounded so a hosted readiness problem is explicit.
+for attempt in $(seq 1 30); do
+  device_state="$(adb -s emulator-5554 get-state 2>/dev/null || true)"
+  boot_completed=""
+  if [[ "${device_state}" == "device" ]]; then
+    boot_completed="$(adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null || true)"
+  fi
+  if [[ "${boot_completed}" == "1" ]]; then
+    break
+  fi
+  if [[ "${attempt}" -eq 30 ]]; then
+    echo "emulator did not become ready for adb" >&2
+    exit 1
+  fi
+  sleep 2
+done
+
 adb -s emulator-5554 install -r \
   fixture/android/app/build/outputs/apk/debug/app-debug.apk
 
@@ -410,12 +428,13 @@ acceptance_save_summary_json="${RUNNER_TEMP}/ariadne-acceptance-save-summary.jso
   "${archive_question_json}" \
   "${acceptance_artifact}" >"${acceptance_save_summary_json}"
 jq -e '
-  (keys_unsorted == ["schema_version", "workflow", "manifest_name", "declared_variable", "manifest_contract_sha256", "run_evidence_sha256", "replication_receipt_sha256", "replication_provenance_sha256", "replication_binding_sha256", "outcome", "evidence_state", "question_id", "question_state", "review_method", "review_path", "review_status", "acceptance_sha256"]) and
-  (.schema_version == 1) and
+  (keys_unsorted == ["schema_version", "workflow", "manifest_name", "declared_variable", "manifest_contract_sha256", "environment_sha256", "run_evidence_sha256", "replication_receipt_sha256", "replication_provenance_sha256", "replication_binding_sha256", "outcome", "evidence_state", "question_id", "question_state", "review_method", "review_path", "review_status", "acceptance_sha256"]) and
+  (.schema_version == 2) and
   (.workflow == "experiment-001-emulator") and
   (.manifest_name == "experiment-001-email") and
   (.declared_variable == "email") and
   (.manifest_contract_sha256 | test("^[0-9a-f]{64}$")) and
+  (.environment_sha256 | test("^[0-9a-f]{64}$")) and
   (.run_evidence_sha256 == $source_evidence_sha256) and
   (.replication_receipt_sha256 | test("^[0-9a-f]{64}$")) and
   (.replication_provenance_sha256 | test("^[0-9a-f]{64}$")) and
