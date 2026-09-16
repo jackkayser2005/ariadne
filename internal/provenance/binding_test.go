@@ -23,6 +23,38 @@ func validTargetBindingForTest() TargetBinding {
 	}
 }
 
+func validEnvironmentBindingForTest() EnvironmentBinding {
+	return EnvironmentBinding{
+		SchemaVersion:  BindingSchemaVersion,
+		Kind:           EnvironmentBindingKind,
+		Source:         "android",
+		Adapter:        "android-experiment-001",
+		AdapterVersion: 1,
+		Scope:          "all",
+		ResetPolicy:    "reset-before-each-session",
+		Target:         validTargetBindingForTest(),
+	}
+}
+
+func TestEnvironmentBindingCanonicalIdentity(t *testing.T) {
+	binding := validEnvironmentBindingForTest()
+	first, err := binding.SHA256()
+	if err != nil || len(first) != 64 {
+		t.Fatalf("EnvironmentBinding.SHA256() = %q, error = %v", first, err)
+	}
+	changed := binding
+	changed.Target.AndroidAPI = 34
+	second, err := changed.SHA256()
+	if err != nil || first == second {
+		t.Fatalf("environment identity did not change: first=%q second=%q error=%v", first, second, err)
+	}
+	invalid := binding
+	invalid.ResetPolicy = ""
+	if _, err := invalid.SHA256(); err == nil {
+		t.Fatal("EnvironmentBinding.SHA256() accepted a missing reset policy")
+	}
+}
+
 func validSessionBindingForTest() SessionBinding {
 	started := time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC)
 	finished := started.Add(15 * time.Second)

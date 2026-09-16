@@ -82,6 +82,32 @@ func SessionBindingSHA256(record SessionRecord) (string, error) {
 	return binding.SHA256()
 }
 
+// SessionEnvironmentSHA256 returns the canonical identity of the shared
+// execution environment for an authenticated Android session.
+func SessionEnvironmentSHA256(record SessionRecord) (string, error) {
+	binding := provenance.EnvironmentBinding{
+		SchemaVersion:  provenance.BindingSchemaVersion,
+		Kind:           provenance.EnvironmentBindingKind,
+		Source:         ReplicationSource,
+		Adapter:        ReplicationAdapter,
+		AdapterVersion: ReplicationAdapterVersion,
+		Scope:          ReplicationScope,
+		ResetPolicy:    record.ResetPolicy,
+		Target: provenance.TargetBinding{
+			ADBVersion:         record.ADBVersion,
+			DeviceSHA256:       provenance.SHA256String(record.Device),
+			Package:            record.Package,
+			AndroidAPI:         record.AndroidAPI,
+			Architecture:       record.Architecture,
+			PackageVersionCode: record.PackageVersionCode,
+			PackageSHA256:      record.PackageSHA256,
+			AriadneRevision:    record.AriadneRevision,
+			AriadneModified:    record.AriadneModified,
+		},
+	}
+	return binding.SHA256()
+}
+
 // ReplicatedPairBindingSHA256 returns the canonical identity of one ordered
 // pair and its two authenticated session bindings.
 func ReplicatedPairBindingSHA256(record ReplicatedRunRecord, pair ReplicatedPairRecord) (string, error) {

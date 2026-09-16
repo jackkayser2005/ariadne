@@ -20,6 +20,7 @@ const (
 	PairBindingKind        = "android-pair"
 	ReplicationBindingKind = "android-replication"
 	EvidenceBindingKind    = "android-replication-evidence"
+	EnvironmentBindingKind = "android-environment"
 )
 
 // TargetBinding contains safe target identities. DeviceSHA256 binds the exact
@@ -34,6 +35,20 @@ type TargetBinding struct {
 	PackageSHA256      string `json:"package_sha256"`
 	AriadneRevision    string `json:"ariadne_revision"`
 	AriadneModified    bool   `json:"ariadne_modified"`
+}
+
+// EnvironmentBinding is the canonical identity of the controlled execution
+// environment shared by matched candidate runs. It intentionally excludes
+// candidate-specific manifests, procedures, and observed values.
+type EnvironmentBinding struct {
+	SchemaVersion  int           `json:"schema_version"`
+	Kind           string        `json:"kind"`
+	Source         string        `json:"source"`
+	Adapter        string        `json:"adapter"`
+	AdapterVersion int           `json:"adapter_version"`
+	Scope          string        `json:"scope"`
+	ResetPolicy    string        `json:"reset_policy"`
+	Target         TargetBinding `json:"target"`
 }
 
 // ArtifactBinding identifies one already-captured artifact without copying its
@@ -173,6 +188,14 @@ func (binding SessionBinding) SHA256() (string, error) {
 	return canonicalSHA256(binding)
 }
 
+// SHA256 returns the canonical JSON identity of a validated environment binding.
+func (binding EnvironmentBinding) SHA256() (string, error) {
+	if err := binding.Validate(); err != nil {
+		return "", err
+	}
+	return canonicalSHA256(binding)
+}
+
 // SHA256 returns the canonical JSON identity of a validated pair binding.
 func (binding PairBinding) SHA256() (string, error) {
 	if err := binding.Validate(); err != nil {
@@ -196,6 +219,18 @@ func (binding EvidenceBinding) SHA256() (string, error) {
 		return "", err
 	}
 	return canonicalSHA256(binding)
+}
+
+// Validate reports whether the environment binding contains bounded shared
+// execution identities.
+func (binding EnvironmentBinding) Validate() error {
+	if err := validateCommon(binding.SchemaVersion, binding.Kind, binding.Source, binding.Adapter, binding.AdapterVersion, binding.Scope); err != nil {
+		return err
+	}
+	if binding.Kind != EnvironmentBindingKind || !validBindingLabel(binding.ResetPolicy, 64) {
+		return errors.New("environment binding identity is invalid")
+	}
+	return binding.Target.Validate()
 }
 
 // Validate reports whether the session binding contains only bounded identity

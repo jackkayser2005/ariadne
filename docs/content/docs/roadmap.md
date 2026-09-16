@@ -76,7 +76,10 @@ the package, role, explicit pair order, reviewed procedure digest, and trace
 session; network and storage evidence must carry the same challenge. Session
 receipts retain only a challenge commitment; complete authenticated
 replications also reject reuse across pairs or execution orders, and failed or
-unverifiable boundaries remain incomplete/unknown. The first minimum-disclosure slice now
+unverifiable boundaries remain incomplete/unknown. Current authenticated
+minimization candidates also carry one shared environment identity across the
+ladder; target, package, API, reset-policy, or runner drift fails closed, while
+legacy receipts remain readable without that guarantee. The first minimum-disclosure slice now
 defines an ordered exact/city/omitted Android ladder, runs each lower-
 disclosure candidate through the existing two-order engine, and emits a
 raw-value-free receipt with separate candidate outcomes and evidence states.
