@@ -186,6 +186,7 @@ func AssembleCase(planPath, outputDir string) (CaseAssemblySummary, error) {
 	}
 	committed = true
 	return summary, nil
+}
 
 // VerifyCaseAssembly verifies the fixed files in one assembled workspace and
 // confirms that its durable disclosure round is derived from its case.

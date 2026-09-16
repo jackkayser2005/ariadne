@@ -27,7 +27,6 @@ func TestValidateDirectoryAndRequireAbsent(t *testing.T) {
 	}
 }
 
-
 func TestPublishDirectoryExclusivePublishesWithoutReplacement(t *testing.T) {
 	root := t.TempDir()
 	source := filepath.Join(root, "staging")
