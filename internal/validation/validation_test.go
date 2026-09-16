@@ -1385,19 +1385,21 @@ func TestReportFromWeather(t *testing.T) {
 
 func TestReportFromReplication(t *testing.T) {
 	base := bundle.ReplicatedExperimentSummary{
-		ReceiptSHA256:    strings.Repeat("a", 64),
-		ProvenanceSHA256: strings.Repeat("b", 64),
-		BindingSHA256:    strings.Repeat("c", 64),
-		Pairs:            2,
-		CompletedPairs:   2,
-		Outcome:          bundle.ReplicatedChange,
-		EvidenceState:    evidence.Observed,
+		ReceiptSHA256:     strings.Repeat("a", 64),
+		ProvenanceSHA256:  strings.Repeat("b", 64),
+		BindingSHA256:     strings.Repeat("c", 64),
+		EnvironmentSHA256: strings.Repeat("d", 64),
+		Pairs:             2,
+		CompletedPairs:    2,
+		Outcome:           bundle.ReplicatedChange,
+		EvidenceState:     evidence.Observed,
 	}
 	report := reportFromReplication(base)
 	if report.Overall != StatusPass ||
 		report.ArtifactKind != KindAndroidReplication ||
 		report.Outcome != string(bundle.ReplicatedChange) ||
 		report.EvidenceState != evidence.Observed ||
+		report.EnvironmentSHA256 != strings.Repeat("d", 64) ||
 		report.Reason != ReasonVerified {
 		t.Fatalf("complete report = %#v", report)
 	}
@@ -1580,7 +1582,9 @@ func TestReportFromMinimization(t *testing.T) {
 		android.CandidateResults[index].EnvironmentSHA256 = strings.Repeat("a", 64)
 	}
 	report = reportFromMinimization(android, "android-bound")
-	if report.Overall != StatusPass || tierStatus(report, TierBoundary) != StatusPass {
+	if report.Overall != StatusPass ||
+		report.EnvironmentSHA256 != strings.Repeat("a", 64) ||
+		tierStatus(report, TierBoundary) != StatusPass {
 		t.Fatalf("android bound report = %#v", report)
 	}
 

@@ -70,12 +70,13 @@ jq -e '
 replicated_validate_json="${RUNNER_TEMP}/ariadne-replicated-validate.json"
 "${ariadne}" validate --json "${replicated_dir}" >"${replicated_validate_json}"
 jq -e '
-  (.schema_version == 1) and
+  (.schema_version == 2) and
   (.artifact_kind == "android-replication") and
   (.overall == "pass") and
   (.outcome == "replicated-change") and
   (.evidence_state == "observed") and
   (.identity | test("^[0-9a-f]{64}$")) and
+  (.environment_sha256 | test("^[0-9a-f]{64}$")) and
   (.tiers | length == 4) and
   (all(.tiers[]; .status == "pass"))
 ' "${replicated_validate_json}"
@@ -139,13 +140,14 @@ jq -e '
 minimization_validate_json="${RUNNER_TEMP}/ariadne-minimization-validate.json"
 "${ariadne}" validate --json "${minimization_dir}" >"${minimization_validate_json}"
 jq -e '
-  (.schema_version == 1) and
+  (.schema_version == 2) and
   (.artifact_kind == "android-minimization") and
   (.overall == "pass") and
   (.evidence_state == "observed") and
   (.selection_state == "selected") and
   (.selected_candidate == "omitted") and
   (.identity | test("^[0-9a-f]{64}$")) and
+  (.environment_sha256 | test("^[0-9a-f]{64}$")) and
   (.tiers | length == 4) and
   (all(.tiers[]; .status == "pass"))
 ' "${minimization_validate_json}"

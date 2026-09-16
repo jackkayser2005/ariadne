@@ -221,7 +221,10 @@ checks require both canonical provenance and an authenticated execution
 binding in new Android replication and minimization artifacts; provenance alone is
 not an authentication or evidence-boundary guarantee. Current authenticated
 minimization candidates additionally require one shared environment identity;
-legacy receipts remain readable while that guarantee is unavailable. Replay reports readiness from recorded complete pairs but never
+legacy receipts remain readable while that guarantee is unavailable. For current
+Android replication and minimization reports, `environment_sha256` exposes that
+safe binding identity without exposing device serials or captured values. Replay
+reports readiness from recorded complete pairs but never
 launches a device or adapter. Standalone Android runs remain readable across
 legacy bundle schemas, while boundary pass still requires the current
 authenticated session bindings.

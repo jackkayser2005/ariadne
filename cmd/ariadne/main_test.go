@@ -156,7 +156,8 @@ func TestRunValidateJSONReport(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &report); err != nil {
 		t.Fatal(err)
 	}
-	if report["artifact_kind"] != "manifest" ||
+	if report["schema_version"] != float64(validation.SchemaVersion) ||
+		report["artifact_kind"] != "manifest" ||
 		report["overall"] != "warning" ||
 		report["evidence_state"] != "unknown" {
 		t.Fatalf("report = %#v", report)
@@ -197,6 +198,7 @@ func TestWriteValidationReportIncludesSafeFields(t *testing.T) {
 		ArtifactKind:      validation.KindAndroidMinimization,
 		Overall:           validation.StatusPass,
 		Identity:          strings.Repeat("a", 64),
+		EnvironmentSHA256: strings.Repeat("b", 64),
 		Outcome:           "no-change-observed",
 		EvidenceState:     evidence.Observed,
 		SelectionState:    "selected",
@@ -219,6 +221,7 @@ func TestWriteValidationReportIncludesSafeFields(t *testing.T) {
 		"overall: pass",
 		"meaning: The saved evidence passed its checks",
 		"identity: " + strings.Repeat("a", 64),
+		"environment_sha256: " + strings.Repeat("b", 64),
 		"outcome: no-change-observed",
 		"evidence_state: observed",
 		"selection_state: selected",
