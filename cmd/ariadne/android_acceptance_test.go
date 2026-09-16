@@ -18,11 +18,12 @@ func (androidAcceptanceFailWriter) Write([]byte) (int, error) {
 
 func androidAcceptanceSummaryForTest() bundle.AndroidAcceptanceVerificationSummary {
 	return bundle.AndroidAcceptanceVerificationSummary{
-		SchemaVersion:            1,
+		SchemaVersion:            bundle.AndroidAcceptanceSchemaVersion,
 		Workflow:                 "experiment-001-emulator",
 		ManifestName:             "experiment-001-email",
 		DeclaredVariable:         "email",
 		ManifestContractSHA256:   strings.Repeat("c", 64),
+		EnvironmentSHA256:        strings.Repeat("1", 64),
 		RunEvidenceSHA256:        strings.Repeat("d", 64),
 		ReplicationReceiptSHA256: strings.Repeat("e", 64),
 		Outcome:                  bundle.ReplicatedChange,
@@ -66,7 +67,9 @@ func TestRunAndroidAcceptanceSave(t *testing.T) {
 		exitCode := runAndroidAcceptanceSave(append([]string{"--json"}, args...), &stdout, &stderr, func(string, string, string, string, string, bool) (bundle.AndroidAcceptanceVerificationSummary, error) {
 			return summary, nil
 		})
-		if exitCode != 0 || stderr.Len() != 0 || !strings.Contains(stdout.String(), "\"acceptance_sha256\":\""+summary.AcceptanceSHA256+"\"") {
+		if exitCode != 0 || stderr.Len() != 0 ||
+			!strings.Contains(stdout.String(), "\"acceptance_sha256\":\""+summary.AcceptanceSHA256+"\"") ||
+			!strings.Contains(stdout.String(), "\"environment_sha256\":\""+summary.EnvironmentSHA256+"\"") {
 			t.Fatalf("runAndroidAcceptanceSave() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
 		}
 	})
@@ -135,7 +138,9 @@ func TestRunAndroidAcceptanceVerify(t *testing.T) {
 		exitCode := runAndroidAcceptanceVerify([]string{"--json", "acceptance"}, &stdout, &stderr, func(string) (bundle.AndroidAcceptanceVerificationSummary, error) {
 			return summary, nil
 		})
-		if exitCode != 0 || stderr.Len() != 0 || !strings.Contains(stdout.String(), "\"acceptance_sha256\":\""+summary.AcceptanceSHA256+"\"") {
+		if exitCode != 0 || stderr.Len() != 0 ||
+			!strings.Contains(stdout.String(), "\"acceptance_sha256\":\""+summary.AcceptanceSHA256+"\"") ||
+			!strings.Contains(stdout.String(), "\"environment_sha256\":\""+summary.EnvironmentSHA256+"\"") {
 			t.Fatalf("runAndroidAcceptanceVerify() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
 		}
 	})
