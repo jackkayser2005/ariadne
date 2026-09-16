@@ -1197,7 +1197,7 @@ func TestValidateSummaryRejectsBoundaryInputs(t *testing.T) {
 		name   string
 		mutate func(*MinimizationSummary)
 	}{
-		{"schema", func(summary *MinimizationSummary) { summary.SchemaVersion = 2 }},
+		{"schema", func(summary *MinimizationSummary) { summary.SchemaVersion = 3 }},
 		{"plan name", func(summary *MinimizationSummary) { summary.PlanName = "bad name" }},
 		{"variable", func(summary *MinimizationSummary) { summary.Variable = "" }},
 		{"reference", func(summary *MinimizationSummary) { summary.ReferenceCandidate = "../exact" }},
@@ -1318,6 +1318,37 @@ func TestMinimizationCarriesCanonicalProvenance(t *testing.T) {
 	projection.ProvenanceSHA256 = "invalid"
 	if err := validateCandidateProjection(projection); err == nil {
 		t.Fatal("validateCandidateProjection() accepted an invalid provenance digest")
+	}
+}
+
+func TestValidateCandidateEnvironmentIdentities(t *testing.T) {
+	digestA := strings.Repeat("a", 64)
+	digestB := strings.Repeat("b", 64)
+	results := []CandidateResult{
+		{
+			ManifestName:      "android-location-city",
+			BindingSHA256:     strings.Repeat("c", 64),
+			EnvironmentSHA256: digestA,
+		},
+		{
+			ManifestName:      "android-location-omitted",
+			BindingSHA256:     strings.Repeat("d", 64),
+			EnvironmentSHA256: digestA,
+		},
+	}
+	if err := validateCandidateEnvironmentIdentities(SummarySchemaVersion, results); err != nil {
+		t.Fatalf("same environment rejected: %v", err)
+	}
+	results[1].EnvironmentSHA256 = digestB
+	if err := validateCandidateEnvironmentIdentities(SummarySchemaVersion, results); err == nil {
+		t.Fatal("environment mismatch accepted")
+	}
+	results[1].EnvironmentSHA256 = ""
+	if err := validateCandidateEnvironmentIdentities(SummarySchemaVersion, results); err == nil {
+		t.Fatal("missing environment identity accepted")
+	}
+	if err := validateCandidateEnvironmentIdentities(LegacySummarySchemaVersion, results); err != nil {
+		t.Fatalf("legacy environment omission rejected: %v", err)
 	}
 }
 

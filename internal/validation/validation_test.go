@@ -1546,6 +1546,7 @@ func TestReportFromProxyReplication(t *testing.T) {
 func TestReportFromMinimization(t *testing.T) {
 	provenance := strings.Repeat("c", 64)
 	summary := minimize.MinimizationSummary{
+		SchemaVersion:     minimize.SummarySchemaVersion,
 		EvidenceState:     evidence.Observed,
 		SelectionState:    minimize.SelectionSelected,
 		SelectedCandidate: "city",
@@ -1576,6 +1577,7 @@ func TestReportFromMinimization(t *testing.T) {
 	}
 	for index := range android.CandidateResults {
 		android.CandidateResults[index].BindingSHA256 = strings.Repeat("f", 64)
+		android.CandidateResults[index].EnvironmentSHA256 = strings.Repeat("a", 64)
 	}
 	report = reportFromMinimization(android, "android-bound")
 	if report.Overall != StatusPass || tierStatus(report, TierBoundary) != StatusPass {

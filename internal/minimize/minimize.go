@@ -29,8 +29,11 @@ import (
 const (
 	// CurrentSchemaVersion is the minimization plan schema supported by this build.
 	CurrentSchemaVersion = 1
-	// SummarySchemaVersion is the raw-value-free minimization receipt schema.
-	SummarySchemaVersion = 1
+	// LegacySummarySchemaVersion is the readable minimization receipt schema
+	// without cross-candidate environment identity.
+	LegacySummarySchemaVersion = 1
+	// SummarySchemaVersion is the current raw-value-free minimization receipt schema.
+	SummarySchemaVersion = 2
 
 	// FunctionalityCriterionAllNonDisclosureFields names the first fixed
 	// criterion: every observed field other than the declared input and request
@@ -97,10 +100,11 @@ type CandidateResult struct {
 	Classification   CandidateClassification  `json:"classification"`
 	Outcome          bundle.ReplicatedOutcome `json:"outcome"`
 	EvidenceState    evidence.State           `json:"evidence_state"`
-	ReceiptSHA256    string                   `json:"receipt_sha256"`
-	ProvenanceSHA256 string                   `json:"provenance_sha256,omitempty"`
-	BindingSHA256    string                   `json:"binding_sha256,omitempty"`
-	Pairs            int                      `json:"pairs"`
+	ReceiptSHA256     string                   `json:"receipt_sha256"`
+	ProvenanceSHA256  string                   `json:"provenance_sha256,omitempty"`
+	BindingSHA256     string                   `json:"binding_sha256,omitempty"`
+	EnvironmentSHA256 string                   `json:"environment_sha256,omitempty"`
+	Pairs             int                      `json:"pairs"`
 	PairsPerOrder    int                      `json:"pairs_per_order"`
 	CompletedPairs   int                      `json:"completed_pairs"`
 	ChangedPairs     int                      `json:"changed_pairs"`
@@ -493,9 +497,10 @@ func candidateResult(id, directory string, summary bundle.ReplicatedExperimentSu
 		Outcome:          summary.Outcome,
 		EvidenceState:    summary.EvidenceState,
 		ReceiptSHA256:    summary.ReceiptSHA256,
-		ProvenanceSHA256: summary.ProvenanceSHA256,
-		BindingSHA256:    summary.BindingSHA256,
-		Pairs:            summary.Pairs,
+		ProvenanceSHA256:  summary.ProvenanceSHA256,
+		BindingSHA256:     summary.BindingSHA256,
+		EnvironmentSHA256: summary.EnvironmentSHA256,
+		Pairs:             summary.Pairs,
 		PairsPerOrder:    summary.PairsPerOrder,
 		CompletedPairs:   summary.CompletedPairs,
 		ChangedPairs:     summary.ChangedPairs,
@@ -696,9 +701,15 @@ func verifyChildren(rootDir string, summary MinimizationSummary) error {
 			return fmt.Errorf("candidate %q: replication manifest metadata disagrees", result.ID)
 		}
 		expected := candidateResult(result.ID, result.Directory, child)
+		if summary.SchemaVersion == LegacySummarySchemaVersion {
+			expected.EnvironmentSHA256 = ""
+		}
 		if expected != result {
 			return fmt.Errorf("candidate %q: result does not match replication", result.ID)
 		}
+	}
+	if err := validateCandidateEnvironmentIdentities(summary.SchemaVersion, summary.CandidateResults); err != nil {
+		return err
 	}
 	selection, selected, state := selectionFor(summary.CandidateResults)
 	if selection != summary.SelectionState || selected != summary.SelectedCandidate || state != summary.EvidenceState {
@@ -708,7 +719,7 @@ func verifyChildren(rootDir string, summary MinimizationSummary) error {
 }
 
 func validateSummary(summary MinimizationSummary) error {
-	if summary.SchemaVersion != SummarySchemaVersion {
+	if summary.SchemaVersion != SummarySchemaVersion && summary.SchemaVersion != LegacySummarySchemaVersion {
 		return fmt.Errorf("unsupported schema_version %d", summary.SchemaVersion)
 	}
 	if !validIdentifier(summary.PlanName, maxPlanName) {
@@ -770,6 +781,9 @@ func validateSummary(summary MinimizationSummary) error {
 		if result.BindingSHA256 != "" && !validDigest(result.BindingSHA256) {
 			return errors.New("candidate result binding_sha256 is invalid")
 		}
+		if result.EnvironmentSHA256 != "" && !validDigest(result.EnvironmentSHA256) {
+			return errors.New("candidate result environment_sha256 is invalid")
+		}
 		if result.Pairs != result.PairsPerOrder*2 ||
 			result.PairsPerOrder != summary.PairsPerOrder ||
 			result.CompletedPairs < 0 || result.CompletedPairs > result.Pairs ||
@@ -794,12 +808,40 @@ func validateSummary(summary MinimizationSummary) error {
 			return errors.New("candidate result classification disagrees with outcome")
 		}
 	}
+	if err := validateCandidateEnvironmentIdentities(summary.SchemaVersion, summary.CandidateResults); err != nil {
+		return err
+	}
 	selection, selected, state := selectionFor(summary.CandidateResults)
 	if selection != summary.SelectionState || selected != summary.SelectedCandidate || state != summary.EvidenceState {
 		return errors.New("selection does not match candidate results")
 	}
 	if summary.SelectionState != SelectionSelected && summary.SelectedCandidate != "" {
 		return errors.New("selected_candidate is invalid for selection state")
+	}
+	return nil
+}
+
+func validateCandidateEnvironmentIdentities(schemaVersion int, results []CandidateResult) error {
+	if schemaVersion != SummarySchemaVersion {
+		return nil
+	}
+	environment := ""
+	hasEnvironment := false
+	for _, result := range results {
+		if result.ManifestName == "" || result.BindingSHA256 == "" {
+			continue
+		}
+		if result.EnvironmentSHA256 == "" {
+			return errors.New("candidate environment identity is unavailable")
+		}
+		if !hasEnvironment {
+			environment = result.EnvironmentSHA256
+			hasEnvironment = true
+			continue
+		}
+		if result.EnvironmentSHA256 != environment {
+			return errors.New("candidate environment identities disagree")
+		}
 	}
 	return nil
 }

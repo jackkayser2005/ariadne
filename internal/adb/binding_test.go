@@ -144,6 +144,24 @@ func TestAuthenticatedBindingFailurePaths(t *testing.T) {
 		t.Fatalf("bindReplicatedPair() returned %#v, want original pair metadata", got)
 	}
 }
+func TestSessionEnvironmentSHA256(t *testing.T) {
+	record := sessionBindingRecordForTest("baseline")
+	digest, err := SessionEnvironmentSHA256(record)
+	if err != nil || len(digest) != 64 {
+		t.Fatalf("SessionEnvironmentSHA256() = %q, error = %v", digest, err)
+	}
+	changed := record
+	changed.Package = "dev.ariadne.other"
+	changedDigest, err := SessionEnvironmentSHA256(changed)
+	if err != nil || digest == changedDigest {
+		t.Fatalf("environment digest did not change: original=%q changed=%q error=%v", digest, changedDigest, err)
+	}
+	record.ResetPolicy = ""
+	if _, err := SessionEnvironmentSHA256(record); err == nil {
+		t.Fatal("SessionEnvironmentSHA256() accepted a missing reset policy")
+	}
+}
+
 func sessionBindingRecordForTest(kind string) SessionRecord {
 	started := time.Date(2026, 9, 2, 12, 0, 0, 0, time.UTC)
 	record := SessionRecord{

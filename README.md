@@ -61,7 +61,11 @@ each pair binds both session bindings and its execution order; the root binds
 all ordered pairs; and every complete authenticated session in the root must
 use a unique challenge commitment. Replication verification then returns an
 evidence-bound
-summary binding that includes the verified evidence identities. Raw persona
+summary binding that includes the verified evidence identities. Current
+authenticated Android minimization candidates also carry one shared environment
+identity; drift in the target, reset policy, package, API, or Ariadne runner
+revision fails closed. Legacy minimization receipts remain readable without
+that guarantee. Raw persona
 values, challenges, payloads, and device serials remain out of portable
 receipts. These SHA-256 identities prove canonical consistency and session
 binding; they are not signatures, external authenticity proof, reset proof, or
@@ -147,7 +151,10 @@ capture or verification is incomplete. Ariadne selects only the least-
 disclosing sufficient candidate tested after every candidate is observed
 consistently; otherwise the selection remains unknown or reports that no
 candidate was sufficient. This is a minimum tested sufficient disclosure, not
-an absolute minimum or a universal causal claim.
+an absolute minimum or a universal causal claim. Current authenticated Android
+candidate results also bind one shared environment identity across the ladder;
+environment drift is an unavailable or inconsistent boundary, never a
+successful reduction.
 The minimization ladder also has a fixed reflection catalog. These commands
 retain the decision without reopening or copying the local input values:
 
@@ -212,7 +219,9 @@ directories, and a verified browser weather investigation directory containing
 integrity checks delegate to the existing specialized verifiers; boundary
 checks require both canonical provenance and an authenticated execution
 binding in new Android replication and minimization artifacts; provenance alone is
-not an authentication or evidence-boundary guarantee. Replay reports readiness from recorded complete pairs but never
+not an authentication or evidence-boundary guarantee. Current authenticated
+minimization candidates additionally require one shared environment identity;
+legacy receipts remain readable while that guarantee is unavailable. Replay reports readiness from recorded complete pairs but never
 launches a device or adapter. Standalone Android runs remain readable across
 legacy bundle schemas, while boundary pass still requires the current
 authenticated session bindings.

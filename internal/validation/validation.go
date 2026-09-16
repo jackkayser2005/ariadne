@@ -840,7 +840,7 @@ func reportFromMinimization(summary minimize.MinimizationSummary, identity strin
 		report.SelectedCandidate = summary.SelectedCandidate
 	}
 
-	boundaryStatus, boundaryReason := minimizationBoundary(summary.CandidateResults)
+	boundaryStatus, boundaryReason := minimizationBoundary(summary)
 	setTier(&report, TierBoundary, boundaryStatus, boundaryReason)
 	if minimizationReady(summary) {
 		setTier(&report, TierReplay, StatusPass, ReasonVerified)
@@ -850,7 +850,8 @@ func reportFromMinimization(summary minimize.MinimizationSummary, identity strin
 	return finalize(report)
 }
 
-func minimizationBoundary(results []minimize.CandidateResult) (Status, string) {
+func minimizationBoundary(summary minimize.MinimizationSummary) (Status, string) {
+	results := summary.CandidateResults
 	if len(results) == 0 {
 		return StatusFail, ReasonArtifactRejected
 	}
@@ -888,6 +889,33 @@ func minimizationBoundary(results []minimize.CandidateResult) (Status, string) {
 			return StatusUnavailable, ReasonProvenanceUnavailable
 		}
 		return StatusFail, ReasonProvenanceInconsistent
+	}
+	if summary.SchemaVersion == minimize.SummarySchemaVersion {
+		hasEnvironment := false
+		missingEnvironment := false
+		environmentMismatch := false
+		environment := ""
+		for _, result := range results {
+			if result.ManifestName == "" || result.BindingSHA256 == "" {
+				continue
+			}
+			if result.EnvironmentSHA256 == "" {
+				missingEnvironment = true
+				continue
+			}
+			if !hasEnvironment {
+				environment = result.EnvironmentSHA256
+				hasEnvironment = true
+			} else if result.EnvironmentSHA256 != environment {
+				environmentMismatch = true
+			}
+		}
+		if missingEnvironment || environmentMismatch {
+			if !hasEnvironment && missingEnvironment {
+				return StatusUnavailable, ReasonProvenanceUnavailable
+			}
+			return StatusFail, ReasonProvenanceInconsistent
+		}
 	}
 	// Candidate names are part of each manifest contract, so authenticated
 	// candidates intentionally have candidate-specific procedure identities.

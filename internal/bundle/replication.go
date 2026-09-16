@@ -54,6 +54,7 @@ type ReplicatedExperimentSummary struct {
 	ReceiptSHA256          string                  `json:"receipt_sha256"`
 	ProvenanceSHA256       string                  `json:"provenance_sha256,omitempty"`
 	BindingSHA256          string                  `json:"binding_sha256,omitempty"`
+	EnvironmentSHA256      string                  `json:"environment_sha256,omitempty"`
 	Pairs                  int                     `json:"pairs"`
 	PairsPerOrder          int                     `json:"pairs_per_order"`
 	BaselineTreatmentPairs int                     `json:"baseline_treatment_pairs"`
@@ -95,6 +96,7 @@ func VerifyReplicated(rootDir string) (ReplicatedExperimentSummary, error) {
 	byKey := make(map[string]ReplicatedPairSummary, len(record.Pairs))
 	seenChallenges := make(map[string]struct{}, totalPairs)
 	var provenance *Summary
+	environmentSHA256 := ""
 	for _, pair := range record.Pairs {
 		result := ReplicatedPairSummary{
 			Pair:          pair.Pair,
@@ -117,7 +119,19 @@ func VerifyReplicated(rootDir string) (ReplicatedExperimentSummary, error) {
 					}
 					seenChallenges[challenge] = struct{}{}
 				}
-				if summary.ManifestContractSHA256 != record.ManifestContractSHA256 {
+				if summary.EnvironmentSHA256 == "" {
+					return ReplicatedExperimentSummary{}, errors.New("authenticated replication environment identity is unavailable")
+				}
+			}
+			if summary.EnvironmentSHA256 != "" {
+				if environmentSHA256 == "" {
+					environmentSHA256 = summary.EnvironmentSHA256
+				} else if environmentSHA256 != summary.EnvironmentSHA256 {
+					return ReplicatedExperimentSummary{}, errors.New("replication environment identity disagrees")
+				}
+			}
+			if record.SchemaVersion == adb.AuthenticatedReplicatedRunSchemaVersion &&
+				summary.ManifestContractSHA256 != record.ManifestContractSHA256 {
 					return ReplicatedExperimentSummary{}, errors.New("replication pair manifest contract disagrees")
 				}
 				expectedPairBinding, err := adb.ReplicatedPairBindingSHA256(record, pair)
@@ -185,6 +199,7 @@ func VerifyReplicated(rootDir string) (ReplicatedExperimentSummary, error) {
 		DeclaredVariable:       record.DeclaredVariable,
 		ReceiptSHA256:          digestSHA256(receiptData),
 		ProvenanceSHA256:       verifiedProvenanceSHA256,
+		EnvironmentSHA256:      environmentSHA256,
 		Pairs:                  totalPairs,
 		PairsPerOrder:          record.PairsPerOrder,
 		BaselineTreatmentPairs: record.PairsPerOrder,
@@ -502,5 +517,6 @@ func sameReplicatedProvenance(left, right Summary) bool {
 		left.TargetPackageVersionCode == right.TargetPackageVersionCode &&
 		left.TargetPackageSHA256 == right.TargetPackageSHA256 &&
 		left.AriadneRevision == right.AriadneRevision &&
-		left.AriadneModified == right.AriadneModified
+		left.AriadneModified == right.AriadneModified &&
+		left.EnvironmentSHA256 == right.EnvironmentSHA256
 }

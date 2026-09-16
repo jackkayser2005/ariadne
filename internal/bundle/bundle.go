@@ -70,8 +70,11 @@ type Summary struct {
 	EvidenceSHA256 string `json:"-"`
 	// Authenticated is true only when both session records use the current
 	// authenticated schema and pass the session-binding checks.
-	Authenticated   bool   `json:"-"`
-	AriadneRevision string `json:"-"`
+	Authenticated bool `json:"-"`
+	// EnvironmentSHA256 is the canonical identity of the shared authenticated
+	// execution environment. It is internal provenance, never portable output.
+	EnvironmentSHA256 string `json:"-"`
+	AriadneRevision   string `json:"-"`
 	AriadneModified bool   `json:"-"`
 	// RecordedAt is the verified baseline session start in UTC for current bundles.
 	RecordedAt string `json:"-"`
@@ -664,6 +667,13 @@ func buildDocument(runDir string, includeFindingIDs bool) (document, Summary, er
 	if err := validatePair(baseline.record, treatment.record); err != nil {
 		return document{}, Summary{}, err
 	}
+	environmentSHA256 := ""
+	if baseline.record.SchemaVersion == adb.AuthenticatedSessionSchemaVersion {
+		environmentSHA256, err = adb.SessionEnvironmentSHA256(baseline.record)
+		if err != nil {
+			return document{}, Summary{}, fmt.Errorf("environment binding: %w", err)
+		}
+	}
 
 	baselineNormalized, err := analysis.Normalize(
 		bytes.NewReader(baseline.storage),
@@ -793,6 +803,7 @@ func buildDocument(runDir string, includeFindingIDs bool) (document, Summary, er
 		AnswerState:              evidence.AnswerState,
 		ManifestContractSHA256:   evidence.ManifestContractSHA256,
 		Authenticated:            baseline.record.SchemaVersion == adb.AuthenticatedSessionSchemaVersion && treatment.record.SchemaVersion == adb.AuthenticatedSessionSchemaVersion,
+		EnvironmentSHA256:        environmentSHA256,
 		AriadneRevision:          evidence.Target.AriadneRevision,
 		AriadneModified:          evidence.Target.AriadneModified,
 		RecordedAt:               recordedAt,

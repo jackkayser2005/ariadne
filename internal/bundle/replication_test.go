@@ -715,7 +715,8 @@ func TestVerifyReplicatedAuthenticatedEnvelopeBindsEvidence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("VerifyReplicated() error = %v", err)
 	}
-	if summary.SchemaVersion != adb.AuthenticatedReplicatedRunSchemaVersion || summary.BindingSHA256 == "" {
+	if summary.SchemaVersion != adb.AuthenticatedReplicatedRunSchemaVersion ||
+		summary.BindingSHA256 == "" || summary.EnvironmentSHA256 == "" {
 		t.Fatalf("authenticated summary = %#v", summary)
 	}
 	data, err := os.ReadFile(filepath.Join(root, "replication.json"))
