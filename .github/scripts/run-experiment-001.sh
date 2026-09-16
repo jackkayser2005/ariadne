@@ -5,6 +5,24 @@ trap 'echo "experiment-001 script failed at line ${LINENO}" >&2' ERR
 run_dir=".ariadne/ci/experiment-001"
 ariadne="${RUNNER_TEMP}/ariadne"
 
+# The emulator runner can expose the process before adb has a usable, booted
+# device. Keep this wait bounded so a hosted readiness problem is explicit.
+for attempt in $(seq 1 30); do
+  device_state="$(adb -s emulator-5554 get-state 2>/dev/null || true)"
+  boot_completed=""
+  if [[ "${device_state}" == "device" ]]; then
+    boot_completed="$(adb -s emulator-5554 shell getprop sys.boot_completed 2>/dev/null || true)"
+  fi
+  if [[ "${boot_completed}" == "1" ]]; then
+    break
+  fi
+  if [[ "${attempt}" -eq 30 ]]; then
+    echo "emulator did not become ready for adb" >&2
+    exit 1
+  fi
+  sleep 2
+done
+
 adb -s emulator-5554 install -r \
   fixture/android/app/build/outputs/apk/debug/app-debug.apk
 
