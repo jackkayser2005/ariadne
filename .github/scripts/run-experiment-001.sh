@@ -70,7 +70,7 @@ jq -e '
 replicated_validate_json="${RUNNER_TEMP}/ariadne-replicated-validate.json"
 "${ariadne}" validate --json "${replicated_dir}" >"${replicated_validate_json}"
 jq -e '
-  (.schema_version == 1) and
+  (.schema_version == 2) and
   (.artifact_kind == "android-replication") and
   (.overall == "pass") and
   (.outcome == "replicated-change") and
@@ -140,7 +140,7 @@ jq -e '
 minimization_validate_json="${RUNNER_TEMP}/ariadne-minimization-validate.json"
 "${ariadne}" validate --json "${minimization_dir}" >"${minimization_validate_json}"
 jq -e '
-  (.schema_version == 1) and
+  (.schema_version == 2) and
   (.artifact_kind == "android-minimization") and
   (.overall == "pass") and
   (.evidence_state == "observed") and
