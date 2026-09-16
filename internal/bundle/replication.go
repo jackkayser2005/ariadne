@@ -122,7 +122,6 @@ func VerifyReplicated(rootDir string) (ReplicatedExperimentSummary, error) {
 				if summary.EnvironmentSHA256 == "" {
 					return ReplicatedExperimentSummary{}, errors.New("authenticated replication environment identity is unavailable")
 				}
-			}
 			if summary.EnvironmentSHA256 != "" {
 				if environmentSHA256 == "" {
 					environmentSHA256 = summary.EnvironmentSHA256
@@ -137,7 +136,7 @@ func VerifyReplicated(rootDir string) (ReplicatedExperimentSummary, error) {
 			if err != nil || expectedPairBinding != pair.BindingSHA256 {
 				return ReplicatedExperimentSummary{}, errors.New("replication pair binding does not match metadata")
 			}
-		}
+			}
 			if summary.ManifestName != record.ManifestName ||
 				summary.DeclaredVariable != record.DeclaredVariable {
 				return ReplicatedExperimentSummary{}, errors.New("replication pair manifest metadata disagrees")
