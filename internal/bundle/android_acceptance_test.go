@@ -423,10 +423,10 @@ func TestSaveAndroidAcceptanceRecord(t *testing.T) {
 func TestValidateAndroidAcceptanceInputsRequiresEnvironmentJoin(t *testing.T) {
 	digest := strings.Repeat("d", 64)
 	for _, test := range []struct {
-		name          string
+		name           string
 		runEnvironment string
 		repEnvironment string
-		want          string
+		want           string
 	}{
 		{name: "missing run identity", runEnvironment: "", repEnvironment: digest, want: "unavailable"},
 		{name: "missing replication identity", runEnvironment: digest, repEnvironment: "", want: "unavailable"},
