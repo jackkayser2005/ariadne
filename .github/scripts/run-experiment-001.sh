@@ -76,6 +76,7 @@ jq -e '
   (.outcome == "replicated-change") and
   (.evidence_state == "observed") and
   (.identity | test("^[0-9a-f]{64}$")) and
+  (.environment_sha256 | test("^[0-9a-f]{64}$")) and
   (.tiers | length == 4) and
   (all(.tiers[]; .status == "pass"))
 ' "${replicated_validate_json}"
@@ -146,6 +147,7 @@ jq -e '
   (.selection_state == "selected") and
   (.selected_candidate == "omitted") and
   (.identity | test("^[0-9a-f]{64}$")) and
+  (.environment_sha256 | test("^[0-9a-f]{64}$")) and
   (.tiers | length == 4) and
   (all(.tiers[]; .status == "pass"))
 ' "${minimization_validate_json}"
