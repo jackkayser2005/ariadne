@@ -28,6 +28,8 @@ const (
 	KindUnknown ArtifactKind = "unknown"
 	// KindManifest identifies an experiment manifest.
 	KindManifest ArtifactKind = "manifest"
+	// KindAndroidRun identifies a verified standalone Android evidence run.
+	KindAndroidRun ArtifactKind = "android-run"
 	// KindAndroidReplication identifies an Android replication directory.
 	KindAndroidReplication ArtifactKind = "android-replication"
 	// KindAndroidMinimization identifies an Android minimization directory.
@@ -383,8 +385,31 @@ func validateDirectory(path string) Report {
 	replication, replicationErr := inspectMarker(path, "replication.json")
 	minimization, minimizationErr := inspectMarker(path, "minimization.json")
 	sourceAdapter, sourceAdapterErr := inspectMarker(path, "receipt.json")
-	if weatherErr != nil || replicationErr != nil || minimizationErr != nil || sourceAdapterErr != nil {
+	androidEvidence, androidEvidenceErr := inspectMarker(path, "evidence.json")
+	androidReport, androidReportErr := inspectMarker(path, "report.md")
+	androidBaseline, androidBaselineErr := inspectMarker(path, "baseline")
+	androidTreatment, androidTreatmentErr := inspectMarker(path, "treatment")
+	if weatherErr != nil || replicationErr != nil || minimizationErr != nil ||
+		sourceAdapterErr != nil || androidEvidenceErr != nil || androidReportErr != nil ||
+		androidBaselineErr != nil || androidTreatmentErr != nil {
 		return unavailableReport(KindUnknown, ReasonArtifactUnavailable)
+	}
+	standaloneAndroid := androidEvidence.present || androidReport.present ||
+		androidBaseline.present || androidTreatment.present
+	if standaloneAndroid && (sourceAdapter.present || weather.present ||
+		replication.present || minimization.present) {
+		return rejectedReport(KindUnknown)
+	}
+	if standaloneAndroid {
+		if !androidEvidence.regular || !androidReport.regular ||
+			!androidBaseline.present || !androidTreatment.present {
+			return rejectedReport(KindAndroidRun)
+		}
+		summary, err := bundle.Verify(path)
+		if err != nil {
+			return rejectedReport(KindAndroidRun)
+		}
+		return reportFromAndroidRun(summary)
 	}
 	if sourceAdapter.present && (weather.present || replication.present || minimization.present) {
 		return rejectedReport(KindUnknown)
@@ -554,6 +579,25 @@ func reportFromArchiveQuestionTransitionHistoryAcceptance(summary bundle.Archive
 	report.EvidenceState = evidence.Unknown
 	setTier(&report, TierBoundary, StatusUnavailable, ReasonProvenanceUnavailable)
 	setTier(&report, TierReplay, StatusUnavailable, ReasonNotApplicable)
+	return finalize(report)
+}
+
+func reportFromAndroidRun(summary bundle.Summary) Report {
+	report := verifiedReport(KindAndroidRun)
+	report.Identity = summary.EvidenceSHA256
+	if summary.AnswerState.Valid() {
+		report.EvidenceState = summary.AnswerState
+	}
+	if summary.Authenticated {
+		setTier(&report, TierBoundary, StatusPass, ReasonVerified)
+	} else {
+		setTier(&report, TierBoundary, StatusUnavailable, ReasonProvenanceUnavailable)
+	}
+	if summary.Unknowns > 0 {
+		setTier(&report, TierReplay, StatusUnknown, ReasonIncompleteCapture)
+	} else {
+		setTier(&report, TierReplay, StatusPass, ReasonVerified)
+	}
 	return finalize(report)
 }
 

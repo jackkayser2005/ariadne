@@ -67,7 +67,10 @@ type Summary struct {
 	AnswerState            evidence.State `json:"-"`
 	ManifestContractSHA256 string         `json:"-"`
 	// EvidenceSHA256 is the digest of the verified authoritative evidence.json.
-	EvidenceSHA256  string `json:"-"`
+	EvidenceSHA256 string `json:"-"`
+	// Authenticated is true only when both session records use the current
+	// authenticated schema and pass the session-binding checks.
+	Authenticated bool `json:"-"`
 	AriadneRevision string `json:"-"`
 	AriadneModified bool   `json:"-"`
 	// RecordedAt is the verified baseline session start in UTC for current bundles.
@@ -789,6 +792,7 @@ func buildDocument(runDir string, includeFindingIDs bool) (document, Summary, er
 		Question:                 evidence.Question,
 		AnswerState:              evidence.AnswerState,
 		ManifestContractSHA256:   evidence.ManifestContractSHA256,
+		Authenticated:            baseline.record.SchemaVersion == adb.AuthenticatedSessionSchemaVersion && treatment.record.SchemaVersion == adb.AuthenticatedSessionSchemaVersion,
 		AriadneRevision:          evidence.Target.AriadneRevision,
 		AriadneModified:          evidence.Target.AriadneModified,
 		RecordedAt:               recordedAt,
