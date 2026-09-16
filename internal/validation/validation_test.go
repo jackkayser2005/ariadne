@@ -1387,6 +1387,7 @@ func TestReportFromReplication(t *testing.T) {
 	base := bundle.ReplicatedExperimentSummary{
 		ReceiptSHA256:    strings.Repeat("a", 64),
 		ProvenanceSHA256: strings.Repeat("b", 64),
+		BindingSHA256:    strings.Repeat("c", 64),
 		Pairs:            2,
 		CompletedPairs:   2,
 		Outcome:          bundle.ReplicatedChange,
@@ -1402,6 +1403,15 @@ func TestReportFromReplication(t *testing.T) {
 	}
 	if tierStatus(report, TierBoundary) != StatusPass || tierStatus(report, TierReplay) != StatusPass {
 		t.Fatalf("complete tiers = %#v", report.Tiers)
+	}
+
+	unbound := base
+	unbound.BindingSHA256 = ""
+	report = reportFromReplication(unbound)
+	if report.Overall != StatusWarning ||
+		tierStatus(report, TierBoundary) != StatusUnavailable ||
+		report.Reason != ReasonProvenanceUnavailable {
+		t.Fatalf("unbound report = %#v", report)
 	}
 
 	legacy := base
@@ -1551,6 +1561,25 @@ func TestReportFromMinimization(t *testing.T) {
 		tierStatus(report, TierBoundary) != StatusPass ||
 		tierStatus(report, TierReplay) != StatusPass {
 		t.Fatalf("complete report = %#v", report)
+	}
+
+	android := summary
+	android.CandidateResults = append([]minimize.CandidateResult(nil), summary.CandidateResults...)
+	for index := range android.CandidateResults {
+		android.CandidateResults[index].ManifestName = "android-location-" + android.CandidateResults[index].ID
+	}
+	report = reportFromMinimization(android, "android-unbound")
+	if report.Overall != StatusWarning ||
+		tierStatus(report, TierBoundary) != StatusUnavailable ||
+		report.Reason != ReasonProvenanceUnavailable {
+		t.Fatalf("android unbound report = %#v", report)
+	}
+	for index := range android.CandidateResults {
+		android.CandidateResults[index].BindingSHA256 = strings.Repeat("f", 64)
+	}
+	report = reportFromMinimization(android, "android-bound")
+	if report.Overall != StatusPass || tierStatus(report, TierBoundary) != StatusPass {
+		t.Fatalf("android bound report = %#v", report)
 	}
 
 	legacy := summary

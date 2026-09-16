@@ -579,7 +579,10 @@ func reportFromReplication(summary bundle.ReplicatedExperimentSummary) Report {
 	report.Outcome = string(summary.Outcome)
 	report.EvidenceState = summary.EvidenceState
 
-	if summary.ProvenanceSHA256 == "" {
+	// The adapter provenance digest identifies the reviewed boundary; the
+	// authenticated root binding additionally proves that the checked sessions,
+	// ordered pairs, and root receipt agree with that boundary.
+	if summary.ProvenanceSHA256 == "" || summary.BindingSHA256 == "" {
 		setTier(&report, TierBoundary, StatusUnavailable, ReasonProvenanceUnavailable)
 	} else {
 		setTier(&report, TierBoundary, StatusPass, ReasonVerified)
@@ -809,17 +812,37 @@ func minimizationBoundary(results []minimize.CandidateResult) (Status, string) {
 	}
 	hasProvenance := false
 	missingProvenance := false
+	requiresBinding := false
+	hasBinding := false
+	missingBinding := false
 	for _, result := range results {
 		if result.ProvenanceSHA256 == "" {
 			missingProvenance = true
 		} else {
 			hasProvenance = true
 		}
+		// Android candidate results retain their manifest identity. Their
+		// provenance is only a boundary guarantee when the child replication
+		// also carries the authenticated execution binding.
+		if result.ManifestName != "" {
+			requiresBinding = true
+			if result.BindingSHA256 == "" {
+				missingBinding = true
+			} else {
+				hasBinding = true
+			}
+		}
 	}
 	if !hasProvenance {
 		return StatusUnavailable, ReasonProvenanceUnavailable
 	}
 	if missingProvenance {
+		return StatusFail, ReasonProvenanceInconsistent
+	}
+	if requiresBinding && missingBinding {
+		if !hasBinding {
+			return StatusUnavailable, ReasonProvenanceUnavailable
+		}
 		return StatusFail, ReasonProvenanceInconsistent
 	}
 	// Candidate names are part of each manifest contract, so authenticated
