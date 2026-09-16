@@ -134,6 +134,7 @@ type Report struct {
 	ArtifactKind      ArtifactKind   `json:"artifact_kind"`
 	Overall           Status         `json:"overall"`
 	Identity          string         `json:"identity,omitempty"`
+	EnvironmentSHA256 string         `json:"environment_sha256,omitempty"`
 	Outcome           string         `json:"outcome,omitempty"`
 	EvidenceState     evidence.State `json:"evidence_state"`
 	SelectionState    string         `json:"selection_state,omitempty"`
@@ -585,6 +586,7 @@ func reportFromArchiveQuestionTransitionHistoryAcceptance(summary bundle.Archive
 func reportFromAndroidRun(summary bundle.Summary) Report {
 	report := verifiedReport(KindAndroidRun)
 	report.Identity = summary.EvidenceSHA256
+	report.EnvironmentSHA256 = summary.EnvironmentSHA256
 	if summary.AnswerState.Valid() {
 		report.EvidenceState = summary.AnswerState
 	}
@@ -620,6 +622,7 @@ func reportFromAndroidAcceptance(summary bundle.AndroidAcceptanceVerificationSum
 func reportFromReplication(summary bundle.ReplicatedExperimentSummary) Report {
 	report := verifiedReport(KindAndroidReplication)
 	report.Identity = summary.ReceiptSHA256
+	report.EnvironmentSHA256 = summary.EnvironmentSHA256
 	report.Outcome = string(summary.Outcome)
 	report.EvidenceState = summary.EvidenceState
 
@@ -834,6 +837,7 @@ func summaryAsMinimization(summary minimize.LadderSummary) minimize.Minimization
 func reportFromMinimization(summary minimize.MinimizationSummary, identity string) Report {
 	report := verifiedReport(KindAndroidMinimization)
 	report.Identity = identity
+	report.EnvironmentSHA256 = minimizationEnvironment(summary)
 	report.EvidenceState = summary.EvidenceState
 	report.SelectionState = string(summary.SelectionState)
 	if summary.SelectionState == minimize.SelectionSelected {
@@ -848,6 +852,26 @@ func reportFromMinimization(summary minimize.MinimizationSummary, identity strin
 		setTier(&report, TierReplay, StatusUnknown, ReasonIncompleteCapture)
 	}
 	return finalize(report)
+}
+
+func minimizationEnvironment(summary minimize.MinimizationSummary) string {
+	if summary.SchemaVersion != minimize.SummarySchemaVersion {
+		return ""
+	}
+	environment := ""
+	for _, result := range summary.CandidateResults {
+		if result.ManifestName == "" || result.BindingSHA256 == "" || result.EnvironmentSHA256 == "" {
+			return ""
+		}
+		if environment == "" {
+			environment = result.EnvironmentSHA256
+			continue
+		}
+		if result.EnvironmentSHA256 != environment {
+			return ""
+		}
+	}
+	return environment
 }
 
 func minimizationBoundary(summary minimize.MinimizationSummary) (Status, string) {
