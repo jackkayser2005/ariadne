@@ -58,6 +58,14 @@ func validAndroidAcceptanceRecordForTest(t *testing.T) AndroidAcceptanceRecord {
 	}
 }
 
+func currentAndroidAcceptanceRecordForTest(t *testing.T) AndroidAcceptanceRecord {
+	t.Helper()
+	record := validAndroidAcceptanceRecordForTest(t)
+	record.SchemaVersion = androidAcceptanceSchemaVersion
+	record.EnvironmentSHA256 = strings.Repeat("1", 64)
+	return record
+}
+
 func writeAndroidAcceptanceRecordForTest(t *testing.T, record AndroidAcceptanceRecord) string {
 	t.Helper()
 	data, err := json.MarshalIndent(record, "", "  ")
@@ -102,6 +110,30 @@ func TestVerifyAndroidAcceptanceRecord(t *testing.T) {
 	}
 }
 
+func TestVerifyAndroidAcceptanceRecordV2IncludesEnvironment(t *testing.T) {
+	record := currentAndroidAcceptanceRecordForTest(t)
+	path := writeAndroidAcceptanceRecordForTest(t, record)
+	summary, err := VerifyAndroidAcceptanceRecord(path)
+	if err != nil {
+		t.Fatalf("VerifyAndroidAcceptanceRecord() error = %v", err)
+	}
+	if summary.SchemaVersion != androidAcceptanceSchemaVersion ||
+		summary.EnvironmentSHA256 != record.EnvironmentSHA256 {
+		t.Fatalf("summary = %#v", summary)
+	}
+
+	original := summary.AcceptanceSHA256
+	record.EnvironmentSHA256 = strings.Repeat("2", 64)
+	path = writeAndroidAcceptanceRecordForTest(t, record)
+	tampered, err := VerifyAndroidAcceptanceRecord(path)
+	if err != nil {
+		t.Fatalf("tampered receipt verification error = %v", err)
+	}
+	if tampered.AcceptanceSHA256 == original {
+		t.Fatal("environment tampering retained the original receipt identity")
+	}
+}
+
 func TestVerifyAndroidAcceptanceRecordRejectsUnsafeOrInvalidInput(t *testing.T) {
 	valid := validAndroidAcceptanceRecordForTest(t)
 	tests := []struct {
@@ -115,6 +147,11 @@ func TestVerifyAndroidAcceptanceRecordRejectsUnsafeOrInvalidInput(t *testing.T) 
 		{name: "no change outcome", mutate: func(record *AndroidAcceptanceRecord) { record.Outcome = NoChangeObserved }, want: "result"},
 		{name: "unknown evidence", mutate: func(record *AndroidAcceptanceRecord) { record.EvidenceState = evidence.Unknown }, want: "result"},
 		{name: "review path", mutate: func(record *AndroidAcceptanceRecord) { record.ReviewPath = "/run" }, want: "contract"},
+		{name: "missing environment", mutate: func(record *AndroidAcceptanceRecord) { record.SchemaVersion = androidAcceptanceSchemaVersion }, want: "environment_sha256"},
+		{name: "invalid environment", mutate: func(record *AndroidAcceptanceRecord) {
+			record.SchemaVersion = androidAcceptanceSchemaVersion
+			record.EnvironmentSHA256 = "not-a-digest"
+		}, want: "environment_sha256"},
 		{name: "mismatched source", mutate: func(record *AndroidAcceptanceRecord) {
 			record.ReflectionSourceEvidenceSHA256 = strings.Repeat("0", 64)
 		}, want: "result"},
@@ -347,7 +384,9 @@ func TestSaveAndroidAcceptanceRecord(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SaveAndroidAcceptanceRecord() error = %v", err)
 	}
-	if summary.Outcome != ReplicatedChange ||
+	if summary.SchemaVersion != androidAcceptanceSchemaVersion ||
+		!validDigest(summary.EnvironmentSHA256) ||
+		summary.Outcome != ReplicatedChange ||
 		summary.EvidenceState != evidence.Observed ||
 		summary.QuestionState != evidence.Observed ||
 		summary.ReviewMethod != "GET" ||
@@ -378,6 +417,34 @@ func TestSaveAndroidAcceptanceRecord(t *testing.T) {
 	}
 	if _, err := SaveAndroidAcceptanceRecord(runDir, replicationRoot, exportPath, reflectionPath, filepath.Join(t.TempDir(), "other.json"), false); err == nil || !strings.Contains(err.Error(), "review") {
 		t.Fatalf("review requirement error = %v", err)
+	}
+}
+
+func TestValidateAndroidAcceptanceInputsRequiresEnvironmentJoin(t *testing.T) {
+	digest := strings.Repeat("d", 64)
+	for _, test := range []struct {
+		name          string
+		runEnvironment string
+		repEnvironment string
+		want          string
+	}{
+		{name: "missing run identity", runEnvironment: "", repEnvironment: digest, want: "unavailable"},
+		{name: "missing replication identity", runEnvironment: digest, repEnvironment: "", want: "unavailable"},
+		{name: "drift", runEnvironment: digest, repEnvironment: strings.Repeat("e", 64), want: "does not match"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateAndroidAcceptanceInputs(
+				Summary{EnvironmentSHA256: test.runEnvironment},
+				ReplicatedExperimentSummary{EnvironmentSHA256: test.repEnvironment},
+				ExportVerificationSummary{},
+				ArchiveQuestionReport{},
+				ArchiveQuestionVerificationSummary{},
+				"",
+			)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("validateAndroidAcceptanceInputs() error = %v, want containing %q", err, test.want)
+			}
+		})
 	}
 }
 
