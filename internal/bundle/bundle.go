@@ -75,7 +75,7 @@ type Summary struct {
 	// execution environment. It is internal provenance, never portable output.
 	EnvironmentSHA256 string `json:"-"`
 	AriadneRevision   string `json:"-"`
-	AriadneModified bool   `json:"-"`
+	AriadneModified   bool   `json:"-"`
 	// RecordedAt is the verified baseline session start in UTC for current bundles.
 	RecordedAt string `json:"-"`
 	// TargetPackage is the verified package identity for the selected target.
