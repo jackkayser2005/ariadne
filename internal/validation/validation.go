@@ -812,11 +812,25 @@ func minimizationBoundary(results []minimize.CandidateResult) (Status, string) {
 	}
 	hasProvenance := false
 	missingProvenance := false
+	requiresBinding := false
+	hasBinding := false
+	missingBinding := false
 	for _, result := range results {
 		if result.ProvenanceSHA256 == "" {
 			missingProvenance = true
 		} else {
 			hasProvenance = true
+		}
+		// Android candidate results retain their manifest identity. Their
+		// provenance is only a boundary guarantee when the child replication
+		// also carries the authenticated execution binding.
+		if result.ManifestName != "" {
+			requiresBinding = true
+			if result.BindingSHA256 == "" {
+				missingBinding = true
+			} else {
+				hasBinding = true
+			}
 		}
 	}
 	if !hasProvenance {
@@ -825,11 +839,16 @@ func minimizationBoundary(results []minimize.CandidateResult) (Status, string) {
 	if missingProvenance {
 		return StatusFail, ReasonProvenanceInconsistent
 	}
+	if requiresBinding && missingBinding {
+		if !hasBinding {
+			return StatusUnavailable, ReasonProvenanceUnavailable
+		}
+		return StatusFail, ReasonProvenanceInconsistent
+	}
 	// Candidate names are part of each manifest contract, so authenticated
 	// candidates intentionally have candidate-specific procedure identities.
 	return StatusPass, ReasonVerified
 }
-
 func minimizationReady(summary minimize.MinimizationSummary) bool {
 	for _, result := range summary.CandidateResults {
 		if result.CompletedPairs != result.Pairs ||
