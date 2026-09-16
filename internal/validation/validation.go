@@ -134,7 +134,7 @@ type Report struct {
 	ArtifactKind      ArtifactKind   `json:"artifact_kind"`
 	Overall           Status         `json:"overall"`
 	Identity          string         `json:"identity,omitempty"`
-	EnvironmentSHA256  string         `json:"environment_sha256,omitempty"`
+	EnvironmentSHA256 string         `json:"environment_sha256,omitempty"`
 	Outcome           string         `json:"outcome,omitempty"`
 	EvidenceState     evidence.State `json:"evidence_state"`
 	SelectionState    string         `json:"selection_state,omitempty"`
