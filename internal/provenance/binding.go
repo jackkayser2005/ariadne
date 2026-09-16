@@ -20,7 +20,7 @@ const (
 	PairBindingKind        = "android-pair"
 	ReplicationBindingKind = "android-replication"
 	EvidenceBindingKind    = "android-replication-evidence"
-	EnvironmentBindingKind  = "android-environment"
+	EnvironmentBindingKind = "android-environment"
 )
 
 // TargetBinding contains safe target identities. DeviceSHA256 binds the exact
