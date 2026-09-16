@@ -67,7 +67,7 @@ type Summary struct {
 	AnswerState            evidence.State `json:"-"`
 	ManifestContractSHA256 string         `json:"-"`
 	// EvidenceSHA256 is the digest of the verified authoritative evidence.json.
-	EvidenceSHA256  string `json:"-"`
+	EvidenceSHA256 string `json:"-"`
 	// Authenticated is true only when both session records use the current
 	// authenticated schema and pass the session-binding checks.
 	Authenticated   bool   `json:"-"`
