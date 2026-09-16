@@ -93,6 +93,7 @@ func VerifyReplicated(rootDir string) (ReplicatedExperimentSummary, error) {
 	totalPairs := record.PairsPerOrder * 2
 	pairSummaries := make([]ReplicatedPairSummary, 0, totalPairs)
 	byKey := make(map[string]ReplicatedPairSummary, len(record.Pairs))
+	seenChallenges := make(map[string]struct{}, totalPairs)
 	var provenance *Summary
 	for _, pair := range record.Pairs {
 		result := ReplicatedPairSummary{
@@ -102,11 +103,20 @@ func VerifyReplicated(rootDir string) (ReplicatedExperimentSummary, error) {
 			EvidenceState: evidence.Unknown,
 		}
 		if pair.Status == adb.ReplicationStatusComplete {
-			summary, err := verifyReplicatedPair(filepath.Join(rootDir, pair.Directory), pair)
+			summary, challenges, err := verifyReplicatedPairWithChallenges(filepath.Join(rootDir, pair.Directory), pair)
 			if err != nil {
 				return ReplicatedExperimentSummary{}, err
 			}
 			if record.SchemaVersion == adb.AuthenticatedReplicatedRunSchemaVersion {
+				if len(challenges) != 2 {
+					return ReplicatedExperimentSummary{}, errors.New("authenticated replication session boundary is unavailable")
+				}
+				for _, challenge := range challenges {
+					if _, exists := seenChallenges[challenge]; exists {
+						return ReplicatedExperimentSummary{}, errors.New("authenticated replication challenges are reused")
+					}
+					seenChallenges[challenge] = struct{}{}
+				}
 				if summary.ManifestContractSHA256 != record.ManifestContractSHA256 {
 					return ReplicatedExperimentSummary{}, errors.New("replication pair manifest contract disagrees")
 				}
@@ -393,43 +403,57 @@ func validPairSessions(pair adb.ReplicatedPairRecord) bool {
 }
 
 func verifyReplicatedPair(pairDir string, pair adb.ReplicatedPairRecord) (Summary, error) {
+	summary, _, err := verifyReplicatedPairWithChallenges(pairDir, pair)
+	return summary, err
+}
+
+func verifyReplicatedPairWithChallenges(
+	pairDir string,
+	pair adb.ReplicatedPairRecord,
+) (Summary, []string, error) {
 	first, err := loadSession(pairDir, pair.FirstSession)
 	if err != nil {
-		return Summary{}, fmt.Errorf("replication pair %d %s: %w", pair.Pair, pair.Order, err)
+		return Summary{}, nil, fmt.Errorf("replication pair %d %s: %w", pair.Pair, pair.Order, err)
 	}
 	second, err := loadSession(pairDir, pair.SecondSession)
 	if err != nil {
-		return Summary{}, fmt.Errorf("replication pair %d %s: %w", pair.Pair, pair.Order, err)
+		return Summary{}, nil, fmt.Errorf("replication pair %d %s: %w", pair.Pair, pair.Order, err)
 	}
 	if pair.FirstSessionBindingSHA256 != "" ||
 		pair.SecondSessionBindingSHA256 != "" ||
 		pair.BindingSHA256 != "" {
 		if first.record.SchemaVersion != adb.AuthenticatedSessionSchemaVersion ||
 			second.record.SchemaVersion != adb.AuthenticatedSessionSchemaVersion {
-			return Summary{}, errors.New("replication pair session binding is unavailable")
+			return Summary{}, nil, errors.New("replication pair session binding is unavailable")
 		}
 		firstBinding, err := adb.SessionBindingSHA256(first.record)
 		if err != nil || firstBinding != pair.FirstSessionBindingSHA256 {
-			return Summary{}, errors.New("replication pair first session binding disagrees")
+			return Summary{}, nil, errors.New("replication pair first session binding disagrees")
 		}
 		secondBinding, err := adb.SessionBindingSHA256(second.record)
 		if err != nil || secondBinding != pair.SecondSessionBindingSHA256 {
-			return Summary{}, errors.New("replication pair second session binding disagrees")
+			return Summary{}, nil, errors.New("replication pair second session binding disagrees")
 		}
 	}
 	if first.record.SchemaVersion >= 8 &&
 		(first.record.Order != pair.Order || second.record.Order != pair.Order) {
-		return Summary{}, errors.New("replication pair authenticated order disagrees with receipt")
+		return Summary{}, nil, errors.New("replication pair authenticated order disagrees with receipt")
 	}
 	if !first.record.StartedAt.Before(second.record.StartedAt) ||
 		second.record.StartedAt.Before(first.record.FinishedAt) {
-		return Summary{}, errors.New("replication pair session order is invalid")
+		return Summary{}, nil, errors.New("replication pair session order is invalid")
 	}
 	_, summary, _, err := verifyDocumentWithOutput(pairDir)
 	if err != nil {
-		return Summary{}, fmt.Errorf("replication pair %d %s: %w", pair.Pair, pair.Order, err)
+		return Summary{}, nil, fmt.Errorf("replication pair %d %s: %w", pair.Pair, pair.Order, err)
 	}
-	return summary, nil
+	if first.record.SchemaVersion != adb.AuthenticatedSessionSchemaVersion {
+		return summary, nil, nil
+	}
+	return summary, []string{
+		first.record.ChallengeCommitment,
+		second.record.ChallengeCommitment,
+	}, nil
 }
 
 func digestSHA256(data []byte) string {

@@ -696,6 +696,19 @@ func TestVerifyReplicatedBindsCanonicalProvenanceDigest(t *testing.T) {
 	}
 }
 
+func TestVerifyReplicatedRejectsReusedChallengeCommitmentAcrossPairs(t *testing.T) {
+	root := makeAuthenticatedAcceptanceReplicationWithChallenges(t, [4]string{
+		strings.Repeat("d", 64),
+		strings.Repeat("e", 64),
+		strings.Repeat("d", 64),
+		strings.Repeat("9", 64),
+	})
+	if _, err := VerifyReplicated(root); err == nil ||
+		!strings.Contains(err.Error(), "challenges are reused") {
+		t.Fatalf("VerifyReplicated() error = %v, want reused challenge rejection", err)
+	}
+}
+
 func TestVerifyReplicatedAuthenticatedEnvelopeBindsEvidence(t *testing.T) {
 	root := makeAuthenticatedAcceptanceReplication(t)
 	summary, err := VerifyReplicated(root)
