@@ -1575,7 +1575,7 @@ func TestReportFromMinimization(t *testing.T) {
 		t.Fatalf("android unbound report = %#v", report)
 	}
 	for index := range android.CandidateResults {
-		android.CandidateResults[index].BindingSHA256 = strings.Repeat("f", 64-index)
+		android.CandidateResults[index].BindingSHA256 = strings.Repeat("f", 64)
 	}
 	report = reportFromMinimization(android, "android-bound")
 	if report.Overall != StatusPass || tierStatus(report, TierBoundary) != StatusPass {

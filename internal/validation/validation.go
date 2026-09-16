@@ -849,6 +849,7 @@ func minimizationBoundary(results []minimize.CandidateResult) (Status, string) {
 	// candidates intentionally have candidate-specific procedure identities.
 	return StatusPass, ReasonVerified
 }
+
 func minimizationReady(summary minimize.MinimizationSummary) bool {
 	for _, result := range summary.CandidateResults {
 		if result.CompletedPairs != result.Pairs ||
