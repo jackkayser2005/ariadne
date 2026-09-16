@@ -74,8 +74,9 @@ than process arguments or exported activity extras. The debug fixture launcher
 is protected by Android's `android.permission.DUMP`. A one-shot challenge binds
 the package, role, explicit pair order, reviewed procedure digest, and trace
 session; network and storage evidence must carry the same challenge. Session
-receipts retain only a challenge commitment, and failed or unverifiable
-boundaries remain incomplete/unknown. The first minimum-disclosure slice now
+receipts retain only a challenge commitment; complete authenticated
+replications also reject reuse across pairs or execution orders, and failed or
+unverifiable boundaries remain incomplete/unknown. The first minimum-disclosure slice now
 defines an ordered exact/city/omitted Android ladder, runs each lower-
 disclosure candidate through the existing two-order engine, and emits a
 raw-value-free receipt with separate candidate outcomes and evidence states.

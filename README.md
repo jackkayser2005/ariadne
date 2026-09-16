@@ -58,7 +58,9 @@ session receipts use schema 9 and authenticated replication roots use schema 2.
 Each session binding covers the safe target identity, reset policy, manifest and
 procedure identity, challenge commitment, ordered steps, and artifact hashes;
 each pair binds both session bindings and its execution order; the root binds
-all ordered pairs. Replication verification then returns an evidence-bound
+all ordered pairs; and every complete authenticated session in the root must
+use a unique challenge commitment. Replication verification then returns an
+evidence-bound
 summary binding that includes the verified evidence identities. Raw persona
 values, challenges, payloads, and device serials remain out of portable
 receipts. These SHA-256 identities prove canonical consistency and session

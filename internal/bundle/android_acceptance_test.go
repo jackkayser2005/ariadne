@@ -223,6 +223,15 @@ func makeAuthenticatedAcceptanceRun(t *testing.T, destination, order, baselineCh
 }
 
 func makeAuthenticatedAcceptanceReplication(t *testing.T) string {
+	return makeAuthenticatedAcceptanceReplicationWithChallenges(t, [4]string{
+		strings.Repeat("d", 64),
+		strings.Repeat("e", 64),
+		strings.Repeat("f", 64),
+		strings.Repeat("9", 64),
+	})
+}
+
+func makeAuthenticatedAcceptanceReplicationWithChallenges(t *testing.T, challenges [4]string) string {
 	t.Helper()
 	root := filepath.Join(t.TempDir(), "replicated")
 	if err := os.Mkdir(root, 0o700); err != nil {
@@ -255,15 +264,15 @@ func makeAuthenticatedAcceptanceReplication(t *testing.T) string {
 		t,
 		filepath.Join(root, pairs[0].Directory),
 		pairs[0].Order,
-		strings.Repeat("d", 64),
-		strings.Repeat("e", 64),
+		challenges[0],
+		challenges[1],
 	)
 	makeAuthenticatedAcceptanceRun(
 		t,
 		filepath.Join(root, pairs[1].Directory),
 		pairs[1].Order,
-		strings.Repeat("f", 64),
-		strings.Repeat("9", 64),
+		challenges[2],
+		challenges[3],
 	)
 
 	record := adb.ReplicatedRunRecord{
