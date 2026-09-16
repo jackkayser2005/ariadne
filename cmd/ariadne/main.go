@@ -714,6 +714,11 @@ func writeValidationReport(report validation.Report, stdout io.Writer) error {
 			return err
 		}
 	}
+	if report.EnvironmentSHA256 != "" {
+		if _, err := fmt.Fprintf(stdout, "environment_sha256: %s\n", report.EnvironmentSHA256); err != nil {
+			return err
+		}
+	}
 	if report.Outcome != "" {
 		if _, err := fmt.Fprintf(stdout, "outcome: %s\n", report.Outcome); err != nil {
 			return err
