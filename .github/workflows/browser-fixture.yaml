@@ -1,0 +1,180 @@
+name: Browser fixture
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  fixture:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Check browser drivers
+        shell: pwsh
+        run: |
+          node --check cmd/browser-fixture-driver/browser_fixture_driver.mjs
+          node --check cmd/browser-fixture-driver/weather_driver.mjs
+          node --test cmd/browser-fixture-driver/weather_driver.test.mjs
+
+      - name: Capture local browser fixture
+        shell: pwsh
+        run: |
+          $nodeMajor = [int]((node --version).TrimStart('v').Split('.')[0])
+          if ($nodeMajor -lt 22) {
+            throw "Node 22 or newer is required"
+          }
+          $chromeCandidates = @((Join-Path $env:ProgramFiles 'Google\Chrome\Application\chrome.exe'))
+          $programFilesX86 = [Environment]::GetEnvironmentVariable('ProgramFiles(x86)')
+          if ($programFilesX86) {
+            $chromeCandidates += Join-Path $programFilesX86 'Google\Chrome\Application\chrome.exe'
+          }
+          $chrome = $chromeCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          if (-not $chrome) {
+            throw "Chrome executable was not found"
+          }
+          $trace = Join-Path $env:RUNNER_TEMP 'ariadne-browser-local-trace.json'
+          $summary = Join-Path $env:RUNNER_TEMP 'ariadne-browser-local-summary.json'
+          $replication = Join-Path $env:RUNNER_TEMP 'ariadne-browser-local-replicated'
+          $replicationSummary = Join-Path $env:RUNNER_TEMP 'ariadne-browser-local-replicated-summary.json'
+          go run ./cmd/ariadne browser capture --json `
+            --procedure examples/browser-local-fixture-procedure.json `
+            --driver node `
+            --driver-arg cmd/browser-fixture-driver/browser_fixture_driver.mjs `
+            --driver-arg --browser `
+            --driver-arg $chrome `
+            $trace | Out-File -LiteralPath $summary -Encoding utf8
+          go run ./cmd/ariadne trace verify --json $trace
+          $content = Get-Content -Raw -LiteralPath $trace
+          if ($content -match 'https://|session_id|consent=|payload') {
+            throw 'browser fixture trace exposed source values'
+          }
+          go run ./cmd/ariadne browser fixture replicate --json `
+            --procedure examples/browser-local-fixture-procedure.json `
+            --driver node `
+            --driver-arg cmd/browser-fixture-driver/browser_fixture_driver.mjs `
+            --driver-arg --browser `
+            --driver-arg $chrome `
+            --pairs 2 `
+            --output $replication | Out-File -LiteralPath $replicationSummary -Encoding utf8
+          go run ./cmd/ariadne browser fixture replicate verify --json $replication
+          $replicationText = Get-Content -Raw -LiteralPath $replicationSummary
+          if ($replicationText -notmatch '"outcome"\s*:\s*"unknown"' -or $replicationText -notmatch '"evidence_state"\s*:\s*"unknown"') {
+            throw 'browser fixture replication did not preserve partial evidence as unknown'
+          }
+          $replicationFiles = @(Get-ChildItem -LiteralPath $replication -Recurse -File)
+          foreach ($file in $replicationFiles) {
+            $fileContent = Get-Content -Raw -LiteralPath $file.FullName
+            if ($fileContent -match 'https://|session_id|consent=|payload') {
+              throw "browser fixture replication exposed source values: $($file.Name)"
+            }
+          }
+          $minimization = Join-Path $env:RUNNER_TEMP 'ariadne-browser-minimization'
+          $minimizationSummary = Join-Path $env:RUNNER_TEMP 'ariadne-browser-minimization-summary.json'
+          go run ./cmd/ariadne browser fixture minimize --json `
+            --plan examples/browser-account-minimize.json `
+            --procedure examples/browser-local-fixture-procedure.json `
+            --driver node `
+            --driver-arg cmd/browser-fixture-driver/browser_fixture_driver.mjs `
+            --driver-arg --browser `
+            --driver-arg $chrome `
+            --pairs 1 `
+            --output $minimization | Out-File -LiteralPath $minimizationSummary -Encoding utf8
+          go run ./cmd/ariadne browser fixture minimize verify --json $minimization
+          $minimizationText = Get-Content -Raw -LiteralPath $minimizationSummary
+          if ($minimizationText -notmatch '"plan_name"\s*:\s*"browser-account-minimize"' -or $minimizationText -notmatch '"candidate_results"') {
+            throw 'browser fixture minimization summary is incomplete'
+          }
+          $minimizationRound = Join-Path $env:RUNNER_TEMP 'ariadne-browser-minimization-round.json'
+          $minimizationRoundSummary = Join-Path $env:RUNNER_TEMP 'ariadne-browser-minimization-round-summary.json'
+          $minimizationReceipt = Join-Path $env:RUNNER_TEMP 'ariadne-browser-minimization-receipt.json'
+          $minimizationReceiptSummary = Join-Path $env:RUNNER_TEMP 'ariadne-browser-minimization-receipt-summary.json'
+          go run ./cmd/ariadne browser fixture minimize questions --json
+          go run ./cmd/ariadne browser fixture minimize ask all save --json $minimization $minimizationRound | Out-File -LiteralPath $minimizationRoundSummary -Encoding utf8
+          go run ./cmd/ariadne browser fixture minimize ask all verify --json $minimizationRound
+          $roundObject = Get-Content -Raw -LiteralPath $minimizationRoundSummary | ConvertFrom-Json
+          if ($roundObject.questions -ne 2 -or -not $roundObject.round_sha256) {
+            throw 'browser fixture minimization question round is incomplete'
+          }
+          go run ./cmd/ariadne browser fixture minimize ask receipt save --json $minimizationRound minimum-tested-selection $minimizationReceipt | Out-File -LiteralPath $minimizationReceiptSummary -Encoding utf8
+          go run ./cmd/ariadne browser fixture minimize ask receipt verify --json $minimizationReceipt
+          $receiptObject = Get-Content -Raw -LiteralPath $minimizationReceiptSummary | ConvertFrom-Json
+          if ($receiptObject.question_id -ne 'minimum-tested-selection' -or -not $receiptObject.receipt_sha256) {
+            throw 'browser fixture minimization question receipt is incomplete'
+          }
+          foreach ($artifact in @($minimizationRound, $minimizationReceipt)) {
+            $artifactContent = Get-Content -Raw -LiteralPath $artifact
+            if ($artifactContent -match 'https://|account-value|candidate-001-omitted|chrome.exe|Program Files|session_id|consent=|payload') {
+              throw "browser fixture minimization question artifact exposed source values: $artifact"
+            }
+          }
+          $minimizationFiles = @(Get-ChildItem -LiteralPath $minimization -Recurse -File)
+          foreach ($file in $minimizationFiles) {
+            $fileContent = Get-Content -Raw -LiteralPath $file.FullName
+            if ($fileContent -match 'https://|session_id|account_id|consent=|payload') {
+              throw "browser fixture minimization exposed source values: $($file.Name)"
+            }
+          }
+          $archiveRoot = Join-Path $env:RUNNER_TEMP 'ariadne-browser-review-archive'
+          New-Item -ItemType Directory -Path $archiveRoot -Force | Out-Null
+          $ariadne = Join-Path $env:RUNNER_TEMP 'ariadne.exe'
+          go build -o $ariadne ./cmd/ariadne
+          $serverOut = Join-Path $env:RUNNER_TEMP 'ariadne-browser-review.out'
+          $serverErr = Join-Path $env:RUNNER_TEMP 'ariadne-browser-review.err'
+          $server = Start-Process -FilePath $ariadne -ArgumentList @('experiment', 'serve', '--addr', '127.0.0.1:8788', '--minimization', $minimization, '--minimization-round', $minimizationRound, '--minimization-receipt', $minimizationReceipt, $archiveRoot) -RedirectStandardOutput $serverOut -RedirectStandardError $serverErr -PassThru -WindowStyle Hidden
+          try {
+            $response = $null
+            for ($attempt = 0; $attempt -lt 30; $attempt++) {
+              Start-Sleep -Seconds 1
+              try {
+                $response = Invoke-WebRequest -Uri 'http://127.0.0.1:8788/minimization' -UseBasicParsing -TimeoutSec 5
+                break
+              } catch {
+              }
+            }
+            if (-not $response) {
+              throw 'browser minimization review server did not respond'
+            }
+            if ($response.StatusCode -ne 200) {
+              throw "browser minimization review returned status $($response.StatusCode)"
+            }
+            $review = $response.Content
+            foreach ($required in @('browser-local-fixture', 'procedure SHA-256', 'account-id', 'unknown', 'raw-value-free', 'Fixed minimization questions', 'minimum-tested-selection', 'Selected question receipt', 'saved and verified')) {
+              if ($review -notmatch [regex]::Escape($required)) {
+                throw "browser minimization review omitted $required"
+              }
+            }
+            if ($review -match 'https://|account-value|candidate-001-omitted|chrome\.exe|Program Files') {
+              throw 'browser minimization review exposed source-specific values'
+            }
+            $post = Invoke-WebRequest -Method Post -Uri 'http://127.0.0.1:8788/minimization' -UseBasicParsing -SkipHttpErrorCheck
+            if ($post.StatusCode -ne 405 -or $post.Headers['Allow'] -ne 'GET') {
+              throw 'browser minimization review was not GET-only'
+            }
+          } finally {
+            if ($null -ne $server) {
+              $server.Refresh()
+              if (-not $server.HasExited) {
+                Stop-Process -Id $server.Id -Force
+              }
+            }
+          }
+          $profiles = @(Get-ChildItem -LiteralPath $env:TEMP -Directory -Filter 'ariadne-browser-fixture-*' -ErrorAction SilentlyContinue)
+          if ($profiles.Count -ne 0) {
+            throw "temporary browser profiles remain: $($profiles.FullName -join ', ')"
+          }

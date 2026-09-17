@@ -1,10 +1,12 @@
 package bundle
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,7 +14,9 @@ import (
 	"time"
 
 	"github.com/jackkayser2005/ariadne/internal/adb"
+	"github.com/jackkayser2005/ariadne/internal/analysis"
 	"github.com/jackkayser2005/ariadne/internal/collector"
+	evidencestate "github.com/jackkayser2005/ariadne/internal/evidence"
 )
 
 const (
@@ -29,7 +33,22 @@ func TestWrite(t *testing.T) {
 	}
 	if summary.ManifestName != "experiment-001-email" ||
 		summary.Differences != 1 ||
-		summary.Unknowns != 0 {
+		summary.Unknowns != 0 ||
+		summary.Question != "Did changing email influence an observed output?" ||
+		summary.AnswerState != evidencestate.Observed ||
+		summary.ManifestContractSHA256 != strings.Repeat("c", 64) ||
+		summary.AriadneRevision != strings.Repeat("b", 40) ||
+		summary.RecordedAt != "2026-07-25T12:00:00Z" ||
+		summary.TargetPackage != "dev.ariadne.fixture" ||
+		summary.TargetAndroidAPI != 35 ||
+		summary.TargetArchitecture != "x86_64" ||
+		summary.TargetPackageVersionCode != 1 ||
+		summary.TargetPackageSHA256 != strings.Repeat("a", 64) ||
+		len(summary.Normalizations) != 3 ||
+		summary.Normalizations[0] != "decoded network body_base64" ||
+		summary.Normalizations[1] != "required storage and network payload equality per session" ||
+		summary.Normalizations[2] != "removed HTTP transport fields from semantic comparison" ||
+		summary.AriadneModified {
 		t.Fatalf("Write() = %#v", summary)
 	}
 
@@ -41,17 +60,22 @@ func TestWrite(t *testing.T) {
 	if err := json.Unmarshal(evidence, &document); err != nil {
 		t.Fatal(err)
 	}
-	if document.SchemaVersion != 3 ||
-		document.Comparison.SchemaVersion != 2 ||
+	if document.SchemaVersion != 7 ||
+		document.Question != "Did changing email influence an observed output?" ||
+		document.AnswerState != evidencestate.Observed ||
+		document.Comparison.SchemaVersion != 5 ||
 		len(document.Artifacts) != 6 ||
 		len(document.Comparison.Differences) != 1 ||
 		len(document.Comparison.Unknowns) != 0 ||
 		document.Comparison.Differences[0].Field != "variant" ||
+		document.Comparison.Differences[0].Kind != "changed" ||
+		!strings.HasPrefix(document.Comparison.Differences[0].ID, "sha256:") ||
 		document.Target.AndroidAPI != 35 ||
 		document.Target.Architecture != "x86_64" ||
 		document.Target.PackageVersionCode != 1 ||
 		document.Target.PackageSHA256 != strings.Repeat("a", 64) ||
-		document.Target.AriadneRevision != strings.Repeat("b", 40) {
+		document.Target.AriadneRevision != strings.Repeat("b", 40) ||
+		document.ManifestContractSHA256 != strings.Repeat("c", 64) {
 		t.Fatalf("evidence = %#v", document)
 	}
 
@@ -65,6 +89,8 @@ func TestWrite(t *testing.T) {
 		"Observed differences: 1",
 		"Unknown conclusions: 0",
 		"<code>variant</code>",
+		"Finding ID: <code>sha256:",
+		"Kind: <code>changed</code>",
 		"<code>standard</code>",
 		"<code>personalized</code>",
 		"Verified artifacts: 6",
@@ -74,6 +100,9 @@ func TestWrite(t *testing.T) {
 		"Package SHA-256: <code>" + strings.Repeat("a", 64) + "</code>",
 		"Ariadne revision: <code>" + strings.Repeat("b", 40) + "</code>",
 		"Ariadne modified: false",
+		"Manifest contract SHA-256: <code>",
+		"Question: <code>Did changing email influence an observed output?</code>",
+		"Answer state: <code>observed</code>",
 	} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("report missing %q:\n%s", expected, text)
@@ -86,11 +115,916 @@ func TestWrite(t *testing.T) {
 	}
 }
 
+func TestExportIsVerifiedAndRawValueFree(t *testing.T) {
+	runDir := makeRun(t, runOptions{})
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+	exportPath := filepath.Join(t.TempDir(), "redacted.json")
+
+	summary, err := Export(runDir, exportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence, err := os.ReadFile(filepath.Join(runDir, "evidence.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(evidence)
+	wantDigest := hex.EncodeToString(sum[:])
+	if summary.SourceEvidenceSHA256 != wantDigest {
+		t.Fatalf("Export() digest = %q, want %q", summary.SourceEvidenceSHA256, wantDigest)
+	}
+	verification, err := VerifyExport(exportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verification.SchemaVersion != 1 || verification.SourceEvidenceSHA256 != wantDigest {
+		t.Fatalf("VerifyExport() = %#v", verification)
+	}
+
+	exportData, err := os.ReadFile(exportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var exported redactedDocument
+	if err := json.Unmarshal(exportData, &exported); err != nil {
+		t.Fatal(err)
+	}
+	canonicalExport, err := json.Marshal(exported)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exportSum := sha256.Sum256(canonicalExport)
+	wantExportDigest := hex.EncodeToString(exportSum[:])
+	if summary.ExportSHA256 != wantExportDigest || verification.ExportSHA256 != wantExportDigest {
+		t.Fatalf("export identity = %q, %q, want %q", summary.ExportSHA256, verification.ExportSHA256, wantExportDigest)
+	}
+	if !exported.Redacted ||
+		exported.SchemaVersion != 1 ||
+		exported.SourceEvidenceSchemaVersion != 7 ||
+		exported.SourceEvidenceSHA256 != wantDigest ||
+		exported.ManifestName != "experiment-001-email" ||
+		exported.Question != "Did changing email influence an observed output?" ||
+		exported.Target.Package != "dev.ariadne.fixture" ||
+		exported.Target.AndroidAPI != 35 ||
+		exported.Target.Architecture != "x86_64" ||
+		exported.Comparison.SchemaVersion != 5 ||
+		len(exported.Comparison.Differences) != 1 ||
+		exported.Comparison.Differences[0].Field != "variant" ||
+		exported.Comparison.Differences[0].Kind != "changed" ||
+		exported.Comparison.Differences[0].ID == "" ||
+		len(exported.Comparison.Differences[0].Evidence) != 4 ||
+		len(exported.Artifacts) != 6 {
+		t.Fatalf("export = %#v", exported)
+	}
+	if exported.Comparison.Differences[0].State != evidencestate.Observed {
+		t.Fatalf("export difference state = %q", exported.Comparison.Differences[0].State)
+	}
+	raw := string(exportData)
+	for _, secret := range []string{
+		"standard",
+		"personalized",
+		"emulator-5554",
+		"1.0.41",
+	} {
+		if strings.Contains(raw, secret) {
+			t.Fatalf("export exposed redacted value %q: %s", secret, raw)
+		}
+	}
+	if err := os.WriteFile(exportPath, canonicalExport, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	formattedVerification, err := VerifyExport(exportPath)
+	if err != nil || formattedVerification.ExportSHA256 != wantExportDigest {
+		t.Fatalf("VerifyExport() formatted content = %#v, error = %v", formattedVerification, err)
+	}
+
+	if _, err := Export(runDir, exportPath); err == nil || !errors.Is(err, os.ErrExist) {
+		t.Fatalf("second Export() error = %v", err)
+	}
+}
+
+func TestExportSupportsLegacyBundles(t *testing.T) {
+	runDir := makeRun(t, runOptions{sessionSchemaVersion: 4})
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+	exportPath := filepath.Join(t.TempDir(), "legacy-redacted.json")
+	if _, err := Export(runDir, exportPath); err != nil {
+		t.Fatal(err)
+	}
+
+	exportData, err := os.ReadFile(exportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var exported redactedDocument
+	if err := json.Unmarshal(exportData, &exported); err != nil {
+		t.Fatal(err)
+	}
+	if !exported.Redacted || exported.SourceEvidenceSchemaVersion != 4 ||
+		exported.Comparison.Differences[0].ID != "" {
+		t.Fatalf("legacy export = %#v", exported)
+	}
+	if _, err := VerifyExport(exportPath); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestVerifyExportSupportsUnknowns(t *testing.T) {
+	runDir := makeStorageFailureRun(t, treatmentObservation)
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+	exportPath := filepath.Join(t.TempDir(), "unknown-redacted.json")
+	if _, err := Export(runDir, exportPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyExport(exportPath); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAskExportUsesOnlyEmbeddedCounterfactualAnswer(t *testing.T) {
+	runDir := makeRun(t, runOptions{})
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+	exportPath := filepath.Join(t.TempDir(), "redacted.json")
+	exportSummary, err := Export(runDir, exportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	answer, err := AskExport(exportPath, "counterfactual-change")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if answer.QuestionID != "counterfactual-change" ||
+		answer.Question != "Did changing the declared variable influence an observed output?" ||
+		answer.State != evidencestate.Observed ||
+		answer.Reason != "" ||
+		len(answer.FindingIDs) != 1 ||
+		!validFindingID(answer.FindingIDs[0]) ||
+		answer.SourceEvidenceSHA256 != exportSummary.SourceEvidenceSHA256 ||
+		answer.ExportSHA256 != exportSummary.ExportSHA256 {
+		t.Fatalf("AskExport() = %#v", answer)
+	}
+	if strings.Contains(answer.Question, "email") {
+		t.Fatalf("AskExport() exposed source-specific wording: %#v", answer)
+	}
+	finding, err := FindExport(exportPath, answer.FindingIDs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if finding.Question != answer.Question ||
+		finding.AnswerState != answer.State ||
+		finding.Kind != "difference" ||
+		finding.Classification != "changed" ||
+		finding.ID != answer.FindingIDs[0] ||
+		finding.Field != "variant" ||
+		finding.State != evidencestate.Observed ||
+		len(finding.Evidence) != 4 ||
+		finding.SourceEvidenceSHA256 != exportSummary.SourceEvidenceSHA256 ||
+		finding.ExportSHA256 != exportSummary.ExportSHA256 {
+		t.Fatalf("FindExport() = %#v", finding)
+	}
+
+	if _, err := AskExport(exportPath, "capture-complete"); err == nil ||
+		!strings.Contains(err.Error(), "cannot answer this question") {
+		t.Fatalf("AskExport() unsupported question error = %v", err)
+	}
+	if _, err := AskExport(exportPath, "not-a-question"); err == nil ||
+		!strings.Contains(err.Error(), "question ID is invalid") {
+		t.Fatalf("AskExport() invalid question error = %v", err)
+	}
+}
+
+func TestAskExportPreservesBoundedUnknownAndRejectsLegacyAnswer(t *testing.T) {
+	unknownRun := makeStorageFailureRun(t, "")
+	if _, err := Write(unknownRun); err != nil {
+		t.Fatal(err)
+	}
+	unknownExport := filepath.Join(t.TempDir(), "unknown-redacted.json")
+	if _, err := Export(unknownRun, unknownExport); err != nil {
+		t.Fatal(err)
+	}
+	answer, err := AskExport(unknownExport, "counterfactual-change")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if answer.State != evidencestate.Unknown ||
+		answer.Reason != treatmentStorageObservationUnknownReason ||
+		len(answer.FindingIDs) != 2 {
+		t.Fatalf("AskExport() unknown = %#v", answer)
+	}
+	unknownFinding, err := FindExport(unknownExport, answer.FindingIDs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unknownFinding.Kind != "unknown" ||
+		unknownFinding.AnswerState != evidencestate.Unknown ||
+		unknownFinding.State != evidencestate.Unknown ||
+		unknownFinding.Reason != treatmentStorageObservationUnknownReason {
+		t.Fatalf("FindExport() unknown = %#v", unknownFinding)
+	}
+
+	legacyRun := makeRun(t, runOptions{sessionSchemaVersion: 4})
+	if _, err := Write(legacyRun); err != nil {
+		t.Fatal(err)
+	}
+	legacyExport := filepath.Join(t.TempDir(), "legacy-redacted.json")
+	if _, err := Export(legacyRun, legacyExport); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AskExport(legacyExport, "counterfactual-change"); err == nil ||
+		!strings.Contains(err.Error(), "has no counterfactual answer") {
+		t.Fatalf("AskExport() legacy error = %v", err)
+	}
+}
+
+func TestVerifyExportRejectsInvalidEnvelope(t *testing.T) {
+	runDir := makeRun(t, runOptions{})
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+	exportPath := filepath.Join(t.TempDir(), "invalid-redacted.json")
+	if _, err := Export(runDir, exportPath); err != nil {
+		t.Fatal(err)
+	}
+	valid, err := os.ReadFile(exportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var validExport redactedDocument
+	if err := json.Unmarshal(valid, &validExport); err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name string
+		data string
+		want string
+	}{
+		{name: "malformed JSON", data: "{", want: "invalid JSON"},
+		{name: "trailing data", data: string(valid) + "{}", want: "trailing data"},
+		{
+			name: "duplicate key",
+			data: strings.Replace(
+				string(valid),
+				"{\n  \"schema_version\": 1,",
+				"{\n  \"schema_version\": 1,\n  \"schema_version\": 1,",
+				1,
+			),
+			want: "duplicate key",
+		},
+		{
+			name: "unknown key",
+			data: strings.Replace(
+				string(valid),
+				"{\n  \"schema_version\": 1,",
+				"{\n  \"extra\": true,\n  \"schema_version\": 1,",
+				1,
+			),
+			want: "unknown field",
+		},
+		{
+			name: "unsupported export schema",
+			data: strings.Replace(string(valid), `"schema_version": 1`, `"schema_version": 2`, 1),
+			want: "unsupported schema_version",
+		},
+		{
+			name: "missing redacted marker",
+			data: strings.Replace(string(valid), `"redacted": true`, `"redacted": false`, 1),
+			want: "redacted marker",
+		},
+		{
+			name: "invalid source digest",
+			data: strings.Replace(string(valid), validExport.SourceEvidenceSHA256, "bad", 1),
+			want: "source_evidence_sha256",
+		},
+		{
+			name: "unsupported source schema",
+			data: strings.Replace(string(valid), `"source_evidence_schema_version": 7`, `"source_evidence_schema_version": 99`, 1),
+			want: "source_evidence_schema_version",
+		},
+		{
+			name: "incompatible current comparison schema",
+			data: strings.Replace(string(valid), `"schema_version": 5`, `"schema_version": 4`, 1),
+			want: "comparison schema_version",
+		},
+		{
+			name: "incompatible legacy comparison schema",
+			data: strings.Replace(string(valid), `"source_evidence_schema_version": 7`, `"source_evidence_schema_version": 6`, 1),
+			want: "comparison schema_version",
+		},
+		{
+			name: "invalid finding ID",
+			data: strings.Replace(string(valid), "sha256:", "finding:", 1),
+			want: "difference is invalid",
+		},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			if err := os.WriteFile(exportPath, []byte(test.data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := VerifyExport(exportPath); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("VerifyExport() error = %v, want %q", err, test.want)
+			}
+			if err := os.WriteFile(exportPath, valid, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestVerifyExportRejectsInvalidFields(t *testing.T) {
+	runDir := makeRun(t, runOptions{})
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+	exportPath := filepath.Join(t.TempDir(), "invalid-fields.json")
+	if _, err := Export(runDir, exportPath); err != nil {
+		t.Fatal(err)
+	}
+	valid, err := os.ReadFile(exportPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	validText := string(valid)
+	sizeStart := strings.Index(validText, `"size_bytes": `)
+	if sizeStart < 0 {
+		t.Fatal("export did not contain artifact size")
+	}
+	sizeEnd := strings.Index(validText[sizeStart:], ",")
+	if sizeEnd < 0 {
+		t.Fatal("export artifact size was not terminated")
+	}
+	artifactSize := validText[sizeStart : sizeStart+sizeEnd]
+	cases := []struct {
+		name    string
+		replace string
+		with    string
+		want    string
+	}{
+		{name: "manifest metadata", replace: `"manifest_name": "experiment-001-email"`, with: `"manifest_name": ""`, want: "manifest metadata"},
+		{name: "contract digest", replace: `"manifest_contract_sha256": "` + strings.Repeat("c", 64) + `"`, with: `"manifest_contract_sha256": "bad"`, want: "manifest_contract_sha256"},
+		{name: "answer state", replace: `"answer_state": "observed"`, with: `"answer_state": "not-a-state"`, want: "answer_state"},
+		{name: "target metadata", replace: `"android_api": 35`, with: `"android_api": 0`, want: "target metadata"},
+		{name: "artifact metadata", replace: artifactSize, with: `"size_bytes": -1`, want: "artifact metadata"},
+		{name: "comparison schema", replace: `"schema_version": 5`, with: `"schema_version": 3`, want: "comparison schema_version"},
+		{name: "comparison field", replace: `"field": "variant"`, with: `"field": "bad field"`, want: "comparison field"},
+		{name: "difference kind", replace: `"kind": "changed"`, with: `"kind": "other"`, want: "difference is invalid"},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			data := strings.Replace(string(valid), test.replace, test.with, 1)
+			if data == string(valid) {
+				t.Fatalf("test replacement did not match: %q", test.replace)
+			}
+			if err := os.WriteFile(exportPath, []byte(data), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := VerifyExport(exportPath); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("VerifyExport() error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestExportFailsClosedBeforeWriting(t *testing.T) {
+	runDir := makeRun(t, runOptions{})
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+	evidencePath := filepath.Join(runDir, "evidence.json")
+	evidence, err := os.ReadFile(evidencePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence = append(evidence, '\n')
+	if err := os.WriteFile(evidencePath, evidence, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	exportPath := filepath.Join(t.TempDir(), "should-not-exist.json")
+	if _, err := Export(runDir, exportPath); err == nil ||
+		!strings.Contains(err.Error(), "does not match verified artifacts") {
+		t.Fatalf("Export() error = %v", err)
+	}
+	if _, err := os.Stat(exportPath); !os.IsNotExist(err) {
+		t.Fatalf("export path stat error = %v", err)
+	}
+}
+
+func TestRedactedComparisonHidesUntrustedUnknownReasons(t *testing.T) {
+	comparison := redactedComparisonFor(analysis.Comparison{
+		Unknowns: []analysis.Unknown{{
+			Reason:   "untrusted reason",
+			Evidence: []string{"baseline/observations/network.json#/region"},
+		}},
+	})
+	if comparison.Unknowns[0].Reason != "" {
+		t.Fatalf("redacted reason = %q", comparison.Unknowns[0].Reason)
+	}
+}
+
+func TestFindingIDsAreDigestBacked(t *testing.T) {
+	artifacts := []artifact{
+		{Path: "baseline/observations/storage.json", SHA256: strings.Repeat("a", 64)},
+		{Path: "treatment/observations/storage.json", SHA256: strings.Repeat("b", 64)},
+	}
+	comparison := analysis.Comparison{
+		Differences: []analysis.Difference{{
+			Field:     "variant",
+			Kind:      "changed",
+			Baseline:  "standard",
+			Treatment: "personalized",
+			State:     evidencestate.Observed,
+			Evidence: []string{
+				"baseline/observations/storage.json#/variant",
+				"treatment/observations/storage.json#/variant",
+			},
+		}},
+		Unknowns: []analysis.Unknown{{
+			Field:    "region",
+			State:    evidencestate.Unknown,
+			Reason:   "capture gap",
+			Evidence: []string{"baseline/observations/storage.json#/region"},
+		}},
+	}
+	if err := assignFindingIDs(&comparison, artifacts); err != nil {
+		t.Fatal(err)
+	}
+	differenceID := comparison.Differences[0].ID
+	unknownID := comparison.Unknowns[0].ID
+	if differenceID == "" || unknownID == "" || differenceID == unknownID {
+		t.Fatalf("finding IDs = %q, %q", differenceID, unknownID)
+	}
+	if strings.Contains(differenceID, "standard") || strings.Contains(differenceID, "personalized") {
+		t.Fatalf("difference ID exposed an observed value: %q", differenceID)
+	}
+
+	comparison.Differences[0].Baseline = "changed-value"
+	comparison.Differences[0].Treatment = "another-value"
+	if err := assignFindingIDs(&comparison, artifacts); err != nil {
+		t.Fatal(err)
+	}
+	if comparison.Differences[0].ID != differenceID {
+		t.Fatalf("value-only change changed ID: %q != %q", comparison.Differences[0].ID, differenceID)
+	}
+	artifacts[0].SHA256 = strings.Repeat("c", 64)
+	if err := assignFindingIDs(&comparison, artifacts); err != nil {
+		t.Fatal(err)
+	}
+	if comparison.Differences[0].ID == differenceID {
+		t.Fatal("artifact digest change did not change finding ID")
+	}
+}
+
+func TestFindingIDsRejectMissingSources(t *testing.T) {
+	comparison := analysis.Comparison{
+		Differences: []analysis.Difference{{
+			Field:    "variant",
+			Kind:     "changed",
+			State:    evidencestate.Observed,
+			Evidence: []string{"baseline/observations/missing.json#/variant"},
+		}},
+	}
+	if err := assignFindingIDs(&comparison, nil); err == nil || !strings.Contains(err.Error(), "missing artifact") {
+		t.Fatalf("assignFindingIDs() error = %v", err)
+	}
+}
+
+func TestVerifyPreservesOutputs(t *testing.T) {
+	runDir := makeRun(t, runOptions{})
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+	evidenceBefore, err := os.ReadFile(filepath.Join(runDir, "evidence.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportBefore, err := os.ReadFile(filepath.Join(runDir, "report.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary, err := Verify(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidenceDigest := sha256.Sum256(evidenceBefore)
+	if summary.Differences != 1 || summary.Unknowns != 0 || summary.EvidenceSHA256 != hex.EncodeToString(evidenceDigest[:]) {
+		t.Fatalf("Verify() = %#v", summary)
+	}
+	evidenceAfter, err := os.ReadFile(filepath.Join(runDir, "evidence.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportAfter, err := os.ReadFile(filepath.Join(runDir, "report.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(evidenceBefore, evidenceAfter) || !bytes.Equal(reportBefore, reportAfter) {
+		t.Fatal("Verify() changed existing outputs")
+	}
+}
+
+func TestVerifyRequiresRunDirectory(t *testing.T) {
+	_, err := Verify(" \t")
+	if err == nil || !strings.Contains(err.Error(), "run directory is required") {
+		t.Fatalf("Verify() error = %v", err)
+	}
+}
+
+func TestVerifyAcceptsLegacyEvidenceSchemas(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		options        runOptions
+		evidenceSchema int
+	}{
+		{name: "schema-4", options: runOptions{sessionSchemaVersion: 2}, evidenceSchema: 4},
+		{name: "schema-6", options: runOptions{}, evidenceSchema: 6},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			runDir := makeRun(t, test.options)
+			document, _, err := buildDocument(runDir, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			evidenceData, err := encodeDocument(document)
+			if err != nil {
+				t.Fatal(err)
+			}
+			reportData, err := encodeReport(document)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := writeOutputs(runDir, evidenceData, reportData); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Verify(runDir); err != nil {
+				t.Fatal(err)
+			}
+			if document.SchemaVersion != test.evidenceSchema || document.Comparison.SchemaVersion != 4 {
+				t.Fatalf("legacy document = %#v", document)
+			}
+			if len(document.Comparison.Differences) != 1 || document.Comparison.Differences[0].ID != "" {
+				t.Fatalf("legacy findings = %#v", document.Comparison.Differences)
+			}
+		})
+	}
+}
+
+func TestVerifyRejectsUnsupportedEvidenceSchema(t *testing.T) {
+	runDir := makeRun(t, runOptions{})
+	if err := os.WriteFile(filepath.Join(runDir, "evidence.json"), []byte("{\"schema_version\":8}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Verify(runDir)
+	if err == nil || !strings.Contains(err.Error(), "unsupported schema_version") {
+		t.Fatalf("Verify() error = %v", err)
+	}
+}
+
+func TestFindReturnsSafeDifference(t *testing.T) {
+	runDir := makeRun(t, runOptions{})
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(runDir, "evidence.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document document
+	if err := json.Unmarshal(data, &document); err != nil {
+		t.Fatal(err)
+	}
+	evidenceBefore, err := os.ReadFile(filepath.Join(runDir, "evidence.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportBefore, err := os.ReadFile(filepath.Join(runDir, "report.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	finding, err := Find(runDir, document.Comparison.Differences[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if finding.Question != document.Question ||
+		finding.AnswerState != evidencestate.Observed ||
+		finding.Kind != "difference" ||
+		finding.Classification != "changed" ||
+		finding.Field != "variant" ||
+		finding.State != evidencestate.Observed ||
+		len(finding.Evidence) != 4 {
+		t.Fatalf("Find() = %#v", finding)
+	}
+	if strings.Contains(strings.Join(finding.Evidence, " "), "standard") ||
+		strings.Contains(strings.Join(finding.Evidence, " "), "personalized") {
+		t.Fatalf("Find() exposed observed values: %#v", finding)
+	}
+	evidenceAfter, err := os.ReadFile(filepath.Join(runDir, "evidence.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportAfter, err := os.ReadFile(filepath.Join(runDir, "report.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(evidenceBefore, evidenceAfter) || !bytes.Equal(reportBefore, reportAfter) {
+		t.Fatal("Find() changed outputs")
+	}
+}
+
+func TestFindReturnsSafeUnknown(t *testing.T) {
+	runDir := makeStorageFailureRun(t, "")
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(runDir, "evidence.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document document
+	if err := json.Unmarshal(data, &document); err != nil {
+		t.Fatal(err)
+	}
+	finding, err := Find(runDir, document.Comparison.Unknowns[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if finding.AnswerState != evidencestate.Unknown ||
+		finding.Kind != "unknown" ||
+		finding.Classification != "" ||
+		finding.State != evidencestate.Unknown ||
+		finding.Reason != treatmentStorageObservationUnknownReason ||
+		len(finding.Evidence) != 3 {
+		t.Fatalf("Find() = %#v", finding)
+	}
+}
+
+func TestSafeUnknownReasonIsVerifierOwned(t *testing.T) {
+	if got := safeUnknownReason("capture gap"); got != "" {
+		t.Fatalf("safeUnknownReason(untrusted) = %q", got)
+	}
+	if got := safeUnknownReason(treatmentStorageObservationUnknownReason); got != treatmentStorageObservationUnknownReason {
+		t.Fatalf("safeUnknownReason(known) = %q", got)
+	}
+}
+
+func TestFindRejectsInvalidOrUnknownID(t *testing.T) {
+	runDir := makeRun(t, runOptions{})
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Find(runDir, "not-a-finding-id"); err == nil || !strings.Contains(err.Error(), "ID is invalid") {
+		t.Fatalf("Find() invalid ID error = %v", err)
+	}
+	if _, err := Find(runDir, "sha256:"+strings.Repeat("f", 64)); err == nil || !strings.Contains(err.Error(), "finding not found") {
+		t.Fatalf("Find() unknown ID error = %v", err)
+	}
+}
+
+func TestFindRejectsTamperedArtifact(t *testing.T) {
+	runDir := makeRun(t, runOptions{})
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(runDir, "evidence.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document document
+	if err := json.Unmarshal(data, &document); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "baseline", "observations", "storage.json"), []byte(`{"tampered":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = Find(runDir, document.Comparison.Differences[0].ID)
+	if err == nil || !strings.Contains(err.Error(), "integrity check failed") {
+		t.Fatalf("Find() tamper error = %v", err)
+	}
+}
+
+func TestQuestions(t *testing.T) {
+	want := []Question{
+		{ID: "counterfactual-change", Text: "Did changing the declared variable influence an observed output?"},
+		{ID: "capture-complete", Text: "Were all required observations captured for both sessions?"},
+		{ID: "source-integrity", Text: "Do the verified findings still match their source artifacts?"},
+	}
+	got := Questions()
+	if len(got) != len(want) {
+		t.Fatalf("Questions() length = %d, want %d", len(got), len(want))
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("Questions()[%d] = %#v, want %#v", index, got[index], want[index])
+		}
+	}
+}
+
+func TestAskQuestionCatalog(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		makeRun        func(*testing.T) string
+		wantState      evidencestate.State
+		wantReason     string
+		wantFindingIDs int
+	}{
+		{
+			name:           "complete",
+			makeRun:        func(t *testing.T) string { return makeRun(t, runOptions{}) },
+			wantState:      evidencestate.Observed,
+			wantFindingIDs: 1,
+		},
+		{
+			name: "storage gap",
+			makeRun: func(t *testing.T) string {
+				return makeStorageFailureRun(t, "")
+			},
+			wantState:      evidencestate.Unknown,
+			wantReason:     treatmentStorageObservationUnknownReason,
+			wantFindingIDs: 2,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			runDir := test.makeRun(t)
+			if _, err := Write(runDir); err != nil {
+				t.Fatal(err)
+			}
+			for _, question := range Questions() {
+				questionID := question.ID
+				answer, err := Ask(runDir, questionID)
+				if err != nil {
+					t.Fatalf("Ask(%q): %v", questionID, err)
+				}
+				wantState := test.wantState
+				if questionID == "source-integrity" {
+					wantState = evidencestate.Observed
+				}
+				wantReason := test.wantReason
+				if questionID == "source-integrity" {
+					wantReason = ""
+				}
+				if answer.QuestionID != questionID ||
+					answer.Question != question.Text ||
+					answer.State != wantState ||
+					answer.Reason != wantReason ||
+					len(answer.FindingIDs) != test.wantFindingIDs {
+					t.Fatalf("Ask(%q) = %#v", questionID, answer)
+				}
+				if strings.Contains(answer.Question, "standard") ||
+					strings.Contains(answer.Question, "personalized") {
+					t.Fatalf("Ask(%q) exposed observed value: %#v", questionID, answer)
+				}
+				for _, id := range answer.FindingIDs {
+					if !validFindingID(id) {
+						t.Fatalf("Ask(%q) finding ID = %q", questionID, id)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestAskRejectsInvalidOrTamperedBundles(t *testing.T) {
+	runDir := makeRun(t, runOptions{})
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Ask(runDir, "not-a-question"); err == nil || !strings.Contains(err.Error(), "question ID is invalid") {
+		t.Fatalf("Ask() invalid question error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(runDir, "baseline", "observations", "storage.json"), []byte(`{"tampered":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Ask(runDir, "counterfactual-change")
+	if err == nil || !strings.Contains(err.Error(), "integrity check failed") {
+		t.Fatalf("Ask() tamper error = %v", err)
+	}
+}
+
+func TestVerifyRejectsTamperedArtifact(t *testing.T) {
+	runDir := makeRun(t, runOptions{})
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+	evidenceBefore, err := os.ReadFile(filepath.Join(runDir, "evidence.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportBefore, err := os.ReadFile(filepath.Join(runDir, "report.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(runDir, "baseline", "observations", "storage.json")
+	if err := os.WriteFile(path, []byte(`{"tampered":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = Verify(runDir)
+	if err == nil || !strings.Contains(err.Error(), "integrity check failed") {
+		t.Fatalf("Verify() error = %v", err)
+	}
+	evidenceAfter, err := os.ReadFile(filepath.Join(runDir, "evidence.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportAfter, err := os.ReadFile(filepath.Join(runDir, "report.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(evidenceBefore, evidenceAfter) || !bytes.Equal(reportBefore, reportAfter) {
+		t.Fatal("Verify() changed outputs after tamper")
+	}
+}
+
+func TestVerifyRejectsModifiedOutputs(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		path string
+		data []byte
+		want string
+	}{
+		{name: "evidence", path: "evidence.json", data: []byte("\n"), want: "evidence output does not match"},
+		{name: "report", path: "report.md", data: []byte("\n"), want: "report output does not match"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			runDir := makeRun(t, runOptions{})
+			if _, err := Write(runDir); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(runDir, test.path)
+			file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := file.Write(test.data); err != nil {
+				_ = file.Close()
+				t.Fatal(err)
+			}
+			if err := file.Close(); err != nil {
+				t.Fatal(err)
+			}
+			_, err = Verify(runDir)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("Verify() error = %v", err)
+			}
+		})
+	}
+}
+
+func TestVerifyRejectsMissingOutputs(t *testing.T) {
+	for _, name := range []string{"evidence.json", "report.md"} {
+		t.Run(name, func(t *testing.T) {
+			runDir := makeRun(t, runOptions{})
+			if _, err := Write(runDir); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Remove(filepath.Join(runDir, name)); err != nil {
+				t.Fatal(err)
+			}
+			_, err := Verify(runDir)
+			if err == nil || !strings.Contains(err.Error(), "output: open") {
+				t.Fatalf("Verify() error = %v", err)
+			}
+		})
+	}
+}
+
+func TestEncodeOutputsRejectOversizedData(t *testing.T) {
+	evidence := document{ManifestName: strings.Repeat("x", maxOutputBytes)}
+	if _, err := encodeDocument(evidence); err == nil || !strings.Contains(err.Error(), "evidence output exceeds") {
+		t.Fatalf("encodeDocument() error = %v", err)
+	}
+	if _, err := encodeReport(evidence); err == nil || !strings.Contains(err.Error(), "report output exceeds") {
+		t.Fatalf("encodeReport() error = %v", err)
+	}
+}
+
 func TestWriteAcceptsLegacySessions(t *testing.T) {
 	runDir := makeRun(t, runOptions{sessionSchemaVersion: 2})
 
-	if _, err := Write(runDir); err != nil {
+	summary, err := Write(runDir)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if summary.Question != "" || summary.AnswerState != "" || summary.ManifestContractSHA256 != "" || summary.RecordedAt != "" {
+		t.Fatalf("legacy summary = %#v", summary)
+	}
+}
+
+func TestWriteAcceptsStableIDSessionsWithoutContract(t *testing.T) {
+	runDir := makeRun(t, runOptions{sessionSchemaVersion: 5})
+
+	summary, err := Write(runDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.Question != "" || summary.AnswerState != "" || summary.ManifestContractSHA256 != "" || summary.RecordedAt != "" {
+		t.Fatalf("stable-ID summary = %#v", summary)
 	}
 }
 
@@ -115,7 +1049,10 @@ func TestWriteIncompleteTreatment(t *testing.T) {
 	if err := json.Unmarshal(data, &document); err != nil {
 		t.Fatal(err)
 	}
-	if document.SchemaVersion != 3 ||
+	if document.SchemaVersion != 7 ||
+		document.Question != "Did changing email influence an observed output?" ||
+		document.AnswerState != evidencestate.Unknown ||
+		document.Comparison.SchemaVersion != 5 ||
 		len(document.Artifacts) != 5 ||
 		len(document.Comparison.UnchangedFields) != 0 ||
 		len(document.Comparison.Differences) != 0 ||
@@ -125,7 +1062,8 @@ func TestWriteIncompleteTreatment(t *testing.T) {
 	for _, unknown := range document.Comparison.Unknowns {
 		if unknown.State != "unknown" ||
 			unknown.Reason != "treatment storage observation was not captured" ||
-			len(unknown.Evidence) != 3 {
+			len(unknown.Evidence) != 3 ||
+			!strings.HasPrefix(unknown.ID, "sha256:") {
 			t.Fatalf("unknown = %#v", unknown)
 		}
 	}
@@ -141,8 +1079,11 @@ func TestWriteIncompleteTreatment(t *testing.T) {
 		"Unknown conclusions: 2",
 		"No counterfactual difference was established.",
 		"## Unknowns",
+		"Finding ID: <code>sha256:",
 		"treatment storage observation was not captured",
 		"No stable fields were established.",
+		"Question: <code>Did changing email influence an observed output?</code>",
+		"Answer state: <code>unknown</code>",
 	} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("report missing %q:\n%s", expected, text)
@@ -163,7 +1104,7 @@ func TestWriteIncompleteTreatmentRejectsInvalidNetwork(t *testing.T) {
 	)
 
 	_, err := Write(runDir)
-	if err == nil || !strings.Contains(err.Error(), `unknown field "extra"`) {
+	if err == nil || !strings.Contains(err.Error(), "observation field value must be a string") {
 		t.Fatalf("Write() error = %v", err)
 	}
 	if strings.Contains(err.Error(), secret) {
@@ -271,6 +1212,28 @@ func TestWriteRejectsInvalidSessions(t *testing.T) {
 			want: "persona_fields",
 		},
 		{
+			name: "volatile fields order",
+			mutate: func(record *adb.SessionRecord) {
+				record.VolatileFields = []string{"timestamp", "request_id"}
+			},
+			want: "not canonical",
+		},
+		{
+			name: "duplicate volatile field",
+			mutate: func(record *adb.SessionRecord) {
+				record.VolatileFields = []string{"request_id", "request_id"}
+			},
+			want: "duplicate field",
+		},
+		{
+			name: "legacy volatile fields",
+			mutate: func(record *adb.SessionRecord) {
+				record.SchemaVersion = 3
+				record.VolatileFields = []string{"request_id"}
+			},
+			want: "legacy session volatile_fields",
+		},
+		{
 			name: "Android API",
 			mutate: func(record *adb.SessionRecord) {
 				record.AndroidAPI = 0
@@ -290,6 +1253,37 @@ func TestWriteRejectsInvalidSessions(t *testing.T) {
 				record.PackageSHA256 = "invalid"
 			},
 			want: "package_sha256",
+		},
+		{
+			name: "manifest contract digest",
+			mutate: func(record *adb.SessionRecord) {
+				record.ManifestContractSHA256 = "invalid"
+			},
+			want: "manifest_contract_sha256",
+		},
+		{
+			name: "legacy UI hierarchy digest",
+			mutate: func(record *adb.SessionRecord) {
+				record.SchemaVersion = 6
+				record.Steps[3].UIHierarchySHA256 = strings.Repeat("d", 64)
+			},
+			want: "legacy session ui_hierarchy_sha256",
+		},
+		{
+			name: "missing UI hierarchy digest",
+			mutate: func(record *adb.SessionRecord) {
+				record.SchemaVersion = 7
+				record.Steps[3].UIHierarchySHA256 = ""
+			},
+			want: "interact UI hierarchy SHA-256",
+		},
+		{
+			name: "legacy manifest contract digest",
+			mutate: func(record *adb.SessionRecord) {
+				record.SchemaVersion = 5
+				record.ManifestContractSHA256 = strings.Repeat("c", 64)
+			},
+			want: "legacy session manifest_contract_sha256",
 		},
 		{
 			name: "Ariadne revision",
@@ -405,7 +1399,10 @@ func TestWriteRejectsMixedSessionSchemas(t *testing.T) {
 	runDir := makeRun(t, runOptions{
 		mutateTreatment: func(record *adb.SessionRecord) {
 			record.SchemaVersion = 2
+			record.TapResourceID = ""
+			record.ManifestContractSHA256 = ""
 			record.Status = ""
+			record.Steps = append(record.Steps[:3], record.Steps[4:]...)
 		},
 	})
 
@@ -431,6 +1428,18 @@ func TestWriteRejectsSessionAndSourceDisagreement(t *testing.T) {
 			name: "package digest",
 			mutate: func(record *adb.SessionRecord) {
 				record.PackageSHA256 = strings.Repeat("c", 64)
+			},
+		},
+		{
+			name: "volatile fields",
+			mutate: func(record *adb.SessionRecord) {
+				record.VolatileFields = []string{"request_id"}
+			},
+		},
+		{
+			name: "manifest contract digest",
+			mutate: func(record *adb.SessionRecord) {
+				record.ManifestContractSHA256 = strings.Repeat("d", 64)
 			},
 		},
 	} {
@@ -465,8 +1474,8 @@ func TestWriteRejectsInvalidSessionJSON(t *testing.T) {
 			change: func(input string) string {
 				return strings.Replace(
 					input,
-					`"schema_version": 3,`,
-					`"schema_version": 3, "schema_version": 3,`,
+					`"schema_version": 7,`,
+					`"schema_version": 7, "schema_version": 7,`,
 					1,
 				)
 			},
@@ -570,10 +1579,67 @@ func TestWriteNoDifferences(t *testing.T) {
 	}
 }
 
+func TestWriteRecordsVolatileFieldNormalization(t *testing.T) {
+	const baseline = `{"schema_version":1,"region":"us-east","request_id":"baseline-id","variant":"standard"}`
+	const treatment = `{"schema_version":1,"region":"us-east","request_id":"treatment-id","variant":"personalized"}`
+	runDir := makeRun(t, runOptions{
+		baselineStorage:      baseline,
+		baselineNetworkBody:  baseline,
+		treatmentStorage:     treatment,
+		treatmentNetworkBody: treatment,
+		volatileFields:       []string{"request_id"},
+	})
+
+	if _, err := Write(runDir); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(runDir, "evidence.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document document
+	if err := json.Unmarshal(data, &document); err != nil {
+		t.Fatal(err)
+	}
+	if len(document.Comparison.Differences) != 1 ||
+		document.Comparison.Differences[0].Field != "variant" ||
+		len(document.Comparison.NormalizedFields) != 1 ||
+		document.Comparison.NormalizedFields[0] != "request_id" {
+		t.Fatalf("comparison = %#v", document.Comparison)
+	}
+	report, err := os.ReadFile(filepath.Join(runDir, "report.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(
+		string(report),
+		"removed declared volatile observation field request_id from comparison",
+	) {
+		t.Fatalf("report = %s", report)
+	}
+	for kind, want := range map[string]string{
+		"baseline":  baseline,
+		"treatment": treatment,
+	} {
+		raw, err := os.ReadFile(
+			filepath.Join(runDir, kind, "observations", "storage.json"),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(raw) != want {
+			t.Fatalf("%s raw observation changed: %s", kind, raw)
+		}
+	}
+}
+
 type runOptions struct {
 	sessionSchemaVersion int
+	baselineStorage      string
+	baselineNetworkBody  string
 	treatmentStorage     string
 	treatmentNetworkBody string
+	volatileFields       []string
 	mutateBaseline       func(*adb.SessionRecord)
 	mutateTreatment      func(*adb.SessionRecord)
 }
@@ -581,8 +1647,13 @@ type runOptions struct {
 func markStorageCaptureFailure(record *adb.SessionRecord) {
 	record.Status = "incomplete"
 	record.FailureStage = "capture_storage"
-	record.Steps[4].Status = "error"
-	record.Steps[4].ExitCode = -1
+	for index := range record.Steps {
+		if record.Steps[index].Name == "capture_storage" {
+			record.Steps[index].Status = "error"
+			record.Steps[index].ExitCode = -1
+			break
+		}
+	}
 	record.Artifacts = record.Artifacts[:1]
 }
 
@@ -604,7 +1675,13 @@ func makeRun(t *testing.T, options runOptions) string {
 	t.Helper()
 	runDir := filepath.Join(t.TempDir(), "run")
 	if options.sessionSchemaVersion == 0 {
-		options.sessionSchemaVersion = 3
+		options.sessionSchemaVersion = 7
+	}
+	if options.baselineStorage == "" {
+		options.baselineStorage = baselineObservation
+	}
+	if options.baselineNetworkBody == "" {
+		options.baselineNetworkBody = baselineObservation
 	}
 	if options.treatmentStorage == "" {
 		options.treatmentStorage = treatmentObservation
@@ -616,8 +1693,9 @@ func makeRun(t *testing.T, options runOptions) string {
 		t,
 		runDir,
 		"baseline",
-		baselineObservation,
-		baselineObservation,
+		options.baselineStorage,
+		options.baselineNetworkBody,
+		options.volatileFields,
 		options.sessionSchemaVersion,
 		options.mutateBaseline,
 	)
@@ -627,6 +1705,7 @@ func makeRun(t *testing.T, options runOptions) string {
 		"treatment",
 		options.treatmentStorage,
 		options.treatmentNetworkBody,
+		options.volatileFields,
 		options.sessionSchemaVersion,
 		options.mutateTreatment,
 	)
@@ -636,6 +1715,7 @@ func makeRun(t *testing.T, options runOptions) string {
 func writeSession(
 	t *testing.T,
 	runDir, kind, storageBody, networkBody string,
+	volatileFields []string,
 	schemaVersion int,
 	mutate func(*adb.SessionRecord),
 ) {
@@ -658,8 +1738,12 @@ func writeSession(
 	if kind == "treatment" {
 		started = started.Add(20 * time.Second)
 	}
-	steps := make([]adb.StepRecord, len(expectedSteps))
-	for index, name := range expectedSteps {
+	stepNames := expectedSteps
+	if schemaVersion < 5 {
+		stepNames = legacyExpectedSteps
+	}
+	steps := make([]adb.StepRecord, len(stepNames))
+	for index, name := range stepNames {
 		stepStart := started.Add(time.Duration(index+1) * time.Second)
 		steps[index] = adb.StepRecord{
 			Name:       name,
@@ -668,6 +1752,9 @@ func writeSession(
 			Status:     "ok",
 			ExitCode:   0,
 		}
+		if schemaVersion >= 7 && name == "interact" {
+			steps[index].UIHierarchySHA256 = strings.Repeat("d", 64)
+		}
 	}
 	record := adb.SessionRecord{
 		SchemaVersion:      schemaVersion,
@@ -675,6 +1762,7 @@ func writeSession(
 		ManifestName:       "experiment-001-email",
 		DeclaredVariable:   "email",
 		PersonaFields:      2,
+		VolatileFields:     append([]string(nil), volatileFields...),
 		ADBVersion:         "1.0.41",
 		Device:             "emulator-5554",
 		Package:            "dev.ariadne.fixture",
@@ -696,11 +1784,27 @@ func writeSession(
 			),
 		},
 	}
-	if schemaVersion == 3 {
+	if schemaVersion >= 5 {
+		record.TapResourceID = "dev.ariadne.fixture:id/observe_button"
+	}
+	if schemaVersion >= 6 {
+		record.ManifestContractSHA256 = strings.Repeat("c", 64)
+	}
+	if schemaVersion >= adb.AuthenticatedSessionSchemaVersion {
+		record.ResetPolicy = adb.ReplicationResetPolicy
+	}
+	if schemaVersion >= 3 {
 		record.Status = "complete"
 	}
 	if mutate != nil {
 		mutate(&record)
+	}
+	if schemaVersion == adb.AuthenticatedSessionSchemaVersion {
+		binding, err := adb.SessionBindingSHA256(record)
+		if err != nil {
+			t.Fatal(err)
+		}
+		record.BindingSHA256 = binding
 	}
 	data, err := json.MarshalIndent(record, "", "  ")
 	if err != nil {

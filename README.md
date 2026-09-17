@@ -16,9 +16,928 @@ The first milestone targets an authorized Android test application:
 3. Capture network and app-storage observations.
 4. Normalize expected noise.
 5. Report outputs influenced by the changed value.
-6. Produce a redacted, reproducible evidence bundle.
+6. Produce a redacted, reproducible export from a verified evidence bundle.
+
+The runner can also replicate the experiment in both orders. Each requested
+replication runs baseline-treatment and treatment-baseline, resetting the
+package before every session and recording the order in a raw-value-free
+`replication.json` receipt:
+
+```console
+go run ./cmd/ariadne experiment replicate --device emulator-5554 --package dev.ariadne.fixture --pairs 1 --output .ariadne/runs/experiment-001-replicated examples/experiment-001.json
+go run ./cmd/ariadne experiment report .ariadne/runs/experiment-001-replicated/pair-001-baseline-treatment
+go run ./cmd/ariadne experiment report .ariadne/runs/experiment-001-replicated/pair-001-treatment-baseline
+go run ./cmd/ariadne experiment replicate verify --json .ariadne/runs/experiment-001-replicated
+```
+
+Replication verification classifies the aggregate as `replicated-change`,
+`no-change-observed`, `mixed-inconsistent`, or `unknown`. That outcome is
+separate from the evidence model: `evidence_state` still reports whether the
+captured artifacts support the result. A replicated change is stronger repeat
+evidence, not proof of universal causal truth. Verification also rechecks each
+complete pair's existing `evidence.json` and `report.md`, and returns a safe
+receipt SHA-256 plus one evidence SHA-256 per ordered pair so the aggregate can
+be bound back to the files that were checked.
+
+The Android runner now authenticates each fixture session at the experiment
+boundary. It writes a bounded canonical input document through non-PTY `adb shell -T`
+stdin into the fixture's private files area; its debug launcher is protected
+by Android's `android.permission.DUMP`; personas and collector ports are not
+passed as activity extras or process arguments. The fixture consumes and
+deletes that document once, and includes the session challenge in both local
+observations. Ariadne requires the network and storage challenges to match,
+records only a challenge commitment in `session.json`, and excludes the raw
+challenge from reports, traces, and portable exports. Missing, stale, reused,
+or mismatched challenges remain unverifiable rather than becoming a privacy
+assurance. A missing authenticated network capture is also represented as an
+incomplete unknown, never as evidence of no change. Legacy bundles remain
+readable, but they do not receive invented authentication or outcome semantics.
+
+The authenticated Android execution envelope is now explicit and versioned:
+session receipts use schema 9 and authenticated replication roots use schema 2.
+The golden Android acceptance receipt uses schema 2 and carries the shared
+`environment_sha256` identity only after the standalone run and two-order
+replication agree on that environment.
+Each session binding covers the safe target identity, reset policy, manifest and
+procedure identity, challenge commitment, ordered steps, and artifact hashes;
+each pair binds both session bindings and its execution order; the root binds
+all ordered pairs; and every complete authenticated session in the root must
+use a unique challenge commitment. Replication verification then returns an
+evidence-bound
+summary binding that includes the verified evidence identities. Current
+authenticated Android minimization candidates also carry one shared environment
+identity; drift in the target, reset policy, package, API, or Ariadne runner
+revision fails closed. Legacy minimization receipts remain readable without
+that guarantee. Raw persona
+values, challenges, payloads, and device serials remain out of portable
+receipts. These SHA-256 identities prove canonical consistency and session
+binding; they are not signatures, external authenticity proof, reset proof, or
+causal truth. Legacy schema 1/8 artifacts remain readable with binding
+semantics unavailable.
+
+## Golden Android acceptance
+
+The hosted Experiment 001 workflow now closes the first complete
+observe -> authenticate -> reduce -> replay -> compare -> verify path. It
+uses a pinned API 35 Google APIs x86_64 emulator with the authorized fixture,
+runs the standalone reference experiment and one pair in each explicit order,
+checks the loopback review projection, and publishes only raw-value-free
+artifacts.
+
+After producing equivalent local artifacts on an explicitly authorized
+emulator, save and verify the acceptance receipt:
+
+~~~console
+go run ./cmd/ariadne experiment export .ariadne/runs/experiment-001 .ariadne/runs/experiment-001.redacted.json
+go run ./cmd/ariadne experiment ask-archive save --json .ariadne/runs counterfactual-change .ariadne/archive-question.json
+go run ./cmd/ariadne experiment acceptance save --json --review-self-attested \
+  .ariadne/runs/experiment-001 \
+  .ariadne/runs/experiment-001-replicated \
+  .ariadne/runs/experiment-001.redacted.json \
+  .ariadne/archive-question.json \
+  .ariadne/experiment-001-acceptance.json
+go run ./cmd/ariadne experiment acceptance verify --json \
+  .ariadne/experiment-001-acceptance.json
+go run ./cmd/ariadne experiment acceptance verify --json \
+  --expect-sha256 <acceptance-sha256> \
+  .ariadne/experiment-001-acceptance.json
+~~~
+
+Before passing --review-self-attested, inspect the local server with GET / and
+GET /run?directory=experiment-001, and confirm that POST returns 405 with
+Allow: GET. The hosted workflow performs this check itself. The acceptance
+receipt records only safe identities, fixed counts, the replicated outcome,
+separate evidence states, the shared environment identity, the selected
+question identity, and the GET-only review contract. It contains no personas, challenges, payloads, device serials,
+paths, or URLs. Offline verification checks those identities and contracts; it
+does not rerun Android or turn the checked artifacts into a universal causal
+claim. Legacy schema 1 acceptance receipts remain readable, but validation keeps
+their authenticated boundary unavailable because they never recorded the joined
+environment identity.
+
+The workflow uploads the acceptance JSON and text report, reflection, redacted
+export, and safe replication.json only. The authoritative run directories and
+their raw reports remain ephemeral CI inputs and are not publication artifacts.
+
+## Minimum-disclosure lab
+
+The first reduction workflow uses the authorized Android fixture to test a
+controlled disclosure ladder. The plan keeps candidate values in the local
+input file, uses `exact` as the fixed baseline, and evaluates each lower-disclosure
+candidate through the existing replicated runner in both execution orders:
+
+```console
+go run ./cmd/ariadne experiment minimize --device emulator-5554 --package dev.ariadne.fixture --pairs 1 --output .ariadne/runs/android-location-minimize examples/android-location-minimize.json
+go run ./cmd/ariadne experiment minimize verify --json .ariadne/runs/android-location-minimize
+```
+
+The verifier prints the observed root receipt SHA-256 in human output and adds
+`receipt_sha256` to JSON output. To require an identity retained outside the
+run directory, pass it back as a trust anchor:
+
+```console
+go run ./cmd/ariadne experiment minimize verify --json \
+  --expect-sha256 <receipt-sha256> \
+  .ariadne/runs/android-location-minimize
+```
+
+An expected digest pins the canonical receipt bytes and the verified child
+identities; it does not sign the run or prove universal causal truth.
+
+Each candidate gets a separate replicated evidence directory. The root
+`minimization.json` receipt contains candidate IDs, child receipt identities,
+counterfactual outcomes, and evidence states, but never candidate values. The
+first fixed functionality criterion is `all-non-disclosure-fields-equal-v1`:
+the declared disclosure field and the volatile `request_id` are ignored, while
+every other captured field must remain equivalent. A candidate is
+`sufficient` only for complete observed no-change results, `insufficient` for a
+replicated change, `mixed-inconsistent` for disagreement, and `unknown` when
+capture or verification is incomplete. Ariadne selects only the least-
+disclosing sufficient candidate tested after every candidate is observed
+consistently; otherwise the selection remains unknown or reports that no
+candidate was sufficient. This is a minimum tested sufficient disclosure, not
+an absolute minimum or a universal causal claim. Current authenticated Android
+candidate results also bind one shared environment identity across the ladder;
+environment drift is an unavailable or inconsistent boundary, never a
+successful reduction.
+The minimization ladder also has a fixed reflection catalog. These commands
+retain the decision without reopening or copying the local input values:
+
+```console
+go run ./cmd/ariadne experiment minimize questions --json
+go run ./cmd/ariadne experiment minimize ask all --json <minimization-directory>
+go run ./cmd/ariadne experiment minimize ask all save --json <minimization-directory> <round.json>
+go run ./cmd/ariadne experiment minimize ask all verify --json --expect-sha256 <round-sha256> <round.json>
+go run ./cmd/ariadne experiment minimize ask receipt save --json <round.json> <question-id> <receipt.json>
+go run ./cmd/ariadne experiment minimize ask receipt verify --json --expect-sha256 <receipt-sha256> <receipt.json>
+```
+
+The two fixed questions ask for the minimum tested selection and whether every
+candidate has complete replicated support. Question result, counterfactual
+outcome, and evidence state remain distinct. A saved round contains the fixed
+answers plus safe candidate IDs, classifications, outcomes, evidence states,
+counts, and child receipt identities; a selected receipt additionally binds
+one answer to the round. Both artifacts use exclusive creation, bounded
+schemas, canonical SHA-256 identities, and contain no plan values, personas,
+device details, paths, URLs, or captured observations. Verification of these
+artifacts is structural and does not prove the original source evidence.
+
+
+## Tiered artifact validation
+
+The unified validator gives one deterministic summary of the current
+artifact guarantees:
+
+~~~console
+go run ./cmd/ariadne validate --json examples/experiment-001.json
+go run ./cmd/ariadne validate --json .ariadne/runs/experiment-001-replicated
+go run ./cmd/ariadne validate --json .ariadne/runs/experiment-001
+go run ./cmd/ariadne validate .ariadne/runs/android-location-minimize
+go run ./cmd/ariadne validate --json .ariadne/runs/weather-location
+go run ./cmd/ariadne validate --json .ariadne/trace-archive.json
+go run ./cmd/ariadne validate --json .ariadne/trace-replication.json
+go run ./cmd/ariadne validate --json .ariadne/trace-case.json
+go run ./cmd/ariadne validate --json .ariadne/trace-study.json
+go run ./cmd/ariadne validate --json .ariadne/source-adapter-run
+go run ./cmd/ariadne validate --json .ariadne/browser-export.har
+go run ./cmd/ariadne validate --json .ariadne/proxy-replicated
+go run ./cmd/ariadne validate --json .ariadne/proxy-trace.json
+go run ./cmd/ariadne validate --json .ariadne/experiment-001-acceptance.json
+go run ./cmd/ariadne validate --json .ariadne/archive-question.json
+go run ./cmd/ariadne validate --json .ariadne/archive-question-transitions.json
+go run ./cmd/ariadne validate --json .ariadne/archive-question-history-round.json
+go run ./cmd/ariadne validate --json .ariadne/archive-question-history-receipt.json
+go run ./cmd/ariadne validate --json .ariadne/archive-question-history-acceptance.json
+go run ./cmd/ariadne validate --json .ariadne/browser-fixture-replicated
+go run ./cmd/ariadne validate --json .ariadne/browser-account-minimize
+~~~
+
+For trace archives, replication ledgers, cross-source cases, and studies, the same command also has a concise human
+summary when `--json` is omitted; JSON remains available for scripts and the local
+review server.
+
+The validation surface recognizes a JSON experiment manifest (including `manifest.json`),
+verified source-neutral trace archives, replication ledgers, cross-source cases, studies, generic source-adapter runs, bounded HAR exports, and verified browser fixture replication and minimization directories plus proxy replication directories; portable fixed-question rounds, selected receipts, and acceptance records; Android replication and minimization directories, standalone Android evidence-run
+directories, and a verified browser weather investigation directory containing
+`weather.json`. Every report lists
+`structural`, `integrity`, `boundary`, and `replay` tiers. Structural and
+integrity checks delegate to the existing specialized verifiers; boundary
+checks require both canonical provenance and an authenticated execution
+binding in new Android replication and minimization artifacts; provenance alone is
+not an authentication or evidence-boundary guarantee. Current authenticated
+minimization candidates additionally require one shared environment identity;
+legacy receipts remain readable while that guarantee is unavailable. For current
+Android replication and minimization reports, `environment_sha256` exposes that
+safe binding identity without exposing device serials or captured values. Replay
+reports readiness from recorded complete pairs but never
+launches a device or adapter. Standalone Android runs remain readable across
+legacy bundle schemas, while boundary pass still requires the current
+authenticated session bindings.
+
+The aggregate status is `pass` when all applicable tiers pass, `warning` when
+the artifact is valid but a tier is unavailable (for example, a legacy receipt
+without provenance), `unknown` when incomplete evidence prevents a readiness
+conclusion, `fail` when validation rejects the artifact, and `unavailable` when
+the input is missing or unsupported. Only pass exits successfully; warning,
+unknown, failure, and unavailable return a nonzero exit. JSON and human output
+contain only safe identities, fixed labels, tier statuses, outcome semantics,
+and evidence state; they never include paths, persona values, payloads, secrets,
+or driver arguments. An `outcome` remains separate from `evidence_state`, and no
+status is a universal causal claim.
+
+This is a composition layer, not a second verifier or capture backend.
+Trace archive, replication, case, and study verification now join the same entry point as the first
+browser investigation. Verified browser fixture replication and minimization directories plus proxy replication directories now join the entry point as well; standalone redacted trace documents now join the common validator with provenance unavailable when they lack a session envelope; Android acceptance receipts now join it as raw-value-free contract checks with outcome and evidence state preserved, while replay remains unavailable because source artifacts are not reopened; archive-question reflections and transition histories now join as contract-only checks with evidence_state unknown and replay unavailable; portable fixed-question rounds, selected receipts, and acceptance records now join as contract-only checks with source provenance unavailable and replay unavailable; HAR exports continue
+to use their specialized verification commands until their own mapping slice
+is reviewed.
 
 The detailed design and experiment log live in [`docs/`](docs/).
+The evidence-backed first-year path is tracked in
+[`docs/content/docs/roadmap.md`](docs/content/docs/roadmap.md).
+The read-only computer-use acceptance sequence is documented in
+[`docs/content/docs/computer-use-acceptance.md`](docs/content/docs/computer-use-acceptance.md).
+The source-neutral tracking trace contract is documented in
+[`docs/content/docs/tracking-trace.md`](docs/content/docs/tracking-trace.md).
+
+The focused golden Android acceptance slice is implemented in the CLI and
+hosted workflow under [issue #122](https://github.com/jackkayser2005/ariadne/issues/122);
+its real-emulator run remains the acceptance evidence gate. The authenticated
+Android envelope from [issue #121](https://github.com/jackkayser2005/ariadne/issues/121)
+and the initial tiered validation surface from
+[issue #123](https://github.com/jackkayser2005/ariadne/issues/123) are present
+in the current line. Wider artifact-family mapping, emulator evidence, and
+future signed verification remain follow-up work.
+
+Ariadne now verifies and compares raw-value-free tracking traces from an
+authorized source adapter:
+
+```console
+go run ./cmd/ariadne trace verify --json <trace.json>
+go run ./cmd/ariadne trace compare --json <baseline-trace.json> <treatment-trace.json>
+```
+
+These traces contain only verifier-owned logical source, channel, destination,
+and data-category labels. They do not contain payloads or URLs. Complete versus
+partial source coverage is explicit, so an absent event in a partial capture
+remains `unknown` rather than becoming a false absence claim. Browser and proxy
+producers below are narrow authorized boundaries, not universal tracing; desktop
+and additional Android adapters still need their own reviewed procedures and
+redaction tests.
+
+A generic source-adapter handoff is available for an explicitly authorized
+adapter that can produce the same redacted contract:
+
+~~~console
+go run ./cmd/ariadne trace adapter run --json \
+  --procedure examples/source-adapter-procedure.json \
+  --driver <fixed-redacting-adapter> \
+  --output .ariadne/source-adapter-run
+go run ./cmd/ariadne trace adapter verify --json .ariadne/source-adapter-run
+~~~
+
+The procedure permits only a reviewed external-* adapter ID, one fixed source
+catalog label, scope, duration, and event limit. Ariadne sends a single-use
+random challenge and procedure digest over stdin, accepts one bounded response
+containing only a verified redacted trace, invokes the absolute driver without a
+shell, and publishes trace.json, session.json, and a portable receipt
+atomically. The shared `internal/securefs` boundary rejects symlinked or
+reparse-point parents, opens new leaves exclusively, and rechecks the opened
+identity before publication is accepted. The receipt stores executable,
+procedure, trace, session, and
+challenge-commitment identities, never the challenge, driver arguments, or raw
+source values. Verification is offline and proves consistency and session
+binding—not external authenticity, target authorization, universal capture, or
+causal impact.
+The loopback review server can expose one verified source-adapter run:
+
+go run ./cmd/ariadne experiment serve --source-adapter .ariadne/source-adapter-run <archive-root>
+
+The read-only /source-adapter route re-verifies the receipt, trace, and session
+on every GET and leads with a plain-language source → category → destination
+path view. It shows only safe labels, completeness, and identities. It does not
+render the run path, procedure, executable, challenge, payloads, URLs, or
+captured values.
+
+These local boundaries are fail-closed: malformed collector requests do not
+consume the one-shot observation slot; adapter artifact and executable reads
+reject symlinks, reparse points, and path replacement; detectable executable
+hash drift across a run aborts receipt publication; and Android package
+selectors are restricted to package-name syntax before they reach ADB shell
+commands.
+
+A verified adapter run can also be retained directly in a receipt-bound
+archive. Repeat --run in the caller's intended order:
+
+~~~console
+go run ./cmd/ariadne trace archive create --json \
+  --run .ariadne/source-adapter-run-1 \
+  --run .ariadne/source-adapter-run-2 \
+  .ariadne/source-adapter-archive.json
+go run ./cmd/ariadne trace archive verify --json \
+  .ariadne/source-adapter-archive.json
+go run ./cmd/ariadne trace archive ask all save --json \
+  .ariadne/source-adapter-archive.json .ariadne/source-adapter-round.json
+~~~
+
+This emits archive schema version 2 and preserves each run's safe receipt,
+including its procedure, executable, challenge-commitment, trace, and session
+identities. Ariadne verifies each run into memory before embedding it, then
+rechecks the receipt-to-trace/session bindings whenever the archive is read.
+Duplicate receipt identities and mixed --run plus --trace/--session input are
+rejected. The binding proves artifact consistency and process-session
+provenance only; it is not a signature, authorization proof, capture-truth
+claim, chronology inference, or causal result. The archive can now enter the
+existing question-round and trace-case workflow without losing that provenance.
+
+
+The first browser edge accepts an authorized driver's already-redacted audit and
+projects it into the same trace contract:
+
+```console
+go run ./cmd/ariadne browser trace --json examples/browser-audit.json .ariadne/browser-trace.json
+go run ./cmd/ariadne trace verify --json .ariadne/browser-trace.json
+```
+
+The browser adapter accepts only fixed network, cookie, and web-storage labels;
+it rejects URLs, payloads, cookie values, arbitrary destinations, and arbitrary
+fields. It is a redacted handoff boundary, not browser capture or a universal
+sniffer. The authorized driver that produces the audit remains a separate
+source-specific concern.
+
+The capture command now provides one explicit process boundary for that driver:
+
+```console
+go run ./cmd/ariadne browser capture --json --procedure examples/browser-procedure.json --driver <fixed-redacting-driver> .ariadne/browser-trace.json
+```
+
+A validated procedure contains a catalogued procedure ID, scope, duration, and
+event limit. Ariadne sends those bytes to the selected executable on stdin,
+accepts exactly one bounded redacted audit on stdout, invokes it without a
+shell, and rejects scope mismatches, oversized output, timeouts, and unsafe
+audit members. The metadata-only `browser-audit-v1` procedure has no target;
+authorization remains an external precondition. `examples/browser-procedure.json`
+is a safe handoff starting point, not a capture configuration.
+
+The repository now also includes the narrow `browser-target-v1` producer. Its
+procedure carries one canonical HTTPS origin, which is included in the
+procedure identity. The driver launches a new isolated Chromium process with a
+fresh temporary profile, allows only that host through its resolver boundary,
+blocks requests whose URL origin is not exactly the declared origin,
+observes bounded page-load network metadata, maps recognized query-key names to
+fixed fields, and discards URLs, cookies, storage, DOM, headers, bodies, and
+values. It never attaches to an existing profile, executes supplied scripts, or
+claims that the caller is authorized. Unsupported or blocked activity remains
+partial and therefore yields `unknown` during comparison.
+
+The repository now includes one deterministic local-fixture producer. It takes
+an explicit Chrome executable, creates a fresh temporary profile, serves only a
+loopback fixture, and emits fixed network labels through the same boundary.
+It requires Node 22 or newer:
+
+```console
+go run ./cmd/ariadne browser capture --json \
+  --procedure examples/browser-local-fixture-procedure.json \
+  --driver node \
+  --driver-arg cmd/browser-fixture-driver/browser_fixture_driver.mjs \
+  --driver-arg --browser \
+  --driver-arg "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" \
+  .ariadne/browser-local-trace.json
+```
+
+This producer is fixture evidence only. It does not accept a target URL, reuse
+a profile, read cookies/storage/bodies/DOM, or claim coverage of arbitrary
+browser sessions. Use `browser-local-fixture` as the session adapter when
+binding this trace to provenance.
+
+For one explicitly authorized HTTPS origin, use the target producer through the
+same capture boundary. Replace the reserved example origin in the procedure
+with the origin you are authorized to test; do not commit a personal target
+procedure:
+
+```console
+go run ./cmd/ariadne browser capture --json \
+  --procedure examples/browser-target-procedure.json \
+  --driver node \
+  --driver-arg cmd/browser-fixture-driver/browser_fixture_driver.mjs \
+  --driver-arg --browser \
+  --driver-arg "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" \
+  .ariadne/browser-target-trace.json
+```
+
+This is a single-origin, page-load metadata producer, not a browser history
+reader or universal network sniffer. The resulting trace can use the existing
+session, pair, replication-ledger, question-round, and receipt commands. A
+real target run still proves only the declared procedure and redaction
+boundary, not target authorization, capture truth, or causal impact.
+
+The repository also includes a narrow `proxy-connect-v1` producer for one
+explicitly authorized HTTPS authority. Replace the reserved authority in
+`examples/proxy-connect-procedure.json` before use; do not commit a personal
+target procedure:
+
+```console
+go run ./cmd/ariadne proxy capture --json \
+  --procedure examples/proxy-connect-procedure.json \
+  --program "C:\\Path\\to\\authorized-app.exe" \
+  --program-arg <arg> \
+  .ariadne/proxy-trace.json
+```
+
+The producer launches exactly the supplied executable without a shell, passes
+only common runtime path/locale variables plus the proxy variables, and gives
+it a fresh authenticated loopback HTTP proxy. Only `CONNECT` to the
+procedure's canonical `host:port` is accepted; plaintext HTTP, other
+authorities, IP literals, and malformed or oversized requests are rejected.
+The proxy relays encrypted bytes opaquely and never acts as a TLS MITM or
+creates a CA. It retains only a partial `proxy`/`network`/`request`/
+`first-party`/`unknown` event, discarding URLs, hostnames, headers, bodies,
+cookies, credentials, and process arguments. Use `proxy-connect` as the
+session adapter when binding this trace to provenance. This is an authorized
+single-authority boundary, not tracing data from arbitrary applications or
+proof of target authorization, capture truth, or causal impact.
+
+The same process boundary can run repeated matched counterfactuals in both
+orders. Supply shared process arguments, then one final baseline and treatment
+argument; the runner owns that one controlled difference:
+
+```console
+go run ./cmd/ariadne proxy replicate --json \
+  --procedure examples/proxy-connect-procedure.json \
+  --program "C:\\Path\to\\authorized-app.exe" \
+  --shared-arg <shared-arg> \
+  --baseline-arg <baseline-value> \
+  --treatment-arg <treatment-value> \
+  --pairs 2 \
+  --output .ariadne/proxy-replicated
+go run ./cmd/ariadne proxy replicate verify --json .ariadne/proxy-replicated
+```
+
+Every session gets a new process, loopback proxy, and proxy credential. The
+runner stages a private run-local copy of the executable and records its digest
+so every session uses the same reviewed bytes. The receipt records the
+executable digest, explicit order, pair identities, and reset policy, while
+withholding the executable path, procedure identity, arguments, condition
+values, authority, credentials, and traffic. Procedure-bound session files
+remain the provenance join point for later verification. Verification
+classifies the aggregate as `replicated-change`, `no-change-observed`,
+`mixed-inconsistent`, or `unknown`, independently of `evidence_state`. Because
+the proxy producer is intentionally partial, a repeated observed same event
+can report `no-change-observed` with `evidence_state: unknown`; an absent event
+in partial coverage remains `unknown`. This proves only the declared process,
+proxy, and authority boundary, not remote-state reset, authorization, or
+causality.
+
+Join already verified trace history into one portable case package. The case
+embeds caller-ordered trace archives or replicated ledgers together with their
+matching fixed question rounds, so verification never reopens source paths.
+For the common cross-source workflow, assemble those inputs and derive the
+disclosure question round in one atomic local workspace:
+
+```console
+go run ./cmd/ariadne trace case assemble --json \
+  --plan examples/case-assembly-plan.json \
+  --output .ariadne/case-workspace
+go run ./cmd/ariadne trace case assemble verify --json .ariadne/case-workspace
+go run ./cmd/ariadne trace case verify --json .ariadne/case-workspace/case.json
+go run ./cmd/ariadne trace case map ask all --json .ariadne/case-workspace/case.json
+go run ./cmd/ariadne trace case map compare --json \
+  --commitment-sha256 <private-investigation-digest> \
+  .ariadne/first-case-workspace .ariadne/second-case-workspace
+```
+
+The plan is a local-only input: its artifact paths are used while verifying
+the existing archives or replication ledgers, but are never copied into the
+workspace or summary. The destination must not already exist. On success the
+workspace contains only `case.json` and `disclosure-round.json`; the JSON or
+human summary reports their identities, coverage, and fixed question results.
+The combined trace case assemble verify command rechecks both files and
+confirms that the retained disclosure round is the one derived from the
+current case before the workspace is handed to review.
+Assembly is a convenience coordinator over the existing verifiers, not a new
+evidence store, capture adapter, authorization proof, chronology model, or
+causal claim. To make two workspaces comparable, set the same lowercase
+64-character `investigation_commitment_sha256` in both local assembly plans;
+the `--commitment-sha256` argument is checked against both embedded case
+packages. Legacy workspaces without that binding remain readable but compare as
+`incomparable`.
+
+The lower-level form remains available when a caller needs explicit control:
+
+
+```console
+go run ./cmd/ariadne trace case save --json \
+  .ariadne/case.json \
+  trace-archive .ariadne/trace-archive.json .ariadne/trace-archive-round.json \
+  trace-replication .ariadne/trace-replication.json .ariadne/trace-replication-round.json
+go run ./cmd/ariadne trace case verify --json .ariadne/case.json
+go run ./cmd/ariadne trace case map --json .ariadne/case.json
+go run ./cmd/ariadne trace case map questions --json
+go run ./cmd/ariadne trace case map ask --json .ariadne/case.json cross-boundary-category-overlap
+go run ./cmd/ariadne trace case map ask all --json .ariadne/case.json
+go run ./cmd/ariadne trace case map ask all save --json .ariadne/case.json .ariadne/case-disclosure-round.json
+go run ./cmd/ariadne trace case map ask all verify --json .ariadne/case-disclosure-round.json
+go run ./cmd/ariadne trace case map ask receipt --json .ariadne/case-disclosure-round.json cross-boundary-category-overlap
+go run ./cmd/ariadne trace case map ask receipt save --json .ariadne/case-disclosure-round.json cross-boundary-category-overlap .ariadne/case-disclosure-receipt.json
+go run ./cmd/ariadne trace case map ask receipt verify --json .ariadne/case-disclosure-receipt.json
+go run ./cmd/ariadne trace case ask all --json .ariadne/case.json
+go run ./cmd/ariadne trace case ask all save --json .ariadne/case.json .ariadne/case-round.json
+go run ./cmd/ariadne trace case ask all verify --json .ariadne/case-round.json
+go run ./cmd/ariadne trace case ask all compare --json .ariadne/first-case-round.json .ariadne/second-case-round.json
+```
+
+The fixed case questions expose represented source boundaries, retained
+replicated outcomes, and whether any child conclusion remains unknown. The
+package stores no input paths, target identifiers, process arguments, or
+captured values; caller order is retained without inferring chronology. A
+case is a durable reflection/index boundary, not a database, universal
+capture service, cross-source causal attribution, or natural-language
+question engine.
+
+If a selected disclosure question needs a durable receipt, create it from the
+assembled round before opening the page:
+
+```console
+go run ./cmd/ariadne trace case map ask receipt save --json \
+  .ariadne/case-workspace/disclosure-round.json \
+  cross-boundary-category-overlap \
+  .ariadne/case-workspace/disclosure-receipt.json
+```
+
+When the case came from `trace case assemble`, pass its durable disclosure
+round and (optionally) one selected receipt to the same read-only page:
+
+```console
+go run ./cmd/ariadne experiment serve \
+  --trace-case .ariadne/case-workspace/case.json \
+  --trace-case-round .ariadne/case-workspace/disclosure-round.json \
+  --trace-case-receipt .ariadne/case-workspace/disclosure-receipt.json \
+  <archive-root>
+```
+
+The page re-derives the fixed disclosure round from the verified case and
+requires the supplied round identity to match before rendering it. A supplied
+receipt must match the verified case, round, and selected question. Saved
+artifacts are marked as verified in the page; paths remain configuration only
+and are never rendered. The route remains GET-only and returns the same
+generic `trace case unavailable` response for drift or malformed artifacts.
+
+The derived `trace case map` command groups safe category labels from every
+embedded trace and reports reviewed source, adapter, channel, event kind,
+destination, and retained-trace count. Aggregate `coverage_state` becomes
+`unknown` when any contributing trace is partial; directly retained
+observations remain `observed`. The map is recomputed from the verified case
+and is not persisted as a second evidence store. In human-readable output the
+command starts with a short explanation of what the labels do and do not mean;
+`--json` remains the stable machine-readable form. Set `ARIADNE_COLOR=1` when
+you want successful status headings colored green in an interactive terminal.
+Human `validate` output now starts with a plain-language answer before the
+artifact identity, tier statuses, and reason; `--json` is unchanged.
+`trace case map compare` is the next cross-case reflection boundary. It
+re-verifies both assembled workspaces, requires the same caller-supplied
+private investigation commitment and compatible reviewed source provenance,
+then reports `same`, `changed`, or `incomparable` with added, removed, and
+coverage-unresolved categories and source/adapter/channel/kind/destination
+boundaries. If either workspace is partial, an absent category or boundary is
+never called removed; supported positive observations may still be reported,
+but the aggregate `evidence_state` remains `unknown`. The output carries both
+case and disclosure-round identities plus the commitment digest, and contains
+no workspace paths, URLs, arguments, identifiers, or captured values.
+
+The nested `trace case map` question catalog adds two bounded reflections:
+`disclosure-map-coverage` returns `complete` with `observed` evidence only when
+every retained trace declared complete coverage, otherwise it returns `unknown`
+with `unknown` evidence. `cross-boundary-category-overlap` returns
+`overlap-observed` with `observed` evidence when a safe category appeared across
+at least two reviewed source/adapter boundaries. With complete coverage and no
+overlap it returns `no-overlap-observed`; with partial coverage and no observed
+overlap it remains `unknown`. Saved question rounds and selected receipts are
+raw-value-free, carry their case and round identities, and retain only safe
+category plus source/adapter boundary summaries. Offline round/receipt
+verification checks only the supplied documents' schema, canonical identities,
+and internal binding; it does not authenticate that an originally referenced
+case produced them without verifying that case as well.
+
+`trace case ask all compare` independently verifies both retained rounds and
+compares their fixed projections in caller order. It reports `same` or
+`changed`, the round and case identities, and only changed question IDs with
+bounded `result`, `evidence-state`, count, source, or replicated `outcome`
+change kinds. A question `result` such as `available` is not the same field as
+an embedded replicated `outcome`; different case identities are allowed, and
+the comparison does not infer chronology, causality, improvement, or
+regression.
+
+Expose the verified case through the same loopback review page when a
+computer-use driver needs a bounded inspection surface:
+
+```console
+go run ./cmd/ariadne experiment serve \
+  --trace-case .ariadne/case.json \
+  <archive-root>
+```
+
+The read-only `/trace-case` route re-verifies the embedded archives, ledgers,
+and matching question rounds before rendering only the case identity, caller
+order, safe source summaries, child identities, fixed case answers, and
+separate question `result`, replicated child `outcome`, and `evidence_state`
+fields. It also renders the derived cross-source disclosure map and its two
+fixed disclosure questions using only safe category, destination, and
+source/adapter boundary labels plus retained-trace counts. The page leads with
+a plain-language path view; verifier identities, fixed questions, and child
+entries remain available as expandable technical detail. Each question card
+links to a selected raw-value-free receipt projection through
+`disclosure_question_id`; durable rounds and receipts are created with the
+CLI. A case question result such as `available`, `supported`, or `unknown`
+is not itself a replicated outcome. It fails closed with a generic
+`trace case unavailable` response for malformed or identity-inconsistent
+input; it never renders the configured path, captured values, or source
+specific arguments.
+
+The same fixture path can run a small counterfactual replication. The runner
+owns the fixed baseline/treatment variants, creates a fresh profile before each
+session, records both orders, and verifies the aggregate separately from
+`evidence_state`:
+
+```console
+go run ./cmd/ariadne browser fixture replicate --json \
+  --procedure examples/browser-local-fixture-procedure.json \
+  --driver node \
+  --driver-arg cmd/browser-fixture-driver/browser_fixture_driver.mjs \
+  --driver-arg --browser \
+  --driver-arg "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" \
+  --pairs 2 \
+  --output .ariadne/browser-fixture-replicated
+go run ./cmd/ariadne browser fixture replicate verify --json .ariadne/browser-fixture-replicated
+```
+
+The safe receipt records `baseline-treatment` and `treatment-baseline` pair
+order, fresh-profile resets, and only trace/session identities. Verification
+classifies the aggregate as `replicated-change`, `no-change-observed`,
+`mixed-inconsistent`, or `unknown`. This is a deterministic fixture smoke
+path, not a user-browser adapter. The fixture intentionally reports partial
+coverage for unsupported activity, so its hosted smoke expects `unknown` and
+`evidence_state: unknown`; synthetic complete traces exercise the other
+aggregate classifications. The hosted Windows browser-fixture workflow checks
+the single capture, both replication orders, redaction, and profile cleanup.
+
+The minimization handoff can test the fixed synthetic browser input ladder:
+
+```console
+go run ./cmd/ariadne browser fixture minimize --json \
+  --plan examples/browser-account-minimize.json \
+  --procedure examples/browser-local-fixture-procedure.json \
+  --driver node \
+  --driver-arg cmd/browser-fixture-driver/browser_fixture_driver.mjs \
+  --driver-arg --browser \
+  --driver-arg "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" \
+  --pairs 1 \
+  --output .ariadne/browser-account-minimize
+go run ./cmd/ariadne browser fixture minimize verify --json \
+  .ariadne/browser-account-minimize
+```
+
+The browser verifier also prints and returns the canonical root receipt
+identity. Use `--expect-sha256 <receipt-sha256>` on the verify command when a
+trusted digest is available outside the copied run directory; a mismatch
+fails closed before any review surface consumes the ladder.
+
+The browser adapter binds only the safe candidates `reference` and `omitted`
+to the synthetic `account-id` input. Its fixed functionality criterion is
+`all-non-disclosure-fields-equal-v1`, so ordinary trace replication still
+reports the account-id disclosure while minimization checks that every other
+observed field remains equal. A complete result may call `omitted` the
+`minimum tested sufficient disclosure`; the receipt contains only candidate
+IDs, counts, outcomes, evidence states, provenance, and child receipt hashes.
+Values, URLs, driver arguments, profiles, and captured events are excluded.
+Missing or mismatched child evidence leaves the result `unknown`. This is a
+controlled fixture handoff, not universal browser tracing.
+
+The same read-only review surface accepts this browser ladder through the existing minimization option:
+
+```console
+go run ./cmd/ariadne experiment serve --minimization .ariadne/browser-account-minimize <archive-root>
+```
+
+The `/minimization` route re-verifies the browser adapter children before rendering safe adapter, procedure, scope, reset-policy, candidate, count, classification, counterfactual-outcome, and evidence-state fields. The browser ladder now uses the shared source-neutral question catalog rather
+than synthesizing Android-specific answers. Ask or retain the bounded questions
+only after the browser adapter has re-verified the ladder:
+
+~~~console
+go run ./cmd/ariadne browser fixture minimize questions --json
+go run ./cmd/ariadne browser fixture minimize ask all --json .ariadne/browser-account-minimize
+go run ./cmd/ariadne browser fixture minimize ask all save --json .ariadne/browser-account-minimize .ariadne/browser-account-minimize-round.json
+go run ./cmd/ariadne browser fixture minimize ask all verify --json .ariadne/browser-account-minimize-round.json
+go run ./cmd/ariadne browser fixture minimize ask receipt save --json .ariadne/browser-account-minimize-round.json minimum-tested-selection .ariadne/browser-account-minimize-receipt.json
+go run ./cmd/ariadne browser fixture minimize ask receipt verify --json .ariadne/browser-account-minimize-receipt.json
+~~~
+
+The saved round and selected receipt contain only fixed answers, candidate
+projections, and identities. Their offline verification checks structure and
+canonical identities; it does not re-verify the browser source. The route
+remains GET-only, raw-value-free, and local-loopback-bound.
+
+Bind a verified trace to its reviewed adapter and capture procedure without
+adding URLs, profile names, or captured values:
+
+```console
+go run ./cmd/ariadne trace session create --adapter browser-redacted-audit --adapter-version 1 --procedure-sha256 <procedure-sha256> .ariadne/browser-trace.json .ariadne/browser-session.json
+go run ./cmd/ariadne trace session verify --json .ariadne/browser-session.json .ariadne/browser-trace.json
+go run ./cmd/ariadne trace session pair create --json --adapter browser-redacted-audit --adapter-version 1 --procedure-sha256 <procedure-sha256> --order baseline-treatment <baseline-trace.json> <treatment-trace.json> <baseline-session.json> <treatment-session.json>
+go run ./cmd/ariadne trace session pair verify --json <baseline-session.json> <baseline-trace.json> <treatment-session.json> <treatment-trace.json>
+go run ./cmd/ariadne trace session pair compare --json <baseline-session.json> <baseline-trace.json> <treatment-session.json> <treatment-trace.json>
+```
+
+The standalone command creates one envelope. The pair command derives one
+canonical pair identity from both verified trace identities and shared
+provenance, then writes complementary baseline/treatment envelopes. Pair order
+is explicit: use `baseline-treatment` or `treatment-baseline`. The envelope checks the trace hash,
+source, scope, and completeness, but does not prove authorization, capture
+truth, or causal impact. Pair verification additionally requires complementary
+roles, separate trace paths, and matching adapter, procedure, scope,
+order, and canonical pair identity. The trace paths must be separate, while
+identical normalized trace content is valid evidence for `no-change-observed`.
+Empty traces retain their declared completeness, but have no event source to
+corroborate the adapter assertion.
+The current fixed adapter catalog covers the implemented Android, browser, and
+loopback proxy producers; future desktop or other adapters add their own
+reviewed labels when they exist.
+
+The pair comparison command first verifies the session envelopes, then runs
+the existing raw-value-free trace comparison and returns both objects together.
+Provenance, structural differences, and evidence states remain separate; a
+joined comparison is not a causal claim.
+
+Combine already-produced matched pairs into one portable, source-neutral
+replication ledger. Supply at least one pair in each explicit order; each group
+contains baseline trace, treatment trace, baseline session, and treatment
+session paths:
+
+```console
+go run ./cmd/ariadne trace replication save --json \
+  --reset-confirmed 1 --reset-confirmed 2 \
+  .ariadne/trace-replication.json \
+  <baseline-1-trace.json> <treatment-1-trace.json> \
+  <baseline-1-session.json> <treatment-1-session.json> \
+  <baseline-2-trace.json> <treatment-2-trace.json> \
+  <baseline-2-session.json> <treatment-2-session.json>
+go run ./cmd/ariadne trace replication verify --json \
+  .ariadne/trace-replication.json
+go run ./cmd/ariadne trace replication verify --json \
+  --expect-sha256 <ledger-sha256> .ariadne/trace-replication.json
+```
+
+The ledger embeds normalized traces and provenance-bound sessions, records the
+caller's pair order and reset assertion, and re-verifies comparisons without
+reopening source-specific inputs. Its aggregate is `replicated-change`,
+`no-change-observed`, `mixed-inconsistent`, or `unknown`; `evidence_state`
+remains a separate support judgment. Missing reset confirmation, incomplete
+capture, unequal nonzero order counts, or an unknown comparison yields
+`unknown`. This is a portable replication record, not a runner, capture
+adapter, chronology model, statistical model, or causal proof.
+
+Repeat `--reset-confirmed <pair-index>` once for each pair whose reset was
+confirmed; omitted pair indexes remain unconfirmed and are classified safely.
+
+The ledger has a fixed question catalog for repeatable review. Ask it directly,
+or save a raw-value-free question round and one selected receipt for offline
+rechecking:
+
+```console
+go run ./cmd/ariadne trace replication questions --json
+go run ./cmd/ariadne trace replication ask all --json .ariadne/trace-replication.json
+go run ./cmd/ariadne trace replication ask all save --json \
+  .ariadne/trace-replication.json .ariadne/trace-replication-round.json
+go run ./cmd/ariadne trace replication ask all verify --json \
+  --expect-sha256 <round-sha256> .ariadne/trace-replication-round.json
+go run ./cmd/ariadne trace replication ask receipt save --json \
+  .ariadne/trace-replication-round.json replication-outcome \
+  .ariadne/trace-replication-receipt.json
+go run ./cmd/ariadne trace replication ask receipt verify --json \
+  --expect-sha256 <receipt-sha256> .ariadne/trace-replication-receipt.json
+```
+
+The fixed questions ask for the aggregate outcome, reset/comparison support,
+and agreement across both execution orders. Saved answers bind to the ledger
+identity; receipts bind to both ledger and question-round identities. Results
+such as `replicated-change`, `mixed-inconsistent`, or `unknown` remain separate
+from `evidence_state`. The loopback `/trace-replication` page shows the same
+three questions from the verified ledger without accepting free-form input.
+
+Combine independent ledger runs into one portable replication study when the
+same counterfactual has been repeated. Supply a private SHA-256 commitment for
+the counterfactual, then pair each ledger with its saved question round:
+
+```console
+go run ./cmd/ariadne trace study save --json \
+  --contrast-sha256 <private-contrast-sha256> \
+  .ariadne/trace-study.json \
+  .ariadne/trace-replication-1.json .ariadne/trace-replication-1-round.json \
+  .ariadne/trace-replication-2.json .ariadne/trace-replication-2-round.json
+go run ./cmd/ariadne trace study verify --json \
+  --expect-sha256 <study-sha256> .ariadne/trace-study.json
+```
+
+The study embeds only already-verified ledgers and fixed question rounds. It
+requires 2--8 distinct ledger identities, matching question-round identities,
+and shared source/adapter/version/procedure/scope provenance. A supported
+result requires a balanced, reset-confirmed pair set in every run; unsupported
+runs are retained and make the aggregate `unknown`. Its `order_basis: caller`
+preserves the supplied run order without inferring chronology. Every supported run must
+report the same outcome for `replicated-change` or `no-change-observed`; a
+supported disagreement is `mixed-inconsistent`, while any unsupported or
+unknown run makes the study `unknown`. `evidence_state` is summarized
+separately. The commitment is only an identity binding: the study does not
+store the contrast value, execute resets, capture browsers, infer causality, or
+claim universal tracking.
+
+Ask the study's fixed questions after verifying the saved artifact, then retain
+that complete bounded answer set and one selected receipt:
+
+```console
+go run ./cmd/ariadne trace study questions --json
+go run ./cmd/ariadne trace study ask --json .ariadne/trace-study.json study-outcome
+go run ./cmd/ariadne trace study ask all --json .ariadne/trace-study.json
+go run ./cmd/ariadne trace study ask all save --json \
+  .ariadne/trace-study.json .ariadne/trace-study-round.json
+go run ./cmd/ariadne trace study ask all verify --json \
+  --expect-sha256 <round-sha256> .ariadne/trace-study-round.json
+go run ./cmd/ariadne trace study ask receipt save --json \
+  .ariadne/trace-study-round.json study-outcome \
+  .ariadne/trace-study-receipt.json
+go run ./cmd/ariadne trace study ask receipt verify --json \
+  --expect-sha256 <receipt-sha256> .ariadne/trace-study-receipt.json
+```
+
+These answers report the aggregate outcome, whether every run has sufficient
+support, and whether supported runs agree. `result`, aggregate `outcome`, and
+`evidence_state` remain separate. The saved round contains only the fixed
+answers and the study SHA-256; the selected receipt embeds that bounded round
+and binds it to both the study and round identities. Both artifacts can be
+verified offline without reopening source paths or captured values.
+
+Compare two independently retained study reflections in caller order:
+
+```console
+go run ./cmd/ariadne trace study ask all compare --json \
+  .ariadne/first-study.json .ariadne/first-study-round.json \
+  .ariadne/second-study.json .ariadne/second-study-round.json
+```
+
+Both studies and rounds are re-verified, and each round must reproduce the
+answers derived from its supplied study. Compatible studies require the same
+private counterfactual commitment and reviewed source provenance. The result
+is `same`, `changed`, or `incomparable`; changed entries expose only fixed
+question IDs and `result`, `outcome`, `evidence-state`, or `support-counts`
+change kinds. Caller order is not chronology, and this comparison does not
+infer trend, improvement, regression, causality, or authorization. Paths,
+commitments, payloads, URLs, and captured values are never returned.
+
+Retain caller-ordered standalone trace snapshots from any reviewed adapter in
+one portable archive, then ask the fixed source-neutral questions without
+reopening source values:
+
+```console
+go run ./cmd/ariadne trace archive create --json \
+  --trace baseline-trace.json --session baseline-session.json \
+  --trace treatment-trace.json --session treatment-session.json \
+  .ariadne/trace-archive.json
+go run ./cmd/ariadne trace archive verify --json .ariadne/trace-archive.json
+go run ./cmd/ariadne trace archive questions --json
+go run ./cmd/ariadne trace archive ask all --json .ariadne/trace-archive.json
+go run ./cmd/ariadne trace archive ask all save --json \
+  .ariadne/trace-archive.json .ariadne/trace-round.json
+go run ./cmd/ariadne trace archive ask all verify --json \
+  .ariadne/trace-round.json
+go run ./cmd/ariadne trace archive ask receipt save --json \
+  .ariadne/trace-round.json trace-change .ariadne/trace-receipt.json
+go run ./cmd/ariadne trace archive ask receipt verify --json \
+  .ariadne/trace-receipt.json
+```
+
+The archive stores only normalized trace labels and standalone provenance
+envelopes. Its order is the caller's order, not inferred chronology. The fixed
+questions report whether every trace declared complete coverage, whether safe
+categories changed across compatible adjacent entries, and which reviewed
+source adapters are represented. Partial or incompatible boundaries remain
+`unknown`, and every archive/answer carries a canonical SHA-256 identity. This
+is a portable review index, not a chronology engine, a natural-language engine,
+or a universal capture service. A saved question round retains all fixed
+answers, and a saved receipt retains one selected answer; both can be verified
+without reopening the source archive. Their outcome semantics remain separate
+from their evidence state.
+
+The shareable export has its own canonical SHA-256 identity. Verify a received
+export structurally, and optionally require the expected identity, with
+`experiment export verify --json --expect-sha256 <export-sha256> <export.json>`.
+That identity covers only the raw-value-free export content; it does not prove
+the underlying evidence.
+
+A verified export can answer its embedded counterfactual question offline with
+`experiment export ask --json <export.json> counterfactual-change`. Questions
+about capture completeness or source integrity remain unavailable without the
+authoritative evidence bundle. Follow one returned safe finding reference with
+`experiment export finding --json <export.json> <finding-id>`; comparison values
+remain unavailable, and both JSON responses carry the verified source-evidence
+and export identities they came from.
 
 ## Reproduce Experiment 001
 
@@ -31,6 +950,316 @@ resulting evidence bundle.
 The same procedure runs on a real API 35 emulator in GitHub Actions. It also
 proves that missing targets, modified observations, and mismatched package
 provenance prevent evidence publication.
+
+The hosted workflow also runs one replicated pair in both orders. The two
+ordered pair directories are independently reportable, while the root receipt
+checks the reset policy, recorded order, pair completeness, and aggregate
+classification without exposing persona values or captured payloads. The
+replication verifier rechecks each pair's authoritative outputs and exposes
+only their safe SHA-256 identities.
+
+After the report is verified, project one selected session into the portable
+tracking trace and compare the two sessions without reopening raw values:
+
+```console
+go run ./cmd/ariadne experiment trace --session baseline .ariadne/runs/experiment-001 .ariadne/baseline-trace.json
+go run ./cmd/ariadne experiment trace --session treatment .ariadne/runs/experiment-001 .ariadne/treatment-trace.json
+go run ./cmd/ariadne trace compare --json .ariadne/baseline-trace.json .ariadne/treatment-trace.json
+```
+
+This first producer is deliberately narrow: it re-verifies the Experiment 001
+bundle, recognizes only the fixture's known network and private-storage
+artifacts, maps the `region` and volatile `request_id` keys to safe category
+labels, and omits the experiment's `variant` value. A storage-gap run produces
+a `partial` treatment trace, so the missing storage event remains `unknown` in
+comparison. Browser, desktop, proxy, and additional Android adapters remain
+separate authorized slices.
+
+Once a report is saved, Ariadne can re-verify it offline and compare two saved
+reflection snapshots without exposing captured values:
+
+```console
+go run ./cmd/ariadne experiment ask-archive verify --json <reflection.json>
+go run ./cmd/ariadne experiment ask-archive save --json <archive-root> <question-id> <reflection.json>
+go run ./cmd/ariadne experiment ask-archive compare --json <older-reflection.json> <newer-reflection.json>
+go run ./cmd/ariadne experiment ask-archive compare-current --json <older-reflection.json> <archive-root>
+go run ./cmd/ariadne experiment ask-archive transitions --json <reflection-1.json> <reflection-2.json> ...
+go run ./cmd/ariadne experiment ask-archive transitions questions --json
+go run ./cmd/ariadne experiment ask-archive transitions ask --json <history.json> [<question-id>]
+go run ./cmd/ariadne experiment ask-archive transitions ask repeated --json <history.json>
+go run ./cmd/ariadne experiment ask-archive transitions ask all --json <history.json>
+go run ./cmd/ariadne experiment ask-archive transitions ask all save --json <history.json> <round.json>
+go run ./cmd/ariadne experiment ask-archive transitions ask all verify --json [--expect-sha256 <digest>] <round.json>
+go run ./cmd/ariadne experiment ask-archive transitions ask all compare --json <first-round.json> <second-round.json>
+go run ./cmd/ariadne experiment ask-archive transitions ask receipt --json <history.json> <question-id>
+go run ./cmd/ariadne experiment ask-archive transitions ask receipt save --json <history.json> <question-id> <receipt.json>
+go run ./cmd/ariadne experiment ask-archive transitions ask receipt verify --json [--expect-sha256 <digest>] <receipt.json>
+go run ./cmd/ariadne experiment ask-archive transitions acceptance save --json <round.json> <receipt.json> <acceptance.json>
+go run ./cmd/ariadne experiment ask-archive transitions acceptance verify --json [--expect-sha256 <digest>] <acceptance.json>
+go run ./cmd/ariadne experiment ask-archive transitions save --json <reflection-1.json> <reflection-2.json> ... <history.json>
+go run ./cmd/ariadne experiment ask-archive transitions verify --json <transitions.json>
+```
+
+The comparison reports `same`, `changed`, or `incomparable` for bounded
+per-directory answer states. When common entries change, it also names those
+safe archive directories and their older/newer answer states. It does not
+infer a trend or prove the underlying evidence. The transitions command
+applies those same bounded comparisons to each adjacent pair in caller-supplied
+order and reports safe reflection identities, aggregate change counts, and any
+changed archive directories with their bounded older/newer states. The saved
+transition ledger carries those same state changes without observations or
+persona values. Current ledgers also carry a safe summary for each supplied
+snapshot: its reflection identity and observed, unknown, unavailable, and
+checked counts. These summaries make the historical spine inspectable without
+reopening raw evidence.
+The saved transition ledger can be structurally re-verified and given an
+expected content identity before another tool consumes it. Verification also
+requires adjacent transitions to share their boundary reflection identity, so
+a history cannot silently join unrelated snapshots.
+
+`transitions questions` lists the fixed, raw-value-free questions available for
+a verified history in stable order. Use it to discover the question IDs before
+asking one; it does not create arbitrary natural-language queries.
+
+`transitions ask` answers a catalog question from the verified history itself.
+With no question ID it preserves the original history question; pass any ID
+from `transitions questions` to select a fixed question. It returns only the bounded result, 1-based transition indexes
+for changed or membership-incomparable boundaries, and safe directory/state
+triples for changed entries, each bound to its adjacent reflection identities;
+it does not infer chronology or prove the underlying evidence. The legacy
+`ask repeated` spelling remains supported. Legacy schema 1
+histories retain the indexes and have no per-entry details.
+
+`transitions ask repeated` asks a second fixed question of the verified
+history: whether any safe archive entry changed at more than one supplied
+boundary. It returns the repeated entry's safe state-change records and
+adjacent reflection identities. Schema 1 histories answer `unavailable`, and
+the result never establishes chronology or a trend.
+
+`transitions ask <history.json> answer-state-snapshot-summaries` asks which
+safe snapshot summaries a verified history recorded. Schema 3 histories return each
+snapshot's identity and observed/unknown/unavailable/checked counts; schema 1
+and 2 histories answer `unavailable`. It does not infer chronology or prove
+the underlying evidence.
+
+`transitions ask <history.json> answer-state-summary-changes` asks whether
+those bounded snapshot summaries changed at any supplied boundary. Schema 3
+histories return `same` or `changed` plus 1-based boundary indexes; schema 1
+and 2 histories answer `unavailable`. This is a bounded comparison, not a
+chronology or trend claim.
+
+`transitions ask all <history.json>` verifies the history once and records the
+bounded result of every fixed history question in stable catalog order. Its
+raw-value-free JSON is a portable question-round receipt; call an individual
+question ID for detailed entries or snapshot summaries. Use
+`transitions ask all save` to retain that round with exclusive creation; it
+returns a canonical round SHA-256, and `transitions ask all verify` checks the
+retained round without reopening the source history.
+
+`transitions ask all compare <first-round.json> <second-round.json>` verifies
+two retained rounds and compares their fixed bounded results in caller order.
+Each round carries the source history-question identity, so rounds from
+different source questions are rejected before comparison. The command
+returns the two round and history identities plus any changed question IDs; it
+does not infer chronology or prove the underlying evidence.
+
+`transitions ask receipt <history.json> <question-id>` verifies the history once
+and wraps one selected fixed answer in a portable raw-value-free receipt. The
+receipt binds the bounded result and detailed answer to the verified history
+SHA-256; use a question ID from `transitions questions` and do not infer
+chronology or the underlying evidence from it.
+
+`transitions ask receipt save <history.json> <question-id> <receipt.json>` does
+the same verified ask and writes the raw-value-free receipt with exclusive
+creation. It returns a receipt SHA-256 and never overwrites an existing
+receipt, so later reflection work can retain the exact answer artifact.
+
+`transitions ask receipt verify <receipt.json>` checks a retained receipt
+without reopening the source history. It validates the fixed question,
+nested answer's counts, indexes, states, ordering, and result consistency,
+history digest, and canonical receipt SHA-256; pass `--expect-sha256` to
+require a previously recorded receipt identity. This checks the receipt
+contract only and does not re-verify the history or prove the underlying
+evidence.
+
+`transitions acceptance save <round.json> <receipt.json> <acceptance.json>`
+verifies a retained question round and selected receipt, confirms their
+history, question, and bounded-result identities agree, and writes only those
+identities with exclusive creation. `transitions acceptance verify
+<acceptance.json>` checks that raw-value-free binding offline and can require
+its canonical SHA-256 with `--expect-sha256`. It does not prove that a UI
+driver performed the selection.
+
+New transition ledgers use schema 3 and include those snapshot summaries;
+schema 2 ledgers remain readable, and schema 1 ledgers remain readable with
+their older state-change limits.
+
+Use `ask-archive save` to create a new snapshot with exclusive file creation;
+it never overwrites an existing reflection. The command returns the same
+canonical identity used by offline verification, so saved snapshots can feed
+the comparison and transition commands without exposing captured values.
+
+Use `transitions save` to persist the verified adjacent-boundary ledger with
+the same no-overwrite behavior before opening it in the local history view.
+The page shows the same safe snapshot summaries alongside the fixed history
+questions, including a direct snapshot-summary question, so a UI driver can
+choose a question and retain the identities it was asking about.
+
+The local review page can receive a verified transition ledger, a saved
+reflection, an acceptance identity binding, two retained question rounds, and
+one portable trace archive, saved question round, replicated trace ledger, or
+cross-source case with
+`experiment serve --history <history.json> --reflection <reflection.json> --acceptance <acceptance.json> --round-first <first-round.json> --round-second <second-round.json> --trace-archive <trace-archive.json> --trace-round <trace-round.json> --trace-replication <ledger.json> --trace-case <case.json> [--trace-case-round <round.json>] [--trace-case-receipt <receipt.json>] --trace-study <study.json> --trace-study-round <round.json> --trace-study-receipt <receipt.json> [--source-adapter <run-directory>] [--minimization <run-directory>] [--minimization-round <round.json>] [--minimization-receipt <receipt.json>] <archive-root>`.
+It renders caller-ordered bounded transitions and re-asks the saved reflection's
+fixed question against the current archive, showing only safe comparison counts,
+identities, per-directory bounded state changes, and the repeated-change
+question, snapshot-summary question, and snapshot-change question when history
+is available. The history
+panel presents a compact verified question round in fixed catalog order, with
+each bounded result and a direct receipt link, so a UI driver can choose a
+bounded question without inventing natural language. The page also shows the
+question-round SHA-256. The selected receipt renders its stable history and
+receipt SHA-256 identities alongside the raw-value-free JSON details.
+When `--acceptance` is supplied, the page also reports whether the selected
+question and receipt match the saved history, round, and receipt identities.
+When the supplied verified history has the saved history identity, the saved
+question ID is also a direct link back to that bounded history-question route.
+This is a read-only identity comparison; it does not prove that a UI driver
+performed the selection.
+On 2026-08-10, a Windows Chrome smoke pass opened the loopback page, followed
+the saved acceptance link, and rendered `MATCHED` with the raw-value-free
+receipt identities visible. That validates the rendered route and accessibility
+contract only; it does not prove target-application behavior.
+When both `--round-first` and `--round-second` are supplied, the page also
+shows which fixed question results changed between those retained rounds,
+alongside both round and history identities. The comparison preserves caller
+order and does not infer chronology; each changed fixed-question ID links back
+to the same bounded history-question route for a repeatable re-check only when
+the supplied history identity matches one of the compared rounds.
+When `--trace-replication` is supplied, `/trace-replication` shows the verified
+aggregate, the fixed outcome/support/consistency questions, both explicit order
+counts, reset assertions, pair identities, and safe difference/unknown counts.
+It never renders configured paths, payloads, URLs, or captured values, and
+remains GET-only.
+When `--trace-case` is supplied, `/trace-case` shows the verified case identity,
+caller-ordered child archive/ledger summaries, safe reviewed source boundaries,
+the fixed case questions, and separate outcome/evidence-state fields. The
+reader-first page puts the recorded category paths up front and keeps verifier
+identities and entry metadata expandable. Caller order is not chronology, and
+the route does not establish cross-source
+causality. It is also GET-only and fails closed without disclosing the input
+path or detailed verification error.
+When `--trace-study` is supplied, `/trace-study` shows the verified study
+commitment and caller order, aggregate counts, the three fixed study answers,
+and the identity of every embedded ledger and question round. It keeps
+question `result`, aggregate `outcome`, and `evidence_state` separate, is
+GET-only, and fails closed as `trace study unavailable` without disclosing
+the configured path or detailed verification error. Supplying
+`--trace-study-round` makes the route re-verify the saved round against the
+study; supplying `--trace-study-receipt` additionally verifies the selected
+receipt against both identities. `?question_id=<fixed-study-question-id>`
+selects one bounded receipt for the rendered review when no saved receipt is
+provided. These artifacts contain no paths, payloads, URLs, or captured values.
+To expose a bounded comparison of two retained study reflections, add the
+second verified study and round:
+
+```console
+go run ./cmd/ariadne experiment serve \
+  --trace-study .ariadne/first-study.json \
+  --trace-study-round .ariadne/first-study-round.json \
+  --trace-study-second .ariadne/second-study.json \
+  --trace-study-round-second .ariadne/second-study-round.json \
+  <archive-root>
+```
+
+The GET-only trace-study-comparison route re-verifies all four artifacts
+through the authoritative comparison engine and shows only same, changed, or
+incomparable, fixed question IDs, caller-order identities, and separate
+result/outcome/evidence-state projections. It does not render paths, payloads,
+URLs, captured values, or language implying chronology, trend, improvement,
+regression, authorization, or causality.
+
+When `--minimization <run-directory>` is supplied, the same server adds a
+`/minimization` page for a verified minimum-disclosure receipt:
+
+```console
+go run ./cmd/ariadne experiment serve \
+  --minimization .ariadne/runs/android-location-minimize \
+  <archive-root>
+```
+
+The route calls the authoritative verifier on every request, rechecks the
+canonical receipt and every child replication, and displays the root receipt
+identity, recorded candidate order, safe counts, functionality classification,
+replicated counterfactual outcome, and evidence state. The page renders only
+candidate IDs and verifier-derived metadata; it never renders the minimization
+directory, plan values, personas, manifests, URLs, challenges, or captured
+observations. A selected result is labeled **minimum tested sufficient
+disclosure**. Mixed, incomplete, or unknown evidence leaves the selection
+unestablished. The page starts with a plain-language answer, then keeps the
+receipt identity, fixed questions, and candidate ladder behind clearly labeled
+technical details. The loopback server requires the canonical configured loopback
+authority and sends no-store/security headers; it remains GET-only.
+When `--minimization-round <round.json>` is supplied with
+`--minimization <run-directory>`, the page rechecks the saved fixed-question
+round against the current minimization identity and renders its durable
+question-round SHA-256. When `--minimization-receipt <receipt.json>` is also
+supplied, it rechecks the selected receipt against both identities. Without a
+saved receipt, `?question_id=<fixed-question-id>` shows the same selected
+receipt projection in memory. Any identity drift is a generic unavailable state.
+Stable-ID Android sessions also record a SHA-256 identity for the successful
+UI hierarchy used to resolve the manifest-declared control. The raw hierarchy
+XML is never retained in session metadata; this identity is control provenance
+only and does not prove anything about the target application.
+
+Those links use the validated `history_question_id` query and fail closed for
+unknown IDs. An
+unavailable comparison remains a generic bounded state; the
+page does not turn it into chronology, trend inference, or a claim about the
+underlying evidence.
+
+The read-only review page exposes the same canonical SHA-256 identity for the
+currently derived archive question report. It is computed in memory, contains
+no captured values, and identifies the derived report only; it is not proof of
+the underlying evidence or a trend claim.
+
+Supply `--trace-archive <trace-archive.json>` to the same loopback review page
+to open the separate `/trace-archive` reflection route. It verifies the
+portable archive once per request, answers all three fixed questions from that
+verified in-memory archive, and renders the archive identity, caller order,
+source summaries, outcome, and evidence state separately. The route is
+read-only and does not accept arbitrary question text or render local input
+paths or captured values. Supply `--trace-round <trace-round.json>` to render a
+saved question round without reopening its source archive; if both flags are
+supplied, the archive and round identities must match or the route fails closed.
+
+It can also review one portable export with
+`experiment serve --export <export.json> <archive-root>`. The export question
+and its safe finding references remain read-only and display their verified
+export identities.
+
+## Website location investigation
+
+The fixed `browser-weather-location-v1` procedure runs eight fresh-profile Chrome
+sessions against `https://beta.weather.gov`, comparing synthetic precise,
+city-center, and denied geolocation. It captures only redacted attempted and
+response-backed location labels, verified traces, and bounded visibility gaps.
+A workflow failure or unsupported channel remains `unknown`; the result is not
+an onward-sharing or causal claim.
+
+~~~console
+go run ./cmd/ariadne browser weather --json --driver "C:\Program Files\nodejs\node.exe" --driver-arg cmd/browser-fixture-driver/weather_driver.mjs --driver-arg --browser --driver-arg "C:\Program Files\Google\Chrome\Application\chrome.exe" --output .ariadne/runs/weather-location
+go run ./cmd/ariadne browser weather verify --json --expect-sha256 <receipt-sha256> .ariadne/runs/weather-location
+go run ./cmd/ariadne experiment serve --addr 127.0.0.1:8787 --weather .ariadne/runs/weather-location .ariadne/runs
+~~~
+
+Open `/weather` on the loopback review server. The page re-verifies the bundle
+on each GET and never renders coordinates, URLs, payloads, executable paths, or
+local artifact paths. The JSON and page also expose verifier-derived
+per-candidate functionality counts and fixed explanations for visibility gaps.
+See the [weather investigation guide](docs/content/docs/weather-investigation.md)
+for the tested live result and coverage limits. The [audit and verification report](docs/content/docs/audit-report.md)
+records the security findings, performance measurements, and remaining gaps.
 
 ## Development
 
@@ -76,3 +1305,11 @@ Pre-alpha. We are building Experiment 001 in the
 Only analyze software, devices, accounts, and data you own or are explicitly
 authorized to test. Evidence bundles must redact secrets and unrelated personal
 data by default.
+
+### Saved browser capture review
+
+Create a plain-language local HTML inventory with `ariadne browser inspect-har
+--origin https://example.com --output review.html capture.har`. Reports omit raw
+values and identify field-name clues without claiming confirmed disclosure.
+See [capture review](docs/content/docs/browser-capture-review.md) for supported
+inputs and visibility limits.

@@ -94,11 +94,6 @@ func (c *Collector) Close() error {
 }
 
 func (c *Collector) handle(response http.ResponseWriter, request *http.Request) {
-	if !c.claimed.CompareAndSwap(false, true) {
-		http.Error(response, "observation already received", http.StatusConflict)
-		return
-	}
-
 	if request.Method != http.MethodPost {
 		c.reject(response, http.StatusMethodNotAllowed, "request method is not POST")
 		return
@@ -132,6 +127,10 @@ func (c *Collector) handle(response http.ResponseWriter, request *http.Request) 
 		return
 	}
 
+	if !c.claimed.CompareAndSwap(false, true) {
+		http.Error(response, "observation already received", http.StatusConflict)
+		return
+	}
 	c.result <- captureResult{observation: Observation{
 		SchemaVersion: 1,
 		Method:        request.Method,
@@ -142,8 +141,7 @@ func (c *Collector) handle(response http.ResponseWriter, request *http.Request) 
 	response.WriteHeader(http.StatusNoContent)
 }
 
-func (c *Collector) reject(response http.ResponseWriter, status int, message string) {
-	c.result <- captureResult{err: errors.New(message)}
+func (c *Collector) reject(response http.ResponseWriter, status int, _ string) {
 	http.Error(response, "invalid observation", status)
 }
 

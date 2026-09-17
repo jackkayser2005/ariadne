@@ -84,8 +84,11 @@ jobs:
         with:
           name: experiment-001-${{ github.sha }}
           path: |
-            .ariadne/ci/experiment-001
-            .ariadne/ci/experiment-001-storage-gap
+            .ariadne/ci/experiment-001-acceptance.json
+            .ariadne/ci/experiment-001-acceptance.txt
+            .ariadne/ci/experiment-001-reflection.json
+            .ariadne/ci/experiment-001-redacted.json
+            .ariadne/ci-replicated/experiment-001/replication.json
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 14

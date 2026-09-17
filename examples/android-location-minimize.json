@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "name": "android-location-minimize",
+  "variable": "location",
+  "reference_candidate": "exact",
+  "functionality_criterion": "all-non-disclosure-fields-equal-v1",
+  "tap_resource_id": "dev.ariadne.fixture:id/observe_button",
+  "base_persona": {
+    "email": "baseline@example.invalid",
+    "region": "us-east"
+  },
+  "candidates": [
+    {
+      "id": "exact",
+      "value": "37.7749-122.4194"
+    },
+    {
+      "id": "city",
+      "value": "san-francisco"
+    },
+    {
+      "id": "omitted",
+      "omitted": true
+    }
+  ]
+}
