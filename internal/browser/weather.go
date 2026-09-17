@@ -88,6 +88,8 @@ func weatherGapEvidence(id string) WeatherGapEvidence {
 		reason = "A destination outside the reviewed origin allowlist was blocked."
 	case "unsupported-body":
 		reason = "A request body used an encoding outside the bounded parser."
+	case "unsupported-encoding":
+		reason = "A location-like value used a percent encoding outside the reviewed matcher."
 	case "unsupported-channel":
 		reason = "A worker, service worker, shared worker, or WebSocket channel was outside this capture."
 	case "capture-incomplete":
@@ -229,7 +231,7 @@ func validateWeatherSession(s WeatherSession) error {
 	seen := map[string]bool{}
 	for _, g := range s.Gaps {
 		switch g {
-		case "blocked-origin", "unsupported-body", "unsupported-channel", "capture-incomplete", "server-side-unobservable":
+		case "blocked-origin", "unsupported-body", "unsupported-encoding", "unsupported-channel", "capture-incomplete", "server-side-unobservable":
 		default:
 			return errors.New("weather gap invalid")
 		}

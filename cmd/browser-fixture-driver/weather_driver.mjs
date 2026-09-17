@@ -18,12 +18,7 @@ export function validateRequest(r) {
   if (!r || Object.keys(r).length !== keys.length || keys.some(k => !Object.hasOwn(r,k)) || r.schema_version !== 1 || r.procedure_id !== procedureID || !['precise','coarse','denied'].includes(r.candidate) || !/^[a-f0-9]{64}$/.test(r.challenge) || !Number.isInteger(r.duration_ms) || r.duration_ms < 100 || r.duration_ms > 30000) throw new Error('weather request invalid');
 }
 
-// Match a coordinate PAIR, including the site's reviewed three-decimal rounding.
-// Keys and lone numbers are insufficient; unsupported encodings remain unknown.
-export function matchesLocation(value) {
-  if (typeof value !== 'string' || Buffer.byteLength(value) > maxBody) return false;
-  let text = value;
-  try { text = decodeURIComponent(value.replaceAll('+',' ')); } catch { return false; }
+function containsLocationPair(text) {
   const tokens = [...text.matchAll(/(?<![\w.])[+-]?\d+\.\d+(?![\w.])/g)].map(match => Number(match[0]));
   const pairs = Object.values(coordinates).flatMap(pair => {
     const rounded = pair.map(n => Math.round(n*1000)/1000);
@@ -33,8 +28,21 @@ export function matchesLocation(value) {
     if (pairs.some(pair => pair[0] === tokens[index] && pair[1] === tokens[index + 1])) return true;
   }
   return false;
-
 }
+
+// Match a coordinate PAIR, including the site's reviewed three-decimal rounding.
+// Keys and lone numbers are insufficient; unsupported encodings remain unknown.
+function inspectLocation(value) {
+  if (typeof value !== 'string' || Buffer.byteLength(value) > maxBody) return {matched:false,unsupported:false};
+  let text;
+  try { text = decodeURIComponent(value.replaceAll('+',' ')); } catch { return {matched:false,unsupported:true}; }
+  // A second percent-decoding pass is deliberately outside the reviewed scope.
+  // Keep the gap even when another part of this value matched.
+  const unsupported = /%[0-9a-f]{2}/i.test(text);
+  return {matched:containsLocationPair(text),unsupported};
+}
+
+export function matchesLocation(value) { return inspectLocation(value).matched; }
 
 export function allowedRequest(value) {
   try { const u = new URL(value); return u.origin === origin && !u.username && !u.password && u.protocol === 'https:'; } catch { return false; }
@@ -49,32 +57,53 @@ export function weatherCollector(limit = 1024) {
   const add = (stage,destination) => observations.set(stage+destination,{stage,destination,category:'location'});
   return {
     request(p) {
+      p ||= {};
       if (++count > limit) { gaps.add('capture-incomplete'); return; }
+      const requestID = typeof p.requestId === 'string' && p.requestId.length > 0 ? p.requestId : null;
+      if (!requestID) gaps.add('capture-incomplete');
       const r = p.request || {};
       if (p.redirectResponse) {
         if (p.redirectResponse.status === 429) rateLimited = true;
         if (p.redirectResponse.fromServiceWorker || p.redirectResponse.fromDiskCache) gaps.add('capture-incomplete');
         if (!allowedRequest(p.redirectResponse.url)) gaps.add('blocked-origin');
-        if (pending.get(p.requestId) && allowedRequest(p.redirectResponse.url) && !p.redirectResponse.fromServiceWorker && !p.redirectResponse.fromDiskCache) add('response-backed','weather-service');
-        pending.delete(p.requestId);
+        if (requestID && pending.get(requestID) && allowedRequest(p.redirectResponse.url) && !p.redirectResponse.fromServiceWorker && !p.redirectResponse.fromDiskCache) add('response-backed','weather-service');
+        if (requestID) pending.delete(requestID);
       }
-      let matched = matchesLocation(r.url);
+      const urlMatch = inspectLocation(r.url);
+      let matched = urlMatch.matched;
+      if (urlMatch.unsupported) gaps.add('unsupported-encoding');
       if (r.hasPostData) {
         const type = Object.entries(r.headers || {}).find(([k]) => k.toLowerCase()==='content-type')?.[1] || '';
         if (typeof r.postData !== 'string' || Buffer.byteLength(r.postData)>maxBody || !/^(application\/(json|x-www-form-urlencoded)|text\/plain)(;|$)/i.test(type)) gaps.add('unsupported-body');
-        else matched ||= matchesLocation(r.postData);
+        else {
+          const bodyMatch = inspectLocation(r.postData);
+          matched ||= bodyMatch.matched;
+          if (bodyMatch.unsupported) gaps.add('unsupported-encoding');
+        }
       }
       const allowed = allowedRequest(r.url);
       if (!allowed) gaps.add('blocked-origin');
-      if (matched) { add('attempted',allowed ? 'weather-service' : 'undeclared'); if (allowed) pending.set(p.requestId,true); }
+      if (matched) { add('attempted',allowed ? 'weather-service' : 'undeclared'); if (allowed && requestID) pending.set(requestID,true); }
     },
     response(p) {
+      p ||= {};
+      const requestID = typeof p.requestId === 'string' && p.requestId.length > 0 ? p.requestId : null;
+      if (!requestID) gaps.add('capture-incomplete');
       if (p.response?.status === 429) rateLimited = true;
       if (p.response?.fromServiceWorker || p.response?.fromDiskCache) gaps.add('capture-incomplete');
-      if (pending.get(p.requestId) && allowedRequest(p.response?.url) && !p.response?.fromServiceWorker && !p.response?.fromDiskCache) add('response-backed','weather-service');
-      pending.delete(p.requestId);
+      if (requestID && pending.get(requestID)) {
+        if (allowedRequest(p.response?.url) && !p.response?.fromServiceWorker && !p.response?.fromDiskCache) add('response-backed','weather-service');
+        else if (p.response?.url && !allowedRequest(p.response.url)) gaps.add('blocked-origin');
+        else gaps.add('capture-incomplete');
+        pending.delete(requestID);
+      }
     },
-    failed(p) { pending.delete(p.requestId); gaps.add('capture-incomplete'); },
+    failed(p) {
+      const requestID = typeof p?.requestId === 'string' && p.requestId.length > 0 ? p.requestId : null;
+      if (!requestID) gaps.add('capture-incomplete');
+      else pending.delete(requestID);
+      gaps.add('capture-incomplete');
+    },
     gap(g) { gaps.add(g); },
     rateLimited() { return rateLimited; },
     result() { if (pending.size) gaps.add('capture-incomplete'); return {gaps:[...gaps].sort(),observations:[...observations.values()].sort((a,b)=>(a.stage+a.destination).localeCompare(b.stage+b.destination)),rateLimited}; }
