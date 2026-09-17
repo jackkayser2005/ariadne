@@ -30,10 +30,14 @@ const (
 	// CurrentSchemaVersion is the minimization plan schema supported by this build.
 	CurrentSchemaVersion = 1
 	// LegacySummarySchemaVersion is the readable minimization receipt schema
-	// without cross-candidate environment identity.
+	// without authenticated candidate environment identity.
 	LegacySummarySchemaVersion = 1
-	// SummarySchemaVersion is the current raw-value-free minimization receipt schema.
-	SummarySchemaVersion = 2
+	// CandidateEnvironmentSummarySchemaVersion is the readable receipt schema
+	// that added authenticated environment identity to each candidate result.
+	CandidateEnvironmentSummarySchemaVersion = 2
+	// SummarySchemaVersion is the current raw-value-free minimization receipt
+	// schema. It promotes the shared environment identity to the receipt root.
+	SummarySchemaVersion = 3
 
 	// FunctionalityCriterionAllNonDisclosureFields names the first fixed
 	// criterion: every observed field other than the declared input and request
@@ -122,6 +126,7 @@ type MinimizationSummary struct {
 	Variable               string            `json:"variable"`
 	ReferenceCandidate     string            `json:"reference_candidate"`
 	FunctionalityCriterion string            `json:"functionality_criterion"`
+	EnvironmentSHA256      string            `json:"environment_sha256,omitempty"`
 	PairsPerOrder          int               `json:"pairs_per_order"`
 	EvidenceState          evidence.State    `json:"evidence_state"`
 	SelectionState         SelectionState    `json:"selection_state"`
@@ -546,12 +551,14 @@ func summarize(plan MinimizationPlan, pairs int, results []CandidateResult) (Min
 		resultIndex++
 	}
 	selection, selected, state := selectionFor(results)
+	environment := candidateEnvironment(results)
 	summary := MinimizationSummary{
 		SchemaVersion:          SummarySchemaVersion,
 		PlanName:               plan.Name,
 		Variable:               plan.Variable,
 		ReferenceCandidate:     plan.ReferenceCandidate,
 		FunctionalityCriterion: plan.FunctionalityCriterion,
+		EnvironmentSHA256:      environment,
 		PairsPerOrder:          pairs,
 		EvidenceState:          state,
 		SelectionState:         selection,
@@ -714,6 +721,9 @@ func verifyChildren(rootDir string, summary MinimizationSummary) error {
 	if err := validateCandidateEnvironmentIdentities(summary.SchemaVersion, summary.CandidateResults); err != nil {
 		return err
 	}
+	if err := validateSummaryEnvironment(summary); err != nil {
+		return err
+	}
 	selection, selected, state := selectionFor(summary.CandidateResults)
 	if selection != summary.SelectionState || selected != summary.SelectedCandidate || state != summary.EvidenceState {
 		return errors.New("minimization receipt selection does not match candidate results")
@@ -722,8 +732,16 @@ func verifyChildren(rootDir string, summary MinimizationSummary) error {
 }
 
 func validateSummary(summary MinimizationSummary) error {
-	if summary.SchemaVersion != SummarySchemaVersion && summary.SchemaVersion != LegacySummarySchemaVersion {
+	if summary.SchemaVersion != SummarySchemaVersion &&
+		summary.SchemaVersion != CandidateEnvironmentSummarySchemaVersion &&
+		summary.SchemaVersion != LegacySummarySchemaVersion {
 		return fmt.Errorf("unsupported schema_version %d", summary.SchemaVersion)
+	}
+	if summary.EnvironmentSHA256 != "" && !validDigest(summary.EnvironmentSHA256) {
+		return errors.New("environment_sha256 is invalid")
+	}
+	if summary.SchemaVersion != SummarySchemaVersion && summary.EnvironmentSHA256 != "" {
+		return errors.New("environment_sha256 is unsupported for legacy schema")
 	}
 	if !validIdentifier(summary.PlanName, maxPlanName) {
 		return errors.New("plan_name is invalid")
@@ -817,6 +835,9 @@ func validateSummary(summary MinimizationSummary) error {
 	if err := validateCandidateEnvironmentIdentities(summary.SchemaVersion, summary.CandidateResults); err != nil {
 		return err
 	}
+	if err := validateSummaryEnvironment(summary); err != nil {
+		return err
+	}
 	selection, selected, state := selectionFor(summary.CandidateResults)
 	if selection != summary.SelectionState || selected != summary.SelectedCandidate || state != summary.EvidenceState {
 		return errors.New("selection does not match candidate results")
@@ -828,7 +849,7 @@ func validateSummary(summary MinimizationSummary) error {
 }
 
 func validateCandidateEnvironmentIdentities(schemaVersion int, results []CandidateResult) error {
-	if schemaVersion != SummarySchemaVersion {
+	if schemaVersion < CandidateEnvironmentSummarySchemaVersion {
 		return nil
 	}
 	environment := ""
@@ -848,6 +869,35 @@ func validateCandidateEnvironmentIdentities(schemaVersion int, results []Candida
 		if result.EnvironmentSHA256 != environment {
 			return errors.New("candidate environment identities disagree")
 		}
+	}
+	return nil
+}
+
+func candidateEnvironment(results []CandidateResult) string {
+	for _, result := range results {
+		if result.ManifestName != "" && result.BindingSHA256 != "" {
+			return result.EnvironmentSHA256
+		}
+	}
+	return ""
+}
+
+func validateSummaryEnvironment(summary MinimizationSummary) error {
+	if summary.SchemaVersion != SummarySchemaVersion {
+		return nil
+	}
+	environment := candidateEnvironment(summary.CandidateResults)
+	if environment == "" {
+		if summary.EnvironmentSHA256 != "" {
+			return errors.New("environment_sha256 has no authenticated candidate")
+		}
+		return nil
+	}
+	if summary.EnvironmentSHA256 == "" {
+		return errors.New("environment_sha256 is unavailable")
+	}
+	if summary.EnvironmentSHA256 != environment {
+		return errors.New("environment_sha256 disagrees with candidate results")
 	}
 	return nil
 }

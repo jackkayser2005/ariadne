@@ -1617,6 +1617,7 @@ func TestReportFromMinimization(t *testing.T) {
 		android.CandidateResults[index].BindingSHA256 = strings.Repeat("f", 64)
 		android.CandidateResults[index].EnvironmentSHA256 = strings.Repeat("a", 64)
 	}
+	android.EnvironmentSHA256 = strings.Repeat("a", 64)
 	report = reportFromMinimization(android, "android-bound")
 	if report.Overall != StatusPass ||
 		report.EnvironmentSHA256 != strings.Repeat("a", 64) ||

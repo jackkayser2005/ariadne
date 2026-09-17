@@ -171,10 +171,13 @@ capture or verification is incomplete. Ariadne selects only the least-
 disclosing sufficient candidate tested after every candidate is observed
 consistently; otherwise the selection remains unknown or reports that no
 candidate was sufficient. This is a minimum tested sufficient disclosure, not
-an absolute minimum or a universal causal claim. Current authenticated Android
-candidate results also bind one shared environment identity across the ladder;
-environment drift is an unavailable or inconsistent boundary, never a
-successful reduction.
+an absolute minimum or a universal causal claim. The current authenticated
+Android minimization receipt is schema 3: it records one shared
+`environment_sha256` at the receipt root and repeats it in each bound candidate
+result. Environment drift is an unavailable or inconsistent boundary, never a
+successful reduction. Schema 2 receipts remain readable with the identity only
+on their candidate results; legacy schema 1 receipts remain readable without
+that guarantee.
 The minimization ladder also has a fixed reflection catalog. These commands
 retain the decision without reopening or copying the local input values:
 
