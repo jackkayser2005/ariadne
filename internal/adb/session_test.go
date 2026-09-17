@@ -1,9 +1,11 @@
 package adb
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -120,8 +122,10 @@ func TestRunPair(t *testing.T) {
 			t.Fatal(err)
 		}
 		text := string(data)
-		if !strings.Contains(text, `"schema_version": 3`) ||
+		if !strings.Contains(text, `"schema_version": 4`) ||
 			!strings.Contains(text, `"kind": "`+kind+`"`) ||
+			!strings.Contains(text, `"volatile_fields": [`) ||
+			!strings.Contains(text, `"request_id"`) ||
 			!strings.Contains(text, `"status": "complete"`) ||
 			strings.Contains(text, `"failure_stage"`) ||
 			!strings.Contains(text, `"exit_code": 0`) ||
@@ -139,6 +143,132 @@ func TestRunPair(t *testing.T) {
 				t.Fatalf("%s session metadata exposed persona value %q", kind, value)
 			}
 		}
+	}
+}
+
+func TestRunPairUsesStableResourceInteraction(t *testing.T) {
+	manifest := sessionManifest()
+	manifest.SchemaVersion = 3
+	manifest.TapResourceID = "dev.ariadne.fixture:id/observe_button"
+	contractDigest := manifest.ContractDigest()
+	target := sessionTarget()
+	var calls [][]string
+	var startArgs []string
+	var current []byte
+	captures := [][]byte{
+		[]byte(`{"schema_version":1,"region":"us-east","variant":"standard"}`),
+		[]byte(`{"schema_version":1,"region":"us-east","variant":"personalized"}`),
+	}
+	ui := []byte(`<hierarchy><node resource-id="" bounds="[0,0][1000,1000]"><node resource-id="dev.ariadne.fixture:id/observe_button" bounds="[100,200][300,400]" /></node></hierarchy>`)
+	duplicateUI := []byte(`<hierarchy><node resource-id="dev.ariadne.fixture:id/observe_button" bounds="[0,0][100,100]" /><node resource-id="dev.ariadne.fixture:id/observe_button" bounds="[100,100][200,200]" /></hierarchy>`)
+	uiDumps := 0
+	run := func(_ context.Context, binary string, args ...string) ([]byte, error) {
+		calls = append(calls, append([]string{binary}, args...))
+		if args[3] == "pm" {
+			return []byte("Success\n"), nil
+		}
+		if args[2] == "reverse" {
+			return nil, nil
+		}
+		if args[3] == "am" {
+			startArgs = append([]string(nil), args...)
+			return []byte("Status: ok\n"), nil
+		}
+		if args[3] == "uiautomator" || args[3] == "rm" {
+			return nil, nil
+		}
+		if args[3] == "cat" {
+			uiDumps++
+			if uiDumps == 1 {
+				return duplicateUI, nil
+			}
+			return ui, nil
+		}
+		if args[3] == "input" {
+			current = captures[0]
+			if err := postFixtureObservation(startArgs, current); err != nil {
+				return nil, err
+			}
+			return nil, nil
+		}
+		if args[2] == "exec-out" {
+			output := current
+			captures = captures[1:]
+			return output, nil
+		}
+		return []byte("Status: ok\n"), nil
+	}
+
+	outputDir := filepath.Join(t.TempDir(), "run")
+	if err := runPairWith(
+		context.Background(),
+		"adb",
+		target,
+		manifest,
+		outputDir,
+		run,
+		sequenceClock(),
+	); err != nil {
+		t.Fatalf("runPairWith() error = %v", err)
+	}
+
+	seenDump := false
+	seenTap := false
+	for _, call := range calls {
+		if len(call) >= 8 && call[4] == "uiautomator" && call[6] == "--compressed" {
+			seenDump = true
+		}
+		if len(call) >= 8 && call[4] == "input" && call[6] == "200" && call[7] == "300" {
+			seenTap = true
+		}
+	}
+	if !seenDump || !seenTap {
+		t.Fatalf("interaction calls missing from %#v", calls)
+	}
+	if uiDumps < 3 {
+		t.Fatalf("UI hierarchy was not retried before tapping: %d dumps", uiDumps)
+	}
+	for _, kind := range []string{"baseline", "treatment"} {
+		data, err := os.ReadFile(filepath.Join(outputDir, kind, "session.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := string(data)
+		uiSum := sha256.Sum256(ui)
+		if !strings.Contains(text, `"schema_version": 7`) ||
+			!strings.Contains(text, `"tap_resource_id": "dev.ariadne.fixture:id/observe_button"`) ||
+			!strings.Contains(text, `"manifest_contract_sha256": "`+contractDigest+`"`) ||
+			!strings.Contains(text, `"name": "interact"`) ||
+			!strings.Contains(text, `"ui_hierarchy_sha256": "`+fmt.Sprintf("%x", uiSum)+`"`) ||
+			strings.Contains(text, string(ui)) {
+			t.Fatalf("%s session metadata = %s", kind, text)
+		}
+	}
+}
+
+func TestTapCoordinatesRejectsAmbiguousOrHostileUI(t *testing.T) {
+	const resourceID = "dev.ariadne.fixture:id/observe_button"
+	valid := []byte(`<hierarchy><node resource-id="` + resourceID + `" bounds="[10,20][110,220]" /></hierarchy>`)
+	coordinates, err := tapCoordinates(valid, resourceID)
+	if err != nil || coordinates != [2]int{60, 120} {
+		t.Fatalf("tapCoordinates() = %v, %v", coordinates, err)
+	}
+	for _, test := range []struct {
+		name string
+		data []byte
+	}{
+		{name: "malformed", data: []byte("<hierarchy>")},
+		{name: "missing", data: []byte(`<hierarchy><node resource-id="other" bounds="[0,0][1,1]" /></hierarchy>`)},
+		{name: "duplicate", data: []byte(`<hierarchy><node resource-id="` + resourceID + `" bounds="[0,0][1,1]" /><node resource-id="` + resourceID + `" bounds="[1,1][2,2]" /></hierarchy>`)},
+		{name: "bad bounds", data: []byte(`<hierarchy><node resource-id="` + resourceID + `" bounds="[0,0][0,1]" /></hierarchy>`)},
+		{name: "trailing XML", data: []byte(`<hierarchy><node resource-id="` + resourceID + `" bounds="[0,0][1,1]" /></hierarchy><extra />`)},
+		{name: "oversized", data: bytes.Repeat([]byte("x"), 256<<10+1)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := tapCoordinates(test.data, resourceID); err == nil {
+				t.Fatal("tapCoordinates() error = nil")
+			}
+		})
 	}
 }
 
@@ -304,6 +434,58 @@ func TestRunPairCleansNetworkMappingAfterMissingObservation(t *testing.T) {
 		!strings.Contains(text, `"status": "incomplete"`) ||
 		!strings.Contains(text, `"failure_stage": "capture_network"`) {
 		t.Fatalf("failure metadata = %s", data)
+	}
+}
+
+func TestAuthenticatedRunRecordsZeroNetworkCaptureShape(t *testing.T) {
+	outputDir := filepath.Join(t.TempDir(), "run")
+	manifest := sessionManifest()
+	manifest.SchemaVersion = 3
+	manifest.TapResourceID = "dev.ariadne.fixture:id/observe_button"
+	ui := []byte(`<hierarchy><node resource-id="dev.ariadne.fixture:id/observe_button" bounds="[100,200][300,400]" /></hierarchy>`)
+	run := func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		if args[3] == "pm" {
+			return []byte("Success"), nil
+		}
+		if args[2] == "reverse" {
+			return nil, nil
+		}
+		if args[3] == "uiautomator" {
+			return ui, nil
+		}
+		if args[3] == "cat" {
+			return ui, nil
+		}
+		if args[3] == "input" {
+			return nil, nil
+		}
+		return []byte("Status: ok"), nil
+	}
+	writeInput := func(context.Context, string, []byte, ...string) ([]byte, error) {
+		return nil, nil
+	}
+	challenge := func() (string, error) {
+		return strings.Repeat("a", 64), nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	err := runPairWithAuthenticated(ctx, "adb", sessionTarget(), manifest, outputDir, run, writeInput, challenge, sequenceClock())
+	if err == nil || !strings.Contains(err.Error(), "capture network") {
+		t.Fatalf("runPairWithAuthenticated() error = %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(outputDir, "baseline", "session.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record SessionRecord
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatal(err)
+	}
+	if record.Status != "incomplete" || record.FailureStage != "capture_network" || len(record.Steps) != 7 || len(record.Artifacts) != 0 {
+		t.Fatalf("zero-network session = %#v", record)
+	}
+	if record.Steps[4].Name != "capture_network" || record.Steps[4].Status != "error" || record.Steps[5].Name != "capture_storage" || record.Steps[5].Status != "error" {
+		t.Fatalf("zero-network steps = %#v", record.Steps)
 	}
 }
 
@@ -657,9 +839,14 @@ func TestRunPairRejectsUnexpectedResetOutput(t *testing.T) {
 }
 
 func TestFinishSessionReportsWriteFailure(t *testing.T) {
+	root := t.TempDir()
+	blocked := filepath.Join(root, "blocked")
+	if err := os.WriteFile(blocked, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	record := SessionRecord{}
 	err := finishSession(
-		filepath.Join(t.TempDir(), "missing"),
+		blocked,
 		&record,
 		time.Now,
 		"",
@@ -698,7 +885,7 @@ func TestCommandExitCode(t *testing.T) {
 
 func sessionManifest() experiment.Manifest {
 	return experiment.Manifest{
-		SchemaVersion: experiment.CurrentSchemaVersion,
+		SchemaVersion: 2,
 		Name:          "experiment-001-email",
 		Variable:      "email",
 		Baseline: experiment.Persona{
@@ -709,6 +896,7 @@ func sessionManifest() experiment.Manifest {
 			"email":  "treatment@example.invalid",
 			"region": "us-east",
 		},
+		VolatileFields: []string{"request_id"},
 	}
 }
 

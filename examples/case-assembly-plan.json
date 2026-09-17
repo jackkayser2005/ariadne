@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "order_basis": "caller",
+  "entries": [
+    {
+      "kind": "trace-archive",
+      "artifact_path": ".ariadne/trace-archive.json",
+      "question_round_path": ".ariadne/trace-archive-round.json"
+    },
+    {
+      "kind": "trace-replication",
+      "artifact_path": ".ariadne/trace-replication.json",
+      "question_round_path": ".ariadne/trace-replication-round.json"
+    }
+  ]
+}

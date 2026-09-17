@@ -1,6 +1,7 @@
 package dev.ariadne.fixture;
 
 import java.util.Objects;
+import java.util.UUID;
 
 final class ExperimentLogic {
     private static final String TREATMENT_NETWORK_ONLY = "treatment_network_only";
@@ -10,6 +11,10 @@ final class ExperimentLogic {
     static String variantFor(String email) {
         Objects.requireNonNull(email, "email");
         return email.startsWith("treatment@") ? "personalized" : "standard";
+    }
+
+    static String requestID() {
+        return UUID.randomUUID().toString();
     }
 
     static boolean shouldWriteStorage(String email, String captureMode) {

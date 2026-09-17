@@ -2,6 +2,8 @@ package dev.ariadne.fixture;
 
 import android.app.Activity;
 import android.os.Bundle;
+import android.view.View;
+import android.widget.Button;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -12,28 +14,60 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicReference;
 
 public final class MainActivity extends Activity {
+    static final String INPUT_FILE = "ariadne-input.json";
     static final String OBSERVATION_FILE = "observation.json";
     private static final int REPORT_TIMEOUT_MILLIS = 5_000;
+
+    private String email;
+    private String region;
+    private String location;
+    private String captureMode;
+    private int collectorPort;
+    private String challenge;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        String email = getIntent().getStringExtra("email");
-        String region = getIntent().getStringExtra("region");
-        if (email == null || region == null) {
+        FixtureInput input;
+        try {
+            input = FixtureInput.read(this);
+        } catch (IOException error) {
+            setResult(RESULT_CANCELED);
+            finish();
+            return;
+        }
+        if (!getPackageName().equals(input.packageName())) {
             setResult(RESULT_CANCELED);
             finish();
             return;
         }
 
+        email = input.value("email");
+        region = input.value("region");
+        location = input.value("location");
+        challenge = input.challenge();
+        if (email == null || (region == null && location == null) || challenge == null) {
+            setResult(RESULT_CANCELED);
+            finish();
+            return;
+        }
+
+        captureMode = input.value("capture_mode");
+        collectorPort = input.collectorPort();
+        setContentView(R.layout.activity_main);
+        Button observeButton = findViewById(R.id.observe_button);
+        observeButton.setOnClickListener(this::runObservation);
+        observeButton.requestFocus();
+    }
+
+    private void runObservation(View view) {
+        view.setEnabled(false);
         try {
-            byte[] observation = observationFor(email, region);
-            String captureMode = getIntent().getStringExtra("capture_mode");
+            byte[] observation = observationFor(email, region, location, challenge);
             if (ExperimentLogic.shouldWriteStorage(email, captureMode)) {
                 writeObservation(observation);
             }
-            int collectorPort = getIntent().getIntExtra("collector_port", 0);
             if (collectorPort != 0) {
                 reportObservation(collectorPort, observation);
             }
@@ -44,10 +78,17 @@ public final class MainActivity extends Activity {
         finish();
     }
 
-    private byte[] observationFor(String email, String region) throws JSONException {
+    private byte[] observationFor(String email, String region, String location, String challenge) throws JSONException {
         JSONObject observation = new JSONObject()
                 .put("schema_version", 1)
-                .put("region", region)
+                .put("challenge", challenge);
+        if (location != null) {
+            observation.put("location", location);
+        } else {
+            observation.put("region", region);
+        }
+        observation
+                .put("request_id", ExperimentLogic.requestID())
                 .put("variant", ExperimentLogic.variantFor(email));
         return observation.toString().getBytes(StandardCharsets.UTF_8);
     }

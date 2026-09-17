@@ -14,15 +14,19 @@ Two personas will differ in exactly one declared value. The specific value will
 be selected with the fixture application so that the expected influence is
 known without being hard-coded into Ariadne.
 
-## Manifest v1
+## Manifest
 
 The first manifest is intentionally flat:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 3,
   "name": "experiment-001-email",
   "variable": "email",
+  "volatile_fields": [
+    "request_id"
+  ],
+  "tap_resource_id": "dev.ariadne.fixture:id/observe_button",
   "baseline": {
     "email": "baseline@example.invalid",
     "region": "us-east"
@@ -36,11 +40,18 @@ The first manifest is intentionally flat:
 
 Both personas must contain the same string keys. Exactly one value must differ,
 and its key must equal `variable`. Nested values and non-string persona values
-are outside v1.
+are not supported by either current manifest schema.
 
 The parser will reject inputs larger than 64 KiB, duplicate JSON keys, unknown
 top-level fields, and trailing data. Validation errors may name fields but must
 never include persona values.
+
+Manifest schema 2 adds an optional `volatile_fields` array of unique observation
+field names. Schema 3 adds the required `tap_resource_id` stable resource ID for
+one authorized fixture action. Schema 1 and 2 remain accepted for launch-only
+sessions. The list is limited to 64 names and is stored in sorted order with
+each session. Resource IDs are bounded ASCII identifiers; coordinates are never
+stored in the manifest.
 
 ## Validate a manifest
 
@@ -55,10 +66,42 @@ Successful validation prints stable metadata without displaying persona values:
 ```text
 valid manifest
 name: experiment-001-email
-schema_version: 1
+schema_version: 3
 variable: email
 persona_fields: 2
+manifest_contract_sha256: <64 lowercase hexadecimal characters>
 ```
+
+
+## Unified artifact validation
+
+Use the unified command when you want one safe status summary across the
+current manifest, Android bundle, and raw-value-free acceptance boundaries:
+
+~~~console
+go run ./cmd/ariadne validate --json examples/experiment-001.json
+go run ./cmd/ariadne validate --json <replicated-directory>
+go run ./cmd/ariadne validate --json <minimization-directory>
+go run ./cmd/ariadne validate --json <acceptance.json>
+go run ./cmd/ariadne validate --json <reflection.json>
+go run ./cmd/ariadne validate --json <history.json>
+go run ./cmd/ariadne validate --json <history-round.json>
+go run ./cmd/ariadne validate --json <history-receipt.json>
+go run ./cmd/ariadne validate --json <history-acceptance.json>
+~~~
+
+The report always lists the four tiers `structural`, `integrity`, `boundary`,
+and `replay`. A complete authenticated Android root can pass all four. A
+legacy root may be a `warning` because provenance is unavailable; an
+incomplete root is `unknown`; a malformed or mismatched root is `fail`.
+`replay` means that recorded pairs are complete enough for a later controlled
+replay or reproducibility review; it does not run anything. Only pass exits successfully; warning, unknown, fail, and unavailable return a nonzero exit.
+
+The JSON and human modes are raw-value-free. They contain no local paths,
+persona values, captured payloads, secrets, device serials, or driver
+arguments. Android replication `outcome` and `evidence_state` remain separate,
+and minimization reports retain the separate candidate selection state. An Android acceptance receipt is checked as a contract-only handoff: its outcome and evidence state are preserved, but replay is unavailable because validation does not reopen the source artifacts. Transition histories, fixed question rounds, selected receipts, and acceptance records are also recognized as contract-only artifacts; source provenance and replay remain unavailable because validation does not reopen source reflections or perform UI selection. This command composes the existing verifiers; it does not replace the specialized
+trace, browser, proxy, case, study, or question transition and receipt verification commands.
 
 ## Android target preflight
 
@@ -91,15 +134,25 @@ than 256 MiB.
 
 ## Authorized fixture
 
-The fixture package is `dev.ariadne.fixture`. Its exported activity accepts
-`email` and `region` string extras, writes `files/observation.json`, and exits.
-It requests Android's normal `INTERNET` permission. It sends no request unless
-the runner supplies `collector_port`; when supplied, it posts the same JSON to
-IPv4 loopback. Cleartext traffic to other destinations is denied.
+The fixture package is `dev.ariadne.fixture`. Its `MainActivity` is exported
+only behind Android's `android.permission.DUMP`, allowing the authorized ADB
+shell to launch it while ordinary applications cannot. The runner starts it
+through `adb shell am` without persona, challenge, or collector-port extras.
+The runner first writes
+one bounded canonical input document through non-PTY `adb shell -T` stdin into the
+app-private files area. The activity consumes and deletes that document once,
+renders the `observe_button` control, and waits for that control before writing
+`files/observation.json` and exiting. The runner resolves the exact declared
+resource ID from a bounded UI hierarchy and taps its center; it does not use
+coordinates from the manifest or arbitrary shell commands. The activity
+requests Android's normal `INTERNET` permission. It sends no request unless the
+private input supplies `collector_port`; when supplied, it posts the same JSON
+to IPv4 loopback. Cleartext traffic to other destinations is denied.
 
 For the example manifest, the stored `variant` is `standard` for the baseline
 email and `personalized` for the treatment email. Ariadne does not contain this
-rule.
+rule. The fixture also generates a fresh `request_id` for every session and
+uses the same observation bytes for storage and network capture.
 
 ## Reproduce from a fresh checkout
 
@@ -141,18 +194,191 @@ Validate the manifest, verify the selected target, and execute the experiment:
 go run ./cmd/ariadne validate examples/experiment-001.json
 go run ./cmd/ariadne android check --device emulator-5554 --package dev.ariadne.fixture
 go run ./cmd/ariadne experiment run --device emulator-5554 --package dev.ariadne.fixture --output .ariadne/runs/experiment-001 examples/experiment-001.json
+go run ./cmd/ariadne experiment replicate --device emulator-5554 --package dev.ariadne.fixture --pairs 1 --output .ariadne/runs/experiment-001-replicated examples/experiment-001.json
+go run ./cmd/ariadne experiment report .ariadne/runs/experiment-001-replicated/pair-001-baseline-treatment
+go run ./cmd/ariadne experiment report .ariadne/runs/experiment-001-replicated/pair-001-treatment-baseline
+go run ./cmd/ariadne experiment replicate verify --json .ariadne/runs/experiment-001-replicated
 go run ./cmd/ariadne experiment report .ariadne/runs/experiment-001
+go run ./cmd/ariadne experiment export .ariadne/runs/experiment-001 .ariadne/runs/experiment-001.redacted.json
+go run ./cmd/ariadne experiment export verify --json .ariadne/runs/experiment-001.redacted.json
+go run ./cmd/ariadne experiment export verify --json --expect-sha256 <export-sha256> .ariadne/runs/experiment-001.redacted.json
+go run ./cmd/ariadne experiment export ask --json .ariadne/runs/experiment-001.redacted.json counterfactual-change
+go run ./cmd/ariadne experiment export finding --json .ariadne/runs/experiment-001.redacted.json <finding-id>
+go run ./cmd/ariadne experiment verify .ariadne/runs/experiment-001
+go run ./cmd/ariadne experiment verify --json .ariadne/runs/experiment-001
+go run ./cmd/ariadne experiment list --json .ariadne/runs
+go run ./cmd/ariadne experiment serve --addr 127.0.0.1:8787 .ariadne/runs
+go run ./cmd/ariadne experiment finding .ariadne/runs/experiment-001 <finding-id-from-evidence.json>
+go run ./cmd/ariadne experiment questions
+go run ./cmd/ariadne experiment questions --json
+go run ./cmd/ariadne experiment ask .ariadne/runs/experiment-001 counterfactual-change
+go run ./cmd/ariadne experiment ask --json .ariadne/runs/experiment-001 counterfactual-change
+go run ./cmd/ariadne experiment ask-archive --json .ariadne/runs counterfactual-change
+go run ./cmd/ariadne experiment ask-archive save --json .ariadne/runs counterfactual-change .ariadne/archive-question.json
+go run ./cmd/ariadne experiment ask-archive verify --json .ariadne/archive-question.json
+go run ./cmd/ariadne experiment ask-archive verify --json --expect-sha256 <reflection-sha256> .ariadne/archive-question.json
+go run ./cmd/ariadne experiment trace --session baseline <run-directory> <baseline-trace.json>
+go run ./cmd/ariadne experiment trace --session treatment <run-directory> <treatment-trace.json>
+go run ./cmd/ariadne trace compare --json <baseline-trace.json> <treatment-trace.json>
+go run ./cmd/ariadne experiment ask-archive compare --json <older-report.json> <newer-report.json>
+go run ./cmd/ariadne experiment ask-archive compare-current --json <older-report.json> <archive-root>
+go run ./cmd/ariadne experiment ask-archive transitions --json <report-1.json> <report-2.json> ...
+go run ./cmd/ariadne experiment ask-archive transitions questions --json
+go run ./cmd/ariadne experiment ask-archive transitions ask --json <history.json> [<question-id>]
+go run ./cmd/ariadne experiment ask-archive transitions ask repeated --json <history.json>
+go run ./cmd/ariadne experiment ask-archive transitions ask all --json <history.json>
+go run ./cmd/ariadne experiment ask-archive transitions ask all save --json <history.json> <round.json>
+go run ./cmd/ariadne experiment ask-archive transitions ask all verify --json [--expect-sha256 <digest>] <round.json>
+go run ./cmd/ariadne experiment ask-archive transitions ask receipt --json <history.json> <question-id>
+go run ./cmd/ariadne experiment ask-archive transitions ask receipt save --json <history.json> <question-id> <receipt.json>
+go run ./cmd/ariadne experiment ask-archive transitions save --json <report-1.json> <report-2.json> ... <history.json>
+go run ./cmd/ariadne experiment ask-archive transitions verify --json <transitions.json>
+go run ./cmd/ariadne experiment serve --history <transitions.json> --reflection <reflection.json> .ariadne/runs
+go run ./cmd/ariadne experiment serve --export .ariadne/runs/experiment-001.redacted.json .ariadne/runs
+go run ./cmd/ariadne experiment finding --json .ariadne/runs/experiment-001 <finding-id-from-evidence.json>
 ```
 
 The output directory must not exist before `experiment run`. A successful final
 command reports `experiment-001-email` with one difference. `report.md` must
 show `variant` changing from `standard` to `personalized`, `region` remaining
-stable, and six verified artifacts.
+stable, `request_id` normalized, and six verified artifacts.
 
 In `evidence.json`, `target.package_sha256` must equal the SHA-256 of the built
 APK, `target.ariadne_revision` must equal `git rev-parse HEAD`, and
 `target.ariadne_modified` must reflect whether the checkout had source changes
 when `go run` built Ariadne.
+
+For replicated execution, use a separate output directory. `--pairs 1` creates
+two independently verifiable pair directories: one runs baseline then
+treatment, and the other runs treatment then baseline. Every session begins
+with `adb shell pm clear`, and `replication.json` records the reset policy,
+pair order, and completion status without persona values or captured output.
+`experiment replicate verify` rechecks each complete pair's `evidence.json` and
+`report.md`, returns their safe evidence SHA-256 identities, and returns four
+possible aggregate outcomes: `replicated-change` when every ordered pair
+changed, `no-change-observed` when none changed, `mixed-inconsistent` when
+complete pairs disagree, and `unknown` when a pair or its evidence is
+incomplete. Its `evidence_state` is a separate field and remains `unknown`
+when the captures do not support a conclusion. The outcome is repeat evidence,
+not a universal causal claim. The root receipt SHA-256 binds the summary to the
+recorded execution order and reset policy; it does not turn the result into a
+universal causal claim.
+
+Authenticated replication roots produced by the current runner also include
+provenance_sha256. The digest binds the canonical Android source, adapter,
+adapter version, manifest contract as the reviewed procedure identity, and
+the fixed all scope. Verification cross-checks that digest against each
+complete pair before returning it in the safe summary. A legacy replication
+root without the field remains readable and reports no invented provenance.
+
+## Golden Android acceptance receipt
+
+The hosted workflow is the canonical end-to-end acceptance path for the current
+Android fixture. It pins API 35, Google APIs, x86_64, the pixel_7 profile, and
+emulator port 5554. It proves the standalone run, both replication orders, the
+authenticated session boundary, the raw-value-free export, the bounded
+reflection, and the read-only review projection before publishing a small safe
+artifact set.
+
+A local checkout can create the same receipt only when it has produced the
+current golden target and artifact contract. After the standalone run,
+replication, export, and reflection are verified, start the review server in
+one terminal:
+
+~~~console
+go run ./cmd/ariadne experiment serve --addr 127.0.0.1:8787 --reflection .ariadne/archive-question.json --export .ariadne/runs/experiment-001.redacted.json .ariadne/runs
+~~~
+
+In another terminal, check GET / and
+GET /run?directory=experiment-001. Confirm a POST to / returns 405 and
+Allow: GET. Then save and verify the raw-value-free acceptance receipt:
+
+~~~console
+go run ./cmd/ariadne experiment acceptance save --json --review-self-attested \
+  .ariadne/runs/experiment-001 \
+  .ariadne/runs/experiment-001-replicated \
+  .ariadne/runs/experiment-001.redacted.json \
+  .ariadne/archive-question.json \
+  .ariadne/experiment-001-acceptance.json
+go run ./cmd/ariadne experiment acceptance verify --json \
+  .ariadne/experiment-001-acceptance.json
+go run ./cmd/ariadne experiment acceptance verify --json \
+  --expect-sha256 <acceptance-sha256> \
+  .ariadne/experiment-001-acceptance.json
+~~~
+
+The review check is a prerequisite for the flag; the flag does not simulate
+computer use or target behavior. The receipt keeps only fixed identities,
+counts, replicated outcome, separate evidence states, the selected question
+identity, and the GET-only review contract. It does not contain personas,
+challenges, payloads, device serials, paths, or URLs. Offline verification
+checks the receipt contract and canonical identity; it does not rerun Android
+or establish universal causality.
+
+The hosted workflow uploads only the acceptance JSON and text report, the
+raw-value-free reflection and export, and the safe replication root receipt.
+Authoritative run directories and raw reports remain local CI inputs.
+
+## Minimum-disclosure lab
+
+The location ladder is the first reduction slice. Its plan is
+[`examples/android-location-minimize.json`](../../../../examples/android-location-minimize.json)
+and contains the synthetic candidate values in the local authoritative input:
+`exact`, `city`, and an explicit omitted sentinel. The fixture emits the
+candidate through a `location` observation field while retaining the stable
+functionality signal.
+
+Run it only against the explicitly selected authorized emulator:
+
+```console
+go run ./cmd/ariadne experiment minimize --device emulator-5554 --package dev.ariadne.fixture --pairs 1 --output .ariadne/runs/android-location-minimize examples/android-location-minimize.json
+go run ./cmd/ariadne experiment minimize verify --json .ariadne/runs/android-location-minimize
+```
+
+The verifier returns the observed root receipt SHA-256. For an independently
+retained trust anchor, require the exact canonical receipt identity:
+
+```console
+go run ./cmd/ariadne experiment minimize verify --json \
+  --expect-sha256 <receipt-sha256> \
+  .ariadne/runs/android-location-minimize
+```
+
+This pins the raw-value-free receipt and its verified child identities; it is
+not a signature or a universal causal claim.
+
+The reference candidate is not executed as a treatment; it supplies the fixed
+baseline for each lower-disclosure candidate. Every candidate runs through the
+same two-order replicated engine, and the minimization command automatically
+writes and verifies each child evidence bundle before saving
+`minimization.json`. The receipt is raw-value-free. Its candidate result keeps
+counterfactual `outcome` separate from `evidence_state` and classifies results
+as `sufficient`, `insufficient`, `mixed-inconsistent`, or `unknown`.
+
+Selection is conservative: all tested candidates must have complete observed
+evidence and no mixed result. The selected ID is therefore the minimum tested
+sufficient disclosure in the caller's explicit ladder order. An incomplete
+capture, failed reset, or unverifiable child prevents a privacy selection and
+leaves the minimization decision unknown.
+The verified ladder can also be retained as a fixed question reflection. The
+catalog is deliberately small: it asks what minimum tested sufficient
+disclosure the ladder established and whether every candidate has complete
+replicated support and observed evidence.
+
+~~~console
+go run ./cmd/ariadne experiment minimize questions --json
+go run ./cmd/ariadne experiment minimize ask all save --json <minimization-directory> <round.json>
+go run ./cmd/ariadne experiment minimize ask all verify --json --expect-sha256 <round-sha256> <round.json>
+go run ./cmd/ariadne experiment minimize ask receipt save --json <round.json> <question-id> <receipt.json>
+go run ./cmd/ariadne experiment minimize ask receipt verify --json --expect-sha256 <receipt-sha256> <receipt.json>
+~~~
+
+The round contains safe candidate IDs, classifications, counterfactual
+outcomes, evidence states, counts, and child receipt identities. The selected
+receipt binds one answer to the round. Neither artifact includes plan values,
+personas, device details, local paths, URLs, or captured observations. Round
+and receipt verification is structural and does not re-prove the source
+evidence.
 
 ### Common failures
 
@@ -164,8 +390,263 @@ when `go run` built Ariadne.
   APK before running either session.
 - If report generation fails, inspect each `session.json` step status. Ariadne
   fails closed for unsupported capture shapes or artifact integrity failures.
+- Verification can use `--json` for the stable raw-value-free fields
+  `manifest_name`, `differences`, and `unknowns`; it remains non-destructive.
+- `experiment trace --session baseline|treatment <run-directory> <trace.json>`
+  re-verifies the bundle and writes a raw-value-free trace for one selected
+  Android session. It recognizes only the fixture's known network and private
+  storage artifacts, maps the `region` and volatile `request_id` keys to safe
+  category labels, omits `variant`, and marks an incomplete treatment trace
+  `partial`.
+  Use `trace compare` to keep a missing storage event `unknown` rather than
+  treating it as an observed absence.
+- `experiment export <run-directory> <export.json>` re-verifies the source
+  bundle, then writes an additive raw-value-free JSON projection. It includes
+  the verified source `evidence.json` SHA-256, safe target and provenance
+  fields, artifact references, finding IDs, classifications, evidence
+  references, and normalization descriptions. It omits device serial, ADB
+  version, and baseline/treatment comparison values, and refuses an existing
+  destination. The command also returns a canonical SHA-256 identity for the
+  raw-value-free export content. The authoritative `evidence.json` and
+  `report.md` remain the local analysis source and must not be shared as the
+  redacted export.
+- `experiment export verify [--json] [--expect-sha256 <digest>] <export.json>`
+  validates a received projection without needing the original run directory.
+  It checks the export schema, duplicate/unknown keys, source schema version,
+  hashes, states, artifact metadata, and finding IDs, then returns the same
+  canonical export identity. `--expect-sha256` fails closed unless that
+  identity matches. A successful result proves only that the export satisfies
+  Ariadne's structural contract; it does not prove the original source
+  evidence.
+- `experiment export ask [--json] <export.json> counterfactual-change` verifies
+  the projection and answers its one embedded counterfactual question using
+  only the redacted answer state and finding IDs. `capture-complete` and
+  `source-integrity` remain unavailable because they require the authoritative
+  evidence bundle. The JSON answer also carries the source-evidence and export
+  SHA-256 identities that were verified before answering.
+- `experiment export finding [--json] <export.json> <finding-id>` verifies the
+  projection and returns one referenced finding's safe kind, field, state, and
+  evidence paths. It never returns comparison values; legacy exports without
+  current finding IDs cannot answer this lookup. The JSON finding carries the
+  same source-evidence and export identities.
+- `experiment list --json <archive-root>` inspects only immediate child
+  directories, rejects symbolic links, and returns only relative directory
+  names plus verified summary fields.
+- `experiment ask-archive [--json] <archive-root> <question-id>` re-verifies one
+  fixed bounded question across those immediate children. It orders dated
+  results oldest first by verifier-provided UTC recording time, places undated
+  results last, and reports observed, unknown, unavailable, and checked counts.
+  Unavailable entries do not expose their internal verification errors.
+  Versioned JSON also carries the verified manifest contract digest, source
+  `evidence.json` SHA-256, recorded Ariadne revision, and modified-worktree
+  flag when current provenance exists.
+  It contains only safe directory and manifest names, timestamps, bounded
+  answer states, verifier-owned reasons, finding IDs, and that provenance; the
+  digest points back to the authoritative bundle but does not make this
+  derived reflection view authoritative. It never returns observed or persona
+  values and does not infer a trend.
+- `experiment ask-archive save [--json] <archive-root> <question-id> <report.json>`
+  derives and saves one validated raw-value-free reflection with exclusive
+  file creation. It refuses to overwrite an existing path and returns the same
+  canonical reflection identity used by offline verification. The saved report
+  can then be supplied to `compare` or `transitions`.
+- `experiment ask-archive compare [--json] <older-report.json> <newer-report.json>`
+  re-verifies two saved reflections and compares only their per-directory answer
+  states. It returns `same` or `changed` when the directory membership matches,
+  and `incomparable` when either snapshot contains a different set of directories.
+  A changed result also lists each common directory whose bounded answer state
+  changed, with its older and newer states. This is a bounded state comparison,
+  not trend inference or proof of the source evidence; the listed states never
+  include observations or persona values.
+- `experiment ask-archive compare-current [--json] <older-report.json> <archive-root>`
+  re-verifies one saved reflection, re-asks its fixed question against the
+  explicitly supplied current archive, and compares the two bounded answer
+  states. The current reflection is derived in memory, not persisted, and the
+  command does not infer a trend or prove the underlying evidence.
+- `experiment ask-archive transitions [--json] <report-1.json> <report-2.json> ...`
+  re-verifies at least two saved reflections and compares each adjacent pair in
+  caller-supplied order. It reports the same bounded `same`, `changed`, or
+  `incomparable` result as the two-snapshot command, with stable reflection
+  identities, aggregate counts, and safe per-directory state changes when
+  common entries changed. New schema 3 ledgers also carry each supplied
+  snapshot's reflection identity and safe observed/unknown/unavailable/checked
+  counts. It never exposes observations or persona values, and never infers
+  chronology or a trend.
+- `experiment ask-archive transitions questions [--json]` lists the fixed
+  raw-value-free questions available for a verified transition history in
+  stable order. It is a discovery surface for callers and does not accept
+  arbitrary natural-language queries.
+- `experiment ask-archive transitions ask [--json] <history.json> [<question-id>]`
+  verifies a saved transition ledger and asks one catalog question. With no
+  question ID it preserves the original history question; pass an ID from
+  `transitions questions` to select another fixed question. It returns the
+  bounded result plus 1-based indexes for changed and membership-incomparable
+  transitions, along with safe directory/state triples for changed entries and
+  their adjacent reflection identities. Legacy schema 1 histories retain the
+  indexes and have no per-entry details.
+  It does not infer chronology or prove the underlying evidence.
+- `experiment ask-archive transitions ask repeated [--json] <history.json>`
+  verifies the same ledger and asks whether any safe archive entry changed at
+  more than one supplied boundary. It returns grouped safe state-change
+  records with their adjacent reflection identities; the legacy spelling is
+  retained for compatibility. Schema 1 histories answer `unavailable`. It does
+  not establish chronology or a trend.
+- `experiment ask-archive transitions ask [--json] <history.json> answer-state-snapshot-summaries`
+  asks which safe snapshot summaries the verified history recorded. Schema 3
+  histories return each snapshot's reflection identity and bounded
+  observed/unknown/unavailable/checked counts. Schema 1 and 2 histories answer
+  `unavailable`; the result does not infer chronology or prove the underlying
+  evidence.
+- `experiment ask-archive transitions ask [--json] <history.json> answer-state-summary-changes`
+  asks whether the bounded snapshot summaries changed at any supplied
+  boundary. Schema 3 histories return `same` or `changed` plus 1-based changed
+  boundary indexes. Schema 1 and 2 histories answer `unavailable`; this is a
+  bounded comparison rather than a chronology or trend claim.
+- `experiment ask-archive transitions ask all [--json] <history.json>` verifies
+  the ledger once and records every fixed history question's bounded result in
+  stable catalog order. The JSON result is a raw-value-free portable question
+  round; use an individual question ID for detailed output.
+- `experiment ask-archive transitions ask all save [--json] <history.json> <round.json>`
+  performs the same verified question round and writes it with exclusive
+  creation. It returns a canonical round SHA-256 so a later reflection pass can
+  retain the exact fixed-question set it asked.
+- `experiment ask-archive transitions ask all verify [--json] [--expect-sha256 <digest>] <round.json>`
+  checks a retained question round without reopening the source history. It
+  validates catalog order, bounded result vocabularies, history identity, and
+  canonical round identity; it does not re-verify the history or prove the
+  underlying evidence.
+- `experiment ask-archive transitions ask all compare [--json] <first-round.json> <second-round.json>`
+  verifies two retained question rounds and compares their fixed bounded
+  results in caller order. Each round carries a source history-question
+  identity, and mismatched source questions are rejected before comparison. It
+  returns both round identities, both referenced history identities, and any
+  changed question IDs; it does not infer chronology or prove the underlying
+  evidence.
+- `experiment ask-archive transitions ask receipt [--json] <history.json> <question-id>`
+  verifies the ledger once and wraps one selected fixed answer in a common
+  raw-value-free receipt. The receipt binds its bounded result and nested
+  detailed answer to the verified transition-history SHA-256; it does not
+  infer chronology or prove the underlying evidence. The local review page
+  renders the same receipt envelope for a selected history question.
+- `experiment ask-archive transitions ask receipt save [--json] <history.json> <question-id> <receipt.json>`
+  performs the same verified ask and writes the raw-value-free receipt with
+  exclusive creation. It returns a receipt SHA-256 and refuses to overwrite an
+  existing receipt, so later reflection work can retain the exact answer
+  artifact.
+- `experiment ask-archive transitions ask receipt verify [--json] [--expect-sha256 <digest>] <receipt.json>`
+  checks a retained receipt without reopening its source history. It validates
+  the fixed question, nested answer identity, detailed counts, indexes, states,
+  ordering, result consistency, history digest, and canonical receipt SHA-256.
+  This verifies the receipt contract only; it does not re-verify the transition
+  history or prove the underlying evidence.
+- `experiment ask-archive transitions acceptance save [--json] <round.json> <receipt.json> <acceptance.json>`
+  verifies a retained question round and selected receipt, confirms their
+  history, question, and bounded-result identities agree, and writes a
+  raw-value-free identity binding with exclusive creation. It does not prove
+  that a UI driver performed the selection.
+- `experiment ask-archive transitions acceptance verify [--json] [--expect-sha256 <digest>] <acceptance.json>`
+  checks that acceptance binding offline and returns its canonical identity.
+  This verifies the saved record only; it does not reopen the round or receipt
+  and does not prove the underlying evidence or UI interaction.
+- `experiment ask-archive transitions save [--json] <report-1.json> <report-2.json> ... <history.json>`
+  verifies the supplied reflections, writes one raw-value-free transition
+  ledger with exclusive file creation, including safe per-directory state
+  changes and per-snapshot safe summaries, and returns its canonical content
+  identity. New ledgers use schema 3; verification remains compatible with
+  schema 1 and 2 ledgers. It refuses to overwrite an existing history path.
+- `experiment ask-archive transitions verify [--json] [--expect-sha256 <digest>] <history.json>`
+  verifies a saved transition ledger's fixed question, caller-order marker,
+  adjacent count contract, contiguous safe reflection identities, safe
+  snapshot summaries, bounded state-change entries, and deterministic content
+  identity without requiring the source reflections. This is structural
+  verification, not proof of the underlying evidence or chronology. The common
+  validate command recognizes the saved history as a contract-only artifact;
+  it reports the history identity while leaving evidence state unknown and
+  replay unavailable.
+- `experiment ask-archive verify [--json] <report.json>` checks a saved
+  archive-reflection report offline for its schema, fixed question catalog,
+  safe metadata, answer states, provenance digests, and deterministic ordering.
+  It also returns a stable SHA-256 identity for the canonical raw-value-free
+  reflection content, so a later caller can refer back to the same snapshot
+  after formatting changes. That identity proves only the report content, not
+  the underlying evidence.
+  Pass `--expect-sha256 <digest>` to fail closed unless the saved report has
+  exactly the expected identity; a mismatch produces no verification output.
+  A successful result proves only that the derived report satisfies Ariadne's
+  structural contract; it does not re-verify or prove the underlying evidence.
+- `experiment serve [--history <history.json>] [--reflection <report.json>] [--export <export.json>] [--acceptance <acceptance.json>] [--round-first <round.json> --round-second <round.json>] [--minimization <run-directory>] [--minimization-round <round.json>] [--minimization-receipt <receipt.json>] <archive-root>` starts a
+  localhost-only, read-only review
+  page at `http://127.0.0.1:8787/`; only loopback IP addresses are accepted, and
+  it lists verified bundles and links to the same bounded questions and finding
+  references without rendering observations. The archive page can re-check one
+  fixed bounded question across all verified bundles. A bundle page also shows
+  safe provenance context: its bounded question and answer state, manifest contract
+  digest, verified baseline start time in UTC, recorded Ariadne revision, and
+  modified-worktree flag, plus the verified target package, Android API,
+  architecture, package version, package SHA-256, and deterministic
+  normalization descriptions, followed by a
+  re-verified board for the fixed question catalog. Question and finding detail
+  pages retain that same context after following a link. Available archive-lens
+  results show the same safe contract, UTC recorded time, revision, and
+  working-tree context, target identity, and normalization context. The
+  selected archive question also reports how many bundles are observed,
+  unknown, unavailable, and checked before the individual result cards. Those
+  cards are ordered oldest first by the verifier-provided recorded UTC time;
+  bundles without that timestamp follow deterministically. The selected lens
+  also displays the canonical SHA-256 identity of the current raw-value-free
+  reflection and the number of bundles it checked; the identity is derived in
+  memory and is not a claim about the underlying evidence, chronology, or a
+  trend. If the current reflection cannot be derived, the page reports that
+  boundedly without exposing the internal error.
+  When `--history` is supplied, the page also reads one structurally verified
+  transition ledger and renders its caller-ordered, raw-value-free boundaries,
+  including the verified history-question result, safe directory/state changes,
+  safe snapshot summaries, the repeated-change question, the snapshot-summary
+  question, and the snapshot-change question when present. The history panel also lists
+  a compact verified question round in fixed catalog order, with each bounded
+  result and a direct receipt link, so a UI driver can choose a bounded
+  question without inventing natural language. The page also renders the
+  question-round SHA-256. The selected receipt renders its stable history and
+  receipt SHA-256 identities alongside the raw-value-free JSON details. Those
+  links use the validated `history_question_id` query and fail closed for
+  unknown IDs.
+  When `--reflection` is supplied, the page re-asks that saved reflection's
+  fixed question against the current archive and renders a bounded comparison
+  with safe result counts and reflection identities. Invalid history or saved
+  reflections remain bounded unavailable states; internal verification errors
+  are not rendered. Neither view establishes chronology, infers a trend, or
+  proves the underlying evidence.
+  When `--export` is supplied, the archive page also links to the portable
+  export's fixed question and safe finding references. Those pages show the
+  verified source-evidence and export identities, never comparison values or
+  captured payloads. Invalid export answers remain generic unavailable states.
+  Supplying `--minimization <run-directory>` adds a separate GET-only
+  `/minimization` page. It re-verifies the canonical raw-value-free receipt and
+  every child replication on each request, then renders only safe candidate IDs,
+  counts, classifications, replicated outcomes, evidence states, and receipt
+  identities. The page preserves the explicit ladder order and calls a selected
+  result the minimum tested sufficient disclosure; it never renders candidate
+  values, personas, manifests, paths, challenges, URLs, or captured
+  observations. The server rejects a request whose Host differs from its exact
+  configured loopback authority and sends no-store/security headers.
+With the optional minimization-round path, the page re-verifies the saved
+question round against the current minimization receipt identity and shows the
+round SHA-256. With the optional minimization-receipt path, it additionally
+checks the selected answer against the same round. Without a saved receipt,
+the fixed question links use question_id to derive the selected receipt from
+the verified in-memory round. Any identity drift remains unavailable.
 - If `ariadne_modified` is unexpectedly `true`, inspect `git status --short`
   before treating the run as reproducible from the recorded revision alone.
+- Finding lookup re-verifies the bundle first and prints only the question,
+  answer state, stable ID, field, and source references. It rejects unknown
+  IDs, tampered artifacts, and malformed bundles without writing output. Add
+  `--json` for the same raw-value-free fields in deterministic machine-readable
+  order.
+- The bounded question catalog currently supports `counterfactual-change`,
+  `capture-complete`, and `source-integrity`. It returns deterministic answer
+  states and finding IDs, and rejects any other question ID. Use
+  `experiment questions --json` to enumerate those IDs and their safe display
+  text before asking one.
 
 ## Run isolated sessions
 
@@ -175,19 +656,39 @@ After installing the fixture, run:
 go run ./cmd/ariadne experiment run --device emulator-5554 --package dev.ariadne.fixture --output .ariadne/runs/experiment-001 examples/experiment-001.json
 ```
 
-The output directory must not already exist. Ariadne clears the selected
-package before each session, starts `.MainActivity` with the persona fields,
-and captures the raw session artifacts.
+The output directory must not already exist. Ariadne clears the selected package
+before each session, writes the private input, starts the DUMP-protected
+`.MainActivity` through the authorized ADB shell without experiment extras,
+performs the one manifest-declared resource-ID
+interaction, and captures the raw session artifacts.
 
 After both sessions succeed, verify the artifacts and write the evidence
 outputs:
 
 ```console
 go run ./cmd/ariadne experiment report .ariadne/runs/experiment-001
+go run ./cmd/ariadne experiment export .ariadne/runs/experiment-001 .ariadne/runs/experiment-001.redacted.json
+go run ./cmd/ariadne experiment export verify .ariadne/runs/experiment-001.redacted.json
+go run ./cmd/ariadne experiment verify .ariadne/runs/experiment-001
+go run ./cmd/ariadne experiment finding .ariadne/runs/experiment-001 <finding-id-from-evidence.json>
+go run ./cmd/ariadne experiment ask .ariadne/runs/experiment-001 counterfactual-change
 ```
 
 The report command refuses existing `evidence.json` or `report.md` files. The
-completed directory contains:
+verify command is non-destructive: it rechecks the sessions, artifact hashes,
+normalization inputs, and existing output bytes without rerunning capture or
+rewriting either file. The finding command uses that same verification path and
+returns the safe question state plus source references without returning raw
+observation or persona values. The
+question command is a fixed, deterministic catalog rather than an arbitrary
+natural-language answerer; it can be rerun after archival and returns the same
+answer state and finding IDs. Add `--json` for a stable, raw-value-free object
+with the same fields plus `reason` for an unknown finding when one is available.
+Unknown answers also include the verifier-owned `reason` when one is available;
+complete answers omit it. Human-readable output remains the default. The
+catalog command exposes the same fixed questions without needing a run
+directory, so a caller can enumerate before asking. The completed directory
+contains:
 
 ```text
 .ariadne/runs/experiment-001/
@@ -208,10 +709,18 @@ completed directory contains:
 Session metadata includes the selected device, Android API, architecture,
 package version and SHA-256, Ariadne Git revision and modified state, ADB
 version, timestamps, step status, exit codes, and a SHA-256 record for each
-captured artifact. Session schema 3 also records `status` as `complete` or
-`incomplete`. Incomplete sessions record only a controlled `failure_stage`;
-they never persist raw errors. Metadata excludes persona values, command
-arguments, raw APK bytes, and raw ADB output.
+captured artifact. Session schemas 3 and 4 remain readable for launch-only
+runs; schema 5 remains readable for stable-ID runs without a contract digest;
+schema 6 remains readable for stable-ID runs with a contract digest; current
+schema 7 records `tap_resource_id`, the structural
+`manifest_contract_sha256`, and the successful `interact` step's
+`ui_hierarchy_sha256`. That digest binds the exact bounded UI hierarchy used
+to resolve the declared control without retaining the raw XML. All current
+schemas record `status` as `complete` or `incomplete`. Incomplete sessions
+record only a controlled `failure_stage`; they never persist raw errors.
+Metadata excludes persona values, command arguments, raw APK bytes, and raw
+ADB output. Schemas 4, 5, and 6 also record the manifest's sorted
+`volatile_fields` declaration without observation values.
 
 The storage artifact is the exact bounded JSON read from the fixture's private
 `files/observation.json` through Android's `run-as` command. Capture fails if
@@ -227,15 +736,62 @@ reverse mapping before the session ends, including after capture failures.
 
 `evidence.json` verifies matching target provenance, session order, successful
 step records, artifact sizes, and SHA-256 digests before recording the
-normalization and comparison. `report.md` is the concise human-readable view.
+normalization and comparison. Current evidence schema 7 also records the
+manifest contract digest, the safe question `Did changing <variable> influence
+an observed output?`, its answer state, and deterministic SHA-256 IDs for each
+difference or unknown. Each finding ID includes its source path and the digest
+of the immutable artifact it references; it never includes observed values. A
+complete pair is `observed`; the supported treatment-storage gap is `unknown`.
+The manifest contract digest covers only schema
+version, manifest name, declared variable, persona field names, volatile
+fields, and the stable tap resource ID; it never includes persona values.
+Legacy session-schema-4 and schema-5 runs continue to produce readable
+evidence. `report.md` is the concise human-readable view.
 For the fixture, it reports one observed `variant` difference supported by both
-storage and network artifacts.
+storage and network artifacts. The differing raw `request_id` values remain in
+those artifacts but are not copied into `evidence.json` or `report.md`.
+
+The explicit `experiment export` command is the shareable boundary. It first
+verifies both authoritative outputs and then writes a separate JSON projection
+with `redacted: true`, a SHA-256 binding to the exact source `evidence.json`,
+and a canonical SHA-256 identity for the safe export content.
+The projection keeps safe conclusion and provenance metadata but omits device
+serial, ADB version, and all baseline/treatment values. It never overwrites an
+existing destination. Keep the authoritative `evidence.json`, `report.md`, and
+raw session artifacts local because the report can contain comparison values
+needed for local analysis.
+The companion `export verify` command can check the received projection's
+shape and content identity without the source run, but it intentionally makes
+no claim about the truth of the source evidence.
+The companion `export ask` command can answer only the fixed
+`counterfactual-change` question carried by a current export. It uses the
+catalog question text rather than the export's source-specific wording and
+fails closed for unsupported questions or legacy exports without an answer
+state.
+The companion `export finding` command follows a current finding ID within the
+same redacted boundary, so a recipient can inspect the conclusion without
+receiving the authoritative artifacts.
+
+Observation schema 1 is a bounded JSON object containing `schema_version: 1`
+and 1 to 64 string fields. Field names are restricted so evidence references
+remain unambiguous. Ariadne requires storage and network fields to agree within
+each session, then compares the sorted union of baseline and treatment fields.
+Each observed difference is classified as `added`, `removed`, or `changed`;
+equal fields are listed as stable. A declared volatile field is removed from
+comparison only when both sessions captured it. The field is then listed in
+`comparison.normalized_fields` and the applied rule is recorded in
+`normalizations`. A one-sided volatile field remains an added or removed
+finding. Raw artifacts are never rewritten.
 
 If the baseline completes but treatment storage capture fails after treatment
 network capture succeeds, reporting preserves the five verified artifacts and
-classifies both fixture fields as `unknown`. It does not compare the available
-network value or claim that either field changed or stayed stable. Other
-incomplete session shapes remain unsupported and stop report generation.
+classifies every field found in either available session as `unknown`. It does
+not compare the available network value or claim that any field changed or
+stayed stable. If authenticated network capture fails before an observation
+arrives, the session records both capture steps as failed with no observation
+artifacts; verification accepts that bounded zero-artifact shape and reports
+`unknown` with a network-unavailable reason. Other incomplete session shapes
+remain unsupported and stop report generation.
 The authorized fixture proof is declared in
 `examples/experiment-001-storage-gap.json` and runs in the real-emulator
 workflow.
@@ -260,7 +816,8 @@ run and the verified treatment-storage-gap run.
 ## Success criteria
 
 - One expected persona-dependent difference is reported.
-- Known timestamp or identifier noise is not reported as causal.
+- The fixture's unique per-session `request_id` is recorded as normalized, not
+  reported as causal.
 - Every finding links to raw evidence.
 - The supported treatment-storage gap is reported as `unknown`; other gaps stop
   report generation instead of being silently omitted.

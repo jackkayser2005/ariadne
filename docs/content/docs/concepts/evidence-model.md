@@ -17,5 +17,8 @@ policy can claim that a value is not retained while a controlled run observes
 that value in local storage.
 
 Findings must link to immutable artifact hashes. Normalized output must retain
-a path back to its raw source.
-
+a path back to its raw source. In current Experiment 001 bundles, every
+difference and unknown also has a deterministic SHA-256 finding ID derived
+from its state, source paths, and referenced artifact hashes; observed values
+are excluded from the ID. Re-verifying the same bundle therefore preserves
+the identity, while changing a source artifact changes the verified output.

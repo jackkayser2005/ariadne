@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "name": "browser-account-minimize",
+  "variable": "account-id",
+  "reference_candidate": "reference",
+  "functionality_criterion": "all-non-disclosure-fields-equal-v1",
+  "candidates": [
+    "reference",
+    "omitted"
+  ]
+}
