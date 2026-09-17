@@ -609,7 +609,7 @@ func reportFromAndroidAcceptance(summary bundle.AndroidAcceptanceVerificationSum
 	report.EnvironmentSHA256 = summary.EnvironmentSHA256
 	report.Outcome = string(summary.Outcome)
 	report.EvidenceState = summary.EvidenceState
-	if summary.SchemaVersion != bundle.AndroidAcceptanceSchemaVersion ||
+	if (summary.SchemaVersion != 2 && summary.SchemaVersion != bundle.AndroidAcceptanceSchemaVersion) ||
 		summary.EnvironmentSHA256 == "" ||
 		summary.ReplicationBindingSHA256 == "" {
 		setTier(&report, TierBoundary, StatusUnavailable, ReasonProvenanceUnavailable)

@@ -134,6 +134,7 @@ func validReplicationBindingForTest() ReplicationBinding {
 		DeclaredVariable:       "email",
 		ManifestContractSHA256: bindingDigest(),
 		ProvenanceSHA256:       strings.Repeat("d", 64),
+		ProcedureSHA256:        strings.Repeat("a", 64),
 		PairsPerOrder:          1,
 		ResetPolicy:            "reset-before-each-session",
 		Pairs: []PairReference{
@@ -155,6 +156,7 @@ func validEvidenceBindingForTest() EvidenceBinding {
 		DeclaredVariable:       "email",
 		ManifestContractSHA256: bindingDigest(),
 		ProvenanceSHA256:       strings.Repeat("d", 64),
+		ProcedureSHA256:        strings.Repeat("a", 64),
 		ResetPolicy:            "reset-before-each-session",
 		RootBindingSHA256:      strings.Repeat("e", 64),
 		ReceiptSHA256:          strings.Repeat("f", 64),
@@ -447,6 +449,7 @@ func TestPairReplicationAndEvidenceValidationRejectsMissingIdentity(t *testing.T
 		name   string
 		mutate func(*EvidenceBinding)
 	}{
+		{"procedure digest", func(binding *EvidenceBinding) { binding.ProcedureSHA256 = "bad" }},
 		{"manifest", func(binding *EvidenceBinding) { binding.ManifestName = "" }},
 		{"variable", func(binding *EvidenceBinding) { binding.DeclaredVariable = "" }},
 		{"source", func(binding *EvidenceBinding) { binding.Source = "" }},

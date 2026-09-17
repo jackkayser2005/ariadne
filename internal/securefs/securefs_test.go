@@ -178,3 +178,127 @@ func TestMkdirAllRejectsFileComponent(t *testing.T) {
 		t.Fatal("MkdirAll() accepted a regular file component")
 	}
 }
+
+func TestPublicationRejectsInvalidPathsWithoutMovingSource(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	if err := MkdirExclusive(source, 0700); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(root, "file")
+	if err := os.WriteFile(file, []byte("keep"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, pair := range [][2]string{{"", source}, {source, ""}, {source, source}, {file, filepath.Join(root, "new")}, {filepath.Join(root, "missing"), filepath.Join(root, "new")}, {source, filepath.Join(file, "new")}, {source, filepath.Join(root, "missing", "new")}} {
+		if err := PublishDirectoryExclusive(pair[0], pair[1]); err == nil {
+			t.Fatalf("accepted invalid paths %#v", pair)
+		}
+		if err := ValidateDirectory(source); err != nil {
+			t.Fatalf("source lost: %v", err)
+		}
+	}
+	if err := MkdirAll("", 0700); err == nil {
+		t.Fatal("empty mkdir")
+	}
+	if err := MkdirExclusive("", 0700); err == nil {
+		t.Fatal("empty exclusive mkdir")
+	}
+	if err := MkdirExclusive(source, 0700); !errors.Is(err, os.ErrExist) {
+		t.Fatal("existing directory replaced", err)
+	}
+	if err := MkdirExclusive(filepath.Join(file, "new"), 0700); err == nil {
+		t.Fatal("file parent")
+	}
+	if err := ValidateDirectory(""); err == nil {
+		t.Fatal("empty validation")
+	}
+	if err := RequireAbsent(""); err == nil {
+		t.Fatal("empty absent")
+	}
+	if err := WriteExclusive("", nil, 0600); err == nil {
+		t.Fatal("empty write")
+	}
+}
+
+func TestNoReplacePrimitiveRejectsLateCollision(t *testing.T) {
+	root := t.TempDir()
+	source, target := filepath.Join(root, "source"), filepath.Join(root, "target")
+	if err := os.Mkdir(source, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := RequireAbsent(target); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(target, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := renameNoReplace(source, target); err == nil {
+		t.Fatal("replaced late destination")
+	}
+	if _, err := os.Stat(source); err != nil {
+		t.Fatal("removed source", err)
+	}
+	if err := renameNoReplace("bad\x00path", target); err == nil {
+		t.Fatal("invalid source path accepted")
+	}
+	if err := renameNoReplace(source, "bad\x00path"); err == nil {
+		t.Fatal("invalid destination path accepted")
+	}
+	if err := renameNoReplace(filepath.Join(root, "missing"), filepath.Join(root, "new")); err == nil {
+		t.Fatal("missing source accepted")
+	}
+}
+
+func TestFailedWriteCleanupPreservesReplacedFile(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "artifact")
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old, err := file.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	file.Close()
+	parent, err := directorySnapshot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyOpenedPath(path, root, parent, old); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(path, filepath.Join(root, "original")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("replacement"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyOpenedPath(path, root, parent, old); !IsPathSafetyError(err) {
+		t.Fatal("replacement accepted", err)
+	}
+	removeIfSame(path, nil)
+	removeIfSame(path, old)
+	data, err := os.ReadFile(path)
+	if err != nil || string(data) != "replacement" {
+		t.Fatal("removed replacement", err)
+	}
+	current, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	removeIfSame(path, current)
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("same file not removed", err)
+	}
+	removeIfSame(path, old)
+	if err := verifyOpenedPath(path, root, parent, old); err == nil {
+		t.Fatal("missing path accepted")
+	}
+	if err := verifyOpenedPath(path, filepath.Join(root, "missing"), parent, old); err == nil {
+		t.Fatal("missing parent accepted")
+	}
+	if err := writeAll(file, []byte("no")); err == nil {
+		t.Fatal("closed file write accepted")
+	}
+}

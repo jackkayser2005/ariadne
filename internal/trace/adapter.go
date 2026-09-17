@@ -398,10 +398,7 @@ func runSourceAdapterWithRunnerMode(procedurePath, executable string, args []str
 	if err != nil {
 		return SourceAdapterRunSummary{}, fmt.Errorf("source adapter verification: %w", err)
 	}
-	if err := securefs.RequireAbsent(cleanOutputDir); err != nil {
-		return SourceAdapterRunSummary{}, errors.New("source adapter output publish failed")
-	}
-	if err := os.Rename(temporaryDir, cleanOutputDir); err != nil {
+	if err := securefs.PublishDirectoryExclusive(temporaryDir, cleanOutputDir); err != nil {
 		return SourceAdapterRunSummary{}, errors.New("source adapter output publish failed")
 	}
 	published = true

@@ -18,7 +18,7 @@ const (
 	legacyAndroidAcceptanceSchemaVersion = 1
 	// AndroidAcceptanceSchemaVersion is the current raw-value-free acceptance
 	// receipt schema.
-	AndroidAcceptanceSchemaVersion = 2
+	AndroidAcceptanceSchemaVersion = 3
 	androidAcceptanceSchemaVersion = AndroidAcceptanceSchemaVersion
 	androidAcceptanceWorkflow      = "experiment-001-emulator"
 	androidAcceptanceManifest      = "experiment-001-email"
@@ -38,6 +38,7 @@ type AndroidAcceptanceRecord struct {
 	DeclaredVariable               string            `json:"declared_variable"`
 	ManifestContractSHA256         string            `json:"manifest_contract_sha256"`
 	EnvironmentSHA256              string            `json:"environment_sha256,omitempty"`
+	ProcedureSHA256                string            `json:"procedure_sha256,omitempty"`
 	Package                        string            `json:"package"`
 	AndroidAPI                     int               `json:"android_api"`
 	Architecture                   string            `json:"architecture"`
@@ -79,6 +80,7 @@ type AndroidAcceptanceVerificationSummary struct {
 	DeclaredVariable            string            `json:"declared_variable"`
 	ManifestContractSHA256      string            `json:"manifest_contract_sha256"`
 	EnvironmentSHA256           string            `json:"environment_sha256,omitempty"`
+	ProcedureSHA256             string            `json:"procedure_sha256,omitempty"`
 	RunEvidenceSHA256           string            `json:"run_evidence_sha256"`
 	ReplicationReceiptSHA256    string            `json:"replication_receipt_sha256"`
 	ReplicationProvenanceSHA256 string            `json:"replication_provenance_sha256"`
@@ -187,6 +189,7 @@ func SaveAndroidAcceptanceRecord(runDir, replicationDir, exportPath, reflectionP
 		DeclaredVariable:               runSummary.DeclaredVariable,
 		ManifestContractSHA256:         runSummary.ManifestContractSHA256,
 		EnvironmentSHA256:              runSummary.EnvironmentSHA256,
+		ProcedureSHA256:                replicationSummary.ProcedureSHA256,
 		Package:                        runSummary.TargetPackage,
 		AndroidAPI:                     runSummary.TargetAndroidAPI,
 		Architecture:                   runSummary.TargetArchitecture,
@@ -250,7 +253,7 @@ func decodeAndroidAcceptanceRecord(data []byte) (AndroidAcceptanceRecord, error)
 }
 
 func validateAndroidAcceptanceRecord(record AndroidAcceptanceRecord) error {
-	if (record.SchemaVersion != legacyAndroidAcceptanceSchemaVersion &&
+	if (record.SchemaVersion != legacyAndroidAcceptanceSchemaVersion && record.SchemaVersion != 2 &&
 		record.SchemaVersion != androidAcceptanceSchemaVersion) ||
 		record.Workflow != androidAcceptanceWorkflow ||
 		record.ManifestName != androidAcceptanceManifest ||
@@ -266,7 +269,7 @@ func validateAndroidAcceptanceRecord(record AndroidAcceptanceRecord) error {
 		record.ReviewStatus != androidAcceptanceReviewStatus {
 		return errors.New("android acceptance record contract is invalid")
 	}
-	if record.SchemaVersion == androidAcceptanceSchemaVersion {
+	if record.SchemaVersion >= 2 {
 		if !validDigest(record.EnvironmentSHA256) {
 			return errors.New("environment_sha256 is invalid")
 		}
@@ -310,9 +313,25 @@ func validateAndroidAcceptanceRecord(record AndroidAcceptanceRecord) error {
 		record.ReflectionSourceEvidenceSHA256 != record.RunEvidenceSHA256 {
 		return errors.New("android acceptance result is invalid")
 	}
-	expectedProvenance, err := adb.ReplicationProvenanceSHA256(record.ManifestContractSHA256)
-	if err != nil || expectedProvenance != record.ReplicationProvenanceSHA256 {
-		return errors.New("android acceptance provenance is invalid")
+	if record.SchemaVersion < androidAcceptanceSchemaVersion {
+		if record.ProcedureSHA256 != "" {
+			return errors.New("legacy android acceptance procedure is invalid")
+		}
+		expectedProvenance, err := adb.ReplicationProvenanceSHA256(record.ManifestContractSHA256)
+		if err != nil || expectedProvenance != record.ReplicationProvenanceSHA256 {
+			return errors.New("android acceptance provenance is invalid")
+		}
+	} else {
+		expectedProcedure, err := adb.AndroidProcedureSHA256()
+		if err != nil || record.ProcedureSHA256 != expectedProcedure {
+			return errors.New("android acceptance procedure is invalid")
+		}
+		expectedProvenance, err := adb.ReplicationProvenanceSHA256WithProcedure(
+			record.ManifestContractSHA256, record.ProcedureSHA256,
+		)
+		if err != nil || expectedProvenance != record.ReplicationProvenanceSHA256 {
+			return errors.New("android acceptance provenance is invalid")
+		}
 	}
 	return nil
 }
@@ -362,12 +381,18 @@ func validateAndroidAcceptanceInputs(
 		replication.UnknownPairs != 0 {
 		return errors.New("android acceptance replication does not match the golden contract")
 	}
-	expectedProvenance, err := adb.ReplicationProvenanceSHA256(run.ManifestContractSHA256)
+	if replication.SchemaVersion != adb.AuthenticatedReplicatedRunSchemaVersion ||
+		!validDigest(replication.ProcedureSHA256) ||
+		replication.ProcedureSHA256 != run.ProcedureSHA256 {
+		return errors.New("android acceptance replication procedure does not match the run")
+	}
+	expectedProvenance, err := adb.ReplicationProvenanceSHA256WithProcedure(
+		run.ManifestContractSHA256, run.ProcedureSHA256,
+	)
 	if err != nil || replication.ProvenanceSHA256 != expectedProvenance {
 		return errors.New("android acceptance replication provenance does not match the run")
 	}
-	if replication.SchemaVersion == adb.AuthenticatedReplicatedRunSchemaVersion &&
-		!validDigest(replication.BindingSHA256) {
+	if !validDigest(replication.BindingSHA256) {
 		return errors.New("android acceptance replication binding is unavailable")
 	}
 	if export.SourceEvidenceSHA256 != run.EvidenceSHA256 ||
@@ -425,6 +450,16 @@ func requireAuthenticatedAndroidReplication(rootDir string) error {
 	if !validDigest(record.ManifestContractSHA256) {
 		return errors.New("authenticated replication binding is unavailable")
 	}
+	expectedProcedure, err := adb.AndroidProcedureSHA256()
+	if err != nil || record.ProcedureSHA256 != expectedProcedure {
+		return errors.New("authenticated replication procedure is unavailable")
+	}
+	expectedProvenance, err := adb.ReplicationProvenanceSHA256WithProcedure(
+		record.ManifestContractSHA256, record.ProcedureSHA256,
+	)
+	if err != nil || record.ProvenanceSHA256 != expectedProvenance {
+		return errors.New("authenticated replication provenance is unavailable")
+	}
 	if record.ProvenanceSHA256 == "" || !validDigest(record.ProvenanceSHA256) {
 		return errors.New("authenticated replication provenance is unavailable")
 	}
@@ -474,6 +509,7 @@ func requireAndroidAcceptanceReplicationBinding(rootDir string, run Summary) err
 			if target.ManifestName != run.ManifestName ||
 				target.DeclaredVariable != run.DeclaredVariable ||
 				target.ManifestContractSHA256 != run.ManifestContractSHA256 ||
+				target.ProcedureSHA256 != run.ProcedureSHA256 ||
 				target.ADBVersion != run.TargetADBVersion ||
 				target.Package != run.TargetPackage ||
 				target.AndroidAPI != run.TargetAndroidAPI ||
@@ -497,6 +533,7 @@ func androidAcceptanceVerificationSummary(record AndroidAcceptanceRecord, accept
 		DeclaredVariable:            record.DeclaredVariable,
 		ManifestContractSHA256:      record.ManifestContractSHA256,
 		EnvironmentSHA256:           record.EnvironmentSHA256,
+		ProcedureSHA256:             record.ProcedureSHA256,
 		RunEvidenceSHA256:           record.RunEvidenceSHA256,
 		ReplicationReceiptSHA256:    record.ReplicationReceiptSHA256,
 		ReplicationProvenanceSHA256: record.ReplicationProvenanceSHA256,

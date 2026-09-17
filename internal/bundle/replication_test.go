@@ -357,7 +357,7 @@ func shiftSession(t *testing.T, path string, delta time.Duration) {
 		record.Steps[index].StartedAt = record.Steps[index].StartedAt.Add(delta)
 		record.Steps[index].FinishedAt = record.Steps[index].FinishedAt.Add(delta)
 	}
-	if record.SchemaVersion == adb.AuthenticatedSessionSchemaVersion {
+	if record.SchemaVersion >= adb.LegacyAuthenticatedSessionSchemaVersion {
 		binding, err := adb.SessionBindingSHA256(record)
 		if err != nil {
 			t.Fatal(err)
@@ -709,6 +709,102 @@ func TestVerifyReplicatedRejectsReusedChallengeCommitmentAcrossPairs(t *testing.
 	}
 }
 
+func TestVerifyLegacyAuthenticatedReplicationPreservesReceiptBindings(t *testing.T) {
+	root := makeAuthenticatedAcceptanceReplication(t)
+	receiptPath := filepath.Join(root, "replication.json")
+	data, err := os.ReadFile(receiptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record adb.ReplicatedRunRecord
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatal(err)
+	}
+	record.SchemaVersion = adb.LegacyAuthenticatedReplicatedRunSchemaVersion
+	record.ProcedureSHA256 = ""
+	record.ProvenanceSHA256, err = adb.ReplicationProvenanceSHA256(record.ManifestContractSHA256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for pairIndex := range record.Pairs {
+		pair := &record.Pairs[pairIndex]
+		bindings := make(map[string]string, 2)
+		for _, kind := range []string{pair.FirstSession, pair.SecondSession} {
+			sessionPath := filepath.Join(root, pair.Directory, kind, "session.json")
+			sessionData, err := os.ReadFile(sessionPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var session adb.SessionRecord
+			if err := json.Unmarshal(sessionData, &session); err != nil {
+				t.Fatal(err)
+			}
+			session.SchemaVersion = adb.LegacyAuthenticatedSessionSchemaVersion
+			session.ProcedureSHA256 = session.ManifestContractSHA256
+			session.BindingSHA256, err = adb.SessionBindingSHA256(session)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sessionData, err = json.MarshalIndent(session, "", "  ")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(sessionPath, append(sessionData, '\n'), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			bindings[kind] = session.BindingSHA256
+		}
+		pair.FirstSessionBindingSHA256 = bindings[pair.FirstSession]
+		pair.SecondSessionBindingSHA256 = bindings[pair.SecondSession]
+		pairDir := filepath.Join(root, pair.Directory)
+		removePairOutputs(t, pairDir)
+		if _, err := Write(pairDir); err != nil {
+			t.Fatalf("Write(legacy pair): %v", err)
+		}
+		pair.BindingSHA256, err = adb.ReplicatedPairBindingSHA256(record, *pair)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	record.BindingSHA256, err = adb.ReplicatedBindingSHA256(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeReplicatedRecordForTest(t, root, record)
+
+	verified, err := VerifyReplicated(root)
+	if err != nil {
+		t.Fatalf("VerifyReplicated(legacy): %v", err)
+	}
+	if verified.SchemaVersion != adb.LegacyAuthenticatedReplicatedRunSchemaVersion ||
+		verified.ProcedureSHA256 != "" || verified.ProvenanceSHA256 != record.ProvenanceSHA256 ||
+		verified.BindingSHA256 == "" {
+		t.Fatalf("legacy summary = %#v", verified)
+	}
+}
+
+func TestVerifyReplicatedRejectsUnreviewedProcedureWithFixedManifest(t *testing.T) {
+	root := makeAuthenticatedAcceptanceReplication(t)
+	data, err := os.ReadFile(filepath.Join(root, "replication.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record adb.ReplicatedRunRecord
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatal(err)
+	}
+	manifestContract := record.ManifestContractSHA256
+	record.ProcedureSHA256 = strings.Repeat("1", 64)
+	writeReplicatedRecordForTest(t, root, record)
+	if _, err := VerifyReplicated(root); err == nil ||
+		!strings.Contains(err.Error(), "reviewed Android procedure") {
+		t.Fatalf("VerifyReplicated() error = %v, want fixed procedure rejection", err)
+	}
+	if record.ManifestContractSHA256 != manifestContract {
+		t.Fatal("test changed the manifest contract while mutating the procedure")
+	}
+}
+
 func TestVerifyReplicatedAuthenticatedEnvelopeBindsEvidence(t *testing.T) {
 	root := makeAuthenticatedAcceptanceReplication(t)
 	summary, err := VerifyReplicated(root)
@@ -775,6 +871,7 @@ func TestVerifyReplicatedRejectsLegacySessionInAuthenticatedPair(t *testing.T) {
 		t.Fatal(err)
 	}
 	record.SchemaVersion = 8
+	record.ProcedureSHA256 = record.ManifestContractSHA256
 	record.ResetPolicy = ""
 	record.BindingSHA256 = ""
 	data, err = json.MarshalIndent(record, "", "  ")

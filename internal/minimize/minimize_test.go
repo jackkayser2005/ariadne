@@ -1220,6 +1220,9 @@ func TestValidateSummaryRejectsBoundaryInputs(t *testing.T) {
 		{"receipt hex", func(summary *MinimizationSummary) {
 			summary.CandidateResults[0].ReceiptSHA256 = strings.Repeat("g", 64)
 		}},
+		{"procedure digest", func(summary *MinimizationSummary) {
+			summary.CandidateResults[0].ProcedureSHA256 = "invalid"
+		}},
 		{"pairs total", func(summary *MinimizationSummary) { summary.CandidateResults[0].Pairs = 1 }},
 		{"pairs per order", func(summary *MinimizationSummary) { summary.CandidateResults[0].PairsPerOrder = 2 }},
 		{"completed count", func(summary *MinimizationSummary) { summary.CandidateResults[0].CompletedPairs = 3 }},
@@ -1278,9 +1281,11 @@ func TestDecodeRejectsOversizedPlanAndSaveRejectsInvalidPath(t *testing.T) {
 
 func TestMinimizationCarriesCanonicalProvenance(t *testing.T) {
 	provenanceSHA256 := strings.Repeat("b", 64)
+	procedureSHA256 := strings.Repeat("c", 64)
 	child := bundle.ReplicatedExperimentSummary{
 		ManifestName:     "plan-city",
 		ProvenanceSHA256: provenanceSHA256,
+		ProcedureSHA256:  procedureSHA256,
 		ReceiptSHA256:    strings.Repeat("a", 64),
 		Pairs:            2,
 		PairsPerOrder:    1,
@@ -1290,8 +1295,10 @@ func TestMinimizationCarriesCanonicalProvenance(t *testing.T) {
 		EvidenceState:    evidence.Observed,
 	}
 	result := candidateResult("city", "candidate-001-city", child)
-	if result.ProvenanceSHA256 != provenanceSHA256 {
-		t.Fatalf("candidate provenance_sha256 = %q, want %q", result.ProvenanceSHA256, provenanceSHA256)
+	if result.ProvenanceSHA256 != provenanceSHA256 ||
+		result.ProcedureSHA256 != procedureSHA256 {
+		t.Fatalf("candidate provenance = (%q, %q), want (%q, %q)",
+			result.ProvenanceSHA256, result.ProcedureSHA256, provenanceSHA256, procedureSHA256)
 	}
 	summary := MinimizationSummary{
 		SchemaVersion:          SummarySchemaVersion,
@@ -1309,8 +1316,10 @@ func TestMinimizationCarriesCanonicalProvenance(t *testing.T) {
 		t.Fatalf("validateSummary() error = %v", err)
 	}
 	projection := candidateProjection(result)
-	if projection.ProvenanceSHA256 != provenanceSHA256 {
-		t.Fatalf("projection provenance_sha256 = %q, want %q", projection.ProvenanceSHA256, provenanceSHA256)
+	if projection.ProvenanceSHA256 != provenanceSHA256 ||
+		projection.ProcedureSHA256 != procedureSHA256 {
+		t.Fatalf("projection provenance = (%q, %q), want (%q, %q)",
+			projection.ProvenanceSHA256, projection.ProcedureSHA256, provenanceSHA256, procedureSHA256)
 	}
 	if err := validateCandidateProjection(projection); err != nil {
 		t.Fatalf("validateCandidateProjection() error = %v", err)
@@ -1318,6 +1327,11 @@ func TestMinimizationCarriesCanonicalProvenance(t *testing.T) {
 	projection.ProvenanceSHA256 = "invalid"
 	if err := validateCandidateProjection(projection); err == nil {
 		t.Fatal("validateCandidateProjection() accepted an invalid provenance digest")
+	}
+	projection.ProvenanceSHA256 = provenanceSHA256
+	projection.ProcedureSHA256 = "invalid"
+	if err := validateCandidateProjection(projection); err == nil {
+		t.Fatal("validateCandidateProjection() accepted an invalid procedure digest")
 	}
 }
 

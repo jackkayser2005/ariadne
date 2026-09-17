@@ -161,10 +161,14 @@ func TestRunPairWithAuthenticatedInputBoundary(t *testing.T) {
 		if err != nil || record.ResetPolicy != ReplicationResetPolicy || record.BindingSHA256 != expectedBinding {
 			t.Fatalf("session binding = %q, expected %q, error = %v", record.BindingSHA256, expectedBinding, err)
 		}
-		if !strings.Contains(text, `"schema_version": 9`) ||
+		procedureSHA256, err := AndroidProcedureSHA256()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(text, `"schema_version": 10`) ||
 			!strings.Contains(text, `"role": "`+kind+`"`) ||
 			!strings.Contains(text, `"order": "baseline-treatment"`) ||
-			!strings.Contains(text, `"procedure_sha256": "`+manifest.ContractDigest()+`"`) ||
+			!strings.Contains(text, `"procedure_sha256": "`+procedureSHA256+`"`) ||
 			strings.Contains(text, challenges[index]) ||
 			strings.Contains(text, manifest.Baseline["email"]) ||
 			strings.Contains(text, manifest.Treatment["email"]) {
