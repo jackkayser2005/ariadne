@@ -371,7 +371,11 @@ func TestAuthenticatedReplicationRecordsCanonicalProvenance(t *testing.T) {
 	); err != nil {
 		t.Fatalf("runReplicatedWithAuthenticated() error = %v", err)
 	}
-	expected, err := ReplicationProvenanceSHA256(manifest.ContractDigest())
+	procedureSHA256, err := AndroidProcedureSHA256()
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected, err := ReplicationProvenanceSHA256WithProcedure(manifest.ContractDigest(), procedureSHA256)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -385,6 +389,7 @@ func TestAuthenticatedReplicationRecordsCanonicalProvenance(t *testing.T) {
 	}
 	if record.SchemaVersion != AuthenticatedReplicatedRunSchemaVersion ||
 		record.ManifestContractSHA256 != manifest.ContractDigest() ||
+		record.ProcedureSHA256 != procedureSHA256 ||
 		record.BindingSHA256 == "" {
 		t.Fatalf("authenticated replication envelope = %#v", record)
 	}

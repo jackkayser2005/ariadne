@@ -24,11 +24,17 @@ const (
 	fixtureInputPath           = "files/ariadne-input.json"
 	maxFixtureInputBytes       = 32 << 10
 	challengeSize              = 32
-	authenticatedSessionSchema = 9
+	authenticatedSessionSchema = 10
 )
 
 // AuthenticatedSessionSchemaVersion is the current authenticated Android session receipt schema.
-const AuthenticatedSessionSchemaVersion = authenticatedSessionSchema
+const (
+	// LegacyAuthenticatedSessionSchemaVersion identifies authenticated sessions
+	// whose procedure digest was still aliased to the manifest digest.
+	LegacyAuthenticatedSessionSchemaVersion = 9
+	// AuthenticatedSessionSchemaVersion is the current independently procedure-bound session schema.
+	AuthenticatedSessionSchemaVersion = authenticatedSessionSchema
+)
 
 type fixtureInput struct {
 	SchemaVersion   int                `json:"schema_version"`

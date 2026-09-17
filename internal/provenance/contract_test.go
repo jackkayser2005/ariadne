@@ -50,6 +50,32 @@ func TestContractCanonicalIdentity(t *testing.T) {
 	}
 }
 
+func TestContractCanonicalIdentitySeparatesManifestAndProcedure(t *testing.T) {
+	legacy := validContract()
+	legacyDigest, err := legacy.SHA256()
+	if err != nil {
+		t.Fatal(err)
+	}
+	current := legacy
+	current.ManifestContractSHA256 = strings.Repeat("b", 64)
+	currentJSON, err := current.CanonicalBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(currentJSON, []byte(`"procedure_sha256":"`+strings.Repeat("a", 64)+`"`)) ||
+		!bytes.Contains(currentJSON, []byte(`"manifest_contract_sha256":"`+strings.Repeat("b", 64)+`"`)) {
+		t.Fatalf("canonical current provenance did not separate identities: %s", currentJSON)
+	}
+	currentDigest, err := current.SHA256()
+	if err != nil || currentDigest == legacyDigest {
+		t.Fatalf("separate manifest identity digest = %q, err = %v; legacy = %q", currentDigest, err, legacyDigest)
+	}
+	decoded, err := Decode(currentJSON)
+	if err != nil || decoded != current {
+		t.Fatalf("Decode() = %#v, err = %v; want %#v", decoded, err, current)
+	}
+}
+
 func TestContractValidationRejectsInvalidFields(t *testing.T) {
 	base := validContract()
 	tests := []struct {
@@ -66,6 +92,7 @@ func TestContractValidationRejectsInvalidFields(t *testing.T) {
 		{name: "adapter version high", edit: func(value *Contract) { value.AdapterVersion = 33 }},
 		{name: "procedure short", edit: func(value *Contract) { value.ProcedureSHA256 = "bad" }},
 		{name: "procedure uppercase", edit: func(value *Contract) { value.ProcedureSHA256 = strings.Repeat("A", 64) }},
+		{name: "manifest contract short", edit: func(value *Contract) { value.ManifestContractSHA256 = "bad" }},
 		{name: "scope empty", edit: func(value *Contract) { value.Scope = "" }},
 		{name: "scope too long", edit: func(value *Contract) { value.Scope = strings.Repeat("a", maxScopeBytes+1) }},
 	}

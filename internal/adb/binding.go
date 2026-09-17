@@ -17,7 +17,7 @@ import (
 // SessionBindingSHA256 returns the canonical safe identity of an authenticated
 // Android session. It excludes persona values and captured payloads.
 func SessionBindingSHA256(record SessionRecord) (string, error) {
-	adapterProvenance, err := ReplicationProvenanceSHA256(record.ManifestContractSHA256)
+	adapterProvenance, err := sessionProvenanceSHA256(record)
 	if err != nil {
 		return "", fmt.Errorf("session provenance: %w", err)
 	}
@@ -108,6 +108,24 @@ func SessionEnvironmentSHA256(record SessionRecord) (string, error) {
 	return binding.SHA256()
 }
 
+// sessionProvenanceSHA256 uses the legacy manifest alias only for receipts
+// created before the independent Android procedure schema.
+func sessionProvenanceSHA256(record SessionRecord) (string, error) {
+	if record.SchemaVersion < AuthenticatedSessionSchemaVersion {
+		return ReplicationProvenanceSHA256(record.ManifestContractSHA256)
+	}
+	return ReplicationProvenanceSHA256WithProcedure(record.ManifestContractSHA256, record.ProcedureSHA256)
+}
+
+// replicatedProcedureSHA256 preserves old pair binding bytes while binding
+// current receipts to the independent procedure digest.
+func replicatedProcedureSHA256(record ReplicatedRunRecord) string {
+	if record.SchemaVersion >= AuthenticatedReplicatedRunSchemaVersion {
+		return record.ProcedureSHA256
+	}
+	return record.ManifestContractSHA256
+}
+
 // ReplicatedPairBindingSHA256 returns the canonical identity of one ordered
 // pair and its two authenticated session bindings.
 func ReplicatedPairBindingSHA256(record ReplicatedRunRecord, pair ReplicatedPairRecord) (string, error) {
@@ -122,7 +140,7 @@ func ReplicatedPairBindingSHA256(record ReplicatedRunRecord, pair ReplicatedPair
 		DeclaredVariable:           record.DeclaredVariable,
 		ManifestContractSHA256:     record.ManifestContractSHA256,
 		ProvenanceSHA256:           record.ProvenanceSHA256,
-		ProcedureSHA256:            record.ManifestContractSHA256,
+		ProcedureSHA256:            replicatedProcedureSHA256(record),
 		ResetPolicy:                record.ResetPolicy,
 		Pair:                       pair.Pair,
 		Order:                      pair.Order,
@@ -158,6 +176,7 @@ func ReplicatedBindingSHA256(record ReplicatedRunRecord) (string, error) {
 		DeclaredVariable:       record.DeclaredVariable,
 		ManifestContractSHA256: record.ManifestContractSHA256,
 		ProvenanceSHA256:       record.ProvenanceSHA256,
+		ProcedureSHA256:        record.ProcedureSHA256,
 		PairsPerOrder:          record.PairsPerOrder,
 		ResetPolicy:            record.ResetPolicy,
 		Pairs:                  pairs,
@@ -187,7 +206,7 @@ func readSessionBinding(sessionDir, kind string) (string, error) {
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
 		return "", errors.New("session metadata has trailing data")
 	}
-	if record.SchemaVersion != AuthenticatedSessionSchemaVersion || record.Kind != kind || record.BindingSHA256 == "" {
+	if (record.SchemaVersion != AuthenticatedSessionSchemaVersion && record.SchemaVersion != LegacyAuthenticatedSessionSchemaVersion) || record.Kind != kind || record.BindingSHA256 == "" {
 		return "", errors.New("authenticated session binding is unavailable")
 	}
 	expected, err := SessionBindingSHA256(record)

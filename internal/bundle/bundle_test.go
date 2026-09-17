@@ -1712,6 +1712,15 @@ func makeRun(t *testing.T, options runOptions) string {
 	return runDir
 }
 
+func androidProcedureSHA256ForTest(t *testing.T) string {
+	t.Helper()
+	digest, err := adb.AndroidProcedureSHA256()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return digest
+}
+
 func writeSession(
 	t *testing.T,
 	runDir, kind, storageBody, networkBody string,
@@ -1790,7 +1799,12 @@ func writeSession(
 	if schemaVersion >= 6 {
 		record.ManifestContractSHA256 = strings.Repeat("c", 64)
 	}
-	if schemaVersion >= adb.AuthenticatedSessionSchemaVersion {
+	if schemaVersion == adb.LegacyAuthenticatedSessionSchemaVersion {
+		record.ProcedureSHA256 = record.ManifestContractSHA256
+	} else if schemaVersion == adb.AuthenticatedSessionSchemaVersion {
+		record.ProcedureSHA256 = androidProcedureSHA256ForTest(t)
+	}
+	if schemaVersion >= adb.LegacyAuthenticatedSessionSchemaVersion {
 		record.ResetPolicy = adb.ReplicationResetPolicy
 	}
 	if schemaVersion >= 3 {
@@ -1799,7 +1813,7 @@ func writeSession(
 	if mutate != nil {
 		mutate(&record)
 	}
-	if schemaVersion == adb.AuthenticatedSessionSchemaVersion {
+	if schemaVersion >= adb.LegacyAuthenticatedSessionSchemaVersion {
 		binding, err := adb.SessionBindingSHA256(record)
 		if err != nil {
 			t.Fatal(err)

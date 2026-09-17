@@ -18,8 +18,11 @@ import (
 const (
 	// ReplicatedRunSchemaVersion is the root replication receipt schema.
 	ReplicatedRunSchemaVersion = 1
-	// AuthenticatedReplicatedRunSchemaVersion is the root schema with execution bindings.
-	AuthenticatedReplicatedRunSchemaVersion = 2
+	// LegacyAuthenticatedReplicatedRunSchemaVersion is the authenticated root schema
+	// that aliases the manifest digest as its procedure identity.
+	LegacyAuthenticatedReplicatedRunSchemaVersion = 2
+	// AuthenticatedReplicatedRunSchemaVersion is the current independently procedure-bound root schema.
+	AuthenticatedReplicatedRunSchemaVersion = 3
 	// ReplicationOrderBaselineTreatment records baseline-first execution.
 	ReplicationOrderBaselineTreatment = "baseline-treatment"
 	// ReplicationOrderTreatmentBaseline records treatment-first execution.
@@ -48,6 +51,7 @@ type ReplicatedRunRecord struct {
 	ManifestName           string                 `json:"manifest_name"`
 	DeclaredVariable       string                 `json:"declared_variable"`
 	ManifestContractSHA256 string                 `json:"manifest_contract_sha256,omitempty"`
+	ProcedureSHA256        string                 `json:"procedure_sha256,omitempty"`
 	PairsPerOrder          int                    `json:"pairs_per_order"`
 	ResetPolicy            string                 `json:"reset_policy"`
 	ProvenanceSHA256       string                 `json:"provenance_sha256,omitempty"`
@@ -80,6 +84,34 @@ func ReplicationProvenance(manifestContractSHA256 string) (provenance.Contract, 
 // for an authenticated Android replication run.
 func ReplicationProvenanceSHA256(manifestContractSHA256 string) (string, error) {
 	contract, err := ReplicationProvenance(manifestContractSHA256)
+	if err != nil {
+		return "", err
+	}
+	return contract.SHA256()
+}
+
+// ReplicationProvenanceWithProcedure returns Android provenance with the
+// manifest contract and reviewed execution procedure represented separately.
+func ReplicationProvenanceWithProcedure(manifestContractSHA256, procedureSHA256 string) (provenance.Contract, error) {
+	contract := provenance.Contract{
+		SchemaVersion:          provenance.SchemaVersion,
+		Source:                 ReplicationSource,
+		Adapter:                ReplicationAdapter,
+		AdapterVersion:         ReplicationAdapterVersion,
+		ProcedureSHA256:        procedureSHA256,
+		ManifestContractSHA256: manifestContractSHA256,
+		Scope:                  ReplicationScope,
+	}
+	if err := contract.Validate(); err != nil {
+		return provenance.Contract{}, err
+	}
+	return contract, nil
+}
+
+// ReplicationProvenanceSHA256WithProcedure returns the independently
+// manifest- and procedure-bound Android provenance identity.
+func ReplicationProvenanceSHA256WithProcedure(manifestContractSHA256, procedureSHA256 string) (string, error) {
+	contract, err := ReplicationProvenanceWithProcedure(manifestContractSHA256, procedureSHA256)
 	if err != nil {
 		return "", err
 	}
@@ -200,12 +232,17 @@ func runReplicatedWithMode(
 	}
 	recordSchemaVersion := ReplicatedRunSchemaVersion
 	manifestContractSHA256 := ""
+	procedureSHA256 := ""
 	provenanceSHA256 := ""
+	var err error
 	if authDependencies != nil {
 		recordSchemaVersion = AuthenticatedReplicatedRunSchemaVersion
 		manifestContractSHA256 = manifest.ContractDigest()
-		var err error
-		provenanceSHA256, err = ReplicationProvenanceSHA256(manifest.ContractDigest())
+		procedureSHA256, err = AndroidProcedureSHA256()
+		if err != nil {
+			return fmt.Errorf("replication procedure: %w", err)
+		}
+		provenanceSHA256, err = ReplicationProvenanceSHA256WithProcedure(manifestContractSHA256, procedureSHA256)
 		if err != nil {
 			return fmt.Errorf("replication provenance: %w", err)
 		}
@@ -222,6 +259,7 @@ func runReplicatedWithMode(
 		ManifestName:           manifest.Name,
 		DeclaredVariable:       manifest.Variable,
 		ManifestContractSHA256: manifestContractSHA256,
+		ProcedureSHA256:        procedureSHA256,
 		PairsPerOrder:          pairs,
 		ResetPolicy:            ReplicationResetPolicy,
 		ProvenanceSHA256:       provenanceSHA256,
@@ -343,6 +381,7 @@ func completedPairCount(pairs []ReplicatedPairRecord) int {
 
 func writeReplicatedRecord(outputDir string, record ReplicatedRunRecord) error {
 	if record.SchemaVersion != ReplicatedRunSchemaVersion &&
+		record.SchemaVersion != LegacyAuthenticatedReplicatedRunSchemaVersion &&
 		record.SchemaVersion != AuthenticatedReplicatedRunSchemaVersion {
 		return errors.New("replication schema version is invalid")
 	}
@@ -352,12 +391,21 @@ func writeReplicatedRecord(outputDir string, record ReplicatedRunRecord) error {
 	}
 	if record.SchemaVersion == AuthenticatedReplicatedRunSchemaVersion {
 		if !validSHA256(record.ManifestContractSHA256) ||
+			!validSHA256(record.ProcedureSHA256) ||
 			!validSHA256(record.ProvenanceSHA256) ||
 			(record.Status == ReplicationStatusComplete && !validSHA256(record.BindingSHA256)) ||
 			(record.Status == ReplicationStatusIncomplete && record.BindingSHA256 != "") {
 			return errors.New("authenticated replication binding is invalid")
 		}
-	} else if record.ManifestContractSHA256 != "" || record.BindingSHA256 != "" {
+	} else if record.SchemaVersion == LegacyAuthenticatedReplicatedRunSchemaVersion {
+		if !validSHA256(record.ManifestContractSHA256) ||
+			record.ProcedureSHA256 != "" ||
+			!validSHA256(record.ProvenanceSHA256) ||
+			(record.Status == ReplicationStatusComplete && !validSHA256(record.BindingSHA256)) ||
+			(record.Status == ReplicationStatusIncomplete && record.BindingSHA256 != "") {
+			return errors.New("legacy authenticated replication binding is invalid")
+		}
+	} else if record.ManifestContractSHA256 != "" || record.ProcedureSHA256 != "" || record.BindingSHA256 != "" {
 		return errors.New("legacy replication binding fields are invalid")
 	} else if record.ProvenanceSHA256 != "" && !validSHA256(record.ProvenanceSHA256) {
 		return errors.New("replication metadata provenance is invalid")
@@ -372,7 +420,7 @@ func writeReplicatedRecord(outputDir string, record ReplicatedRunRecord) error {
 			(pair.Status != ReplicationStatusComplete && pair.Status != ReplicationStatusIncomplete) {
 			return errors.New("replication pair metadata is invalid")
 		}
-		if record.SchemaVersion == AuthenticatedReplicatedRunSchemaVersion {
+		if record.SchemaVersion >= LegacyAuthenticatedReplicatedRunSchemaVersion {
 			if pair.Status == ReplicationStatusComplete &&
 				(!validSHA256(pair.FirstSessionBindingSHA256) ||
 					!validSHA256(pair.SecondSessionBindingSHA256) ||

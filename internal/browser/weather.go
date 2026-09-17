@@ -345,10 +345,7 @@ func runWeather(ctx context.Context, input WeatherInput, driver captureRunner) e
 	if _, err := VerifyWeather(staging); err != nil {
 		return err
 	}
-	if err := securefs.RequireAbsent(input.OutputDir); err != nil {
-		return errors.New("weather output publish failed")
-	}
-	if err := os.Rename(staging, input.OutputDir); err != nil {
+	if err := securefs.PublishDirectoryExclusive(staging, input.OutputDir); err != nil {
 		return errors.New("publish weather investigation")
 	}
 	return nil

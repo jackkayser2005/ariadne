@@ -46,6 +46,7 @@ type MinimizationCandidateProjection struct {
 	EvidenceState    evidence.State           `json:"evidence_state"`
 	ReceiptSHA256    string                   `json:"receipt_sha256"`
 	ProvenanceSHA256 string                   `json:"provenance_sha256,omitempty"`
+	ProcedureSHA256  string                   `json:"procedure_sha256,omitempty"`
 	Pairs            int                      `json:"pairs"`
 	PairsPerOrder    int                      `json:"pairs_per_order"`
 	CompletedPairs   int                      `json:"completed_pairs"`
@@ -606,6 +607,7 @@ func candidateProjection(result CandidateResult) MinimizationCandidateProjection
 		EvidenceState:    result.EvidenceState,
 		ReceiptSHA256:    result.ReceiptSHA256,
 		ProvenanceSHA256: result.ProvenanceSHA256,
+		ProcedureSHA256:  result.ProcedureSHA256,
 		Pairs:            result.Pairs,
 		PairsPerOrder:    result.PairsPerOrder,
 		CompletedPairs:   result.CompletedPairs,
@@ -734,6 +736,9 @@ func validateCandidateProjection(candidate MinimizationCandidateProjection) erro
 	}
 	if candidate.ProvenanceSHA256 != "" && !validDigest(candidate.ProvenanceSHA256) {
 		return errors.New("provenance_sha256 is invalid")
+	}
+	if candidate.ProcedureSHA256 != "" && !validDigest(candidate.ProcedureSHA256) {
+		return errors.New("procedure_sha256 is invalid")
 	}
 	if candidate.PairsPerOrder < 1 || candidate.PairsPerOrder > 8 || candidate.Pairs != candidate.PairsPerOrder*2 || candidate.CompletedPairs < 0 || candidate.CompletedPairs > candidate.Pairs || candidate.ChangedPairs < 0 || candidate.NoChangePairs < 0 || candidate.UnknownPairs < 0 || candidate.ChangedPairs+candidate.NoChangePairs+candidate.UnknownPairs != candidate.Pairs {
 		return errors.New("counts are invalid")

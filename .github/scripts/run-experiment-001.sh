@@ -64,8 +64,9 @@ replicated_verify_json="${RUNNER_TEMP}/ariadne-replicated-verify.json"
 "${ariadne}" experiment replicate verify --json \
   "${replicated_dir}" >"${replicated_verify_json}"
 jq -e '
-  (keys_unsorted == ["schema_version", "manifest_name", "declared_variable", "receipt_sha256", "provenance_sha256", "binding_sha256", "environment_sha256", "pairs", "pairs_per_order", "baseline_treatment_pairs", "treatment_baseline_pairs", "outcome", "evidence_state", "completed_pairs", "changed_pairs", "no_change_pairs", "unknown_pairs", "pair_summaries"]) and
-  (.schema_version == 2) and
+  (keys_unsorted == ["schema_version", "manifest_name", "declared_variable", "receipt_sha256", "provenance_sha256", "procedure_sha256", "binding_sha256", "environment_sha256", "pairs", "pairs_per_order", "baseline_treatment_pairs", "treatment_baseline_pairs", "outcome", "evidence_state", "completed_pairs", "changed_pairs", "no_change_pairs", "unknown_pairs", "pair_summaries"]) and
+  (.schema_version == 3) and
+  (.procedure_sha256 | test("^[0-9a-f]{64}$")) and
   (.manifest_name == "experiment-001-email") and
   (.declared_variable == "email") and
   (.receipt_sha256 | test("^[0-9a-f]{64}$")) and
@@ -111,8 +112,10 @@ if grep -F -q \
 fi
 replication_json="${replicated_dir}/replication.json"
 jq -e '
-  (keys_unsorted == ["schema_version", "manifest_name", "declared_variable", "manifest_contract_sha256", "pairs_per_order", "reset_policy", "provenance_sha256", "binding_sha256", "status", "completed_pairs", "pairs"]) and
-  (.schema_version == 2) and
+  (keys_unsorted == ["schema_version", "manifest_name", "declared_variable", "manifest_contract_sha256", "procedure_sha256", "pairs_per_order", "reset_policy", "provenance_sha256", "binding_sha256", "status", "completed_pairs", "pairs"]) and
+  (.schema_version == 3) and
+  (.procedure_sha256 | test("^[0-9a-f]{64}$")) and
+  (.procedure_sha256 != .manifest_contract_sha256) and
   (.manifest_contract_sha256 | test("^[0-9a-f]{64}$")) and
   (.provenance_sha256 | test("^[0-9a-f]{64}$")) and
   (.binding_sha256 | test("^[0-9a-f]{64}$")) and
@@ -428,8 +431,9 @@ acceptance_save_summary_json="${RUNNER_TEMP}/ariadne-acceptance-save-summary.jso
   "${archive_question_json}" \
   "${acceptance_artifact}" >"${acceptance_save_summary_json}"
 jq -e '
-  (keys_unsorted == ["schema_version", "workflow", "manifest_name", "declared_variable", "manifest_contract_sha256", "environment_sha256", "run_evidence_sha256", "replication_receipt_sha256", "replication_provenance_sha256", "replication_binding_sha256", "outcome", "evidence_state", "question_id", "question_state", "review_method", "review_path", "review_status", "acceptance_sha256"]) and
-  (.schema_version == 2) and
+  (keys_unsorted == ["schema_version", "workflow", "manifest_name", "declared_variable", "manifest_contract_sha256", "environment_sha256", "procedure_sha256", "run_evidence_sha256", "replication_receipt_sha256", "replication_provenance_sha256", "replication_binding_sha256", "outcome", "evidence_state", "question_id", "question_state", "review_method", "review_path", "review_status", "acceptance_sha256"]) and
+  (.schema_version == 3) and
+  (.procedure_sha256 | test("^[0-9a-f]{64}$")) and
   (.workflow == "experiment-001-emulator") and
   (.manifest_name == "experiment-001-email") and
   (.declared_variable == "email") and
@@ -810,16 +814,21 @@ jq -e \
 ' "${run_dir}/evidence.json"
 
 contract_digest="$(jq -r '.manifest_contract_sha256' "${run_dir}/evidence.json")"
+procedure_digest="$(jq -r '.procedure_sha256' "${run_dir}/baseline/session.json")"
+[[ "${procedure_digest}" =~ ^[0-9a-f]{64}$ ]]
+test "${procedure_digest}" != "${contract_digest}"
 
 tap_resource_id="dev.ariadne.fixture:id/observe_button"
 for session in baseline treatment; do
   jq -e \
     --arg tap_resource_id "${tap_resource_id}" \
     --arg contract_digest "${contract_digest}" \
+    --arg procedure_digest "${procedure_digest}" \
     '
-    (.schema_version == 9) and
+    (.schema_version == 10) and
     (.tap_resource_id == $tap_resource_id) and
     (.manifest_contract_sha256 == $contract_digest) and
+    (.procedure_sha256 == $procedure_digest) and
     (.reset_policy == "reset-before-each-session") and
     (.binding_sha256 | test("^[0-9a-f]{64}$")) and
     (.status == "complete") and
@@ -899,19 +908,19 @@ complete_pair_summary="${complete_trace_dir}/pair-summary.json"
 "${ariadne}" trace session pair create --json \
   --adapter android-experiment-001 \
   --adapter-version 1 \
-  --procedure-sha256 "${contract_digest}" \
+  --procedure-sha256 "${procedure_digest}" \
   --order baseline-treatment \
   "${complete_baseline_trace}" "${complete_treatment_trace}" \
   "${complete_baseline_session}" "${complete_treatment_session}" >"${complete_pair_summary}"
 jq -e \
-  --arg contract_digest "${contract_digest}" \
+  --arg procedure_digest "${procedure_digest}" \
   '
   (keys_unsorted == ["schema_version", "pair_sha256", "source", "adapter", "adapter_version", "procedure_sha256", "scope", "order", "baseline_trace_sha256", "treatment_trace_sha256", "baseline_completeness", "treatment_completeness", "baseline_session_sha256", "treatment_session_sha256"]) and
   (.schema_version == 1) and
   (.source == "android") and
   (.adapter == "android-experiment-001") and
   (.adapter_version == 1) and
-  (.procedure_sha256 == $contract_digest) and
+  (.procedure_sha256 == $procedure_digest) and
   (.scope == "all") and
   (.order == "baseline-treatment") and
   (.baseline_trace_sha256 | test("^[0-9a-f]{64}$")) and
@@ -934,7 +943,7 @@ complete_treatment_session_sha256="$(jq -r '.treatment_session_sha256' "${comple
   "${complete_baseline_session}" "${complete_baseline_trace}" \
   "${complete_treatment_session}" "${complete_treatment_trace}" >"${complete_pair_summary}"
 jq -e \
-  --arg contract_digest "${contract_digest}" \
+  --arg procedure_digest "${procedure_digest}" \
   --arg baseline_trace_sha256 "${complete_baseline_trace_sha256}" \
   --arg treatment_trace_sha256 "${complete_treatment_trace_sha256}" \
   --arg baseline_session_sha256 "${complete_baseline_session_sha256}" \
@@ -945,7 +954,7 @@ jq -e \
   (.source == "android") and
   (.adapter == "android-experiment-001") and
   (.adapter_version == 1) and
-  (.procedure_sha256 == $contract_digest) and
+  (.procedure_sha256 == $procedure_digest) and
   (.scope == "all") and
   (.order == "baseline-treatment") and
   (.baseline_trace_sha256 == $baseline_trace_sha256) and
@@ -1021,13 +1030,16 @@ test -e "${storage_gap_dir}/baseline/observations/network.json"
 test -e "${storage_gap_dir}/treatment/observations/network.json"
 test ! -e "${storage_gap_dir}/treatment/observations/storage.json"
 storage_gap_contract_digest="$(jq -r '.manifest_contract_sha256' "${storage_gap_dir}/baseline/session.json")"
+storage_gap_procedure_digest="$(jq -r '.procedure_sha256' "${storage_gap_dir}/baseline/session.json")"
 jq -e \
   --arg contract_digest "${storage_gap_contract_digest}" \
+  --arg procedure_digest "${storage_gap_procedure_digest}" \
   '
   (.status == "complete") and
-  (.schema_version == 9) and
+  (.schema_version == 10) and
   (.tap_resource_id == "dev.ariadne.fixture:id/observe_button") and
   (.manifest_contract_sha256 == $contract_digest) and
+  (.procedure_sha256 == $procedure_digest) and
   (.reset_policy == "reset-before-each-session") and
   (.binding_sha256 | test("^[0-9a-f]{64}$")) and
   any(.steps[]; .name == "interact" and .status == "ok" and .exit_code == 0 and (.ui_hierarchy_sha256 | test("^[0-9a-f]{64}$"))) and
@@ -1035,11 +1047,13 @@ jq -e \
 ' "${storage_gap_dir}/baseline/session.json"
 jq -e \
   --arg contract_digest "${storage_gap_contract_digest}" \
+  --arg procedure_digest "${storage_gap_procedure_digest}" \
   '
   (.status == "incomplete") and
-  (.schema_version == 9) and
+  (.schema_version == 10) and
   (.tap_resource_id == "dev.ariadne.fixture:id/observe_button") and
   (.manifest_contract_sha256 == $contract_digest) and
+  (.procedure_sha256 == $procedure_digest) and
   (.reset_policy == "reset-before-each-session") and
   (.binding_sha256 | test("^[0-9a-f]{64}$")) and
   any(.steps[]; .name == "interact" and .status == "ok" and .exit_code == 0 and (.ui_hierarchy_sha256 | test("^[0-9a-f]{64}$"))) and
@@ -1191,6 +1205,7 @@ grep -F -x -q "differences: 0" "${storage_gap_report_stdout}"
 grep -F -x -q "unknowns: 3" "${storage_gap_report_stdout}"
 jq -e \
   --arg contract_digest "${storage_gap_contract_digest}" \
+  --arg procedure_digest "${storage_gap_procedure_digest}" \
   '
   (.schema_version == 7) and
   (.manifest_contract_sha256 == $contract_digest) and
