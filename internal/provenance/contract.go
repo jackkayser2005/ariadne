@@ -29,12 +29,13 @@ const (
 // adapters, procedures, traces, sessions, and replications. It contains no
 // captured values, credentials, device serials, or source-specific paths.
 type Contract struct {
-	SchemaVersion   int    `json:"schema_version"`
-	Source          string `json:"source"`
-	Adapter         string `json:"adapter"`
-	AdapterVersion  int    `json:"adapter_version"`
-	ProcedureSHA256 string `json:"procedure_sha256"`
-	Scope           string `json:"scope"`
+	SchemaVersion          int    `json:"schema_version"`
+	Source                 string `json:"source"`
+	Adapter                string `json:"adapter"`
+	AdapterVersion         int    `json:"adapter_version"`
+	ProcedureSHA256        string `json:"procedure_sha256"`
+	ManifestContractSHA256 string `json:"manifest_contract_sha256,omitempty"`
+	Scope                  string `json:"scope"`
 }
 
 // Validate reports whether the contract contains only bounded, canonical
@@ -54,6 +55,9 @@ func (contract Contract) Validate() error {
 	}
 	if !validSHA256(contract.ProcedureSHA256) {
 		return errors.New("procedure_sha256: invalid")
+	}
+	if contract.ManifestContractSHA256 != "" && !validSHA256(contract.ManifestContractSHA256) {
+		return errors.New("manifest_contract_sha256: invalid")
 	}
 	if !validLabel(contract.Scope, maxScopeBytes) {
 		return errors.New("scope: invalid")

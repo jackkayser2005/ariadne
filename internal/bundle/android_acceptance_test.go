@@ -16,17 +16,20 @@ import (
 func validAndroidAcceptanceRecordForTest(t *testing.T) AndroidAcceptanceRecord {
 	t.Helper()
 	contract := strings.Repeat("c", 64)
-	provenance, err := adb.ReplicationProvenanceSHA256(contract)
+	procedureSHA256 := androidProcedureSHA256ForTest(t)
+	provenance, err := adb.ReplicationProvenanceSHA256WithProcedure(contract, procedureSHA256)
 	if err != nil {
 		t.Fatal(err)
 	}
 	evidenceSHA256 := strings.Repeat("d", 64)
 	return AndroidAcceptanceRecord{
-		SchemaVersion:                  1,
+		SchemaVersion:                  androidAcceptanceSchemaVersion,
 		Workflow:                       "experiment-001-emulator",
 		ManifestName:                   "experiment-001-email",
 		DeclaredVariable:               "email",
 		ManifestContractSHA256:         contract,
+		ProcedureSHA256:                procedureSHA256,
+		EnvironmentSHA256:              strings.Repeat("1", 64),
 		Package:                        "dev.ariadne.fixture",
 		AndroidAPI:                     35,
 		Architecture:                   "x86_64",
@@ -93,6 +96,7 @@ func TestVerifyAndroidAcceptanceRecord(t *testing.T) {
 	}
 	if summary.AcceptanceSHA256 != wantSHA256 ||
 		summary.Workflow != record.Workflow ||
+		summary.ProcedureSHA256 != record.ProcedureSHA256 ||
 		summary.Outcome != ReplicatedChange ||
 		summary.EvidenceState != evidence.Observed ||
 		summary.ReviewMethod != "GET" ||
@@ -110,7 +114,7 @@ func TestVerifyAndroidAcceptanceRecord(t *testing.T) {
 	}
 }
 
-func TestVerifyAndroidAcceptanceRecordV2IncludesEnvironment(t *testing.T) {
+func TestVerifyAndroidAcceptanceRecordIncludesEnvironment(t *testing.T) {
 	record := currentAndroidAcceptanceRecordForTest(t)
 	path := writeAndroidAcceptanceRecordForTest(t, record)
 	summary, err := VerifyAndroidAcceptanceRecord(path)
@@ -134,6 +138,23 @@ func TestVerifyAndroidAcceptanceRecordV2IncludesEnvironment(t *testing.T) {
 	}
 }
 
+func TestVerifyLegacyAndroidAcceptanceRecordRetainsAliasedProvenance(t *testing.T) {
+	record := validAndroidAcceptanceRecordForTest(t)
+	record.SchemaVersion = legacyAndroidAcceptanceSchemaVersion
+	record.EnvironmentSHA256 = ""
+	record.ProcedureSHA256 = ""
+	record.ReplicationProvenanceSHA256, _ = adb.ReplicationProvenanceSHA256(record.ManifestContractSHA256)
+	path := writeAndroidAcceptanceRecordForTest(t, record)
+	summary, err := VerifyAndroidAcceptanceRecord(path)
+	if err != nil {
+		t.Fatalf("VerifyAndroidAcceptanceRecord(legacy): %v", err)
+	}
+	if summary.SchemaVersion != legacyAndroidAcceptanceSchemaVersion ||
+		summary.ProcedureSHA256 != "" {
+		t.Fatalf("legacy acceptance summary = %#v", summary)
+	}
+}
+
 func TestVerifyAndroidAcceptanceRecordRejectsUnsafeOrInvalidInput(t *testing.T) {
 	valid := validAndroidAcceptanceRecordForTest(t)
 	tests := []struct {
@@ -141,13 +162,18 @@ func TestVerifyAndroidAcceptanceRecordRejectsUnsafeOrInvalidInput(t *testing.T) 
 		mutate func(*AndroidAcceptanceRecord)
 		want   string
 	}{
+		{name: "unsupported schema", mutate: func(record *AndroidAcceptanceRecord) { record.SchemaVersion = 99 }, want: "contract"},
+		{name: "missing procedure", mutate: func(record *AndroidAcceptanceRecord) { record.ProcedureSHA256 = "" }, want: "procedure"},
+		{name: "aliased procedure", mutate: func(record *AndroidAcceptanceRecord) { record.ProcedureSHA256 = record.ManifestContractSHA256 }, want: "procedure"},
+		{name: "wrong provenance", mutate: func(record *AndroidAcceptanceRecord) { record.ReplicationProvenanceSHA256 = strings.Repeat("0", 64) }, want: "provenance"},
+		{name: "downgraded schema", mutate: func(record *AndroidAcceptanceRecord) { record.SchemaVersion = 2 }, want: "legacy"},
 		{name: "wrong workflow", mutate: func(record *AndroidAcceptanceRecord) { record.Workflow = "other" }, want: "contract"},
 		{name: "raw revision", mutate: func(record *AndroidAcceptanceRecord) { record.AriadneRevision = "unknown" }, want: "ariadne_revision"},
 		{name: "invalid digest", mutate: func(record *AndroidAcceptanceRecord) { record.ExportSHA256 = "not-a-digest" }, want: "export_sha256"},
 		{name: "no change outcome", mutate: func(record *AndroidAcceptanceRecord) { record.Outcome = NoChangeObserved }, want: "result"},
 		{name: "unknown evidence", mutate: func(record *AndroidAcceptanceRecord) { record.EvidenceState = evidence.Unknown }, want: "result"},
 		{name: "review path", mutate: func(record *AndroidAcceptanceRecord) { record.ReviewPath = "/run" }, want: "contract"},
-		{name: "missing environment", mutate: func(record *AndroidAcceptanceRecord) { record.SchemaVersion = androidAcceptanceSchemaVersion }, want: "environment_sha256"},
+		{name: "missing environment", mutate: func(record *AndroidAcceptanceRecord) { record.EnvironmentSHA256 = "" }, want: "environment_sha256"},
 		{name: "invalid environment", mutate: func(record *AndroidAcceptanceRecord) {
 			record.SchemaVersion = androidAcceptanceSchemaVersion
 			record.EnvironmentSHA256 = "not-a-digest"
@@ -220,9 +246,9 @@ func acceptanceObservationBody(challenge, variant string) string {
 	return string(data)
 }
 
-func acceptanceRunOptions(order, baselineChallenge, treatmentChallenge string) runOptions {
+func acceptanceRunOptions(t *testing.T, order, baselineChallenge, treatmentChallenge string) runOptions {
 	return runOptions{
-		sessionSchemaVersion: 9,
+		sessionSchemaVersion: adb.AuthenticatedSessionSchemaVersion,
 		baselineStorage:      acceptanceObservationBody(baselineChallenge, "standard"),
 		baselineNetworkBody:  acceptanceObservationBody(baselineChallenge, "standard"),
 		treatmentStorage:     acceptanceObservationBody(treatmentChallenge, "personalized"),
@@ -231,20 +257,20 @@ func acceptanceRunOptions(order, baselineChallenge, treatmentChallenge string) r
 			record.ChallengeCommitment = challengeCommitmentForTest(baselineChallenge)
 			record.Role = "baseline"
 			record.Order = order
-			record.ProcedureSHA256 = record.ManifestContractSHA256
+			record.ProcedureSHA256 = androidProcedureSHA256ForTest(t)
 		},
 		mutateTreatment: func(record *adb.SessionRecord) {
 			record.ChallengeCommitment = challengeCommitmentForTest(treatmentChallenge)
 			record.Role = "treatment"
 			record.Order = order
-			record.ProcedureSHA256 = record.ManifestContractSHA256
+			record.ProcedureSHA256 = androidProcedureSHA256ForTest(t)
 		},
 	}
 }
 
 func makeAuthenticatedAcceptanceRun(t *testing.T, destination, order, baselineChallenge, treatmentChallenge string) string {
 	t.Helper()
-	options := acceptanceRunOptions(order, baselineChallenge, treatmentChallenge)
+	options := acceptanceRunOptions(t, order, baselineChallenge, treatmentChallenge)
 	source := makeRun(t, options)
 	if order == adb.ReplicationOrderTreatmentBaseline {
 		shiftSession(t, filepath.Join(source, "treatment", "session.json"), -30*time.Second)
@@ -275,7 +301,8 @@ func makeAuthenticatedAcceptanceReplicationWithChallenges(t *testing.T, challeng
 		t.Fatal(err)
 	}
 	contract := strings.Repeat("c", 64)
-	provenance, err := adb.ReplicationProvenanceSHA256(contract)
+	procedureSHA256 := androidProcedureSHA256ForTest(t)
+	provenance, err := adb.ReplicationProvenanceSHA256WithProcedure(contract, procedureSHA256)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -316,6 +343,7 @@ func makeAuthenticatedAcceptanceReplicationWithChallenges(t *testing.T, challeng
 		SchemaVersion:          adb.AuthenticatedReplicatedRunSchemaVersion,
 		ManifestName:           "experiment-001-email",
 		ManifestContractSHA256: contract,
+		ProcedureSHA256:        procedureSHA256,
 		DeclaredVariable:       "email",
 		PairsPerOrder:          1,
 		ResetPolicy:            adb.ReplicationResetPolicy,
@@ -386,6 +414,7 @@ func TestSaveAndroidAcceptanceRecord(t *testing.T) {
 	}
 	if summary.SchemaVersion != androidAcceptanceSchemaVersion ||
 		!validDigest(summary.EnvironmentSHA256) ||
+		summary.ProcedureSHA256 != androidProcedureSHA256ForTest(t) ||
 		summary.Outcome != ReplicatedChange ||
 		summary.EvidenceState != evidence.Observed ||
 		summary.QuestionState != evidence.Observed ||
@@ -524,7 +553,9 @@ func TestRequireAuthenticatedAndroidReplicationRejectsMissingOrReusedBoundary(t 
 		t.Fatalf("missing provenance error = %v", err)
 	}
 
-	record.ProvenanceSHA256, err = adb.ReplicationProvenanceSHA256(strings.Repeat("c", 64))
+	record.ProvenanceSHA256, err = adb.ReplicationProvenanceSHA256WithProcedure(
+		strings.Repeat("c", 64), record.ProcedureSHA256,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

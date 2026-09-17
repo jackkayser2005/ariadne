@@ -829,3 +829,21 @@ run and the verified treatment-storage-gap run.
 - Defeating certificate pinning
 - Running a general-purpose Android malware sandbox
 - Supporting multiple capture backends before the first experiment works
+
+
+## Independent execution identity
+
+New authenticated sessions use schema 10 and replication receipts use schema 3.
+The `procedure_sha256` field identifies the reviewed Android execution procedure,
+including its input boundary, capture scope, and reset policy. It is separate
+from `manifest_contract_sha256`, which identifies the experiment's declared
+variables and controls. Provenance binds both identities. The environment digest
+continues to identify the device, installed package, and Ariadne revision shared
+by the runs. Reused session challenges and mixed environments are rejected.
+
+Acceptance receipt schema 3 preserves both environment and procedure identity.
+Legacy session schema 9, replication schema 2, and acceptance schemas 1 and 2
+remain readable with their original canonical identities. Acceptance schema 2
+retains its environment-bound validation status; schema 1 cannot establish that
+boundary. Reading a receipt verifies its recorded contract and integrity, not a
+fresh emulator replay or behavior outside the recorded observations.

@@ -28,7 +28,11 @@ const testManifest = `{
 func writeAndroidAcceptanceValidationRecord(t *testing.T) (string, bundle.AndroidAcceptanceRecord) {
 	t.Helper()
 	contract := strings.Repeat("c", 64)
-	provenance, err := adb.ReplicationProvenanceSHA256(contract)
+	procedure, err := adb.AndroidProcedureSHA256()
+	if err != nil {
+		t.Fatal(err)
+	}
+	provenance, err := adb.ReplicationProvenanceSHA256WithProcedure(contract, procedure)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,6 +43,7 @@ func writeAndroidAcceptanceValidationRecord(t *testing.T) (string, bundle.Androi
 		ManifestName:                   "experiment-001-email",
 		DeclaredVariable:               "email",
 		ManifestContractSHA256:         contract,
+		ProcedureSHA256:                procedure,
 		EnvironmentSHA256:              strings.Repeat("1", 64),
 		Package:                        "dev.ariadne.fixture",
 		AndroidAPI:                     35,
@@ -411,6 +416,8 @@ func TestValidateLegacyAndroidAcceptanceRemainsReadableWithoutBoundary(t *testin
 	path, record := writeAndroidAcceptanceValidationRecord(t)
 	record.SchemaVersion = 1
 	record.EnvironmentSHA256 = ""
+	record.ProcedureSHA256 = ""
+	record.ReplicationProvenanceSHA256, _ = adb.ReplicationProvenanceSHA256(record.ManifestContractSHA256)
 	data, err := json.Marshal(record)
 	if err != nil {
 		t.Fatal(err)
@@ -1837,5 +1844,23 @@ func TestReportFromSourceAdapter(t *testing.T) {
 		tierStatus(report, TierReplay) != StatusUnknown ||
 		report.Reason != ReasonIncompleteCapture {
 		t.Fatalf("partial report = %#v", report)
+	}
+}
+
+func TestValidateEnvironmentBoundLegacyAndroidAcceptance(t *testing.T) {
+	path, record := writeAndroidAcceptanceValidationRecord(t)
+	record.SchemaVersion = 2
+	record.ProcedureSHA256 = ""
+	record.ReplicationProvenanceSHA256, _ = adb.ReplicationProvenanceSHA256(record.ManifestContractSHA256)
+	data, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	report := Validate(path)
+	if report.EnvironmentSHA256 != record.EnvironmentSHA256 || tierStatus(report, TierBoundary) != StatusPass {
+		t.Fatalf("legacy environment-bound report = %#v", report)
 	}
 }

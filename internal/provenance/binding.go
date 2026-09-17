@@ -147,6 +147,7 @@ type ReplicationBinding struct {
 	DeclaredVariable       string          `json:"declared_variable"`
 	ManifestContractSHA256 string          `json:"manifest_contract_sha256"`
 	ProvenanceSHA256       string          `json:"provenance_sha256"`
+	ProcedureSHA256        string          `json:"procedure_sha256,omitempty"`
 	PairsPerOrder          int             `json:"pairs_per_order"`
 	ResetPolicy            string          `json:"reset_policy"`
 	Pairs                  []PairReference `json:"pairs"`
@@ -174,6 +175,7 @@ type EvidenceBinding struct {
 	DeclaredVariable       string                  `json:"declared_variable"`
 	ManifestContractSHA256 string                  `json:"manifest_contract_sha256"`
 	ProvenanceSHA256       string                  `json:"provenance_sha256"`
+	ProcedureSHA256        string                  `json:"procedure_sha256,omitempty"`
 	ResetPolicy            string                  `json:"reset_policy"`
 	RootBindingSHA256      string                  `json:"root_binding_sha256"`
 	ReceiptSHA256          string                  `json:"receipt_sha256"`
@@ -340,6 +342,9 @@ func (binding ReplicationBinding) Validate() error {
 		binding.PairsPerOrder < 1 || binding.PairsPerOrder > 8 || binding.ResetPolicy == "" {
 		return errors.New("replication binding identity is invalid")
 	}
+	if binding.ProcedureSHA256 != "" && !validDigest(binding.ProcedureSHA256) {
+		return errors.New("replication binding procedure is invalid")
+	}
 	if len(binding.Pairs) != binding.PairsPerOrder*2 {
 		return errors.New("replication binding pair count is invalid")
 	}
@@ -370,6 +375,9 @@ func (binding EvidenceBinding) Validate() error {
 		binding.ResetPolicy == "" || !validDigest(binding.RootBindingSHA256) || !validDigest(binding.ReceiptSHA256) ||
 		len(binding.Pairs) < 2 || len(binding.Pairs) > 16 || len(binding.Pairs)%2 != 0 {
 		return errors.New("evidence binding identity is invalid")
+	}
+	if binding.ProcedureSHA256 != "" && !validDigest(binding.ProcedureSHA256) {
+		return errors.New("evidence binding procedure is invalid")
 	}
 	for index, pair := range binding.Pairs {
 		expectedPair := index/2 + 1

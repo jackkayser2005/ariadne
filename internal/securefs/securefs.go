@@ -68,12 +68,12 @@ func PublishDirectoryExclusive(sourceDir, destinationDir string) error {
 	if source == destination {
 		return errors.New("source and destination directories must differ")
 	}
-	sourceInfo, err := requireDirectory(source)
+	sourceInfo, err := directorySnapshot(source)
 	if err != nil {
 		return fmt.Errorf("validate source directory: %w", err)
 	}
 	parent := filepath.Dir(destination)
-	parentInfo, err := requireDirectory(parent)
+	parentInfo, err := directorySnapshot(parent)
 	if err != nil {
 		return fmt.Errorf("validate destination parent: %w", err)
 	}
@@ -367,4 +367,27 @@ func writeAll(file *os.File, data []byte) error {
 		}
 	}
 	return nil
+}
+
+// directorySnapshot captures file identity through an open handle. On Windows,
+// Lstat defers reading the file ID until SameFile; after a rename its old path
+// no longer resolves. Stat on the handle records the identity before publication.
+func directorySnapshot(path string) (os.FileInfo, error) {
+	before, err := requireDirectory(path)
+	if err != nil {
+		return nil, err
+	}
+	directory, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer directory.Close()
+	snapshot, err := directory.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !snapshot.IsDir() || !os.SameFile(before, snapshot) {
+		return nil, fmt.Errorf("directory changed before publication: %w", errUnsafePath)
+	}
+	return snapshot, nil
 }

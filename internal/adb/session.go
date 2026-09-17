@@ -381,13 +381,17 @@ func runSessionWithAuth(
 		if !validChallenge(challenge) {
 			return finishSession(sessionDir, &record, now, "start", errors.New("generated session challenge is invalid"))
 		}
+		procedureSHA256, err := AndroidProcedureSHA256()
+		if err != nil {
+			return finishSession(sessionDir, &record, now, "start", err)
+		}
 		auth.challengeValue = challenge
 		record.SchemaVersion = authenticatedSessionSchema
 		record.ManifestContractSHA256 = manifest.ContractDigest()
 		record.ChallengeCommitment = challengeCommitment(challenge)
 		record.Role = kind
 		record.Order = auth.order
-		record.ProcedureSHA256 = record.ManifestContractSHA256
+		record.ProcedureSHA256 = procedureSHA256
 		record.ResetPolicy = ReplicationResetPolicy
 	}
 

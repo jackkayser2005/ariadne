@@ -102,14 +102,15 @@ type CandidateResult struct {
 	EvidenceState     evidence.State           `json:"evidence_state"`
 	ReceiptSHA256     string                   `json:"receipt_sha256"`
 	ProvenanceSHA256  string                   `json:"provenance_sha256,omitempty"`
+	ProcedureSHA256   string                   `json:"procedure_sha256,omitempty"`
 	BindingSHA256     string                   `json:"binding_sha256,omitempty"`
-	EnvironmentSHA256 string                   `json:"environment_sha256,omitempty"`
 	Pairs             int                      `json:"pairs"`
 	PairsPerOrder     int                      `json:"pairs_per_order"`
 	CompletedPairs    int                      `json:"completed_pairs"`
 	ChangedPairs      int                      `json:"changed_pairs"`
 	NoChangePairs     int                      `json:"no_change_pairs"`
 	UnknownPairs      int                      `json:"unknown_pairs"`
+	EnvironmentSHA256 string                   `json:"environment_sha256,omitempty"`
 }
 
 // MinimizationSummary is the raw-value-free receipt for one complete ladder
@@ -466,6 +467,7 @@ func completedPairDirectories(candidateDir string, pairs int) (map[string]struct
 		return nil, errors.New("replication metadata: trailing data")
 	}
 	if (record.SchemaVersion != adb.ReplicatedRunSchemaVersion &&
+		record.SchemaVersion != adb.LegacyAuthenticatedReplicatedRunSchemaVersion &&
 		record.SchemaVersion != adb.AuthenticatedReplicatedRunSchemaVersion) || record.PairsPerOrder != pairs {
 		return nil, errors.New("replication metadata configuration disagrees")
 	}
@@ -498,14 +500,15 @@ func candidateResult(id, directory string, summary bundle.ReplicatedExperimentSu
 		EvidenceState:     summary.EvidenceState,
 		ReceiptSHA256:     summary.ReceiptSHA256,
 		ProvenanceSHA256:  summary.ProvenanceSHA256,
+		ProcedureSHA256:   summary.ProcedureSHA256,
 		BindingSHA256:     summary.BindingSHA256,
-		EnvironmentSHA256: summary.EnvironmentSHA256,
 		Pairs:             summary.Pairs,
 		PairsPerOrder:     summary.PairsPerOrder,
 		CompletedPairs:    summary.CompletedPairs,
 		ChangedPairs:      summary.ChangedPairs,
 		NoChangePairs:     summary.NoChangePairs,
 		UnknownPairs:      summary.UnknownPairs,
+		EnvironmentSHA256: summary.EnvironmentSHA256,
 	}
 }
 
@@ -777,6 +780,9 @@ func validateSummary(summary MinimizationSummary) error {
 		}
 		if result.ProvenanceSHA256 != "" && !validDigest(result.ProvenanceSHA256) {
 			return errors.New("candidate result provenance_sha256 is invalid")
+		}
+		if result.ProcedureSHA256 != "" && !validDigest(result.ProcedureSHA256) {
+			return errors.New("candidate result procedure_sha256 is invalid")
 		}
 		if result.BindingSHA256 != "" && !validDigest(result.BindingSHA256) {
 			return errors.New("candidate result binding_sha256 is invalid")

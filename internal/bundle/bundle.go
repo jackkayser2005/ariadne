@@ -84,6 +84,8 @@ type Summary struct {
 	TargetDevice string `json:"-"`
 	// TargetADBVersion is the verified ADB version for internal provenance checks.
 	TargetADBVersion string `json:"-"`
+	// ProcedureSHA256 is the verified Android procedure identity when available.
+	ProcedureSHA256 string `json:"-"`
 	// TargetAndroidAPI is the verified Android API for the selected target.
 	TargetAndroidAPI int `json:"-"`
 	// TargetArchitecture is the verified architecture for the selected target.
@@ -668,7 +670,7 @@ func buildDocument(runDir string, includeFindingIDs bool) (document, Summary, er
 		return document{}, Summary{}, err
 	}
 	environmentSHA256 := ""
-	if baseline.record.SchemaVersion == adb.AuthenticatedSessionSchemaVersion {
+	if validSessionBindingSchema(baseline.record.SchemaVersion) {
 		environmentSHA256, err = adb.SessionEnvironmentSHA256(baseline.record)
 		if err != nil {
 			return document{}, Summary{}, fmt.Errorf("environment binding: %w", err)
@@ -802,8 +804,9 @@ func buildDocument(runDir string, includeFindingIDs bool) (document, Summary, er
 		Question:                 evidence.Question,
 		AnswerState:              evidence.AnswerState,
 		ManifestContractSHA256:   evidence.ManifestContractSHA256,
-		Authenticated:            baseline.record.SchemaVersion == adb.AuthenticatedSessionSchemaVersion && treatment.record.SchemaVersion == adb.AuthenticatedSessionSchemaVersion,
+		Authenticated:            validSessionBindingSchema(baseline.record.SchemaVersion) && validSessionBindingSchema(treatment.record.SchemaVersion),
 		EnvironmentSHA256:        environmentSHA256,
+		ProcedureSHA256:          baseline.record.ProcedureSHA256,
 		AriadneRevision:          evidence.Target.AriadneRevision,
 		AriadneModified:          evidence.Target.AriadneModified,
 		RecordedAt:               recordedAt,
@@ -1263,6 +1266,7 @@ func validateSession(record adb.SessionRecord, kind string) error {
 		record.SchemaVersion != 6 &&
 		record.SchemaVersion != 7 &&
 		record.SchemaVersion != 8 &&
+		record.SchemaVersion != adb.LegacyAuthenticatedSessionSchemaVersion &&
 		record.SchemaVersion != adb.AuthenticatedSessionSchemaVersion) ||
 		record.Kind != kind {
 		return errors.New("schema_version or kind is invalid")
@@ -1316,8 +1320,18 @@ func validateSession(record adb.SessionRecord, kind string) error {
 		if record.Order != adb.ReplicationOrderBaselineTreatment && record.Order != adb.ReplicationOrderTreatmentBaseline {
 			return errors.New("session order is invalid")
 		}
-		if !validDigest(record.ProcedureSHA256) || record.ProcedureSHA256 != record.ManifestContractSHA256 {
+		if !validDigest(record.ProcedureSHA256) {
 			return errors.New("procedure_sha256 is invalid")
+		}
+		if record.SchemaVersion <= adb.LegacyAuthenticatedSessionSchemaVersion {
+			if record.ProcedureSHA256 != record.ManifestContractSHA256 {
+				return errors.New("legacy procedure_sha256 is invalid")
+			}
+		} else {
+			expectedProcedure, err := adb.AndroidProcedureSHA256()
+			if err != nil || record.ProcedureSHA256 != expectedProcedure {
+				return errors.New("procedure_sha256 is not a reviewed Android procedure")
+			}
 		}
 	}
 	if !slices.IsSorted(record.VolatileFields) {
@@ -1402,7 +1416,7 @@ func validateSession(record adb.SessionRecord, kind string) error {
 		}
 		previous = step.FinishedAt
 	}
-	if record.SchemaVersion < adb.AuthenticatedSessionSchemaVersion {
+	if record.SchemaVersion < adb.LegacyAuthenticatedSessionSchemaVersion {
 		if record.ResetPolicy != "" || record.BindingSHA256 != "" {
 			return errors.New("legacy session binding fields are invalid")
 		}

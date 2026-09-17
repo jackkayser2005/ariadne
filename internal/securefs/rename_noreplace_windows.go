@@ -12,7 +12,6 @@ import (
 var moveFileExW = syscall.NewLazyDLL("kernel32.dll").NewProc("MoveFileExW")
 
 const (
-	moveFileCopyAllowed       = uintptr(0x2)
 	moveFileWriteThrough      = uintptr(0x8)
 	windowsErrorFileExists    = syscall.Errno(80)
 	windowsErrorAlreadyExists = syscall.Errno(183)
@@ -30,7 +29,7 @@ func renameNoReplace(oldPath, newPath string) error {
 	result, _, callErr := moveFileExW.Call(
 		uintptr(unsafe.Pointer(oldPtr)),
 		uintptr(unsafe.Pointer(newPtr)),
-		moveFileCopyAllowed|moveFileWriteThrough,
+		moveFileWriteThrough,
 	)
 	if result != 0 {
 		return nil
