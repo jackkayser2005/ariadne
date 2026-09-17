@@ -286,3 +286,40 @@ func mustJSON(value any) []byte {
 	}
 	return data
 }
+
+func TestCategoryDefinitionsAreStableAndSafe(t *testing.T) {
+	definitions := CategoryDefinitions()
+	if len(definitions) != 13 {
+		t.Fatalf("CategoryDefinitions() length = %d, want 13", len(definitions))
+	}
+	for _, definition := range definitions {
+		if definition.ID == "" || definition.Label == "" || definition.Description == "" || !validField(definition.ID) {
+			t.Fatalf("invalid category definition: %#v", definition)
+		}
+	}
+	copyOfDefinitions := CategoryDefinitions()
+	copyOfDefinitions[0].Label = "changed locally"
+	if CategoryLabel(definitions[0].ID) == "changed locally" {
+		t.Fatal("CategoryDefinitions() exposed mutable catalog state")
+	}
+	if CategoryLabel("unreviewed") != "Reviewed information category" || CategoryMeaning("unreviewed") == "" {
+		t.Fatal("unknown category did not use bounded fallback")
+	}
+	destinations := DestinationDefinitions()
+	if len(destinations) != 5 {
+		t.Fatalf("DestinationDefinitions() length = %d, want 5", len(destinations))
+	}
+	for _, destination := range destinations {
+		if destination.ID == "" || destination.Label == "" || destination.Description == "" || !validDestination(destination.ID) {
+			t.Fatalf("invalid destination definition: %#v", destination)
+		}
+	}
+	copyOfDestinations := DestinationDefinitions()
+	copyOfDestinations[0].Label = "changed locally"
+	if DestinationLabel(destinations[0].ID) == "changed locally" {
+		t.Fatal("DestinationDefinitions() exposed mutable catalog state")
+	}
+	if DestinationLabel("unreviewed") != "Reviewed destination boundary" || DestinationMeaning("unreviewed") == "" {
+		t.Fatal("unknown destination did not use bounded fallback")
+	}
+}

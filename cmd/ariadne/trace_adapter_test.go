@@ -42,7 +42,7 @@ func TestRunTraceAdapter(t *testing.T) {
 	stderr.Reset()
 	if exitCode := runTraceAdapter([]string{"--procedure", "procedure.json", "--driver", "driver.exe", "--output", "run"}, &stdout, &stderr, func(string, string, []string, string) (trace.SourceAdapterRunSummary, error) {
 		return summary, nil
-	}); exitCode != 0 || !strings.Contains(stdout.String(), "source adapter run complete") || !strings.Contains(stdout.String(), "receipt_sha256: "+summary.ReceiptSHA256) || stderr.Len() != 0 {
+	}); exitCode != 0 || !strings.Contains(stdout.String(), "source adapter run complete") || !strings.Contains(stdout.String(), "meaning: The source reported only reviewed labels from supported channels; raw values are omitted.") || !strings.Contains(stdout.String(), "receipt_sha256: "+summary.ReceiptSHA256) || stderr.Len() != 0 {
 		t.Fatalf("human output = %d, %q, stderr=%q", exitCode, stdout.String(), stderr.String())
 	}
 
@@ -97,7 +97,7 @@ func TestRunTraceAdapterVerify(t *testing.T) {
 	stderr.Reset()
 	if exitCode := runTraceAdapterVerify([]string{"run"}, &stdout, &stderr, func(string) (trace.SourceAdapterRunSummary, error) {
 		return summary, nil
-	}); exitCode != 0 || !strings.Contains(stdout.String(), "source adapter run verified") || stderr.Len() != 0 {
+	}); exitCode != 0 || !strings.Contains(stdout.String(), "source adapter run verified") || !strings.Contains(stdout.String(), "meaning: The source reported only reviewed labels from supported channels; raw values are omitted.") || stderr.Len() != 0 {
 		t.Fatalf("human verify = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
 	}
 	stdout.Reset()
@@ -132,12 +132,33 @@ func TestRunTraceAdapterVerify(t *testing.T) {
 	}
 }
 
+func TestSourceAdapterMeaningKeepsUnknownsExplicit(t *testing.T) {
+	complete := sourceAdapterCLISummary()
+	if got := sourceAdapterMeaning(complete); got != "The source reported only reviewed labels from supported channels; raw values are omitted." {
+		t.Fatalf("complete meaning = %q", got)
+	}
+	partial := complete
+	partial.Receipt.Completeness = trace.Partial
+	if got := sourceAdapterMeaning(partial); got != "The source reported some reviewed labels, but incomplete coverage means missing observations are unknown." {
+		t.Fatalf("partial meaning = %q", got)
+	}
+	empty := complete
+	empty.Receipt.Events = 0
+	if got := sourceAdapterMeaning(empty); got != "No supported observations were reported; that is not proof that no information left the source." {
+		t.Fatalf("empty meaning = %q", got)
+	}
+	if got := sourceAdapterMeaning(trace.SourceAdapterRunSummary{}); got != "The report contains only supported labels; missing or unsupported activity remains unknown." {
+		t.Fatalf("fallback meaning = %q", got)
+	}
+}
+
 func sourceAdapterCLISummary() trace.SourceAdapterRunSummary {
 	return trace.SourceAdapterRunSummary{
 		ReceiptSHA256: strings.Repeat("a", 64),
 		TraceEvents:   []trace.Event{{Source: "desktop", Channel: "network", Kind: "request", Destination: "analytics", Fields: []string{"location"}}},
 		Receipt: trace.SourceAdapterReceipt{
 			Adapter: "external-desktop-v1", Source: "desktop", Scope: "outbound", Completeness: trace.Complete,
+			Events:          1,
 			ProcedureSHA256: strings.Repeat("b", 64), ExecutableSHA256: strings.Repeat("c", 64), ChallengeSHA256: strings.Repeat("d", 64),
 			TraceSHA256: strings.Repeat("e", 64), SessionSHA256: strings.Repeat("f", 64),
 		},

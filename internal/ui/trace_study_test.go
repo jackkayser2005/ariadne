@@ -53,6 +53,8 @@ func TestHandlerRendersTraceStudyReflection(t *testing.T) {
 		string(trace.ReplicatedChange),
 		"supported",
 		"observed",
+		"Every complete matched pair reported",
+		"The retained evidence directly contains",
 		"raw-value-free",
 		"does not infer chronology",
 	} {

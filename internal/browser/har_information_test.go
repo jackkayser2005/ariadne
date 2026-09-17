@@ -36,10 +36,17 @@ func TestInformationTrailsAreRedactedAndDetailsStartCollapsed(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(report)
-	for _, want := range []string{"Follow the information", "Email test value", "Found in 1 distinct", `href="#destination-1"`, `id="destination-1"`, "Account identifier test value", "No exact match in the supported channels", "Explore request details"} {
+	for _, want := range []string{"Follow the information", "Email test value", "Found in 1 distinct", `href="#destination-1"`, `id="destination-1"`, "Account identifier test value", "No exact match in the supported channels", "Explore request details", `href="/guide"`, "How Ariadne works"} {
 		if !strings.Contains(text, want) {
 			t.Fatal("missing", want)
 		}
+	}
+	exported, err := ExportHARReport(input, "https://example.test", rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(exported), `href="/guide"`) || strings.Contains(string(exported), `href="/"`) {
+		t.Fatal("standalone export contains local navigation")
 	}
 	for _, forbidden := range []string{"test-person@example.test", "account-12345", "<details open", input} {
 		if strings.Contains(text, forbidden) {

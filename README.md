@@ -7,6 +7,21 @@ data, and reports which observable behaviors change.
 Reports classify conclusions as **observed**, **inferred**, **claimed**, or
 **unknown**.
 
+Start with the guided command map:
+
+```console
+go run ./cmd/ariadne --help
+go run ./cmd/ariadne guide
+```
+
+`guide` explains the investigate → compare → trace → verify workflow and the
+meaning of `observed`, `unknown`, and `verified` in plain language. It writes
+plain text so it is safe to pipe into another command.
+
+To review one verified standalone trace locally, start the read-only server
+with `go run ./cmd/ariadne experiment serve --trace <trace.json> <archive-root>`
+and open `/trace`. It shows source → category → destination labels, the trace
+identity, and coverage limits without rendering values, URLs, or local paths.
 ## Experiment 001
 
 The first milestone targets an authorized Android test application:
@@ -53,27 +68,27 @@ assurance. A missing authenticated network capture is also represented as an
 incomplete unknown, never as evidence of no change. Legacy bundles remain
 readable, but they do not receive invented authentication or outcome semantics.
 
-The authenticated Android execution envelope is now explicit and versioned:
-session receipts use schema 9 and authenticated replication roots use schema 2.
-The golden Android acceptance receipt uses schema 2 and carries the shared
-`environment_sha256` identity only after the standalone run and two-order
-replication agree on that environment.
-Each session binding covers the safe target identity, reset policy, manifest and
-procedure identity, challenge commitment, ordered steps, and artifact hashes;
-each pair binds both session bindings and its execution order; the root binds
-all ordered pairs; and every complete authenticated session in the root must
-use a unique challenge commitment. Replication verification then returns an
-evidence-bound
-summary binding that includes the verified evidence identities. Current
-authenticated Android minimization candidates also carry one shared environment
-identity; drift in the target, reset policy, package, API, or Ariadne runner
-revision fails closed. Legacy minimization receipts remain readable without
-that guarantee. Raw persona
-values, challenges, payloads, and device serials remain out of portable
-receipts. These SHA-256 identities prove canonical consistency and session
-binding; they are not signatures, external authenticity proof, reset proof, or
-causal truth. Legacy schema 1/8 artifacts remain readable with binding
-semantics unavailable.
+The authenticated Android execution envelope is explicit and versioned:
+current session receipts use schema 10 and authenticated replication roots use
+schema 3. Their procedure digest identifies the reviewed Android execution
+contract independently from the experiment manifest. Each session binds the
+safe target identity, reset policy, both identities, challenge commitment,
+ordered steps, and artifact hashes. Each pair binds its two sessions and order;
+the root binds all pairs and rejects reused challenge commitments.
+
+Golden Android acceptance receipts use schema 3 and retain the shared
+`environment_sha256` only after the standalone run and both replication orders
+agree on that environment. Authenticated minimization candidates also require
+one shared environment: target, reset policy, package, API, or runner drift fails
+closed. Legacy acceptance schema 2 retains its environment guarantee. Session
+schema 9 and replication schema 2 preserve their original manifest-aliased
+procedure identities. Older artifacts remain readable without invented binding
+semantics.
+
+Raw persona values, challenges, payloads, and device serials remain out of
+portable receipts. These hashes establish canonical consistency and session
+binding; they are not signatures, independent source authentication, proof of
+reset, or causal proof.
 
 ## Golden Android acceptance
 
@@ -307,7 +322,7 @@ procedure, trace, session, and
 challenge-commitment identities, never the challenge, driver arguments, or raw
 source values. Verification is offline and proves consistency and session
 binding—not external authenticity, target authorization, universal capture, or
-causal impact.
+causal impact. Without `--json`, the run and verify commands also print a short `meaning:` line that explains whether the checked labels are complete, partial, or empty while keeping missing visibility explicit.
 The loopback review server can expose one verified source-adapter run:
 
 go run ./cmd/ariadne experiment serve --source-adapter .ariadne/source-adapter-run <archive-root>
@@ -360,9 +375,11 @@ go run ./cmd/ariadne trace verify --json .ariadne/browser-trace.json
 
 The browser adapter accepts only fixed network, cookie, and web-storage labels;
 it rejects URLs, payloads, cookie values, arbitrary destinations, and arbitrary
-fields. It is a redacted handoff boundary, not browser capture or a universal
-sniffer. The authorized driver that produces the audit remains a separate
-source-specific concern.
+fields. Human-readable `browser trace` output adds a short meaning line for
+complete, partial, and undescribed coverage; `--json` stays unchanged. The local guide and review pages explain each reviewed field ID and destination label with fixed plain-language meanings while keeping the stable IDs available for technical cross-reference. Destination labels describe reviewed boundaries and do not identify organizations. It is a
+redacted handoff boundary, not browser capture or a universal sniffer. The
+authorized driver that produces the audit remains a separate source-specific
+concern.
 
 The capture command now provides one explicit process boundary for that driver:
 
@@ -590,6 +607,10 @@ and is not persisted as a second evidence store. In human-readable output the
 command starts with a short explanation of what the labels do and do not mean;
 `--json` remains the stable machine-readable form. Set `ARIADNE_COLOR=1` when
 you want successful status headings colored green in an interactive terminal.
+The local review server also exposes a GET-only `/guide` page from the home
+header; it explains the investigate -> compare -> trace -> verify workflow and
+the meaning of `observed`, `unknown`, and `verified` before a reader opens
+technical evidence.
 Human `validate` output now starts with a plain-language answer before the
 artifact identity, tier statuses, and reason; `--json` is unchanged.
 `trace case map compare` is the next cross-case reflection boundary. It
@@ -1198,8 +1219,10 @@ observations. A selected result is labeled **minimum tested sufficient
 disclosure**. Mixed, incomplete, or unknown evidence leaves the selection
 unestablished. The page starts with a plain-language answer, then keeps the
 receipt identity, fixed questions, and candidate ladder behind clearly labeled
-technical details. The loopback server requires the canonical configured loopback
-authority and sends no-store/security headers; it remains GET-only.
+technical details. It also translates selection and functionality states into
+fixed plain-language sentences before the technical details; exact status words
+remain available for comparison. The loopback server requires the canonical
+configured loopback authority and sends no-store/security headers; it remains GET-only.
 When `--minimization-round <round.json>` is supplied with
 `--minimization <run-directory>`, the page rechecks the saved fixed-question
 round against the current minimization identity and renders its durable
@@ -1250,13 +1273,16 @@ an onward-sharing or causal claim.
 ~~~console
 go run ./cmd/ariadne browser weather --json --driver "C:\Program Files\nodejs\node.exe" --driver-arg cmd/browser-fixture-driver/weather_driver.mjs --driver-arg --browser --driver-arg "C:\Program Files\Google\Chrome\Application\chrome.exe" --output .ariadne/runs/weather-location
 go run ./cmd/ariadne browser weather verify --json --expect-sha256 <receipt-sha256> .ariadne/runs/weather-location
-go run ./cmd/ariadne experiment serve --addr 127.0.0.1:8787 --weather .ariadne/runs/weather-location .ariadne/runs
+go run ./cmd/ariadne experiment serve --addr 127.0.0.1:8787 --weather .ariadne/runs/weather-location .ariadne/ui-archive
 ~~~
 
 Open `/weather` on the loopback review server. The page re-verifies the bundle
 on each GET and never renders coordinates, URLs, payloads, executable paths, or
 local artifact paths. The JSON and page also expose verifier-derived
 per-candidate functionality counts and fixed explanations for visibility gaps.
+The human CLI summary adds the same simple trail (`browser -> Location -> Weather
+service`) while keeping the technical identities and gap reasons available for
+review.
 See the [weather investigation guide](docs/content/docs/weather-investigation.md)
 for the tested live result and coverage limits. The [audit and verification report](docs/content/docs/audit-report.md)
 records the security findings, performance measurements, and remaining gaps.

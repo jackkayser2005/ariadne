@@ -26,7 +26,7 @@ func TestRunTraceVerify(t *testing.T) {
 	if exitCode := run([]string{"trace", "verify", path}, &stdout, &stderr); exitCode != 0 {
 		t.Fatalf("run() exit code = %d, stderr = %q", exitCode, stderr.String())
 	}
-	if !strings.Contains(stdout.String(), "trace verified\nscope: outbound\ncompleteness: complete\nevents: 1\ntrace_sha256: ") || stderr.Len() != 0 {
+	if !strings.Contains(stdout.String(), "trace verified\nmeaning: this saved trace passed its checks; it reports only supported observations from its capture.\nscope: outbound\ncompleteness: complete\nevents: 1\ntrace_sha256: ") || stderr.Len() != 0 {
 		t.Fatalf("trace verify output = %q, stderr = %q", stdout.String(), stderr.String())
 	}
 
@@ -82,7 +82,7 @@ func TestRunTraceCompare(t *testing.T) {
 	if exitCode := run([]string{"trace", "compare", baseline, treatment}, &stdout, &stderr); exitCode != 0 {
 		t.Fatalf("run() exit code = %d, stderr = %q", exitCode, stderr.String())
 	}
-	for _, want := range []string{"trace compared", "scope: outbound", "differences: 1", "source: browser", "destination: analytics", "change: changed", "state: observed"} {
+	for _, want := range []string{"trace compared", "meaning: these counts describe differences between the two traces; they do not prove why a difference happened.", "scope: outbound", "differences: 1", "source: browser", "destination: analytics (Analytics)", "change: changed", "state: observed", "baseline fields: Region (region)", "treatment fields: Account identifier (account-id), Region (region)"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("trace compare output missing %q: %s", want, stdout.String())
 		}

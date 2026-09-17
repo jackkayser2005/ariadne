@@ -294,6 +294,8 @@ func TestHandlerRendersTraceArchiveReflection(t *testing.T) {
 		"trace-sources",
 		"outcome",
 		"evidence state",
+		"The reviewed source adapter appears in the retained archive.",
+		"The retained evidence cannot establish what happened.",
 		"unknown",
 		"an adjacent trace boundary is incomplete or has incompatible reviewed provenance",
 	} {
@@ -390,6 +392,8 @@ func TestHandlerRendersTraceReplicationLedger(t *testing.T) {
 		"treatment &rarr; baseline",
 		"mixed-inconsistent",
 		"observed",
+		"Complete matched pairs disagreed about whether a safe structural difference appeared.",
+		"The retained evidence directly contains the reported structural result.",
 		"Fixed questions",
 		trace.ReplicationQuestionOutcome,
 		trace.ReplicationQuestionSupport,

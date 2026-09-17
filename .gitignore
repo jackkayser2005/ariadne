@@ -47,3 +47,6 @@ local.properties
 /fixture/android/.gradle/
 /fixture/android/build/
 /fixture/android/app/build/
+
+# Isolated agent checkouts
+/.codex-worktrees/

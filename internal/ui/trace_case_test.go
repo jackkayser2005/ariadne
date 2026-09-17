@@ -61,6 +61,7 @@ func TestHandlerRendersTraceCaseReflection(t *testing.T) {
 		"<dt>outcome</dt>",
 		"evidence state",
 		"unknown",
+		"The retained traces do not support a complete coverage conclusion.",
 		"raw-value-free",
 		"does not infer chronology",
 	} {

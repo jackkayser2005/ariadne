@@ -87,6 +87,9 @@ func writeWeatherSummary(stdout io.Writer, review browser.WeatherReview) error {
 	} else if _, err := io.WriteString(stdout, "Location observed: unknown; no supported response-backed match was recorded.\n"); err != nil {
 		return err
 	}
+	if err := writeWeatherTrail(stdout, precise, preciseOK); err != nil {
+		return err
+	}
 	if _, err := io.WriteString(stdout, "Forecast results:\n"); err != nil {
 		return err
 	}
@@ -126,15 +129,37 @@ func writeWeatherSummary(stdout io.Writer, review browser.WeatherReview) error {
 		return err
 	}
 	if preciseOK && len(precise.VisibilityGaps) > 0 {
-		gaps := make([]string, 0, len(precise.VisibilityGaps))
-		for _, gap := range precise.VisibilityGaps {
-			gaps = append(gaps, gap.ID)
-		}
-		if _, err := fmt.Fprintf(stdout, "Visibility limits: %s\n", strings.Join(gaps, ", ")); err != nil {
+		if _, err := fmt.Fprintf(stdout, "Visibility limits: %s\n", formatWeatherGaps(precise.VisibilityGaps)); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func writeWeatherTrail(stdout io.Writer, precise browser.WeatherCandidateEvidence, available bool) error {
+	switch {
+	case available && precise.ResponseBackedSessions > 0:
+		_, err := fmt.Fprintf(stdout, "Information trail: browser -> Location -> Weather service (response-backed in %d/%d precise-location sessions).\n", precise.ResponseBackedSessions, precise.SessionCount)
+		return err
+	case available && precise.AttemptedSessions > 0:
+		_, err := io.WriteString(stdout, "Information trail: browser attempted to send Location; a response-backed destination was not confirmed.\n")
+		return err
+	default:
+		_, err := io.WriteString(stdout, "Information trail: unknown; no supported location path was recorded.\n")
+		return err
+	}
+}
+
+func formatWeatherGaps(gaps []browser.WeatherGapEvidence) string {
+	parts := make([]string, 0, len(gaps))
+	for _, gap := range gaps {
+		if gap.Reason == "" {
+			parts = append(parts, gap.ID)
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s (%s)", gap.ID, gap.Reason))
+	}
+	return strings.Join(parts, ", ")
 }
 
 func weatherCandidate(review browser.WeatherReview, candidate string) (browser.WeatherCandidateEvidence, bool) {

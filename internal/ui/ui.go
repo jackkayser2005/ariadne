@@ -42,6 +42,8 @@ type handler struct {
 	exportFind               func(string, string) (bundle.Finding, error)
 	traceArchivePath         string
 	traceArchiveRead         func(string) (trace.Archive, trace.ArchiveVerificationSummary, error)
+	tracePath                string
+	traceRead                func(string) (trace.Document, trace.VerificationSummary, error)
 	traceRoundPath           string
 	traceRoundRead           func(string) (trace.ArchiveQuestionRound, trace.ArchiveQuestionRoundVerificationSummary, error)
 	traceReplicationPath     string
@@ -149,6 +151,9 @@ type pageData struct {
 	SavedReflectionComparisonRequested     bool
 	SavedReflectionComparisonAvailable     bool
 	SavedReflectionComparison              bundle.ArchiveQuestionComparison
+	TraceConfigured                        bool
+	TraceSummary                           trace.VerificationSummary
+	TraceEvents                            []trace.Event
 	TraceArchiveConfigured                 bool
 	TraceArchiveRoundSaved                 bool
 	TraceArchiveRoundSHA256                string
@@ -315,11 +320,13 @@ func newHandler(h handler) http.Handler {
 func newHandlerWithHost(h handler, expectedHost string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", h.handleIndex)
+	mux.HandleFunc("/guide", h.handleGuide)
 	mux.HandleFunc("/run", h.handleRun)
 	mux.HandleFunc("/ask", h.handleAsk)
 	mux.HandleFunc("/finding", h.handleFinding)
 	mux.HandleFunc("/export-ask", h.handleExportAsk)
 	mux.HandleFunc("/export-finding", h.handleExportFinding)
+	mux.HandleFunc("/trace", h.handleTrace)
 	mux.HandleFunc("/trace-archive", h.handleTraceArchive)
 	mux.HandleFunc("/trace-replication", h.handleTraceReplication)
 	mux.HandleFunc("/trace-case", h.handleTraceCase)
@@ -537,6 +544,7 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		SavedReflectionComparisonAvailable: savedReflectionComparisonAvailable,
 		SavedReflectionComparison:          savedReflectionComparison,
 		ExportConfigured:                   h.exportAsk != nil && h.exportFind != nil,
+		TraceConfigured:                    h.traceConfigured(),
 		TraceArchiveConfigured:             h.traceArchiveConfigured(),
 		TraceArchiveRoundSaved:             h.traceRoundPath != "",
 		TraceReplicationConfigured:         h.traceReplicationConfigured(),
@@ -549,6 +557,10 @@ func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		HARComparisonConfigured:            h.harPath != "" && h.harOrigin != "" && h.harSecondPath != "" && h.harRulesPath != "",
 		MinimizationConfigured:             h.minimizationPath != "",
 	})
+}
+
+func (h handler) traceConfigured() bool {
+	return h.tracePath != ""
 }
 
 func (h handler) traceArchiveConfigured() bool {
@@ -631,6 +643,32 @@ func (h handler) readTraceArchive() (trace.ArchiveVerificationSummary, trace.Arc
 		}
 	}
 	return summary, roundSummary, round.Answers, nil
+}
+
+func (h handler) handleTrace(w http.ResponseWriter, r *http.Request) {
+	if !getOnly(w, r) {
+		return
+	}
+	if r.URL.Path != "/trace" || !h.traceConfigured() {
+		http.NotFound(w, r)
+		return
+	}
+	if h.traceRead == nil {
+		http.Error(w, "trace unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	document, summary, err := h.traceRead(h.tracePath)
+	if err != nil {
+		http.Error(w, "trace unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	render(w, pageData{
+		View:            "trace",
+		Title:           "Standalone trace review — Ariadne",
+		TraceConfigured: true,
+		TraceSummary:    summary,
+		TraceEvents:     document.Events,
+	})
 }
 
 func (h handler) handleTraceArchive(w http.ResponseWriter, r *http.Request) {
@@ -1241,7 +1279,20 @@ func render(w http.ResponseWriter, data pageData) {
 }
 
 var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
-	"query": func(value string) template.URL { return template.URL(url.QueryEscape(value)) },
+	"query":                             func(value string) template.URL { return template.URL(url.QueryEscape(value)) },
+	"categoryLabel":                     trace.CategoryLabel,
+	"categoryMeaning":                   trace.CategoryMeaning,
+	"traceSourceLabel":                  traceSourceLabel,
+	"traceChannelLabel":                 traceChannelLabel,
+	"traceKindLabel":                    traceKindLabel,
+	"destinationLabel":                  trace.DestinationLabel,
+	"destinationMeaning":                trace.DestinationMeaning,
+	"traceOutcomeMeaning":               traceOutcomeMeaning,
+	"traceEvidenceMeaning":              traceEvidenceMeaning,
+	"traceCoverageMeaning":              traceCoverageMeaning,
+	"traceComparisonMeaning":            traceComparisonMeaning,
+	"minimizationSelectionMeaning":      minimizationSelectionMeaning,
+	"minimizationClassificationMeaning": minimizationClassificationMeaning,
 }).Parse(`<!doctype html>
 <html lang="en">
 <head>
@@ -1258,6 +1309,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
     .brand::before { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 5px var(--accent-soft); content: ""; }
     .context, .eyebrow, .directory, .metric-label, footer { color: var(--muted); font-size: 13px; }
     .header-context { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.58); padding: 5px 10px; }
+    .header-context a { color: var(--accent-strong); font-weight: 750; text-decoration: none; }
     .hero { max-width: 680px; padding-bottom: 30px; }
     h1 { max-width: 760px; margin: 0 0 12px; font-size: clamp(34px, 6vw, 58px); letter-spacing: -.05em; line-height: 1.02; }
     h2 { margin: 0; font-size: 22px; letter-spacing: -.02em; }
@@ -1321,7 +1373,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
 <main>
   <header>
     <a class="brand" href="/">ARIADNE</a>
-    <span class="context header-context">counterfactual evidence review · read only</span>
+    <span class="context header-context"><a href="/guide">How Ariadne works</a><span aria-hidden="true"> · </span>counterfactual evidence review | read only</span>
   </header>
 
   {{define "provenance"}}
@@ -1373,6 +1425,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
     </section>
     {{if .WeatherConfigured}}<section class="panel" aria-labelledby="start-here"><p class="eyebrow">Start here</p><h2 id="start-here">Understand where information goes.</h2><p>Follow a weather website test: what location left the browser, where it went, and whether sharing less still gave a forecast. No technical knowledge needed.</p><a class="button" href="/weather">Open weather investigation</a><p class="context">This is a saved test using synthetic locations. Ariadne is not monitoring your browsing or the rest of your device.</p></section>{{end}}
     {{if .SourceAdapterConfigured}}<section class="panel" aria-labelledby="source-adapter-start"><p class="eyebrow">Redacted information trail</p><h2 id="source-adapter-start">Understand what an authorized source observed.</h2><p>See the safe labels, completeness, and evidence identities from one adapter run. Payloads and executable details stay out of the page.</p><a class="button" href="/source-adapter">Open source-adapter explanation</a><p class="context">This is a saved redacted trace, not a monitor of the rest of your device.</p></section>{{end}}
+    {{if .TraceConfigured}}<section class="panel" aria-labelledby="trace-start"><p class="eyebrow">Standalone redacted trace</p><h2 id="trace-start">Understand the recorded information paths.</h2><p>See the verified source, category, and destination labels from one trace. Values, URLs, and source paths stay out of the page.</p><a class="button" href="/trace">Open standalone trace explanation</a><p class="context">This is a saved redacted trace, not a monitor of the rest of your device.</p></section>{{end}}
     {{if .HARConfigured}}<section class="panel"><p class="eyebrow">Saved browser capture</p><h2>Explore a website's recorded activity.</h2><p>See request destinations and clues about personal information in the configured capture. The explanation omits captured values.</p><a class="button" href="/capture">Explain this capture</a><p class="context">An imported file is not a controlled experiment. Clues do not establish that personal information reached a server.</p></section>{{end}}
     {{if .HARComparisonConfigured}}<section class="panel"><h2>Look at two captures together.</h2><p>Follow the same test values across two exported files. Missing observations remain unknown.</p><a class="button" href="/capture-compare">Compare these captures</a></section>{{end}}
     <section class="panel">
@@ -1661,6 +1714,54 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
         <p class="empty">No verified bundles are available in this archive root.</p>
       {{end}}
 
+  {{else if eq .View "trace"}}
+    <a class="back" href="/">&larr; Review archive</a>
+    <p class="eyebrow">standalone redacted trace &middot; verified</p>
+    <h1>What did this trace record?</h1>
+    <p class="lede">This page translates one verified trace into a simple information path: source, reviewed category, and destination boundary. It never displays captured values, URLs, or source paths.</p>
+    <section class="panel answer" aria-label="How to read this trace">
+      <div class="section-head"><h2>Start with the simple version</h2><span class="context">labels, not values</span></div>
+      {{if .TraceSummary.Events}}<p class="answer-line"><strong>{{.TraceSummary.Events}} recorded path(s)</strong> are available in this trace.</p>{{else}}<p class="answer-line"><strong>No safe event paths were retained.</strong></p>{{end}}
+      <p class="context">{{traceCoverageMeaning .TraceSummary.Completeness}} {{if .TraceSummary.Redacted}}The stored trace is marked redacted.{{else}}The stored trace is not marked redacted.{{end}}</p>
+      <div class="flow">
+        <div class="flow-step"><span class="flow-index">1</span><div><strong>Source</strong><span>Which reviewed surface reported the label?</span></div></div>
+        <div class="flow-step"><span class="flow-index">2</span><div><strong>Category</strong><span>What kind of information was named?</span></div></div>
+        <div class="flow-step"><span class="flow-index">3</span><div><strong>Destination</strong><span>Which reviewed boundary was recorded?</span></div></div>
+        <div class="flow-step"><span class="flow-index">4</span><div><strong>Limit</strong><span>Missing channels remain unknown.</span></div></div>
+      </div>
+      <a class="button" href="#trace-paths">See the recorded paths <span aria-hidden="true">&rarr;</span></a>
+    </section>
+    <details class="panel" aria-label="Verified standalone trace identity">
+      <summary>Verified trace identity <span class="context">technical details</span></summary>
+      <div class="section-head"><h2>Verified trace identity</h2><span class="status">raw-value-free</span></div>
+      <dl>
+        <dt>schema</dt><dd>{{.TraceSummary.SchemaVersion}}</dd>
+        <dt>scope</dt><dd>{{.TraceSummary.Scope}}</dd>
+        <dt>completeness</dt><dd>{{.TraceSummary.Completeness}}</dd>
+        <dt>redacted</dt><dd>{{.TraceSummary.Redacted}}</dd>
+        <dt>events</dt><dd>{{.TraceSummary.Events}}</dd>
+        <dt>trace SHA-256</dt><dd>{{.TraceSummary.TraceSHA256}}</dd>
+      </dl>
+      <p class="context">This digest identifies the normalized trace that was verified when the page opened. It does not prove delivery, server-side use, onward sharing, ownership, or causality.</p>
+    </details>
+    <section class="panel" id="trace-paths" aria-label="Recorded information paths">
+      <div class="section-head"><h2>Recorded information paths</h2><span class="context">source &rarr; category &rarr; boundary</span></div>
+      <p>Each row is a retained label path. The category describes the kind of information; its original value is absent.</p>
+      {{range .TraceEvents}}
+      <ol class="path" aria-label="Recorded information path">
+        <li><span class="path-label">Source</span><strong>{{traceSourceLabel .Source}}</strong><small>{{traceChannelLabel .Channel}} &middot; {{traceKindLabel .Kind}}</small></li>
+        <li><span class="path-label">Information category</span>{{range .Fields}}<strong>{{categoryLabel .}}</strong><small>{{categoryMeaning .}}</small>{{end}}</li>
+        <li><span class="path-label">Destination boundary</span><strong>{{destinationLabel .Destination}}</strong><small>{{destinationMeaning .Destination}}</small></li>
+      </ol>
+      {{else}}
+      <p class="empty">No safe event paths were retained. That does not prove that no information left the source.</p>
+      {{end}}
+    </section>
+    <section class="panel" aria-label="Trace coverage limits">
+      <div class="section-head"><h2>What remains unknown</h2><span class="status status-unknown">coverage limits</span></div>
+      <p>{{if eq .TraceSummary.Completeness "partial"}}Some declared channels were missing, so Ariadne cannot use this trace to conclude that an unlisted path did not occur.{{else}}Even complete declared coverage only describes the channels this procedure inspected. Unsupported channels, server-side handling, onward sharing, and activity outside the procedure remain unknown.{{end}}</p>
+      <p class="context">A category label alone does not establish that a supplied value was transmitted. A destination boundary does not identify an organization or prove what happened after the observation.</p>
+    </section>
   {{else if eq .View "trace-archive"}}
     <a class="back" href="/">&larr; Review archive</a>
     <p class="eyebrow">portable trace archive &middot; verified</p>
@@ -1713,6 +1814,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
             <dt>same</dt><dd>{{.Same}}</dd>
             <dt>unknown</dt><dd>{{.Unknown}}</dd>
           </dl>
+          <p class="context">{{traceOutcomeMeaning .Result}} {{traceEvidenceMeaning .EvidenceState}}</p>
           {{with .Reason}}<p class="context">{{.}}</p>{{end}}
         </article>
       {{end}}
@@ -1729,6 +1831,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       <div class="section-head"><h2>Start with the simple version</h2><span class="context">outcome, then evidence</span></div>
       <p>This page checks the same comparison in two recorded orders. The outcome says what the retained pairs reported; the evidence state says how much the runs could show.</p>
       <p class="answer-line"><strong>In this ledger:</strong> {{.TraceReplicationSummary.Pairs}} matched pair(s), {{.TraceReplicationSummary.CompletePairs}} complete pair(s), outcome <span class="status status-{{.TraceReplicationSummary.Outcome}}">{{.TraceReplicationSummary.Outcome}}</span>.</p>
+      <p class="context">{{traceOutcomeMeaning .TraceReplicationSummary.Outcome}} {{traceEvidenceMeaning .TraceReplicationSummary.EvidenceState}}</p>
       <div class="flow">
         <div class="flow-step"><span class="flow-index">1</span><div><strong>Read the outcome</strong><span>Did the retained safe labels change?</span></div></div>
         <div class="flow-step"><span class="flow-index">2</span><div><strong>Check both orders</strong><span>Was the comparison run baseline-first and treatment-first?</span></div></div>
@@ -1802,6 +1905,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       <div class="section-head"><h2>Start with the simple version</h2><span class="context">labels, not payloads</span></div>
       <p>Ariadne is showing where a reviewed category label appeared in the saved evidence. A label such as <code>region</code> or <code>consent</code> is a description of an observation, not the value itself.</p>
       {{if .TraceCaseDisclosureMap.Categories}}<p class="answer-line"><strong>In this case:</strong> {{len .TraceCaseDisclosureMap.Categories}} reviewed category labels appear across {{.TraceCaseDisclosureMap.Traces}} retained traces.</p>{{else}}<p class="answer-line"><strong>In this case:</strong> no reviewed category labels were retained.</p>{{end}}
+      <p class="context">{{traceCoverageMeaning .TraceCaseDisclosureMap.CoverageState}} A retained path is a direct label observation, not the underlying value.</p>
       <div class="flow">
         <div class="flow-step"><span class="flow-index">1</span><div><strong>Look for a category</strong><span>What kind of information was named?</span></div></div>
         <div class="flow-step"><span class="flow-index">2</span><div><strong>Read the boundary</strong><span>Which reviewed source and destination category saw it?</span></div></div>
@@ -1843,6 +1947,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
             <dt>replicated ledgers</dt><dd>{{.Replications}}</dd>
             <dt>unknown entries</dt><dd>{{.UnknownEntries}}</dd>
           </dl>
+          <p class="context">{{traceOutcomeMeaning .Result}} {{traceEvidenceMeaning .EvidenceState}}</p>
           {{with .Reason}}<p class="context">{{.}}</p>{{end}}
         </article>
       {{end}}
@@ -1860,14 +1965,14 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       {{range .TraceCaseDisclosureMap.Categories}}
         {{$category := .Category}}
         <article class="panel" id="trace-case-disclosure-{{.Category}}">
-          <div class="section-head"><h3><code>{{.Category}}</code></h3><span class="context">{{len .Observations}} locations</span></div>
-          <p class="context">This category label appeared at the reviewed boundaries below. The page does not contain the value itself.</p>
+          <div class="section-head"><h3>{{categoryLabel .Category}} <code>{{.Category}}</code></h3><span class="context">{{len .Observations}} locations</span></div>
+          <p class="context">{{categoryMeaning .Category}} This category label appeared at the reviewed boundaries below. The page does not contain the value itself.</p>
           <div aria-label="Disclosure paths for {{.Category}}">
           {{range .Observations}}
             <ol class="path" aria-label="Recorded category path">
               <li><span class="path-label">Source</span><strong>{{.Source}}</strong><small>{{.Adapter}}</small></li>
-              <li><span class="path-label">Reviewed category</span><strong><code>{{$category}}</code></strong><small>label retained by the verifier</small></li>
-              <li><span class="path-label">Destination</span><strong>{{.Destination}}</strong><small>{{.Channel}} / {{.Kind}}</small></li>
+              <li><span class="path-label">Reviewed category</span><strong>{{categoryLabel $category}}</strong><small><code>{{$category}}</code> · label retained by the verifier</small></li>
+              <li><span class="path-label">Destination</span><strong>{{destinationLabel .Destination}}</strong><small><code>{{.Destination}}</code> · {{destinationMeaning .Destination}}</small><small>{{.Channel}} / {{.Kind}}</small></li>
             </ol>
             <p class="context path-meta">{{.TraceCount}} retained trace(s) &middot; <span class="status status-{{.EvidenceState}}">{{.EvidenceState}}</span></p>
           {{end}}
@@ -1900,7 +2005,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
           <h4>Reviewed boundaries by category</h4>
           <ul>
           {{range .Categories}}
-            <li><code>{{.Category}}</code>: {{range $index, $boundary := .Boundaries}}{{if $index}}, {{end}}{{$boundary.Source}} / {{$boundary.Adapter}}{{end}}</li>
+            <li>{{categoryLabel .Category}} <code>{{.Category}}</code>: {{range $index, $boundary := .Boundaries}}{{if $index}}, {{end}}{{$boundary.Source}} / {{$boundary.Adapter}}{{end}}</li>
           {{else}}
             <li>none</li>
           {{end}}
@@ -1964,6 +2069,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       <div class="section-head"><h2>Start with the simple version</h2><span class="context">outcome, support, and order</span></div>
       <p>This study brings independent repeated ledgers together under one reviewed comparison. Read the outcome first, then check how many runs supported it and whether any run remains unknown.</p>
       <p class="answer-line"><strong>In this study:</strong> {{.TraceStudySummary.Runs}} independent run(s), {{.TraceStudySummary.SupportedRuns}} supported and {{.TraceStudySummary.UnknownRuns}} unknown; outcome <span class="status status-{{.TraceStudySummary.Outcome}}">{{.TraceStudySummary.Outcome}}</span>.</p>
+      <p class="context">{{traceOutcomeMeaning .TraceStudySummary.Outcome}} {{traceEvidenceMeaning .TraceStudySummary.EvidenceState}}</p>
       <div class="flow">
         <div class="flow-step"><span class="flow-index">1</span><div><strong>Read the outcome</strong><span>What did the repeated ledgers report?</span></div></div>
         <div class="flow-step"><span class="flow-index">2</span><div><strong>Check the support</strong><span>How many independent runs could be compared?</span></div></div>
@@ -2020,6 +2126,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
             <dt>mixed runs</dt><dd>{{.MixedRuns}}</dd>
             <dt>unknown pairs</dt><dd>{{.UnknownPairs}}</dd>
           </dl>
+          <p class="context">{{traceOutcomeMeaning .Result}} {{traceEvidenceMeaning .EvidenceState}}</p>
           {{with .Reason}}<p class="context">{{.}}</p>{{end}}
         </article>
       {{end}}
@@ -2077,6 +2184,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       <div class="section-head"><h2>Start with the simple version</h2><span class="context">bounded reflection</span></div>
       <p>This page checks the same fixed study questions in two retained answer sets. The result says whether those bounded projections changed; it does not say why, when, or whether anything improved.</p>
       <p class="answer-line"><strong>In this comparison:</strong> {{.TraceStudyComparison.Compared}} fixed question projection(s) checked, {{.TraceStudyComparison.Changed}} changed; result <span class="status status-{{.TraceStudyComparison.Result}}">{{.TraceStudyComparison.Result}}</span>.</p>
+      <p class="context">{{traceComparisonMeaning .TraceStudyComparison.Result}}</p>
       <div class="flow">
         <div class="flow-step"><span class="flow-index">1</span><div><strong>Read the result</strong><span>Same, changed, or incomparable?</span></div></div>
         <div class="flow-step"><span class="flow-index">2</span><div><strong>Inspect the questions</strong><span>Which fixed projection changed?</span></div></div>
@@ -2144,6 +2252,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
       {{else}}
       <p class="answer-line"><strong>What the test supports:</strong> no candidate was selected. The ladder has mixed, unknown, or incomplete support, so Ariadne withholds a stronger privacy conclusion. Evidence state: <span class="status status-{{.Minimization.EvidenceState}}">{{.Minimization.EvidenceState}}</span>.</p>
       {{end}}
+      <p class="context">{{minimizationSelectionMeaning .Minimization.SelectionState}}</p>
       <div class="flow">
         <div class="flow-step"><span class="flow-index">1</span><div><strong>Read the tested answer</strong><span>Selected or withheld?</span></div></div>
         <div class="flow-step"><span class="flow-index">2</span><div><strong>Check functionality</strong><span>Did the intended behavior remain available?</span></div></div>
@@ -2260,6 +2369,7 @@ var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
             <dt>unknown pairs</dt><dd>{{.UnknownPairs}}</dd>
             <dt>replication receipt SHA-256</dt><dd>{{.ReceiptSHA256}}</dd>
           </dl>
+          <p class="context">{{minimizationClassificationMeaning .Classification}} {{traceOutcomeMeaning .Outcome}} {{traceEvidenceMeaning .EvidenceState}}</p>
           <p class="context">Classification is the bounded functionality conclusion. Outcome summarizes the replicated counterfactual result. Evidence state qualifies support for both; none is a causal proof.</p>
         </article>
       {{end}}
