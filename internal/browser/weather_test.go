@@ -120,6 +120,7 @@ func TestWeatherGapEvidenceUsesFixedReasons(t *testing.T) {
 	}{
 		{"blocked-origin", "A destination outside the reviewed origin allowlist was blocked."},
 		{"unsupported-body", "A request body used an encoding outside the bounded parser."},
+		{"unsupported-encoding", "A location-like value used a percent encoding outside the reviewed matcher."},
 		{"unsupported-channel", "A worker, service worker, shared worker, or WebSocket channel was outside this capture."},
 		{"capture-incomplete", "The capture did not provide complete visibility for supported browser channels."},
 		{"server-side-unobservable", "The browser cannot observe onward handling after a response."},
@@ -237,7 +238,7 @@ func TestWeatherMalformedArtifacts(t *testing.T) {
 
 func TestWeatherUnknownAndMixedWithholdSelection(t *testing.T) {
 	_, review := weatherFixture(t)
-	for _, g := range []string{"blocked-origin", "unsupported-body", "unsupported-channel", "capture-incomplete"} {
+	for _, g := range []string{"blocked-origin", "unsupported-body", "unsupported-encoding", "unsupported-channel", "capture-incomplete"} {
 		r := review.Run
 		r.Sessions = append([]WeatherSession{}, review.Run.Sessions...)
 		r.Sessions[1].Gaps = []string{g}

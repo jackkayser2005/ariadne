@@ -34,7 +34,23 @@ test('redirect responses preserve origin and cache boundaries',()=>{
  result=e.result();
  assert(!result.observations.some(o=>o.stage==='response-backed'));
  assert(result.gaps.includes('capture-incomplete'));
-});test('body coverage, overflow, failures, cached responses and rate limits remain explicit',()=>{
+});test('missing request identifiers cannot become response-backed',()=>{
+ const c=weatherCollector();
+ c.request({request:{url:'https://beta.weather.gov/forecast/point/38.889/-77.035'}});
+ c.response({response:{url:'https://beta.weather.gov/forecast/point/38.889/-77.035',status:200}});
+ const result=c.result();
+ assert(result.gaps.includes('capture-incomplete'));
+ assert(!result.observations.some(o=>o.stage==='response-backed'));
+});
+test('unsupported percent encodings remain an explicit visibility gap',()=>{
+ const c=weatherCollector();
+ c.request({requestId:'nested',request:{url:'https://beta.weather.gov/',hasPostData:true,headers:{'Content-Type':'application/json'},postData:'{\"where\":\"%2533%2538.889%252C-77.035278\"}'}});
+ c.request({requestId:'malformed',request:{url:'https://beta.weather.gov/',hasPostData:true,headers:{'Content-Type':'text/plain'},postData:'location=%invalid'}});
+ const result=c.result();
+ assert(result.gaps.includes('unsupported-encoding'));
+ assert(!result.observations.some(o=>o.stage==='attempted'));
+});
+test('body coverage, overflow, failures, cached responses and rate limits remain explicit',()=>{
  const c=weatherCollector(3);
  c.request({requestId:'a',request:{url:'https://beta.weather.gov/',hasPostData:true,headers:{'Content-Type':'application/json'},postData:'{"lat":38.889,"lon":-77.035}'}});
  c.response({requestId:'a',response:{url:'https://beta.weather.gov/',status:429,fromDiskCache:true}});
