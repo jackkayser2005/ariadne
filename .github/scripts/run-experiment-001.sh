@@ -143,12 +143,14 @@ minimization_verify_json="${RUNNER_TEMP}/ariadne-minimization-verify.json"
 "${ariadne}" experiment minimize verify --json \
   "${minimization_dir}" >"${minimization_verify_json}"
 jq -e '
-  (keys_unsorted == ["schema_version", "plan_name", "variable", "reference_candidate", "functionality_criterion", "pairs_per_order", "evidence_state", "selection_state", "selected_candidate", "candidate_results", "receipt_sha256"]) and
-  (.schema_version == 2) and
+  (keys_unsorted == ["schema_version", "plan_name", "variable", "reference_candidate", "functionality_criterion", "environment_sha256", "pairs_per_order", "evidence_state", "selection_state", "selected_candidate", "candidate_results", "receipt_sha256"]) and
+  (.schema_version == 3) and
   (.plan_name == "android-location-minimize") and
   (.variable == "location") and
   (.reference_candidate == "exact") and
   (.functionality_criterion == "all-non-disclosure-fields-equal-v1") and
+  (.environment_sha256 | test("^[0-9a-f]{64}$")) and
+  (.environment_sha256 as $environment | all(.candidate_results[]; .environment_sha256 == $environment)) and
   (.pairs_per_order == 1) and
   (.evidence_state == "observed") and
   (.selection_state == "selected") and

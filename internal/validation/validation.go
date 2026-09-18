@@ -858,7 +858,10 @@ func reportFromMinimization(summary minimize.MinimizationSummary, identity strin
 }
 
 func minimizationEnvironment(summary minimize.MinimizationSummary) string {
-	if summary.SchemaVersion != minimize.SummarySchemaVersion {
+	if summary.SchemaVersion == minimize.SummarySchemaVersion {
+		return summary.EnvironmentSHA256
+	}
+	if summary.SchemaVersion != minimize.CandidateEnvironmentSummarySchemaVersion {
 		return ""
 	}
 	environment := ""
@@ -917,7 +920,7 @@ func minimizationBoundary(summary minimize.MinimizationSummary) (Status, string)
 		}
 		return StatusFail, ReasonProvenanceInconsistent
 	}
-	if summary.SchemaVersion == minimize.SummarySchemaVersion {
+	if summary.SchemaVersion >= minimize.CandidateEnvironmentSummarySchemaVersion {
 		hasEnvironment := false
 		missingEnvironment := false
 		environmentMismatch := false
@@ -942,6 +945,14 @@ func minimizationBoundary(summary minimize.MinimizationSummary) (Status, string)
 				return StatusUnavailable, ReasonProvenanceUnavailable
 			}
 			return StatusFail, ReasonProvenanceInconsistent
+		}
+		if summary.SchemaVersion == minimize.SummarySchemaVersion && hasEnvironment {
+			if summary.EnvironmentSHA256 == "" {
+				return StatusUnavailable, ReasonProvenanceUnavailable
+			}
+			if summary.EnvironmentSHA256 != environment {
+				return StatusFail, ReasonProvenanceInconsistent
+			}
 		}
 	}
 	// Candidate names are part of each manifest contract, so authenticated

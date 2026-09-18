@@ -506,6 +506,12 @@ hosted API 35 emulator workflow remains the proof that the target behavior and
 review projection actually ran. Raw run directories and reports remain
 authoritative inputs, not portable publication artifacts.
 
+**Current minimization provenance hardening slice.** Authenticated Android
+minimization receipts now use schema 3: the shared `environment_sha256`
+identity is recorded at the receipt root and repeated in every authenticated
+candidate result. Schema 2 receipts remain readable with candidate-level
+identity only; schema 1 receipts remain readable without that guarantee.
+
 ## Browser capture explanation
 
 The local `/capture` view now reviews an authorized HAR export alongside the

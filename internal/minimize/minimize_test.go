@@ -1197,7 +1197,7 @@ func TestValidateSummaryRejectsBoundaryInputs(t *testing.T) {
 		name   string
 		mutate func(*MinimizationSummary)
 	}{
-		{"schema", func(summary *MinimizationSummary) { summary.SchemaVersion = 3 }},
+		{"schema", func(summary *MinimizationSummary) { summary.SchemaVersion = 4 }},
 		{"plan name", func(summary *MinimizationSummary) { summary.PlanName = "bad name" }},
 		{"variable", func(summary *MinimizationSummary) { summary.Variable = "" }},
 		{"reference", func(summary *MinimizationSummary) { summary.ReferenceCandidate = "../exact" }},
@@ -1363,6 +1363,65 @@ func TestValidateCandidateEnvironmentIdentities(t *testing.T) {
 	}
 	if err := validateCandidateEnvironmentIdentities(LegacySummarySchemaVersion, results); err != nil {
 		t.Fatalf("legacy environment omission rejected: %v", err)
+	}
+}
+
+func TestCurrentSummaryPromotesEnvironmentIdentity(t *testing.T) {
+	environment := strings.Repeat("a", 64)
+	results := []CandidateResult{
+		testResult("city", 0, CandidateSufficient, evidence.Observed),
+		testResult("omitted", 1, CandidateSufficient, evidence.Observed),
+	}
+	for index := range results {
+		results[index].BindingSHA256 = strings.Repeat("b", 64)
+		results[index].EnvironmentSHA256 = environment
+	}
+	summary, err := summarize(testPlan(), 1, results)
+	if err != nil {
+		t.Fatalf("summarize() error = %v", err)
+	}
+	if summary.SchemaVersion != SummarySchemaVersion || summary.EnvironmentSHA256 != environment {
+		t.Fatalf("summary = %#v", summary)
+	}
+
+	mismatched := summary
+	mismatched.EnvironmentSHA256 = strings.Repeat("c", 64)
+	if err := validateSummary(mismatched); err == nil {
+		t.Fatal("validateSummary() accepted a mismatched root environment identity")
+	}
+	missing := summary
+	missing.EnvironmentSHA256 = ""
+	if err := validateSummary(missing); err == nil {
+		t.Fatal("validateSummary() accepted a missing root environment identity")
+	}
+	invalid := summary
+	invalid.EnvironmentSHA256 = "not-a-digest"
+	if err := validateSummary(invalid); err == nil {
+		t.Fatal("validateSummary() accepted an invalid root environment identity")
+	}
+
+	legacy := summary
+	legacy.SchemaVersion = CandidateEnvironmentSummarySchemaVersion
+	legacy.EnvironmentSHA256 = ""
+	if err := validateSummary(legacy); err != nil {
+		t.Fatalf("schema 2 summary became unreadable: %v", err)
+	}
+	legacy.EnvironmentSHA256 = environment
+	if err := validateSummary(legacy); err == nil {
+		t.Fatal("validateSummary() accepted a root identity in schema 2")
+	}
+
+	unboundResults := append([]CandidateResult(nil), results...)
+	for index := range unboundResults {
+		unboundResults[index].BindingSHA256 = ""
+	}
+	unbound, err := summarize(testPlan(), 1, unboundResults)
+	if err != nil {
+		t.Fatalf("summarize() unbound error = %v", err)
+	}
+	unbound.EnvironmentSHA256 = environment
+	if err := validateSummary(unbound); err == nil {
+		t.Fatal("validateSummary() accepted a root identity without an authenticated candidate")
 	}
 }
 
