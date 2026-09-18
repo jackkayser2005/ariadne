@@ -31,6 +31,7 @@ type ReviewOptions struct {
 	FirstRoundPath            string
 	SecondRoundPath           string
 	TraceArchivePath          string
+	TracePath                 string
 	TraceRoundPath            string
 	TraceReplicationPath      string
 	TraceCasePath             string
@@ -88,6 +89,10 @@ func reviewHandler(options ReviewOptions) http.Handler {
 	if options.TraceArchivePath != "" {
 		h.traceArchivePath = options.TraceArchivePath
 		h.traceArchiveRead = trace.ReadArchive
+	}
+	if options.TracePath != "" {
+		h.tracePath = options.TracePath
+		h.traceRead = readStandaloneTrace
 	}
 	if options.TraceRoundPath != "" {
 		h.traceRoundPath = options.TraceRoundPath
@@ -434,6 +439,7 @@ func secureReviewHandler(next http.Handler, expectedHost string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'")
+		w.Header().Set("Permissions-Policy", "geolocation=(), camera=(), microphone=()")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		if expectedHost != "" && !reviewHostMatches(expectedHost, r.Host) {

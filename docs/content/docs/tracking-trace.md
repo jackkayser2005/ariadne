@@ -34,9 +34,13 @@ scope completely:
 ```
 
 `source`, `channel`, `kind`, and `destination` come from Ariadne's reviewed
-safe catalog; they are not URLs or raw source strings. `fields` are
-data-category labels such as `device-id`, `consent`, or `region`; they are not
-values. Duplicate event
+safe catalog; they are not URLs or raw source strings. Destination labels are reviewed boundary categories and do not identify organizations. `fields` are
+data-category labels such as `device-id`, `consent`, or `region`; they are not values.
+The local guide and human-readable review pages pair each stable ID with a fixed
+plain-language label from the same reviewed vocabulary. Generic trace review
+pages also translate outcome and evidence-state words into fixed sentences
+before the technical details; `unknown` remains a limitation, not a privacy pass.
+Duplicate event
 identities, duplicate fields, unknown JSON members, oversized documents, and
 unsafe identifiers are rejected.
 
@@ -99,7 +103,7 @@ contains the raw challenge, driver path or arguments, adapter response, or
 source-specific values. trace adapter verify rechecks the portable artifacts
 without launching the adapter. This proves a bounded consistency and session
 binding boundary. It does not authenticate the external executable, establish
-authorization, inspect unrelated traffic, or provide universal tracing.
+authorization, inspect unrelated traffic, or provide universal tracing. Human-readable `trace adapter run` and `trace adapter verify` output adds a short `meaning:` line for complete, partial, and empty reports; `--json` remains unchanged for scripts.
 
 ### Canonical provenance identity
 
@@ -122,6 +126,19 @@ go run ./cmd/ariadne experiment serve --source-adapter .ariadne/source-adapter-r
 The /source-adapter route re-verifies the three portable files on each GET and
 renders only safe labels, completeness, and identities. It never renders the
 run path, procedure, executable, challenge, payloads, URLs, or captured values.
+A standalone redacted trace can use the same local review server without an
+adapter receipt:
+
+~~~console
+go run ./cmd/ariadne experiment serve --trace <trace.json> <archive-root>
+~~~
+
+The /trace route re-reads and verifies the trace on every GET, then explains
+only the fixed source, channel, event-kind, category, and destination labels.
+It shows the normalized trace identity and keeps incomplete coverage, missing
+channels, unsupported activity, server-side handling, and onward sharing
+explicitly unknown. The trace path, values, URLs, and other local file details
+are never rendered.
 
 ## Receipt-bound adapter-run archives
 
@@ -209,7 +226,9 @@ label. It accepts only `network` requests/responses/beacons, `cookie` writes,
 and `web-storage` writes, with the fixed destination and data-category catalogs.
 Unknown JSON members, duplicate identities, arbitrary labels, URLs, and
 payload-shaped fields are rejected. A partial audit remains partial, so missing
-browser events remain `unknown` during comparison.
+browser events remain `unknown` during comparison. Human-readable `browser trace`
+output adds a fixed meaning line for complete, partial, and undescribed coverage;
+`--json` remains the stable machine-readable form.
 
 This producer validates the redaction and handoff boundary. It does not launch
 a browser, inspect a user's session, or claim that the supplied audit is true;

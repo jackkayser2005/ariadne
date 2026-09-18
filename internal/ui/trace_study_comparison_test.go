@@ -74,6 +74,7 @@ func TestHandlerRendersTraceStudyComparison(t *testing.T) {
 		"first evidence state",
 		"second evidence state",
 		"support-counts",
+		"At least one fixed projection changed in the supplied order.",
 		"does not establish chronology",
 	} {
 		if !strings.Contains(body, want) {

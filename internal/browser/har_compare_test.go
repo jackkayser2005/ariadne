@@ -94,7 +94,7 @@ func TestHARComparisonHTMLFreshnessRedactionAndExclusiveOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, wanted := range []string{"First capture", "Second capture", "Supporting entries", "entry 1", "no exported requests", "cannot select a minimum", "not observed in the checked parts of this file", "Request contents we could check", `<details class="origin-row"`} {
+	for _, wanted := range []string{"First capture", "Second capture", "A supplied test value appears in at least one checked file.", "Which reviewed destination is listed?", "Supporting entries", "entry 1", "no exported requests", "cannot select a minimum", "not observed in the checked parts of this file", "Request contents we could check", `<details class="origin-row"`} {
 		if !strings.Contains(string(local), wanted) {
 			t.Fatal("missing", wanted)
 		}
@@ -104,7 +104,7 @@ func TestHARComparisonHTMLFreshnessRedactionAndExclusiveOutput(t *testing.T) {
 			t.Fatal("leak", secret)
 		}
 	}
-	if !strings.Contains(string(local), `href="/"`) || strings.Contains(string(original), `href="/"`) {
+	if !strings.Contains(string(local), `href="/"`) || !strings.Contains(string(local), `href="/guide"`) || strings.Contains(string(original), `href="/"`) || strings.Contains(string(original), `href="/guide"`) {
 		t.Fatal("local navigation scope")
 	}
 	if err := os.WriteFile(right, []byte("secret-invalid"), 0600); err != nil {
@@ -184,6 +184,8 @@ func TestHARComparisonSummaryEmptyStateIsInconclusiveAndHintsStayWeak(t *testing
 	}
 	text := string(report)
 	for _, want := range []string{
+		"These files do not show a supplied test value in the checked channels.",
+		"What the file cannot show stays unknown",
 		"No exact supplied test category matched in either file",
 		"This is inconclusive",
 		"does not show that information stayed private",
