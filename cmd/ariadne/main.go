@@ -12,6 +12,7 @@ import (
 	"os"
 	"runtime/debug"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackkayser2005/ariadne/internal/adb"
@@ -24,6 +25,72 @@ import (
 	"github.com/jackkayser2005/ariadne/internal/ui"
 	"github.com/jackkayser2005/ariadne/internal/validation"
 )
+
+const quickUsage = `Ariadne - local privacy investigation workbench
+
+The basic path is: investigate -> compare -> trace -> verify.
+Ariadne reports what the saved evidence supports and keeps missing visibility unknown.
+
+Start with a saved weather investigation:
+  ariadne browser weather verify <run-directory>
+  ariadne experiment serve --weather <run-directory> [--trace <trace.json>] <archive-root>
+  open http://127.0.0.1:8787/ and choose "How Ariadne works"
+
+Other useful starting points:
+  ariadne guide                                      plain-language workflow guide
+  ariadne validate <artifact>                         check a saved artifact
+  ariadne trace verify <trace.json>                   check a redacted trace
+  ariadne trace compare <baseline.json> <treatment.json> compare two captures
+
+Use --json for machine-readable output. Set ARIADNE_COLOR=1 for green success
+headings in an interactive terminal.
+For the full command reference, run: ariadne help --all
+`
+
+const cliGuide = `Ariadne in plain language
+
+Ariadne follows one saved investigation from a test to an answer:
+  1. Investigate  Run a reviewed test or open a saved capture.
+  2. Compare      Check what changed between the two conditions.
+  3. Trace        Follow a supported information label to a recorded destination.
+  4. Verify       Recheck the saved files before you rely on or share the result.
+
+The words in a report mean:
+  observed  A supported value or label appeared in the checked evidence.
+  unknown   The evidence could not show enough to answer; this is not a privacy pass.
+  verified  The saved files agree with their recorded checks; this does not prove truth.
+
+Ariadne keeps separate questions separate: what left the browser, where it was
+observed, whether the workflow still worked, and what the saved files cannot show.
+It does not monitor the rest of your device or infer what a server did afterward.
+
+Safe categories are labels such as location, account, device, contact, region,
+and session. The actual values stay out of this guide and the default output. Destination labels such as analytics and advertising describe reviewed boundaries; they do not identify an organization.
+
+Reviewed category labels are safe names, not the values themselves:
+  account-id       an identifier associated with an account
+  advertising-id   an identifier used for advertising or measurement
+  consent          a permission or privacy choice
+  cookie-id        an identifier stored in a browser cookie
+  device-id        an identifier associated with a device
+  email            an email address or email label
+  ip-address       a network address that can indicate a connection
+  location         a precise or approximate place
+  phone            a phone number or phone label
+  region           a broader geographic area
+  session-id       an identifier for a visit or session
+  unknown          information that could not be classified safely
+  user-agent       browser or device software information
+
+
+Good first commands:
+  ariadne validate <artifact>
+  ariadne browser weather verify <run-directory>
+  ariadne experiment serve --weather <run-directory> [--trace <trace.json>] <archive-root>
+  open http://127.0.0.1:8787/ and choose "How Ariadne works"
+
+Use --json when another program should read the result. Use "ariadne help --all" for every command.
+`
 
 const usage = `usage:
 Ariadne
@@ -39,6 +106,10 @@ output: plain text by default; add --json for machine-readable output.
 color: set ARIADNE_COLOR=1 to color successful status lines green on an interactive terminal.
 
 command groups
+
+help
+  ariadne guide
+  ariadne help --all
 
 investigate
   ariadne validate [--json] <artifact>
@@ -178,7 +249,7 @@ experiment
   ariadne experiment ask-archive verify [--json] [--expect-sha256 <digest>] <report.json>
   ariadne experiment questions [--json]
   ariadne experiment list [--json] <archive-root>
-	ariadne experiment serve [--addr <address>] [--history <history.json>] [--reflection <report.json>] [--export <export.json>] [--acceptance <acceptance.json>] [--round-first <round.json> --round-second <round.json>] [--trace-archive <archive.json>] [--trace-round <round.json>] [--trace-replication <ledger.json>] [--trace-case <case.json>] [--trace-case-round <round.json>] [--trace-case-receipt <receipt.json>] [--trace-study <study.json>] [--trace-study-round <round.json>] [--trace-study-receipt <receipt.json>] [--trace-study-second <study.json> --trace-study-round-second <round.json>] [--source-adapter <run-directory>] [--minimization <run-directory>] [--minimization-round <round.json>] [--minimization-receipt <receipt.json>] <archive-root>
+	ariadne experiment serve [--addr <address>] [--history <history.json>] [--reflection <report.json>] [--export <export.json>] [--acceptance <acceptance.json>] [--round-first <round.json> --round-second <round.json>] [--trace <trace.json>] [--trace-archive <archive.json>] [--trace-round <round.json>] [--trace-replication <ledger.json>] [--trace-case <case.json>] [--trace-case-round <round.json>] [--trace-case-receipt <receipt.json>] [--trace-study <study.json>] [--trace-study-round <round.json>] [--trace-study-receipt <receipt.json>] [--trace-study-second <study.json> --trace-study-round-second <round.json>] [--weather <weather-directory>] [--source-adapter <run-directory>] [--har <capture.har> --har-origin <origin> [--har-second <capture.har>] [--har-test-values <rules.json>]] [--minimization <run-directory>] [--minimization-round <round.json>] [--minimization-receipt <receipt.json>] <archive-root>
 `
 
 const adbCheckTimeout = 10 * time.Second
@@ -192,6 +263,24 @@ func main() {
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 1 && args[0] == "guide" {
+		if _, err := io.WriteString(stdout, cliGuide); err != nil {
+			return 1
+		}
+		return 0
+	}
+	if len(args) == 1 && (args[0] == "help" || args[0] == "--help" || args[0] == "-h") {
+		if _, err := io.WriteString(stdout, quickUsage); err != nil {
+			return 1
+		}
+		return 0
+	}
+	if len(args) == 2 && (args[0] == "help" || args[0] == "--help" || args[0] == "-h") && args[1] == "--all" {
+		if _, err := io.WriteString(stdout, usage); err != nil {
+			return 1
+		}
+		return 0
+	}
 	if len(args) >= 2 && args[0] == "validate" {
 		return runValidate(args[1:], stdout, stderr)
 	}
@@ -793,6 +882,17 @@ func validationMeaning(status validation.Status) string {
 	}
 }
 
+func browserTraceMeaning(completeness string) string {
+	switch completeness {
+	case trace.Complete:
+		return "This trace contains reviewed labels from the channels it claims to cover; raw values are omitted."
+	case trace.Partial:
+		return "This trace contains some reviewed labels, but missing channels remain unknown."
+	default:
+		return "The trace coverage is not fully described; missing or unsupported activity remains unknown."
+	}
+}
+
 func runBrowserTrace(
 	args []string,
 	stdout, stderr io.Writer,
@@ -819,7 +919,8 @@ func runBrowserTrace(
 	}
 	if _, err := fmt.Fprintf(
 		stdout,
-		"browser trace complete\nscope: %s\ncompleteness: %s\nevents: %d\ntrace_sha256: %s\n",
+		"browser trace complete\nmeaning: %s\nscope: %s\ncompleteness: %s\nevents: %d\ntrace_sha256: %s\n",
+		browserTraceMeaning(summary.Completeness),
 		summary.Scope,
 		summary.Completeness,
 		summary.Events,
@@ -1080,7 +1181,7 @@ func runTraceVerify(
 	}
 	if _, err := fmt.Fprintf(
 		stdout,
-		"trace verified\nscope: %s\ncompleteness: %s\nevents: %d\ntrace_sha256: %s\n",
+		"trace verified\nmeaning: this saved trace passed its checks; it reports only supported observations from its capture.\nscope: %s\ncompleteness: %s\nevents: %d\ntrace_sha256: %s\n",
 		summary.Scope,
 		summary.Completeness,
 		summary.Events,
@@ -1090,6 +1191,21 @@ func runTraceVerify(
 		return 1
 	}
 	return 0
+}
+
+func formatTraceDestination(destination string) string {
+	return fmt.Sprintf("%s (%s)", destination, trace.DestinationLabel(destination))
+}
+
+func formatTraceFields(fields []string) string {
+	if len(fields) == 0 {
+		return "none"
+	}
+	labels := make([]string, 0, len(fields))
+	for _, field := range fields {
+		labels = append(labels, fmt.Sprintf("%s (%s)", trace.CategoryLabel(field), field))
+	}
+	return strings.Join(labels, ", ")
 }
 
 func runTraceCompare(
@@ -1119,7 +1235,7 @@ func runTraceCompare(
 	}
 	if _, err := fmt.Fprintf(
 		stdout,
-		"trace compared\nscope: %s\nbaseline_completeness: %s\ntreatment_completeness: %s\nunchanged: %d\ndifferences: %d\nunknowns: %d\n",
+		"trace compared\nmeaning: these counts describe differences between the two traces; they do not prove why a difference happened.\nscope: %s\nbaseline_completeness: %s\ntreatment_completeness: %s\nunchanged: %d\ndifferences: %d\nunknowns: %d\n",
 		comparison.Scope,
 		comparison.BaselineCompleteness,
 		comparison.TreatmentCompleteness,
@@ -1133,13 +1249,15 @@ func runTraceCompare(
 	for _, difference := range comparison.Differences {
 		if _, err := fmt.Fprintf(
 			stdout,
-			"- source: %s\n  channel: %s\n  kind: %s\n  destination: %s\n  change: %s\n  state: %s\n",
+			"- source: %s\n  channel: %s\n  kind: %s\n  destination: %s\n  change: %s\n  state: %s\n  baseline fields: %s\n  treatment fields: %s\n",
 			difference.Source,
 			difference.Channel,
 			difference.Kind,
-			difference.Destination,
+			formatTraceDestination(difference.Destination),
 			difference.KindOfChange,
 			difference.State,
+			formatTraceFields(difference.BaselineFields),
+			formatTraceFields(difference.TreatmentFields),
 		); err != nil {
 			_, _ = fmt.Fprintf(stderr, "ariadne: trace compare: write output: %v\n", err)
 			return 1
@@ -1152,7 +1270,7 @@ func runTraceCompare(
 			unknown.Source,
 			unknown.Channel,
 			unknown.Kind,
-			unknown.Destination,
+			formatTraceDestination(unknown.Destination),
 			unknown.State,
 			unknown.Reason,
 		); err != nil {
@@ -1476,6 +1594,17 @@ type bundleQuestionLister func() []bundle.Question
 type bundleArchiveIndexer func(string) ([]bundle.ArchiveEntry, error)
 type uiServer func(string, http.Handler) error
 
+func androidCheckHint(err error) string {
+	if err == nil {
+		return ""
+	}
+	message := err.Error()
+	if strings.Contains(message, "check device") || strings.Contains(message, "selected device is not ready") {
+		return "hint: start the explicitly selected emulator and confirm `adb devices` reports it as device\n"
+	}
+	return ""
+}
+
 func runAndroidCheck(
 	args []string,
 	stdout, stderr io.Writer,
@@ -1500,6 +1629,9 @@ func runAndroidCheck(
 	target, err := check(ctx, *binary, *device, *packageName)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "ariadne: android check: %v\n", err)
+		if hint := androidCheckHint(err); hint != "" {
+			_, _ = io.WriteString(stderr, hint)
+		}
 		return 1
 	}
 	target.AriadneRevision, target.AriadneModified = buildIdentity()
@@ -3469,6 +3601,7 @@ func runServe(
 	roundFirstPath := flags.String("round-first", "", "")
 	roundSecondPath := flags.String("round-second", "", "")
 	traceArchivePath := flags.String("trace-archive", "", "")
+	tracePath := flags.String("trace", "", "")
 	traceRoundPath := flags.String("trace-round", "", "")
 	traceReplicationPath := flags.String("trace-replication", "", "")
 	traceCasePath := flags.String("trace-case", "", "")
@@ -3546,6 +3679,7 @@ func runServe(
 		AcceptancePath:            *acceptancePath,
 		FirstRoundPath:            *roundFirstPath,
 		SecondRoundPath:           *roundSecondPath,
+		TracePath:                 *tracePath,
 		TraceArchivePath:          *traceArchivePath,
 		TraceRoundPath:            *traceRoundPath,
 		TraceReplicationPath:      *traceReplicationPath,

@@ -42,6 +42,10 @@ func TestHandlerRendersTraceCaseDisclosureQuestionsAndReceipt(t *testing.T) {
 		"receipt SHA-256",
 		"raw-value-free",
 		"region",
+		"Region",
+		"A broader geographic area.",
+		"Analytics",
+		"A reviewed boundary used for product or usage measurement.",
 		"browser-redacted-audit",
 	} {
 		if !strings.Contains(body, want) {

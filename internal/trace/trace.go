@@ -518,19 +518,11 @@ func validKind(value string) bool {
 }
 
 func validDestination(value string) bool {
-	switch value {
-	case "advertising", "analytics", "crash-reporting", "first-party", "unknown":
-		return true
-	default:
-		return false
-	}
+	_, ok := destinationDefinition(value)
+	return ok
 }
 
 func validField(value string) bool {
-	switch value {
-	case "account-id", "advertising-id", "consent", "cookie-id", "device-id", "email", "ip-address", "location", "phone", "region", "session-id", "unknown", "user-agent":
-		return true
-	default:
-		return false
-	}
+	_, ok := categoryDefinition(value)
+	return ok
 }

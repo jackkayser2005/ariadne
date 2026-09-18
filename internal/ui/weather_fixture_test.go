@@ -76,7 +76,7 @@ func TestWeatherReviewReverifiesAndRenders(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatal(w.Code, w.Body.String())
 	}
-	for _, s := range []string{"Where did my information go?", "coarse", "denied", "Observed session outcomes", "Forecast available", "Reverified on every request", "server-side-unobservable", "The browser cannot observe onward handling after a response."} {
+	for _, s := range []string{"Where did my information go?", "How Ariadne works", "coarse", "denied", "Observed session outcomes", "Forecast available", "Reverified on every request", "server-side-unobservable", "The browser cannot observe onward handling after a response."} {
 		if !strings.Contains(w.Body.String(), s) {
 			t.Fatal("missing", s)
 		}
@@ -134,5 +134,63 @@ func TestWeatherExplanationDoesNotInventDisclosure(t *testing.T) {
 		if !strings.Contains(text, "not everything on your device") || !strings.Contains(text, "not your real location") {
 			t.Fatal("missing test scope")
 		}
+	}
+}
+
+func TestWeatherTemplateExplainsReviewedCategory(t *testing.T) {
+	view := browser.WeatherReview{
+		Run: browser.WeatherRun{
+			Sessions: []browser.WeatherSession{{
+				Candidate: "precise", Status: "complete", Functionality: "available", Geolocation: "granted",
+				Observations: []browser.WeatherObservation{{Stage: "attempted", Destination: "first-party", Category: "location"}},
+			}},
+			TraceSHA256: []string{strings.Repeat("a", 64)},
+		},
+		CandidateEvidence: []browser.WeatherCandidateEvidence{{Candidate: "precise", SessionCount: 1}},
+	}
+	var out strings.Builder
+	if err := weatherTemplate.Execute(&out, view); err != nil {
+		t.Fatal(err)
+	}
+	text := out.String()
+	for _, want := range []string{"Location", "<code>location</code>", "A precise or approximate place.", "First-party", "The reviewed boundary named as part of the product being tested."} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("weather category explanation missing %q", want)
+		}
+	}
+}
+
+func TestWeatherTemplateExplainsProcedureDestinations(t *testing.T) {
+	view := browser.WeatherReview{
+		Run: browser.WeatherRun{
+			Sessions: []browser.WeatherSession{{
+				Candidate: "precise", Status: "complete", Functionality: "available", Geolocation: "granted",
+				Observations: []browser.WeatherObservation{
+					{Stage: "attempted", Destination: "undeclared", Category: "location"},
+					{Stage: "response-backed", Destination: "weather-service", Category: "location"},
+				},
+			}},
+			TraceSHA256: []string{strings.Repeat("a", 64)},
+		},
+		CandidateEvidence: []browser.WeatherCandidateEvidence{{Candidate: "precise", SessionCount: 1}},
+	}
+	var out strings.Builder
+	if err := weatherTemplate.Execute(&out, view); err != nil {
+		t.Fatal(err)
+	}
+	text := out.String()
+	for _, want := range []string{"Weather service", "The reviewed weather-site boundary used by this procedure.", "Blocked destination", "A destination outside the reviewed allowlist; it was blocked by the procedure."} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("weather destination explanation missing %q", want)
+		}
+	}
+}
+
+func TestWeatherDestinationFallbackStaysBounded(t *testing.T) {
+	if got := weatherDestinationLabel("unreviewed"); got != "Reviewed destination boundary" {
+		t.Fatalf("weatherDestinationLabel() = %q", got)
+	}
+	if got := weatherDestinationMeaning("unreviewed"); got != "A destination label retained by the verifier; ownership and onward handling are not shown." {
+		t.Fatalf("weatherDestinationMeaning() = %q", got)
 	}
 }

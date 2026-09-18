@@ -1,18 +1,25 @@
 package ui
 
 import (
-	"github.com/jackkayser2005/ariadne/internal/browser"
 	"html/template"
 	"net/http"
+
+	"github.com/jackkayser2005/ariadne/internal/browser"
+	"github.com/jackkayser2005/ariadne/internal/trace"
 )
 
-var weatherTemplate = template.Must(template.New("weather").Parse(`<!doctype html>
+var weatherTemplate = template.Must(template.New("weather").Funcs(template.FuncMap{
+	"categoryLabel":      trace.CategoryLabel,
+	"categoryMeaning":    trace.CategoryMeaning,
+	"destinationLabel":   weatherDestinationLabel,
+	"destinationMeaning": weatherDestinationMeaning,
+}).Parse(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Your information, explained · Ariadne</title>
 <style>
-:root{color-scheme:light}*{box-sizing:border-box}body{font:17px/1.6 system-ui,sans-serif;margin:0;background:#f3f8f3;color:#13291f}main{max-width:1020px;margin:0 auto;padding:36px 24px 72px}a{color:#176341}h1{font-size:clamp(30px,5vw,48px);line-height:1.15;letter-spacing:-1.4px;margin:20px 0}h2{font-size:25px;line-height:1.3;margin:0 0 12px}h3{font-size:18px;margin:0 0 8px}p{margin:8px 0 16px}.eyebrow{font-size:12px;font-weight:750;letter-spacing:1.5px;text-transform:uppercase;color:#5e7167}.intro{max-width:720px;font-size:19px}.note{color:#5e7167;font-size:14px}.panel{background:white;border:1px solid #d5e2d9;border-radius:18px;padding:28px;margin:24px 0}.answer{border-left:5px solid #176341}.flow{display:flex;align-items:center;gap:12px;list-style:none;padding:0;margin:24px 0}.flow li{flex:1;background:#dff1e5;border-radius:12px;padding:18px}.flow li+li:before{content:'→';margin-right:8px;color:#5e7167}.flow strong{display:block}.options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:20px 0}.option{border:1px solid #d5e2d9;border-radius:12px;padding:18px}.result{font-size:25px;font-weight:700;line-height:1.2;margin:16px 0 4px}.limits{background:#fff9e9;border-color:#e1d3ac}details{border-top:1px solid #d5e2d9;padding:16px 0}summary{cursor:pointer;font-weight:650;min-height:32px}summary:focus-visible,a:focus-visible{outline:3px solid #0f4c32;outline-offset:4px}.technical{font-size:14px}.scroll{overflow-x:auto}table{border-collapse:collapse;width:100%}td,th{text-align:left;padding:10px;border-bottom:1px solid #ddd;vertical-align:top}code{overflow-wrap:anywhere;font-size:12px}.tag{display:inline-block;font-size:12px;border:1px solid #d5e2d9;border-radius:99px;padding:3px 10px}.technical p{overflow-wrap:anywhere}@media(max-width:680px){main{padding:24px 16px}.panel{padding:20px}.options{grid-template-columns:1fr}.flow{flex-direction:column;align-items:stretch}.flow li+li:before{content:'↓'}h1{letter-spacing:-.7px}}
+:root{color-scheme:light}*{box-sizing:border-box}body{font:17px/1.6 system-ui,sans-serif;margin:0;background:#f3f8f3;color:#13291f}main{max-width:1020px;margin:0 auto;padding:36px 24px 72px}a{color:#176341}.topnav{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:34px}.topnav a:last-child{font-weight:750;text-decoration:none}.topnav a:last-child:hover{text-decoration:underline}h1{font-size:clamp(30px,5vw,48px);line-height:1.15;letter-spacing:-1.4px;margin:20px 0}h2{font-size:25px;line-height:1.3;margin:0 0 12px}h3{font-size:18px;margin:0 0 8px}p{margin:8px 0 16px}.eyebrow{font-size:12px;font-weight:750;letter-spacing:1.5px;text-transform:uppercase;color:#5e7167}.intro{max-width:720px;font-size:19px}.note{color:#5e7167;font-size:14px}.panel{background:white;border:1px solid #d5e2d9;border-radius:18px;padding:28px;margin:24px 0}.answer{border-left:5px solid #176341}.flow{display:flex;align-items:center;gap:12px;list-style:none;padding:0;margin:24px 0}.flow li{flex:1;background:#dff1e5;border-radius:12px;padding:18px}.flow li+li:before{content:'→';margin-right:8px;color:#5e7167}.flow strong{display:block}.options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:20px 0}.option{border:1px solid #d5e2d9;border-radius:12px;padding:18px}.result{font-size:25px;font-weight:700;line-height:1.2;margin:16px 0 4px}.limits{background:#fff9e9;border-color:#e1d3ac}details{border-top:1px solid #d5e2d9;padding:16px 0}summary{cursor:pointer;font-weight:650;min-height:32px}summary:focus-visible,a:focus-visible{outline:3px solid #0f4c32;outline-offset:4px}.technical{font-size:14px}.scroll{overflow-x:auto}table{border-collapse:collapse;width:100%}td,th{text-align:left;padding:10px;border-bottom:1px solid #ddd;vertical-align:top}code{overflow-wrap:anywhere;font-size:12px}.tag{display:inline-block;font-size:12px;border:1px solid #d5e2d9;border-radius:99px;padding:3px 10px}.technical p{overflow-wrap:anywhere}@media(max-width:680px){main{padding:24px 16px}.topnav{align-items:flex-start;flex-direction:column;gap:8px;margin-bottom:26px}.panel{padding:20px}.options{grid-template-columns:1fr}.flow{flex-direction:column;align-items:stretch}.flow li+li:before{content:'↓'}h1{letter-spacing:-.7px}}
 </style></head><body><main>
-<a href="/">Ariadne / investigations</a>
+<nav class="topnav" aria-label="Ariadne navigation"><a href="/">Ariadne / investigations</a><a href="/guide">How Ariadne works</a></nav>
 <header><p class="eyebrow">Your information, explained</p><h1>Where did my information go?</h1><p class="intro">We tested the weather website with a precise location, a city-level location, and location access turned off. Here is what we could see.</p><p class="note">This example uses test locations, not your real location. It covers one website workflow, not everything on your device.</p></header>
 <section class="panel answer" aria-labelledby="observed-title"><p class="eyebrow">What we saw</p>
 {{range .CandidateEvidence}}{{if eq .Candidate "precise"}}
@@ -42,9 +49,31 @@ var weatherTemplate = template.Must(template.New("weather").Parse(`<!doctype htm
 <div class="scroll"><table><tr><th>Candidate</th><th>Classification</th><th>Outcome</th><th>Unknown pairs</th></tr>{{range .Ladder.CandidateResults}}<tr><td>{{.ID}}</td><td>{{.Classification}}</td><td>{{.Outcome}}</td><td>{{.UnknownPairs}}</td></tr>{{end}}</table></div>
 <h2>Observed session outcomes</h2><div class="scroll"><table><tr><th>Candidate</th><th>Forecast available</th><th>Unavailable</th><th>Unknown</th><th>Attempted match</th><th>Response-backed match</th></tr>{{range .CandidateEvidence}}<tr><td>{{.Candidate}}</td><td>{{.AvailableSessions}}</td><td>{{.UnavailableSessions}}</td><td>{{.UnknownSessions}}</td><td>{{.AttemptedSessions}}</td><td>{{.ResponseBackedSessions}}</td></tr>{{end}}</table></div>
 <h2>Trace and session evidence</h2><p>Pairs run precise → candidate, then candidate → precise. Browser permission, observed requests, and forecast availability are separate observations.</p>
-{{range $i,$s:=.Run.Sessions}}<details><summary>{{.Candidate}} · forecast {{.Functionality}} · {{.Status}}</summary><p>Geolocation permission: {{.Geolocation}}</p>{{range .Observations}}<p>Browser → {{.Category}} → {{.Destination}}: <strong>{{.Stage}}</strong></p>{{else}}<p>No supported location match observed. Absence remains unknown.</p>{{end}}<p>Visibility limits: {{range .Gaps}}<code>{{.}}</code> {{end}}</p><p>Trace identity: <code>{{index $.Run.TraceSHA256 $i}}</code></p><p>Session binding: <code>{{.ChallengeSHA256}}</code></p><p>Browser executable identity: <code>{{.BrowserSHA256}}</code></p></details>{{end}}
+{{range $i,$s:=.Run.Sessions}}<details><summary>{{.Candidate}} · forecast {{.Functionality}} · {{.Status}}</summary><p>Geolocation permission: {{.Geolocation}}</p>{{range .Observations}}<p>Browser → {{categoryLabel .Category}} (<code>{{.Category}}</code>) → {{destinationLabel .Destination}} (<code>{{.Destination}}</code>): <strong>{{.Stage}}</strong> · {{categoryMeaning .Category}} {{destinationMeaning .Destination}}</p>{{else}}<p>No supported location match observed. Absence remains unknown.</p>{{end}}<p>Visibility limits: {{range .Gaps}}<code>{{.}}</code> {{end}}</p><p>Trace identity: <code>{{index $.Run.TraceSHA256 $i}}</code></p><p>Session binding: <code>{{.ChallengeSHA256}}</code></p><p>Browser executable identity: <code>{{.BrowserSHA256}}</code></p></details>{{end}}
 <h2>Reproducible evidence</h2><p>Procedure: <code>{{.Run.ProcedureID}}</code></p><p>Receipt identity: <code>{{.ReceiptSHA256}}</code></p><p>Identities establish consistency, not independent authenticity. This test does not locate the destination on a geographic map.</p></details>
 </main></body></html>`))
+
+func weatherDestinationLabel(id string) string {
+	switch id {
+	case "weather-service":
+		return "Weather service"
+	case "undeclared":
+		return "Blocked destination"
+	default:
+		return trace.DestinationLabel(id)
+	}
+}
+
+func weatherDestinationMeaning(id string) string {
+	switch id {
+	case "weather-service":
+		return "The reviewed weather-site boundary used by this procedure."
+	case "undeclared":
+		return "A destination outside the reviewed allowlist; it was blocked by the procedure."
+	default:
+		return trace.DestinationMeaning(id)
+	}
+}
 
 func (h handler) handleWeather(w http.ResponseWriter, r *http.Request) {
 	if !getOnly(w, r) {
