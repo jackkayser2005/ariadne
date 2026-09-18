@@ -43,7 +43,7 @@ func TestSourceAdapterViewExplainsVerifiedRun(t *testing.T) {
 		t.Fatalf("status = %d, body=%q", recorder.Code, recorder.Body.String())
 	}
 	for _, want := range []string{
-		"What did this source observe?", "2 observation(s)", "external-desktop-v1", "See the observed paths", "Recorded source-adapter path", "Reviewed category", "analytics", "location",
+		"What did this source observe?", "How Ariadne works", "In plain language", "The source reported reviewed labels from the channels this run could inspect.", "2 observation(s)", "external-desktop-v1", "See the observed paths", "Recorded source-adapter path", "Reviewed category", "analytics", "Analytics", "A reviewed boundary used for product or usage measurement.", "location", "Location", "A precise or approximate place.",
 		"Provenance", "verified", "Replay", "unavailable", summary.ReceiptSHA256,
 	} {
 		if !strings.Contains(recorder.Body.String(), want) {
@@ -58,6 +58,28 @@ func TestSourceAdapterViewExplainsVerifiedRun(t *testing.T) {
 	h.ServeHTTP(post, httptest.NewRequest(http.MethodPost, "/source-adapter", nil))
 	if post.Code != http.StatusMethodNotAllowed || post.Header().Get("Allow") != http.MethodGet {
 		t.Fatalf("POST status = %d, allow = %q", post.Code, post.Header().Get("Allow"))
+	}
+}
+
+func TestSourceAdapterMeaningKeepsCoverageLimits(t *testing.T) {
+	tests := []struct {
+		name         string
+		completeness string
+		events       int
+		want         string
+	}{
+		{name: "complete with events", completeness: trace.Complete, events: 1, want: "The source reported reviewed labels from the channels this run could inspect."},
+		{name: "complete empty", completeness: trace.Complete, events: 0, want: "No supported observations were reported; this is not proof that nothing left the source."},
+		{name: "partial", completeness: trace.Partial, events: 1, want: "Some reviewed labels were found, but missing channels remain unknown."},
+		{name: "partial empty", completeness: trace.Partial, events: 0, want: "No supported observations were reported; missing channels remain unknown."},
+		{name: "unknown completeness", completeness: "", events: 0, want: "Coverage is not fully described; missing or unsupported activity remains unknown."},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := sourceAdapterMeaning(test.completeness, test.events); got != test.want {
+				t.Fatalf("meaning = %q, want %q", got, test.want)
+			}
+		})
 	}
 }
 

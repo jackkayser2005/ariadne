@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 )
@@ -46,6 +47,24 @@ func TestWriteCLIStatusReturnsWriteError(t *testing.T) {
 	want := errors.New("status write failed")
 	if err := writeCLIStatus(cliStyleFailWriter{err: want}, "ready\n"); !errors.Is(err, want) {
 		t.Fatalf("writeCLIStatus() error = %v, want %v", err, want)
+	}
+}
+
+func TestCLIColorRequiresOpenCharacterDevice(t *testing.T) {
+	t.Setenv(ariadneColorEnv, "yes")
+
+	file, err := os.CreateTemp(t.TempDir(), "ariadne-cli-color-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cliColorEnabled(file) {
+		t.Fatal("cliColorEnabled() = true for a regular file")
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if cliColorEnabled(file) {
+		t.Fatal("cliColorEnabled() = true for a closed file")
 	}
 }
 

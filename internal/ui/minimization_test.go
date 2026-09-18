@@ -60,6 +60,8 @@ func TestHandlerRendersMinimizationReview(t *testing.T) {
 		"city",
 		"omitted",
 		"sufficient",
+		"This candidate kept the tested behavior available in every supported comparison.",
+		"Ariadne found a least-disclosing candidate that met the tested bar.",
 		"no-change-observed",
 		"observed",
 		"pairs per order",
@@ -122,6 +124,8 @@ func TestHandlerRendersMinimizationUncertaintySeparately(t *testing.T) {
 		"replicated-change",
 		"unknown",
 		"No minimum tested sufficient disclosure",
+		"The ladder cannot select a candidate because some comparisons are unknown or incomplete.",
+		"This candidate changed the tested behavior, so it did not meet the functionality requirement.",
 		"Classification is the bounded functionality conclusion",
 		"Outcome summarizes the replicated counterfactual result",
 		"Evidence state qualifies support",
@@ -179,6 +183,7 @@ func TestHandlerWithReviewOptionsChecksHostAndSetsSecurityHeaders(t *testing.T) 
 	for header, want := range map[string]string{
 		"Cache-Control":           "no-store",
 		"Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+		"Permissions-Policy":      "geolocation=(), camera=(), microphone=()",
 		"Referrer-Policy":         "no-referrer",
 		"X-Content-Type-Options":  "nosniff",
 	} {

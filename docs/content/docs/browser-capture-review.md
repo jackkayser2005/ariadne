@@ -208,6 +208,8 @@ and absent matches stay inconclusive. The comparison does not establish
 chronology, identical interactions, successful delivery, changed functionality,
 causality, or minimum sufficient disclosure.
 
+The local comparison page now starts with a plain-language answer. A match means a supplied test value appears in the checked export data; an empty result remains inconclusive. The three-step guide then points to the matching file, the reviewed destination label, and the visibility limits before the detailed origin sections.
+
 ## Follow information before requests
 
 When test rules are configured, the capture page starts with one trail for

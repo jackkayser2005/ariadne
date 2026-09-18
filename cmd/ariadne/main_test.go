@@ -17,6 +17,7 @@ import (
 	"github.com/jackkayser2005/ariadne/internal/bundle"
 	"github.com/jackkayser2005/ariadne/internal/evidence"
 	"github.com/jackkayser2005/ariadne/internal/experiment"
+	"github.com/jackkayser2005/ariadne/internal/trace"
 	"github.com/jackkayser2005/ariadne/internal/validation"
 )
 
@@ -138,6 +139,78 @@ func TestRunUsage(t *testing.T) {
 				t.Fatalf("run() stderr = %q, want %q", stderr.String(), usage)
 			}
 		})
+	}
+}
+
+func TestRunGuideWritesPlainLanguageWorkflow(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if exitCode := run([]string{"guide"}, &stdout, &stderr); exitCode != 0 {
+		t.Fatalf("run(guide) = %d, stderr=%q", exitCode, stderr.String())
+	}
+	for _, want := range []string{
+		"Ariadne in plain language",
+		"1. Investigate",
+		"2. Compare",
+		"3. Trace",
+		"4. Verify",
+		"observed",
+		"unknown",
+		"verified",
+		"what a server did afterward",
+		"Safe categories are labels such as location, account, device, contact, region,",
+		"ariadne validate <artifact>",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("guide missing %q: %q", want, stdout.String())
+		}
+	}
+	if stderr.Len() != 0 || strings.Contains(stdout.String(), "\x1b[") {
+		t.Fatalf("guide should be pipe-safe: stdout=%q stderr=%q", stdout.String(), stderr.String())
+	}
+	if exitCode := run([]string{"guide"}, cliStyleFailWriter{err: errors.New("guide write failed")}, &bytes.Buffer{}); exitCode != 1 {
+		t.Fatalf("guide write failure exit code = %d, want 1", exitCode)
+	}
+}
+
+func TestRunHelpWritesQuickGuideToStdout(t *testing.T) {
+	for _, command := range []string{"help", "--help", "-h"} {
+		t.Run(command, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			if exitCode := run([]string{command}, &stdout, &stderr); exitCode != 0 {
+				t.Fatalf("run(%q) = %d, want 0", command, exitCode)
+			}
+			if stdout.String() != quickUsage {
+				t.Fatalf("run(%q) stdout does not contain the quick guide", command)
+			}
+			if stderr.Len() != 0 {
+				t.Fatalf("run(%q) stderr = %q", command, stderr.String())
+			}
+		})
+	}
+}
+
+func TestRunFullHelpWritesReferenceToStdout(t *testing.T) {
+	for _, command := range []string{"help", "--help", "-h"} {
+		t.Run(command, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			if exitCode := run([]string{command, "--all"}, &stdout, &stderr); exitCode != 0 {
+				t.Fatalf("run(%q --all) = %d, want 0", command, exitCode)
+			}
+			if stdout.String() != usage {
+				t.Fatalf("run(%q --all) stdout does not contain the full reference", command)
+			}
+			if stderr.Len() != 0 {
+				t.Fatalf("run(%q --all) stderr = %q", command, stderr.String())
+			}
+		})
+	}
+}
+
+func TestUsageListsReviewInputs(t *testing.T) {
+	for _, want := range []string{"--weather <weather-directory>", "--har <capture.har> --har-origin <origin>", "--source-adapter <run-directory>", "--minimization <run-directory>"} {
+		if !strings.Contains(usage, want) {
+			t.Fatalf("usage missing %q", want)
+		}
 	}
 }
 
@@ -322,6 +395,25 @@ func TestWriteValidationReportFailurePaths(t *testing.T) {
 		}
 	}
 }
+func TestBrowserTraceMeaningKeepsUnknownsExplicit(t *testing.T) {
+	tests := []struct {
+		name         string
+		completeness string
+		want         string
+	}{
+		{name: "complete", completeness: trace.Complete, want: "This trace contains reviewed labels from the channels it claims to cover; raw values are omitted."},
+		{name: "partial", completeness: trace.Partial, want: "This trace contains some reviewed labels, but missing channels remain unknown."},
+		{name: "unknown", completeness: "", want: "The trace coverage is not fully described; missing or unsupported activity remains unknown."},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := browserTraceMeaning(test.completeness); got != test.want {
+				t.Fatalf("meaning = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestRunBrowserTrace(t *testing.T) {
 	input := filepath.Join(t.TempDir(), "browser-audit.json")
 	data := []byte(`{"schema_version":1,"redacted":true,"scope":"outbound","completeness":"complete","events":[{"channel":"network","kind":"request","destination":"analytics","fields":["region"]}]}`)
@@ -347,7 +439,7 @@ func TestRunBrowserTrace(t *testing.T) {
 				if summary["scope"] != "outbound" || summary["events"] != float64(1) {
 					t.Fatalf("summary = %#v", summary)
 				}
-			} else if !strings.Contains(stdout.String(), "browser trace complete") || !strings.Contains(stdout.String(), "events: 1") {
+			} else if !strings.Contains(stdout.String(), "browser trace complete") || !strings.Contains(stdout.String(), "meaning: This trace contains reviewed labels from the channels it claims to cover; raw values are omitted.") || !strings.Contains(stdout.String(), "events: 1") {
 				t.Fatalf("human output = %q", stdout.String())
 			}
 		})
@@ -4750,6 +4842,26 @@ func TestRunAndroidCheckFailures(t *testing.T) {
 				stdout.String(),
 				stderr.String(),
 			)
+		}
+	})
+
+	t.Run("device hint", func(t *testing.T) {
+		var stdout, stderr bytes.Buffer
+		exitCode := runAndroidCheck(
+			[]string{
+				"--device", "emulator-5554",
+				"--package", "dev.ariadne.fixture",
+			},
+			&stdout,
+			&stderr,
+			func(context.Context, string, string, string) (adb.Target, error) {
+				return adb.Target{}, errors.New("check device: exit status 1")
+			},
+		)
+		want := "ariadne: android check: check device: exit status 1\n" +
+			"hint: start the explicitly selected emulator and confirm `adb devices` reports it as device\n"
+		if exitCode != 1 || stdout.Len() != 0 || stderr.String() != want {
+			t.Fatalf("runAndroidCheck() = %d, stdout=%q, stderr=%q", exitCode, stdout.String(), stderr.String())
 		}
 	})
 

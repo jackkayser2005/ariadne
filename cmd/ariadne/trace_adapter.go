@@ -12,6 +12,21 @@ import (
 type sourceAdapterRunner func(string, string, []string, string) (trace.SourceAdapterRunSummary, error)
 type sourceAdapterVerifier func(string) (trace.SourceAdapterRunSummary, error)
 
+func sourceAdapterMeaning(summary trace.SourceAdapterRunSummary) string {
+	switch {
+	case summary.Receipt.Completeness == trace.Partial && summary.Receipt.Events == 0:
+		return "No supported observations were reported; incomplete coverage means missing observations are unknown."
+	case summary.Receipt.Completeness == trace.Partial:
+		return "The source reported some reviewed labels, but incomplete coverage means missing observations are unknown."
+	case summary.Receipt.Completeness == trace.Complete && summary.Receipt.Events == 0:
+		return "No supported observations were reported; that is not proof that no information left the source."
+	case summary.Receipt.Completeness == trace.Complete:
+		return "The source reported only reviewed labels from supported channels; raw values are omitted."
+	default:
+		return "The report contains only supported labels; missing or unsupported activity remains unknown."
+	}
+}
+
 func runTraceAdapter(args []string, stdout, stderr io.Writer, run sourceAdapterRunner) int {
 	flags := flag.NewFlagSet("trace adapter run", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -42,7 +57,8 @@ func runTraceAdapter(args []string, stdout, stderr io.Writer, run sourceAdapterR
 	}
 	if _, err := fmt.Fprintf(
 		stdout,
-		"source adapter run complete\nadapter: %s\nsource: %s\nscope: %s\ncompleteness: %s\nevents: %d\nprocedure_sha256: %s\nexecutable_sha256: %s\nchallenge_sha256: %s\ntrace_sha256: %s\nsession_sha256: %s\nreceipt_sha256: %s\n",
+		"source adapter run complete\nmeaning: %s\nadapter: %s\nsource: %s\nscope: %s\ncompleteness: %s\nevents: %d\nprocedure_sha256: %s\nexecutable_sha256: %s\nchallenge_sha256: %s\ntrace_sha256: %s\nsession_sha256: %s\nreceipt_sha256: %s\n",
+		sourceAdapterMeaning(summary),
 		summary.Receipt.Adapter,
 		summary.Receipt.Source,
 		summary.Receipt.Scope,
@@ -98,7 +114,8 @@ func runTraceAdapterVerify(args []string, stdout, stderr io.Writer, verify sourc
 	}
 	if _, err := fmt.Fprintf(
 		stdout,
-		"source adapter run verified\nadapter: %s\nsource: %s\nscope: %s\ncompleteness: %s\nevents: %d\nprocedure_sha256: %s\nexecutable_sha256: %s\nchallenge_sha256: %s\ntrace_sha256: %s\nsession_sha256: %s\nreceipt_sha256: %s\n",
+		"source adapter run verified\nmeaning: %s\nadapter: %s\nsource: %s\nscope: %s\ncompleteness: %s\nevents: %d\nprocedure_sha256: %s\nexecutable_sha256: %s\nchallenge_sha256: %s\ntrace_sha256: %s\nsession_sha256: %s\nreceipt_sha256: %s\n",
+		sourceAdapterMeaning(summary),
 		summary.Receipt.Adapter,
 		summary.Receipt.Source,
 		summary.Receipt.Scope,

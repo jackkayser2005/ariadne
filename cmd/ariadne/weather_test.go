@@ -69,6 +69,7 @@ func TestWeatherCLIHumanAndJSONOutput(t *testing.T) {
 				for _, marker := range []string{
 					"Weather investigation verified.",
 					"Location observed: 4 of 4",
+					"Information trail: browser -> Location -> Weather service",
 					"city-level location: 2/2",
 					"location access off: 0/2",
 					"Minimum disclosure: unknown",
@@ -84,5 +85,24 @@ func TestWeatherCLIHumanAndJSONOutput(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+func TestFormatWeatherGapsAndTrailStayBounded(t *testing.T) {
+	if got := formatWeatherGaps([]browser.WeatherGapEvidence{{ID: "blocked-origin", Reason: "reviewed gap"}, {ID: "capture-incomplete"}}); got != "blocked-origin (reviewed gap), capture-incomplete" {
+		t.Fatalf("formatWeatherGaps() = %q", got)
+	}
+	var out bytes.Buffer
+	if err := writeWeatherTrail(&out, browser.WeatherCandidateEvidence{SessionCount: 2, AttemptedSessions: 1}, true); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "attempted to send Location") || strings.Contains(out.String(), "https://") {
+		t.Fatalf("attempted trail = %q", out.String())
+	}
+	out.Reset()
+	if err := writeWeatherTrail(&out, browser.WeatherCandidateEvidence{}, false); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "Information trail: unknown; no supported location path was recorded.\n" {
+		t.Fatalf("unknown trail = %q", out.String())
 	}
 }
