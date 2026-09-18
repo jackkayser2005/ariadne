@@ -263,6 +263,9 @@ func main() {
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && (args[0] == "investigate" || args[0] == "inspect") {
+		return runGuided(args[0], args[1:], stdout, stderr, serveGuided)
+	}
 	if len(args) == 1 && args[0] == "guide" {
 		if _, err := io.WriteString(stdout, cliGuide); err != nil {
 			return 1
