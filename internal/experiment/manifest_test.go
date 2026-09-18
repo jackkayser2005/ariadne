@@ -12,9 +12,30 @@ func TestManifestValidate(t *testing.T) {
 		wantErr string
 	}{
 		{name: "valid"},
+		{name: "legacy version", change: func(m *Manifest) {
+			m.SchemaVersion = 1
+			m.VolatileFields = nil
+			m.TapResourceID = ""
+		}},
 		{name: "unsupported version", change: func(m *Manifest) {
-			m.SchemaVersion = 2
+			m.SchemaVersion = 4
 		}, wantErr: "schema_version"},
+		{name: "volatile fields require v2", change: func(m *Manifest) {
+			m.SchemaVersion = 1
+			m.VolatileFields = []string{"request_id"}
+		}, wantErr: "require schema_version 2"},
+		{name: "tap resource requires v3", change: func(m *Manifest) {
+			m.SchemaVersion = 2
+		}, wantErr: "require schema_version 3"},
+		{name: "invalid tap resource", change: func(m *Manifest) {
+			m.TapResourceID = "dev.ariadne.fixture:id/observe button"
+		}, wantErr: "resource identifier"},
+		{name: "invalid volatile field", change: func(m *Manifest) {
+			m.VolatileFields = []string{"request/id"}
+		}, wantErr: "field name is invalid"},
+		{name: "duplicate volatile field", change: func(m *Manifest) {
+			m.VolatileFields = []string{"request_id", "request_id"}
+		}, wantErr: "duplicate field"},
 		{name: "blank name", change: func(m *Manifest) {
 			m.Name = " "
 		}, wantErr: "name"},
@@ -103,5 +124,31 @@ func validManifest() Manifest {
 			"email":  "treatment@example.invalid",
 			"region": "us-east",
 		},
+		VolatileFields: []string{"request_id"},
+		TapResourceID:  "dev.ariadne.fixture:id/observe_button",
+	}
+}
+
+func TestCanonicalVolatileFields(t *testing.T) {
+	got := CanonicalVolatileFields([]string{"timestamp", "request_id"})
+	if strings.Join(got, ",") != "request_id,timestamp" {
+		t.Fatalf("CanonicalVolatileFields() = %v", got)
+	}
+}
+
+func TestContractDigestExcludesPersonaValues(t *testing.T) {
+	manifest := validManifest()
+	first := manifest.ContractDigest()
+	manifest.Baseline["email"] = "different-baseline@example.invalid"
+	manifest.Treatment["email"] = "different-treatment@example.invalid"
+	second := manifest.ContractDigest()
+	if first != second || len(first) != 64 {
+		t.Fatalf("ContractDigest() changed with persona values: %q != %q", first, second)
+	}
+	manifest.Baseline["locale"] = "en-US"
+	manifest.Treatment["locale"] = "en-US"
+	third := manifest.ContractDigest()
+	if third == first {
+		t.Fatal("ContractDigest() did not change with persona fields")
 	}
 }

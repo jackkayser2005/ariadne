@@ -103,6 +103,13 @@ func TestCheckRejectsMissingSelection(t *testing.T) {
 			packageName: "package",
 			want:        "device",
 		},
+		{
+			name:        "package shell punctuation",
+			binary:      "adb",
+			device:      "device",
+			packageName: "dev.ariadne.fixture;id",
+			want:        "package",
+		},
 	}
 
 	for _, test := range tests {
@@ -131,6 +138,24 @@ func TestCheckRejectsMissingSelection(t *testing.T) {
 				t.Fatal("checkWith() invoked adb for invalid input")
 			}
 		})
+	}
+}
+
+func TestValidPackageName(t *testing.T) {
+	for _, value := range []string{"dev.ariadne.fixture", "dev.ariadne_fixture.v2"} {
+		if !validPackageName(value) {
+			t.Fatalf("validPackageName(%q) = false", value)
+		}
+	}
+	for _, value := range []string{
+		"dev..fixture",
+		"dev.1fixture",
+		"dev.foo-bar",
+		strings.Repeat("a", 256),
+	} {
+		if validPackageName(value) {
+			t.Fatalf("validPackageName(%q) = true", value)
+		}
 	}
 }
 

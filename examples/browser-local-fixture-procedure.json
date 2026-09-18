@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "procedure_id": "browser-local-fixture-v1",
+  "scope": "outbound",
+  "duration_ms": 30000,
+  "max_events": 64
+}

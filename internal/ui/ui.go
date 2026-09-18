@@ -1,0 +1,2395 @@
+// Package ui serves the read-only Ariadne evidence review surface.
+package ui
+
+import (
+	"encoding/json"
+	"errors"
+	"html/template"
+	"net/http"
+	"net/url"
+	"path/filepath"
+	"slices"
+	"sort"
+	"time"
+
+	"github.com/jackkayser2005/ariadne/internal/bundle"
+	"github.com/jackkayser2005/ariadne/internal/evidence"
+	"github.com/jackkayser2005/ariadne/internal/minimize"
+	"github.com/jackkayser2005/ariadne/internal/trace"
+)
+
+type handler struct {
+	harSecondPath            string
+	harRulesPath             string
+	harPath                  string
+	harOrigin                string
+	weatherPath              string
+	sourceAdapterPath        string
+	sourceAdapterVerify      func(string) (trace.SourceAdapterRunSummary, error)
+	root                     string
+	index                    func(string) ([]bundle.ArchiveEntry, error)
+	verify                   func(string) (bundle.Summary, error)
+	questions                func() []bundle.Question
+	ask                      func(string, string) (bundle.Answer, error)
+	askArchive               func(string, string) (bundle.ArchiveQuestionReport, error)
+	history                  func() (bundle.ArchiveQuestionTransitionHistory, bundle.ArchiveQuestionTransitionVerificationSummary, error)
+	acceptance               func() (bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary, error)
+	compareRounds            func() (bundle.ArchiveQuestionTransitionHistoryQuestionRoundComparison, error)
+	compareCurrent           func() (bundle.ArchiveQuestionComparison, error)
+	find                     func(string, string) (bundle.Finding, error)
+	exportPath               string
+	exportAsk                func(string, string) (bundle.Answer, error)
+	exportFind               func(string, string) (bundle.Finding, error)
+	traceArchivePath         string
+	traceArchiveRead         func(string) (trace.Archive, trace.ArchiveVerificationSummary, error)
+	traceRoundPath           string
+	traceRoundRead           func(string) (trace.ArchiveQuestionRound, trace.ArchiveQuestionRoundVerificationSummary, error)
+	traceReplicationPath     string
+	traceReplicationRead     func(string) (trace.ReplicationLedger, trace.ReplicationLedgerVerificationSummary, error)
+	traceCasePath            string
+	traceCaseRead            func(string) (trace.CasePackage, trace.CaseVerificationSummary, error)
+	traceCaseRoundPath       string
+	traceCaseRoundRead       func(string) (trace.CaseDisclosureQuestionRound, trace.CaseDisclosureQuestionRoundVerificationSummary, error)
+	traceCaseReceiptPath     string
+	traceCaseReceiptRead     func(string) (trace.CaseDisclosureQuestionReceipt, trace.CaseDisclosureQuestionReceiptVerificationSummary, error)
+	traceStudyPath           string
+	traceStudyRead           func(string) (trace.ReplicationStudy, trace.StudyVerificationSummary, error)
+	traceStudyRoundPath      string
+	traceStudyRoundRead      func(string) (trace.ReplicationStudyQuestionRound, trace.ReplicationStudyQuestionRoundVerificationSummary, error)
+	traceStudyReceiptPath    string
+	traceStudyReceiptRead    func(string) (trace.ReplicationStudyQuestionReceipt, trace.ReplicationStudyQuestionReceiptVerificationSummary, error)
+	traceStudyComparison     func() (trace.ReplicationStudyQuestionRoundComparison, error)
+	minimizationPath         string
+	minimizationVerify       func(string) (minimize.MinimizationSummary, string, error)
+	minimizationLadderVerify func(string) (minimize.LadderSummary, string, error)
+	minimizationRoundPath    string
+	minimizationRoundRead    func(string) (minimize.MinimizationQuestionRound, minimize.MinimizationQuestionRoundVerificationSummary, error)
+	minimizationReceiptPath  string
+	minimizationReceiptRead  func(string) (minimize.MinimizationQuestionReceipt, minimize.MinimizationQuestionReceiptVerificationSummary, error)
+}
+
+type archiveQuestionResult struct {
+	Directory    string
+	ManifestName string
+	Summary      bundle.Summary
+	Answer       bundle.Answer
+	Available    bool
+}
+
+type archiveQuestionSummary struct {
+	Total       int
+	Observed    int
+	Unknown     int
+	Unavailable int
+}
+
+type traceReplicationPairData struct {
+	Position              int
+	Order                 string
+	ResetConfirmed        bool
+	PairSHA256            string
+	BaselineCompleteness  string
+	TreatmentCompleteness string
+	Differences           int
+	Unknowns              int
+	EvidenceState         evidence.State
+}
+
+type traceStudyRunData struct {
+	Position            int
+	LedgerSHA256        string
+	QuestionRoundSHA256 string
+}
+
+type pageData struct {
+	View                                   string
+	Title                                  string
+	Directory                              string
+	Entries                                []bundle.ArchiveEntry
+	Questions                              []bundle.Question
+	SelectedQuestion                       bundle.Question
+	ArchiveAnswers                         []archiveQuestionResult
+	ArchiveSummary                         archiveQuestionSummary
+	Summary                                bundle.Summary
+	Answers                                []bundle.Answer
+	Answer                                 bundle.Answer
+	Finding                                bundle.Finding
+	ExportConfigured                       bool
+	ExportAnswer                           bundle.Answer
+	ExportFinding                          bundle.Finding
+	ExportSourceEvidenceSHA256             string
+	ExportSHA256                           string
+	CurrentReflectionRequested             bool
+	CurrentReflectionAvailable             bool
+	CurrentReflectionSHA256                string
+	CurrentReflectionChecked               int
+	ReflectionHistoryRequested             bool
+	ReflectionHistoryAvailable             bool
+	ReflectionHistory                      bundle.ArchiveQuestionTransitionHistory
+	ReflectionHistorySummary               bundle.ArchiveQuestionTransitionVerificationSummary
+	ReflectionHistoryQuestions             []bundle.Question
+	ReflectionHistoryQuestionRound         bundle.ArchiveQuestionTransitionHistoryQuestionRoundAnswer
+	ReflectionQuestionRoundSHA256          string
+	ReflectionHistoryQuestionID            string
+	ReflectionHistoryAnswer                bundle.ArchiveQuestionTransitionHistoryAnswer
+	ReflectionHistoryRepeatedAnswer        bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer
+	ReflectionHistorySnapshotAnswer        bundle.ArchiveQuestionTransitionHistorySnapshotAnswer
+	ReflectionHistorySummaryAnswer         bundle.ArchiveQuestionTransitionHistorySummaryAnswer
+	ReflectionHistoryReceiptAvailable      bool
+	ReflectionHistoryReceipt               bundle.ArchiveQuestionTransitionHistoryAnswerReceipt
+	ReflectionHistoryReceiptSHA256         string
+	ReflectionHistoryReceiptJSON           string
+	AcceptanceRecordRequested              bool
+	AcceptanceRecordAvailable              bool
+	AcceptanceRecord                       bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary
+	AcceptanceRecordStatus                 string
+	QuestionRoundComparisonRequested       bool
+	QuestionRoundComparisonAvailable       bool
+	QuestionRoundComparison                bundle.ArchiveQuestionTransitionHistoryQuestionRoundComparison
+	SavedReflectionComparisonRequested     bool
+	SavedReflectionComparisonAvailable     bool
+	SavedReflectionComparison              bundle.ArchiveQuestionComparison
+	TraceArchiveConfigured                 bool
+	TraceArchiveRoundSaved                 bool
+	TraceArchiveRoundSHA256                string
+	TraceArchiveSummary                    trace.ArchiveVerificationSummary
+	TraceArchiveAnswers                    []trace.ArchiveAnswer
+	TraceReplicationConfigured             bool
+	TraceReplicationSummary                trace.ReplicationLedgerVerificationSummary
+	TraceReplicationAnswers                []trace.ReplicationAnswer
+	TraceReplicationPairs                  []traceReplicationPairData
+	TraceCaseConfigured                    bool
+	TraceCaseSummary                       trace.CaseVerificationSummary
+	TraceCaseAnswers                       []trace.CaseAnswer
+	TraceCaseDisclosureMap                 trace.CaseDisclosureMap
+	TraceCaseDisclosureQuestions           []trace.CaseDisclosureQuestionAnswer
+	TraceCaseDisclosureQuestionRoundSaved  bool
+	TraceCaseDisclosureQuestionRoundSHA256 string
+	TraceCaseDisclosureQuestionID          string
+	TraceCaseDisclosureReceiptAvailable    bool
+	TraceCaseDisclosureReceiptSaved        bool
+	TraceCaseDisclosureReceipt             trace.CaseDisclosureQuestionReceipt
+	TraceCaseDisclosureReceiptSHA256       string
+	TraceCaseDisclosureReceiptJSON         string
+	TraceStudyConfigured                   bool
+	TraceStudySummary                      trace.StudyVerificationSummary
+	TraceStudyAnswers                      []trace.StudyQuestionAnswer
+	TraceStudyRuns                         []traceStudyRunData
+	TraceStudyRoundSaved                   bool
+	TraceStudyRoundSummary                 trace.ReplicationStudyQuestionRoundVerificationSummary
+	TraceStudyReceiptAvailable             bool
+	TraceStudyReceiptSummary               trace.ReplicationStudyQuestionReceiptVerificationSummary
+	TraceStudyComparisonConfigured         bool
+	TraceStudyComparison                   trace.ReplicationStudyQuestionRoundComparison
+	TraceStudySelectedQuestionID           string
+	WeatherConfigured                      bool
+	SourceAdapterConfigured                bool
+	HARConfigured                          bool
+	HARComparisonConfigured                bool
+	MinimizationConfigured                 bool
+	Minimization                           minimizationReviewData
+}
+
+// Handler returns a read-only HTTP handler for one explicitly supplied archive root.
+func Handler(archiveRoot string) http.Handler {
+	return HandlerWithReview(archiveRoot, "", "")
+}
+
+// HandlerWithHistory returns a read-only HTTP handler that also shows one
+// structurally verified saved reflection history.
+func HandlerWithHistory(archiveRoot, historyPath string) http.Handler {
+	return HandlerWithReview(archiveRoot, historyPath, "")
+}
+
+// HandlerWithReview returns a read-only HTTP handler that can show one
+// structurally verified saved reflection history and one bounded comparison
+// between a saved reflection and the current archive.
+func HandlerWithReview(archiveRoot, historyPath, reflectionPath string) http.Handler {
+	return HandlerWithReviewAndExport(archiveRoot, historyPath, reflectionPath, "")
+}
+
+// HandlerWithReviewAndExport returns a read-only review handler with optional
+// verified history, current-reflection comparison, and one portable redacted
+// export.
+func HandlerWithReviewAndExport(archiveRoot, historyPath, reflectionPath, exportPath string) http.Handler {
+	return HandlerWithReviewAndExportAndAcceptance(archiveRoot, historyPath, reflectionPath, exportPath, "")
+}
+
+// HandlerWithReviewAndExportAndAcceptance returns a read-only review handler
+// with optional verified history, current-reflection comparison, portable
+// redacted export, and an offline acceptance identity binding.
+func HandlerWithReviewAndExportAndAcceptance(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath string) http.Handler {
+	return HandlerWithReviewAndExportAndAcceptanceAndQuestionRounds(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, "", "")
+}
+
+// HandlerWithReviewAndExportAndAcceptanceAndQuestionRounds returns a
+// read-only review handler with optional saved question-round comparison.
+func HandlerWithReviewAndExportAndAcceptanceAndQuestionRounds(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath string) http.Handler {
+	return HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceArchive(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, "")
+}
+
+// HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceArchive
+// returns a read-only review handler with an optional portable trace archive
+// reflection surface.
+func HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceArchive(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, traceArchivePath string) http.Handler {
+	return HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceArchiveRound(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, traceArchivePath, "")
+}
+
+// HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceArchiveRound
+// returns a read-only review handler with an optional live trace archive and
+// optional saved trace question round.
+func HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceArchiveRound(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, traceArchivePath, traceRoundPath string) http.Handler {
+	return HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceReplication(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, traceArchivePath, traceRoundPath, "")
+}
+
+// HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceReplication
+// returns a read-only review handler with an optional source-neutral
+// replicated trace ledger.
+func HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceReplication(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, traceArchivePath, traceRoundPath, traceReplicationPath string) http.Handler {
+	return HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCase(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, traceArchivePath, traceRoundPath, traceReplicationPath, "")
+}
+
+// HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCase
+// returns a read-only review handler with an optional portable cross-source
+// trace case.
+func HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCase(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, traceArchivePath, traceRoundPath, traceReplicationPath, traceCasePath string) http.Handler {
+	return HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCaseAndStudy(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, traceArchivePath, traceRoundPath, traceReplicationPath, traceCasePath, "")
+}
+
+// HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCaseAndStudy
+// returns a read-only review handler with optional portable cross-source case
+// and replication-study reflection surfaces.
+// HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCaseAndStudy
+// returns a read-only review handler with optional portable cross-source case
+// and replication-study reflection surfaces.
+func HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCaseAndStudy(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, traceArchivePath, traceRoundPath, traceReplicationPath, traceCasePath, traceStudyPath string) http.Handler {
+	return HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCaseAndStudyArtifacts(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, traceArchivePath, traceRoundPath, traceReplicationPath, traceCasePath, traceStudyPath, "", "")
+}
+
+// HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCaseAndStudyArtifacts
+// returns a read-only review handler with optional durable study question-round
+// and selected-receipt identities.
+func HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCaseAndStudyArtifacts(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, traceArchivePath, traceRoundPath, traceReplicationPath, traceCasePath, traceStudyPath, traceStudyRoundPath, traceStudyReceiptPath string) http.Handler {
+	return HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCaseAndStudyArtifactsAndComparison(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, traceArchivePath, traceRoundPath, traceReplicationPath, traceCasePath, traceStudyPath, traceStudyRoundPath, traceStudyReceiptPath, "", "")
+}
+
+// HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCaseAndStudyArtifactsAndComparison
+// returns a read-only review handler with an optional verified comparison
+// between two retained replication-study question rounds.
+func HandlerWithReviewAndExportAndAcceptanceAndQuestionRoundsAndTraceCaseAndStudyArtifactsAndComparison(archiveRoot, historyPath, reflectionPath, exportPath, acceptancePath, firstRoundPath, secondRoundPath, traceArchivePath, traceRoundPath, traceReplicationPath, traceCasePath, traceStudyPath, traceStudyRoundPath, traceStudyReceiptPath, traceStudySecondPath, traceStudyRoundSecondPath string) http.Handler {
+	return HandlerWithReviewOptions(ReviewOptions{
+		ArchiveRoot:               archiveRoot,
+		HistoryPath:               historyPath,
+		ReflectionPath:            reflectionPath,
+		ExportPath:                exportPath,
+		AcceptancePath:            acceptancePath,
+		FirstRoundPath:            firstRoundPath,
+		SecondRoundPath:           secondRoundPath,
+		TraceArchivePath:          traceArchivePath,
+		TraceRoundPath:            traceRoundPath,
+		TraceReplicationPath:      traceReplicationPath,
+		TraceCasePath:             traceCasePath,
+		TraceStudyPath:            traceStudyPath,
+		TraceStudyRoundPath:       traceStudyRoundPath,
+		TraceStudyReceiptPath:     traceStudyReceiptPath,
+		TraceStudySecondPath:      traceStudySecondPath,
+		TraceStudyRoundSecondPath: traceStudyRoundSecondPath,
+	})
+}
+func archiveHandler(archiveRoot string) handler {
+	return handler{
+		root:       archiveRoot,
+		index:      bundle.Index,
+		verify:     bundle.Verify,
+		questions:  bundle.Questions,
+		ask:        bundle.Ask,
+		askArchive: bundle.AskArchive,
+		find:       bundle.Find,
+	}
+}
+
+func newHandler(h handler) http.Handler {
+	return newHandlerWithHost(h, "")
+}
+
+func newHandlerWithHost(h handler, expectedHost string) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", h.handleIndex)
+	mux.HandleFunc("/run", h.handleRun)
+	mux.HandleFunc("/ask", h.handleAsk)
+	mux.HandleFunc("/finding", h.handleFinding)
+	mux.HandleFunc("/export-ask", h.handleExportAsk)
+	mux.HandleFunc("/export-finding", h.handleExportFinding)
+	mux.HandleFunc("/trace-archive", h.handleTraceArchive)
+	mux.HandleFunc("/trace-replication", h.handleTraceReplication)
+	mux.HandleFunc("/trace-case", h.handleTraceCase)
+	mux.HandleFunc("/trace-study", h.handleTraceStudy)
+	mux.HandleFunc("/trace-study-comparison", h.handleTraceStudyComparison)
+	mux.HandleFunc("/minimization", h.handleMinimization)
+	mux.HandleFunc("/weather", h.handleWeather)
+	mux.HandleFunc("/source-adapter", h.handleSourceAdapter)
+	mux.HandleFunc("/capture", h.handleHAR)
+	mux.HandleFunc("/capture-report", h.handleHAR)
+	mux.HandleFunc("/capture-compare", h.handleHARComparison)
+	mux.HandleFunc("/capture-comparison-report", h.handleHARComparison)
+	mux.HandleFunc("/favicon.ico", handleFavicon)
+	return secureReviewHandler(mux, expectedHost)
+}
+func handleFavicon(w http.ResponseWriter, r *http.Request) {
+	if !getOnly(w, r) {
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h handler) handleIndex(w http.ResponseWriter, r *http.Request) {
+	if !getOnly(w, r) {
+		return
+	}
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
+	entries, err := h.index(h.root)
+	if err != nil {
+		http.Error(w, "archive unavailable", http.StatusInternalServerError)
+		return
+	}
+	var questions []bundle.Question
+	if h.questions != nil {
+		questions = h.questions()
+	}
+	selectedQuestion, questionID := bundle.Question{}, r.URL.Query().Get("question_id")
+	var archiveAnswers []archiveQuestionResult
+	var archiveSummary archiveQuestionSummary
+	currentReflectionRequested := questionID != "" && h.askArchive != nil
+	currentReflectionAvailable := false
+	currentReflectionSHA256 := ""
+	currentReflectionChecked := 0
+	reflectionHistoryRequested := h.history != nil
+	reflectionHistoryAvailable := false
+	var reflectionHistory bundle.ArchiveQuestionTransitionHistory
+	var reflectionHistorySummary bundle.ArchiveQuestionTransitionVerificationSummary
+	var reflectionHistoryQuestions []bundle.Question
+	var reflectionHistoryQuestionRound bundle.ArchiveQuestionTransitionHistoryQuestionRoundAnswer
+	reflectionHistoryQuestionRoundSHA256 := ""
+	reflectionHistoryQuestionID := r.URL.Query().Get("history_question_id")
+	var reflectionHistoryAnswer bundle.ArchiveQuestionTransitionHistoryAnswer
+	var reflectionHistoryRepeatedAnswer bundle.ArchiveQuestionTransitionHistoryRepeatedAnswer
+	var reflectionHistorySnapshotAnswer bundle.ArchiveQuestionTransitionHistorySnapshotAnswer
+	var reflectionHistorySummaryAnswer bundle.ArchiveQuestionTransitionHistorySummaryAnswer
+	var reflectionHistoryReceipt bundle.ArchiveQuestionTransitionHistoryAnswerReceipt
+	reflectionHistoryReceiptAvailable := false
+	reflectionHistoryReceiptSHA256 := ""
+	reflectionHistoryReceiptJSON := ""
+	acceptanceRecordRequested := h.acceptance != nil
+	acceptanceRecordAvailable := false
+	var acceptanceRecord bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary
+	acceptanceRecordStatus := ""
+	questionRoundComparisonRequested := h.compareRounds != nil
+	questionRoundComparisonAvailable := false
+	var questionRoundComparison bundle.ArchiveQuestionTransitionHistoryQuestionRoundComparison
+	savedReflectionComparisonRequested := h.compareCurrent != nil
+	savedReflectionComparisonAvailable := false
+	var savedReflectionComparison bundle.ArchiveQuestionComparison
+	if reflectionHistoryQuestionID != "" {
+		if _, ok := questionForID(bundle.ArchiveQuestionTransitionHistoryQuestions(), reflectionHistoryQuestionID); !ok {
+			http.Error(w, "history question not found", http.StatusNotFound)
+			return
+		}
+	}
+	if h.history != nil {
+		reflectionHistoryQuestions = bundle.ArchiveQuestionTransitionHistoryQuestions()
+		var historyErr error
+		reflectionHistory, reflectionHistorySummary, historyErr = h.history()
+		reflectionHistoryAvailable = historyErr == nil
+		if reflectionHistoryAvailable {
+			reflectionHistoryAnswer = bundle.AnswerArchiveQuestionTransitionHistory(reflectionHistory, reflectionHistorySummary.TransitionHistorySHA256)
+			reflectionHistoryRepeatedAnswer = bundle.AnswerArchiveQuestionTransitionHistoryRepeated(reflectionHistory, reflectionHistorySummary.TransitionHistorySHA256)
+			reflectionHistorySnapshotAnswer = bundle.AnswerArchiveQuestionTransitionHistorySnapshots(reflectionHistory, reflectionHistorySummary.TransitionHistorySHA256)
+			reflectionHistorySummaryAnswer = bundle.AnswerArchiveQuestionTransitionHistorySummary(reflectionHistory, reflectionHistorySummary.TransitionHistorySHA256)
+			reflectionHistoryQuestionRound = bundle.AnswerArchiveQuestionTransitionHistoryQuestionRound(reflectionHistory, reflectionHistorySummary.TransitionHistorySHA256)
+			if roundSHA256, roundSHAErr := bundle.ArchiveQuestionTransitionHistoryQuestionRoundSHA256(reflectionHistoryQuestionRound); roundSHAErr == nil {
+				reflectionHistoryQuestionRoundSHA256 = roundSHA256
+			}
+			if reflectionHistoryQuestionID != "" {
+				var receiptErr error
+				reflectionHistoryReceipt, receiptErr = bundle.AnswerArchiveQuestionTransitionHistoryReceipt(reflectionHistory, reflectionHistorySummary.TransitionHistorySHA256, reflectionHistoryQuestionID)
+				if receiptErr == nil {
+					var receiptSHAErr error
+					reflectionHistoryReceiptSHA256, receiptSHAErr = bundle.ArchiveQuestionTransitionHistoryAnswerReceiptSHA256(reflectionHistoryReceipt)
+					reflectionHistoryReceiptJSONBytes, marshalErr := json.MarshalIndent(reflectionHistoryReceipt, "", "  ")
+					if receiptSHAErr == nil && marshalErr == nil {
+						reflectionHistoryReceiptJSON = string(reflectionHistoryReceiptJSONBytes)
+						reflectionHistoryReceiptAvailable = true
+					}
+				}
+			}
+		}
+	}
+	if h.acceptance != nil {
+		var acceptanceErr error
+		acceptanceRecord, acceptanceErr = h.acceptance()
+		acceptanceRecordAvailable = acceptanceErr == nil
+		switch {
+		case !acceptanceRecordAvailable:
+			acceptanceRecordStatus = "unavailable"
+		case !reflectionHistoryAvailable:
+			acceptanceRecordStatus = "history unavailable"
+		case reflectionHistoryQuestionID == "":
+			acceptanceRecordStatus = "select bound question"
+		case acceptanceRecordMatches(
+			acceptanceRecord,
+			reflectionHistorySummary,
+			reflectionHistoryQuestionRoundSHA256,
+			reflectionHistoryQuestionID,
+			reflectionHistoryReceiptAvailable,
+			reflectionHistoryReceiptSHA256,
+		):
+			acceptanceRecordStatus = "matched"
+		default:
+			acceptanceRecordStatus = "mismatch"
+		}
+	}
+	if h.compareRounds != nil {
+		var comparisonErr error
+		questionRoundComparison, comparisonErr = h.compareRounds()
+		questionRoundComparisonAvailable = comparisonErr == nil
+	}
+	if h.compareCurrent != nil {
+		var comparisonErr error
+		savedReflectionComparison, comparisonErr = h.compareCurrent()
+		savedReflectionComparisonAvailable = comparisonErr == nil
+	}
+	if questionID != "" {
+		var ok bool
+		selectedQuestion, ok = questionForID(questions, questionID)
+		if !ok {
+			http.Error(w, "question not found", http.StatusNotFound)
+			return
+		}
+		if h.askArchive != nil {
+			currentReport, reportErr := h.askArchive(h.root, questionID)
+			if reportErr == nil {
+				currentReflectionSHA256, reportErr = bundle.ArchiveQuestionReportReflectionSHA256(currentReport)
+				if reportErr == nil {
+					currentReflectionChecked = currentReport.Summary.Checked
+					currentReflectionAvailable = true
+				}
+			}
+		}
+		archiveAnswers = make([]archiveQuestionResult, 0, len(entries))
+		for _, entry := range entries {
+			runDir := filepath.Join(h.root, entry.Directory)
+			summary, verifyErr := h.verify(runDir)
+			answer := bundle.Answer{}
+			askErr := verifyErr
+			if verifyErr == nil {
+				answer, askErr = h.ask(runDir, questionID)
+			}
+			archiveAnswers = append(archiveAnswers, archiveQuestionResult{
+				Directory:    entry.Directory,
+				ManifestName: entry.ManifestName,
+				Summary:      summary,
+				Answer:       answer,
+				Available:    askErr == nil,
+			})
+		}
+		sortArchiveQuestionResults(archiveAnswers)
+		archiveSummary = summarizeArchiveAnswers(archiveAnswers)
+	}
+	render(w, pageData{
+		View:                               "index",
+		Title:                              "Ariadne — evidence review",
+		Entries:                            entries,
+		Questions:                          questions,
+		SelectedQuestion:                   selectedQuestion,
+		ArchiveAnswers:                     archiveAnswers,
+		ArchiveSummary:                     archiveSummary,
+		CurrentReflectionRequested:         currentReflectionRequested,
+		CurrentReflectionAvailable:         currentReflectionAvailable,
+		CurrentReflectionSHA256:            currentReflectionSHA256,
+		CurrentReflectionChecked:           currentReflectionChecked,
+		ReflectionHistoryRequested:         reflectionHistoryRequested,
+		ReflectionHistoryAvailable:         reflectionHistoryAvailable,
+		ReflectionHistory:                  reflectionHistory,
+		ReflectionHistorySummary:           reflectionHistorySummary,
+		ReflectionHistoryQuestions:         reflectionHistoryQuestions,
+		ReflectionHistoryQuestionRound:     reflectionHistoryQuestionRound,
+		ReflectionQuestionRoundSHA256:      reflectionHistoryQuestionRoundSHA256,
+		ReflectionHistoryQuestionID:        reflectionHistoryQuestionID,
+		ReflectionHistoryAnswer:            reflectionHistoryAnswer,
+		ReflectionHistoryRepeatedAnswer:    reflectionHistoryRepeatedAnswer,
+		ReflectionHistorySnapshotAnswer:    reflectionHistorySnapshotAnswer,
+		ReflectionHistorySummaryAnswer:     reflectionHistorySummaryAnswer,
+		ReflectionHistoryReceiptAvailable:  reflectionHistoryReceiptAvailable,
+		ReflectionHistoryReceipt:           reflectionHistoryReceipt,
+		ReflectionHistoryReceiptSHA256:     reflectionHistoryReceiptSHA256,
+		ReflectionHistoryReceiptJSON:       reflectionHistoryReceiptJSON,
+		AcceptanceRecordRequested:          acceptanceRecordRequested,
+		AcceptanceRecordAvailable:          acceptanceRecordAvailable,
+		AcceptanceRecord:                   acceptanceRecord,
+		AcceptanceRecordStatus:             acceptanceRecordStatus,
+		QuestionRoundComparisonRequested:   questionRoundComparisonRequested,
+		QuestionRoundComparisonAvailable:   questionRoundComparisonAvailable,
+		QuestionRoundComparison:            questionRoundComparison,
+		SavedReflectionComparisonRequested: savedReflectionComparisonRequested,
+		SavedReflectionComparisonAvailable: savedReflectionComparisonAvailable,
+		SavedReflectionComparison:          savedReflectionComparison,
+		ExportConfigured:                   h.exportAsk != nil && h.exportFind != nil,
+		TraceArchiveConfigured:             h.traceArchiveConfigured(),
+		TraceArchiveRoundSaved:             h.traceRoundPath != "",
+		TraceReplicationConfigured:         h.traceReplicationConfigured(),
+		TraceCaseConfigured:                h.traceCaseConfigured(),
+		TraceStudyConfigured:               h.traceStudyConfigured(),
+		TraceStudyComparisonConfigured:     h.traceStudyComparison != nil,
+		WeatherConfigured:                  h.weatherPath != "",
+		SourceAdapterConfigured:            h.sourceAdapterPath != "",
+		HARConfigured:                      h.harPath != "" && h.harOrigin != "",
+		HARComparisonConfigured:            h.harPath != "" && h.harOrigin != "" && h.harSecondPath != "" && h.harRulesPath != "",
+		MinimizationConfigured:             h.minimizationPath != "",
+	})
+}
+
+func (h handler) traceArchiveConfigured() bool {
+	return h.traceArchivePath != "" || h.traceRoundPath != ""
+}
+
+func (h handler) traceReplicationConfigured() bool {
+	return h.traceReplicationPath != ""
+}
+
+func (h handler) traceCaseConfigured() bool {
+	return h.traceCasePath != ""
+}
+
+func (h handler) traceStudyConfigured() bool {
+	return h.traceStudyPath != "" || h.traceStudyRoundPath != "" || h.traceStudyReceiptPath != ""
+}
+
+func (h handler) readTraceArchive() (trace.ArchiveVerificationSummary, trace.ArchiveQuestionRoundVerificationSummary, []trace.ArchiveAnswer, error) {
+	if !h.traceArchiveConfigured() {
+		return trace.ArchiveVerificationSummary{}, trace.ArchiveQuestionRoundVerificationSummary{}, nil, errors.New("trace archive is not configured")
+	}
+	var summary trace.ArchiveVerificationSummary
+	var round trace.ArchiveQuestionRound
+	var roundSummary trace.ArchiveQuestionRoundVerificationSummary
+	var liveRoundSHA256 string
+	if h.traceArchivePath != "" {
+		if h.traceArchiveRead == nil {
+			return trace.ArchiveVerificationSummary{}, trace.ArchiveQuestionRoundVerificationSummary{}, nil, errors.New("trace archive reader is unavailable")
+		}
+		archive, archiveSummary, err := h.traceArchiveRead(h.traceArchivePath)
+		if err != nil {
+			return trace.ArchiveVerificationSummary{}, trace.ArchiveQuestionRoundVerificationSummary{}, nil, err
+		}
+		var roundErr error
+		round, roundErr = trace.AnswerArchiveQuestionRound(archive, archiveSummary)
+		if roundErr != nil {
+			return trace.ArchiveVerificationSummary{}, trace.ArchiveQuestionRoundVerificationSummary{}, nil, roundErr
+		}
+		roundSHA256, roundSHAErr := trace.ArchiveQuestionRoundSHA256(round)
+		if roundSHAErr != nil {
+			return trace.ArchiveVerificationSummary{}, trace.ArchiveQuestionRoundVerificationSummary{}, nil, roundSHAErr
+		}
+		liveRoundSHA256 = roundSHA256
+		summary = archiveSummary
+		roundSummary = trace.ArchiveQuestionRoundVerificationSummary{
+			SchemaVersion: round.SchemaVersion,
+			ArchiveSHA256: round.ArchiveSHA256,
+			Questions:     len(round.Answers),
+			RoundSHA256:   roundSHA256,
+		}
+	}
+	if h.traceRoundPath != "" {
+		if h.traceRoundRead == nil {
+			return trace.ArchiveVerificationSummary{}, trace.ArchiveQuestionRoundVerificationSummary{}, nil, errors.New("trace archive question round reader is unavailable")
+		}
+		var savedSummary trace.ArchiveQuestionRoundVerificationSummary
+		var err error
+		round, savedSummary, err = h.traceRoundRead(h.traceRoundPath)
+		if err != nil {
+			return trace.ArchiveVerificationSummary{}, trace.ArchiveQuestionRoundVerificationSummary{}, nil, err
+		}
+		if summary.ArchiveSHA256 != "" && summary.ArchiveSHA256 != savedSummary.ArchiveSHA256 {
+			return trace.ArchiveVerificationSummary{}, trace.ArchiveQuestionRoundVerificationSummary{}, nil, errors.New("trace archive question round archive identity does not match archive")
+		}
+		if liveRoundSHA256 != "" && liveRoundSHA256 != savedSummary.RoundSHA256 {
+			return trace.ArchiveVerificationSummary{}, trace.ArchiveQuestionRoundVerificationSummary{}, nil, errors.New("trace archive question round identity does not match archive")
+		}
+		roundSummary = savedSummary
+		if summary.ArchiveSHA256 == "" {
+			summary = trace.ArchiveVerificationSummary{
+				SchemaVersion: round.SchemaVersion,
+				OrderBasis:    round.OrderBasis,
+				Entries:       round.Entries,
+				Complete:      round.Complete,
+				Partial:       round.Partial,
+				Sources:       round.Sources,
+				ArchiveSHA256: round.ArchiveSHA256,
+			}
+		}
+	}
+	return summary, roundSummary, round.Answers, nil
+}
+
+func (h handler) handleTraceArchive(w http.ResponseWriter, r *http.Request) {
+	if !getOnly(w, r) {
+		return
+	}
+	if r.URL.Path != "/trace-archive" || !h.traceArchiveConfigured() {
+		http.NotFound(w, r)
+		return
+	}
+	summary, roundSummary, answers, err := h.readTraceArchive()
+	if err != nil {
+		http.Error(w, "trace archive unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	render(w, pageData{
+		View:                    "trace-archive",
+		Title:                   "Trace archive review — Ariadne",
+		TraceArchiveConfigured:  true,
+		TraceArchiveRoundSaved:  h.traceRoundPath != "",
+		TraceArchiveRoundSHA256: roundSummary.RoundSHA256,
+		TraceArchiveSummary:     summary,
+		TraceArchiveAnswers:     answers,
+	})
+}
+
+func (h handler) handleTraceReplication(w http.ResponseWriter, r *http.Request) {
+	if !getOnly(w, r) {
+		return
+	}
+	if r.URL.Path != "/trace-replication" || !h.traceReplicationConfigured() {
+		http.NotFound(w, r)
+		return
+	}
+	if h.traceReplicationRead == nil {
+		http.Error(w, "trace replication unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	ledger, summary, err := h.traceReplicationRead(h.traceReplicationPath)
+	if err != nil {
+		http.Error(w, "trace replication unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	answers, err := trace.AnswerAllReplicationQuestionsFromSummary(summary)
+	if err != nil {
+		http.Error(w, "trace replication unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	pairs := make([]traceReplicationPairData, 0, len(ledger.Pairs))
+	for _, pair := range ledger.Pairs {
+		pairs = append(pairs, traceReplicationPairData{
+			Position:              pair.Position,
+			Order:                 pair.Pair.Order,
+			ResetConfirmed:        pair.ResetConfirmed,
+			PairSHA256:            pair.Pair.PairSHA256,
+			BaselineCompleteness:  pair.Pair.BaselineCompleteness,
+			TreatmentCompleteness: pair.Pair.TreatmentCompleteness,
+			Differences:           len(pair.Comparison.Differences),
+			Unknowns:              len(pair.Comparison.Unknowns),
+			EvidenceState:         trace.ReplicationPairEvidenceState(pair),
+		})
+	}
+	render(w, pageData{
+		View:                       "trace-replication",
+		Title:                      "Trace replication review — Ariadne",
+		TraceReplicationConfigured: true,
+		TraceReplicationSummary:    summary,
+		TraceReplicationAnswers:    answers,
+		TraceReplicationPairs:      pairs,
+	})
+}
+
+func (h handler) handleTraceCase(w http.ResponseWriter, r *http.Request) {
+	if !getOnly(w, r) {
+		return
+	}
+	if r.URL.Path != "/trace-case" || !h.traceCaseConfigured() {
+		http.NotFound(w, r)
+		return
+	}
+	if h.traceCaseRead == nil {
+		http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	casePackage, summary, err := h.traceCaseRead(h.traceCasePath)
+	if err != nil {
+		http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	answers, err := trace.AnswerAllCaseQuestions(casePackage, summary)
+	if err != nil {
+		http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	disclosureMap, err := trace.BuildCaseDisclosureMap(casePackage, summary)
+	if err != nil {
+		http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	disclosureRound, err := trace.AnswerCaseDisclosureQuestionRound(casePackage, summary)
+	if err != nil {
+		http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	disclosureRoundSHA256, err := trace.CaseDisclosureQuestionRoundSHA256(disclosureRound)
+	if err != nil {
+		http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	disclosureRoundSaved := false
+	if h.traceCaseRoundPath != "" {
+		if h.traceCaseRoundRead == nil {
+			http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		savedRound, savedRoundSummary, readErr := h.traceCaseRoundRead(h.traceCaseRoundPath)
+		if readErr != nil || savedRoundSummary.CaseSHA256 != summary.CaseSHA256 || savedRoundSummary.RoundSHA256 != disclosureRoundSHA256 {
+			http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		disclosureRound = savedRound
+		disclosureRoundSHA256 = savedRoundSummary.RoundSHA256
+		disclosureRoundSaved = true
+	}
+	disclosureQuestionID := r.URL.Query().Get("disclosure_question_id")
+	var disclosureReceipt trace.CaseDisclosureQuestionReceipt
+	disclosureReceiptAvailable := false
+	disclosureReceiptSaved := false
+	disclosureReceiptSHA256 := ""
+	disclosureReceiptJSON := ""
+	if h.traceCaseReceiptPath != "" {
+		if h.traceCaseReceiptRead == nil {
+			http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		savedReceipt, savedReceiptSummary, readErr := h.traceCaseReceiptRead(h.traceCaseReceiptPath)
+		if readErr != nil || savedReceipt.CaseSHA256 != summary.CaseSHA256 || savedReceipt.RoundSHA256 != disclosureRoundSHA256 || (disclosureQuestionID != "" && disclosureQuestionID != savedReceipt.QuestionID) {
+			http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		disclosureQuestionID = savedReceipt.QuestionID
+		disclosureReceipt = savedReceipt
+		disclosureReceiptSHA256 = savedReceiptSummary.ReceiptSHA256
+		disclosureReceiptJSONBytes, marshalErr := json.MarshalIndent(disclosureReceipt, "", "  ")
+		if marshalErr != nil {
+			http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		disclosureReceiptJSON = string(disclosureReceiptJSONBytes)
+		disclosureReceiptAvailable = true
+		disclosureReceiptSaved = true
+	}
+	if disclosureQuestionID != "" && !disclosureReceiptSaved {
+		var selectedAnswer trace.CaseDisclosureQuestionAnswer
+		found := false
+		for _, answer := range disclosureRound.Answers {
+			if answer.QuestionID == disclosureQuestionID {
+				selectedAnswer = answer
+				found = true
+				break
+			}
+		}
+		if !found {
+			http.Error(w, "trace disclosure question not found", http.StatusNotFound)
+			return
+		}
+		disclosureReceipt = trace.CaseDisclosureQuestionReceipt{
+			CaseDisclosureQuestionAnswer: selectedAnswer,
+			RoundSHA256:                  disclosureRoundSHA256,
+			Round:                        disclosureRound,
+		}
+		disclosureReceiptSHA256, err = trace.CaseDisclosureQuestionReceiptSHA256(disclosureReceipt)
+		if err != nil {
+			http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		disclosureReceiptJSONBytes, marshalErr := json.MarshalIndent(disclosureReceipt, "", "  ")
+		if marshalErr != nil {
+			http.Error(w, "trace case unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		disclosureReceiptJSON = string(disclosureReceiptJSONBytes)
+		disclosureReceiptAvailable = true
+	}
+	render(w, pageData{
+		View:                                   "trace-case",
+		Title:                                  "Trace case review — Ariadne",
+		TraceCaseConfigured:                    true,
+		TraceCaseSummary:                       summary,
+		TraceCaseAnswers:                       answers,
+		TraceCaseDisclosureMap:                 disclosureMap,
+		TraceCaseDisclosureQuestions:           disclosureRound.Answers,
+		TraceCaseDisclosureQuestionRoundSaved:  disclosureRoundSaved,
+		TraceCaseDisclosureQuestionRoundSHA256: disclosureRoundSHA256,
+		TraceCaseDisclosureQuestionID:          disclosureQuestionID,
+		TraceCaseDisclosureReceiptAvailable:    disclosureReceiptAvailable,
+		TraceCaseDisclosureReceiptSaved:        disclosureReceiptSaved,
+		TraceCaseDisclosureReceipt:             disclosureReceipt,
+		TraceCaseDisclosureReceiptSHA256:       disclosureReceiptSHA256,
+		TraceCaseDisclosureReceiptJSON:         disclosureReceiptJSON,
+	})
+}
+
+func (h handler) handleTraceStudy(w http.ResponseWriter, r *http.Request) {
+	if !getOnly(w, r) {
+		return
+	}
+	if r.URL.Path != "/trace-study" || !h.traceStudyConfigured() {
+		http.NotFound(w, r)
+		return
+	}
+	if h.traceStudyRead == nil {
+		http.Error(w, "trace study unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	study, summary, err := h.traceStudyRead(h.traceStudyPath)
+	if err != nil {
+		http.Error(w, "trace study unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	answers, err := trace.AnswerAllReplicationStudyQuestions(study, summary)
+	if err != nil {
+		http.Error(w, "trace study unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	round, err := trace.AnswerReplicationStudyQuestionRound(study, summary)
+	if err != nil {
+		http.Error(w, "trace study unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	roundSHA256, err := trace.ReplicationStudyQuestionRoundSHA256(round)
+	if err != nil {
+		http.Error(w, "trace study unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	roundSummary := trace.ReplicationStudyQuestionRoundVerificationSummary{
+		SchemaVersion: round.SchemaVersion,
+		StudySHA256:   round.StudySHA256,
+		Questions:     len(round.Answers),
+		RoundSHA256:   roundSHA256,
+	}
+	if h.traceStudyRoundPath != "" {
+		if h.traceStudyRoundRead == nil {
+			http.Error(w, "trace study unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		savedRound, savedSummary, readErr := h.traceStudyRoundRead(h.traceStudyRoundPath)
+		if readErr != nil || savedSummary.StudySHA256 != summary.StudySHA256 || !slices.Equal(savedRound.Answers, answers) {
+			http.Error(w, "trace study unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		round = savedRound
+		roundSummary = savedSummary
+	}
+	receiptSummary := trace.ReplicationStudyQuestionReceiptVerificationSummary{}
+	receiptAvailable := false
+	selectedQuestionID := selectedStudyQuestionID(r.URL.Query().Get("question_id"))
+	if h.traceStudyReceiptPath != "" {
+		if h.traceStudyReceiptRead == nil {
+			http.Error(w, "trace study unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		receipt, savedReceiptSummary, readErr := h.traceStudyReceiptRead(h.traceStudyReceiptPath)
+		if readErr != nil || receipt.StudySHA256 != summary.StudySHA256 || receipt.RoundSHA256 != roundSummary.RoundSHA256 || (selectedQuestionID != "" && selectedQuestionID != receipt.QuestionID) {
+			http.Error(w, "trace study unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		selectedQuestionID = receipt.QuestionID
+		receiptSummary = savedReceiptSummary
+		receiptAvailable = true
+	} else if selectedQuestionID != "" {
+		answer, answerErr := studyAnswerFromRound(round, selectedQuestionID)
+		if answerErr != nil {
+			http.Error(w, "trace study unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		receipt := trace.ReplicationStudyQuestionReceipt{
+			StudyQuestionAnswer: answer,
+			RoundSHA256:         roundSummary.RoundSHA256,
+			Round:               round,
+		}
+		receiptSHA256, receiptErr := trace.ReplicationStudyQuestionReceiptSHA256(receipt)
+		if receiptErr != nil {
+			http.Error(w, "trace study unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		receiptSummary = trace.ReplicationStudyQuestionReceiptVerificationSummary{
+			SchemaVersion: receipt.SchemaVersion,
+			QuestionID:    receipt.QuestionID,
+			Question:      receipt.Question,
+			Result:        receipt.Result,
+			EvidenceState: receipt.EvidenceState,
+			StudySHA256:   receipt.StudySHA256,
+			RoundSHA256:   receipt.RoundSHA256,
+			ReceiptSHA256: receiptSHA256,
+			Outcome:       receipt.Outcome,
+		}
+		receiptAvailable = true
+	}
+	runs := make([]traceStudyRunData, 0, len(study.Runs))
+	for _, run := range study.Runs {
+		ledgerSHA256, ledgerErr := trace.ReplicationLedgerSHA256(run.Ledger)
+		roundSHA256, roundErr := trace.ReplicationQuestionRoundSHA256(run.QuestionRound)
+		if ledgerErr != nil || roundErr != nil {
+			http.Error(w, "trace study unavailable", http.StatusUnprocessableEntity)
+			return
+		}
+		runs = append(runs, traceStudyRunData{
+			Position:            run.Position,
+			LedgerSHA256:        ledgerSHA256,
+			QuestionRoundSHA256: roundSHA256,
+		})
+	}
+	render(w, pageData{
+		View:                         "trace-study",
+		Title:                        "Replication study review — Ariadne",
+		TraceStudyConfigured:         true,
+		TraceStudySummary:            summary,
+		TraceStudyAnswers:            answers,
+		TraceStudyRuns:               runs,
+		TraceStudyRoundSaved:         h.traceStudyRoundPath != "",
+		TraceStudyRoundSummary:       roundSummary,
+		TraceStudyReceiptAvailable:   receiptAvailable,
+		TraceStudyReceiptSummary:     receiptSummary,
+		TraceStudySelectedQuestionID: selectedQuestionID,
+	})
+}
+
+func (h handler) handleTraceStudyComparison(w http.ResponseWriter, r *http.Request) {
+	if !getOnly(w, r) {
+		return
+	}
+	if r.URL.Path != "/trace-study-comparison" || h.traceStudyComparison == nil {
+		http.NotFound(w, r)
+		return
+	}
+	comparison, err := h.traceStudyComparison()
+	if err != nil {
+		http.Error(w, "trace study comparison unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	render(w, pageData{
+		View:                           "trace-study-comparison",
+		Title:                          "Replication study comparison — Ariadne",
+		TraceStudyComparisonConfigured: true,
+		TraceStudyComparison:           comparison,
+	})
+}
+
+func selectedStudyQuestionID(value string) string {
+	for _, question := range trace.ReplicationStudyQuestions() {
+		if question.ID == value {
+			return value
+		}
+	}
+	return ""
+}
+
+func studyAnswerFromRound(round trace.ReplicationStudyQuestionRound, questionID string) (trace.StudyQuestionAnswer, error) {
+	for _, answer := range round.Answers {
+		if answer.QuestionID == questionID {
+			return answer, nil
+		}
+	}
+	return trace.StudyQuestionAnswer{}, errors.New("study question is unavailable")
+}
+func sortArchiveQuestionResults(results []archiveQuestionResult) {
+	sort.SliceStable(results, func(i, j int) bool {
+		left, right := results[i], results[j]
+		if left.Summary.RecordedAt == right.Summary.RecordedAt {
+			return left.Directory < right.Directory
+		}
+		if left.Summary.RecordedAt == "" {
+			return false
+		}
+		if right.Summary.RecordedAt == "" {
+			return true
+		}
+		leftTime, leftErr := time.Parse(time.RFC3339Nano, left.Summary.RecordedAt)
+		rightTime, rightErr := time.Parse(time.RFC3339Nano, right.Summary.RecordedAt)
+		if leftErr == nil && rightErr == nil && !leftTime.Equal(rightTime) {
+			return leftTime.Before(rightTime)
+		}
+		return left.Summary.RecordedAt < right.Summary.RecordedAt
+	})
+}
+
+func summarizeArchiveAnswers(results []archiveQuestionResult) archiveQuestionSummary {
+	summary := archiveQuestionSummary{Total: len(results)}
+	for _, result := range results {
+		if !result.Available {
+			summary.Unavailable++
+			continue
+		}
+		switch result.Answer.State {
+		case evidence.Observed:
+			summary.Observed++
+		case evidence.Unknown:
+			summary.Unknown++
+		}
+	}
+	return summary
+}
+
+func acceptanceRecordMatches(
+	record bundle.ArchiveQuestionTransitionHistoryAcceptanceVerificationSummary,
+	historySummary bundle.ArchiveQuestionTransitionVerificationSummary,
+	questionRoundSHA256, questionID string,
+	receiptAvailable bool,
+	receiptSHA256 string,
+) bool {
+	return record.TransitionHistorySHA256 == historySummary.TransitionHistorySHA256 &&
+		record.QuestionRoundSHA256 == questionRoundSHA256 &&
+		record.QuestionID == questionID &&
+		receiptAvailable &&
+		record.ReceiptSHA256 == receiptSHA256
+}
+
+func (h handler) handleRun(w http.ResponseWriter, r *http.Request) {
+	if !getOnly(w, r) {
+		return
+	}
+	directory := r.URL.Query().Get("directory")
+	runDir, ok := h.bundlePath(directory)
+	if !ok {
+		http.Error(w, "bundle not found", http.StatusNotFound)
+		return
+	}
+	summary, err := h.verify(runDir)
+	if err != nil {
+		http.Error(w, "bundle is no longer verifiable", http.StatusUnprocessableEntity)
+		return
+	}
+	questions := h.questions()
+	answers := make([]bundle.Answer, 0, len(questions))
+	for _, question := range questions {
+		answer, err := h.ask(runDir, question.ID)
+		if err != nil {
+			answers = nil
+			break
+		}
+		answers = append(answers, answer)
+	}
+	render(w, pageData{
+		View:      "run",
+		Title:     "Bundle review — Ariadne",
+		Directory: directory,
+		Summary:   summary,
+		Answers:   answers,
+	})
+}
+
+func (h handler) handleAsk(w http.ResponseWriter, r *http.Request) {
+	if !getOnly(w, r) {
+		return
+	}
+	directory := r.URL.Query().Get("directory")
+	questionID := r.URL.Query().Get("question_id")
+	runDir, ok := h.bundlePath(directory)
+	if !ok || questionID == "" {
+		http.Error(w, "question not found", http.StatusNotFound)
+		return
+	}
+	summary, err := h.verify(runDir)
+	if err != nil {
+		http.Error(w, "bundle is no longer verifiable", http.StatusUnprocessableEntity)
+		return
+	}
+	answer, err := h.ask(runDir, questionID)
+	if err != nil {
+		http.Error(w, "question unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	render(w, pageData{
+		View:      "ask",
+		Title:     "Question review — Ariadne",
+		Directory: directory,
+		Summary:   summary,
+		Answer:    answer,
+	})
+}
+
+func (h handler) handleFinding(w http.ResponseWriter, r *http.Request) {
+	if !getOnly(w, r) {
+		return
+	}
+	directory := r.URL.Query().Get("directory")
+	findingID := r.URL.Query().Get("finding_id")
+	runDir, ok := h.bundlePath(directory)
+	if !ok || findingID == "" {
+		http.Error(w, "finding not found", http.StatusNotFound)
+		return
+	}
+	summary, err := h.verify(runDir)
+	if err != nil {
+		http.Error(w, "bundle is no longer verifiable", http.StatusUnprocessableEntity)
+		return
+	}
+	finding, err := h.find(runDir, findingID)
+	if err != nil {
+		http.Error(w, "finding unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	render(w, pageData{
+		View:      "finding",
+		Title:     "Finding review — Ariadne",
+		Directory: directory,
+		Summary:   summary,
+		Finding:   finding,
+	})
+}
+
+func (h handler) handleExportAsk(w http.ResponseWriter, r *http.Request) {
+	if !getOnly(w, r) {
+		return
+	}
+	questionID := r.URL.Query().Get("question_id")
+	if h.exportAsk == nil || questionID == "" {
+		http.Error(w, "question not found", http.StatusNotFound)
+		return
+	}
+	questions := []bundle.Question{}
+	if h.questions != nil {
+		questions = h.questions()
+	}
+	if _, ok := questionForID(questions, questionID); !ok {
+		http.Error(w, "question not found", http.StatusNotFound)
+		return
+	}
+	answer, err := h.exportAsk(h.exportPath, questionID)
+	if err != nil {
+		http.Error(w, "export question unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	render(w, pageData{
+		View:                       "export-ask",
+		Title:                      "Portable export question — Ariadne",
+		ExportConfigured:           true,
+		ExportAnswer:               answer,
+		ExportSourceEvidenceSHA256: answer.SourceEvidenceSHA256,
+		ExportSHA256:               answer.ExportSHA256,
+	})
+}
+
+func (h handler) handleExportFinding(w http.ResponseWriter, r *http.Request) {
+	if !getOnly(w, r) {
+		return
+	}
+	findingID := r.URL.Query().Get("finding_id")
+	if h.exportFind == nil || findingID == "" {
+		http.Error(w, "finding not found", http.StatusNotFound)
+		return
+	}
+	finding, err := h.exportFind(h.exportPath, findingID)
+	if err != nil {
+		http.Error(w, "export finding unavailable", http.StatusUnprocessableEntity)
+		return
+	}
+	render(w, pageData{
+		View:                       "export-finding",
+		Title:                      "Portable export finding — Ariadne",
+		ExportConfigured:           true,
+		ExportFinding:              finding,
+		ExportSourceEvidenceSHA256: finding.SourceEvidenceSHA256,
+		ExportSHA256:               finding.ExportSHA256,
+	})
+}
+
+func (h handler) bundlePath(directory string) (string, bool) {
+	if directory == "" {
+		return "", false
+	}
+	entries, err := h.index(h.root)
+	if err != nil {
+		return "", false
+	}
+	for _, entry := range entries {
+		if entry.Directory == directory {
+			return filepath.Join(h.root, entry.Directory), true
+		}
+	}
+	return "", false
+}
+
+func questionForID(questions []bundle.Question, id string) (bundle.Question, bool) {
+	for _, question := range questions {
+		if question.ID == id {
+			return question, true
+		}
+	}
+	return bundle.Question{}, false
+}
+
+func getOnly(w http.ResponseWriter, r *http.Request) bool {
+	if r.Method == http.MethodGet {
+		return true
+	}
+	w.Header().Set("Allow", http.MethodGet)
+	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	return false
+}
+
+func render(w http.ResponseWriter, data pageData) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := pageTemplate.Execute(w, data); err != nil {
+		http.Error(w, "page unavailable", http.StatusInternalServerError)
+	}
+}
+
+var pageTemplate = template.Must(template.New("page").Funcs(template.FuncMap{
+	"query": func(value string) template.URL { return template.URL(url.QueryEscape(value)) },
+}).Parse(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}}</title>
+  <style>
+    :root { color-scheme: light; --ink: #13291f; --muted: #5e7167; --line: #d5e2d9; --paper: #f3f8f3; --card: #fffefa; --accent: #176341; --accent-strong: #0f4c32; --accent-soft: #dff1e5; --warning: #8a5a00; --warning-soft: #fff3d5; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: linear-gradient(180deg, #e8f3ea 0, var(--paper) 360px); color: var(--ink); font: 16px/1.55 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    main { width: min(980px, calc(100% - 32px)); margin: 0 auto; padding: 28px 0 56px; }
+    header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 48px; }
+    .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--ink); font-size: 14px; font-weight: 800; letter-spacing: .16em; text-decoration: none; }
+    .brand::before { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 5px var(--accent-soft); content: ""; }
+    .context, .eyebrow, .directory, .metric-label, footer { color: var(--muted); font-size: 13px; }
+    .header-context { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.58); padding: 5px 10px; }
+    .hero { max-width: 680px; padding-bottom: 30px; }
+    h1 { max-width: 760px; margin: 0 0 12px; font-size: clamp(34px, 6vw, 58px); letter-spacing: -.05em; line-height: 1.02; }
+    h2 { margin: 0; font-size: 22px; letter-spacing: -.02em; }
+    h3 { margin: 4px 0 2px; font-size: 20px; }
+    p { margin: 0 0 18px; }
+    .lede { color: var(--muted); font-size: 19px; }
+    .section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin: 0 0 14px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+    .card, .panel { border: 1px solid var(--line); border-radius: 16px; background: var(--card); padding: 22px; box-shadow: 0 10px 28px rgba(23,99,65,.08); }
+    .card { display: flex; flex-direction: column; min-height: 230px; }
+    .card .button { margin-top: auto; }
+    .panel + .panel { margin-top: 14px; }
+    .panel > summary { cursor: pointer; list-style: none; font-weight: 800; }
+    .panel > summary::-webkit-details-marker { display: none; }
+    .panel > summary::after { float: right; color: var(--accent); content: "＋"; font-size: 20px; line-height: 1; }
+    .panel[open] > summary::after { content: "−"; }
+    .panel > summary:focus-visible { outline: 3px solid #9ad6aa; outline-offset: 4px; }
+    .directory { word-break: break-word; }
+    .metrics { display: flex; gap: 22px; margin: 22px 0; }
+    .metric { display: grid; gap: 2px; }
+    .metric-value { font-size: 27px; font-weight: 750; line-height: 1; }
+    .button { display: inline-flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--accent); border-radius: 10px; color: #fff; background: var(--accent); padding: 10px 13px; font-weight: 700; text-decoration: none; transition: background .15s ease, border-color .15s ease, transform .15s ease; }
+    .button:hover { color: #fff; background: var(--accent-strong); border-color: var(--accent-strong); transform: translateY(-1px); }
+    .button:focus-visible, .back:focus-visible, .brand:focus-visible { outline: 3px solid #9ad6aa; outline-offset: 3px; }
+    .question-links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+    .question-list { display: grid; gap: 10px; margin-top: 18px; }
+    .back { display: inline-block; margin-bottom: 26px; color: var(--accent-strong); font-weight: 700; text-decoration: none; }
+    .status { display: inline-block; border-radius: 999px; background: var(--accent-soft); color: var(--accent); padding: 5px 11px; font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
+    .status-unknown, .status-insufficient, .status-mixed-inconsistent, .status-no-sufficient-candidate { background: var(--warning-soft); color: var(--warning); }
+    .status-unavailable { background: var(--line); color: var(--muted); }
+    .question { max-width: 700px; margin: 20px 0 28px; font-size: 25px; letter-spacing: -.02em; }
+    .answer-line { max-width: 760px; margin: 2px 0 22px; font-size: 21px; letter-spacing: -.02em; }
+    .answer-line strong { color: var(--accent-strong); }
+    .path { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 18px 0 8px; padding: 0; list-style: none; }
+    .path li { position: relative; min-height: 92px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.72); padding: 13px; }
+    .path li + li::before { position: absolute; left: -9px; top: 35px; color: var(--accent); content: "→"; font-weight: 800; }
+    .path-label { display: block; color: var(--muted); font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+    .path strong, .path code { display: block; margin-top: 6px; overflow-wrap: anywhere; }
+    .path small { display: block; margin-top: 4px; color: var(--muted); font-size: 12px; }
+    .path-meta { margin-bottom: 18px; }
+    dl { display: grid; grid-template-columns: 150px 1fr; gap: 10px 18px; margin: 20px 0 30px; }
+    dt { color: var(--muted); font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+    dd { margin: 0; overflow-wrap: anywhere; }
+    ul { margin: 12px 0 26px; padding-left: 22px; }
+    li { margin: 6px 0; overflow-wrap: anywhere; }
+    pre { max-height: 420px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); padding: 14px; font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+    a.finding { color: var(--accent); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 13px; }
+    .empty { color: var(--muted); border: 1px dashed var(--line); border-radius: 14px; padding: 24px; }
+    footer { border-top: 1px solid var(--line); margin-top: 52px; padding-top: 16px; }
+    .flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 0 0 28px; }
+    .flow-step { display: flex; align-items: flex-start; gap: 10px; min-height: 92px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255,255,255,.68); padding: 14px; }
+    .flow-index { display: grid; flex: 0 0 26px; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-strong); font-size: 13px; font-weight: 800; }
+    .flow-step strong, .flow-step span { display: block; }
+    .flow-step strong { margin-bottom: 3px; font-size: 14px; }
+    .flow-step div > span { color: var(--muted); font-size: 13px; line-height: 1.35; }
+    @media (max-width: 760px) { .flow { grid-template-columns: repeat(2, minmax(0, 1fr)); } .path { grid-template-columns: 1fr; } .path li + li::before { left: 15px; top: -12px; content: "↓"; } }
+    @media (max-width: 560px) { header { display: block; padding-bottom: 38px; } .header-context { display: flex; width: fit-content; margin-top: 10px; } dl { grid-template-columns: 1fr; gap: 3px; } dd { margin-bottom: 10px; } .flow { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <a class="brand" href="/">ARIADNE</a>
+    <span class="context header-context">counterfactual evidence review · read only</span>
+  </header>
+
+  {{define "provenance"}}
+  {{if or .Summary.Question .Summary.AnswerState .Summary.ManifestContractSHA256 .Summary.AriadneRevision .Summary.RecordedAt}}
+  <section class="panel">
+    <h2>Verified provenance</h2>
+    <dl>
+      {{with .Summary.Question}}<dt>question</dt><dd>{{.}}</dd>{{end}}
+      {{with .Summary.AnswerState}}<dt>answer state</dt><dd><span class="status status-{{.}}">{{.}}</span></dd>{{end}}
+      {{with .Summary.ManifestContractSHA256}}<dt>manifest contract</dt><dd>{{.}}</dd>{{end}}
+      {{with .Summary.RecordedAt}}<dt>recorded (UTC)</dt><dd>{{.}}</dd>{{end}}
+      {{with .Summary.TargetPackage}}<dt>target package</dt><dd>{{.}}</dd>{{end}}
+      {{if .Summary.TargetAndroidAPI}}<dt>Android API</dt><dd>{{.Summary.TargetAndroidAPI}}</dd>{{end}}
+      {{with .Summary.TargetArchitecture}}<dt>architecture</dt><dd>{{.}}</dd>{{end}}
+      {{if .Summary.TargetPackageVersionCode}}<dt>package version</dt><dd>{{.Summary.TargetPackageVersionCode}}</dd>{{end}}
+      {{with .Summary.TargetPackageSHA256}}<dt>package SHA-256</dt><dd>{{.}}</dd>{{end}}
+      {{if .Summary.Normalizations}}<dt>normalization</dt><dd><ul>{{range .Summary.Normalizations}}<li>{{.}}</li>{{end}}</ul></dd>{{end}}
+      {{with .Summary.AriadneRevision}}<dt>Ariadne revision</dt><dd>{{.}}</dd><dt>working tree</dt><dd>{{if $.Summary.AriadneModified}}modified{{else}}clean{{end}}</dd>{{end}}
+    </dl>
+    <p class="context">This context is structural metadata only; observations and persona values are not rendered.</p>
+  </section>
+  {{end}}
+  {{end}}
+
+  {{define "export-identity"}}
+  {{if or .ExportSourceEvidenceSHA256 .ExportSHA256}}
+  <section class="panel">
+    <h2>Portable export identity</h2>
+    <dl>
+      {{with .ExportSourceEvidenceSHA256}}<dt>source evidence SHA-256</dt><dd>{{.}}</dd>{{end}}
+      {{with .ExportSHA256}}<dt>export SHA-256</dt><dd>{{.}}</dd>{{end}}
+    </dl>
+    <p class="context">These identities bind this answer or finding to the verified raw-value-free export. They do not prove the underlying evidence.</p>
+  </section>
+  {{end}}
+  {{end}}
+
+  {{if eq .View "index"}}
+    <section class="hero">
+      <p class="eyebrow">local investigations</p>
+      <h1>Follow the information.</h1>
+      <p class="lede">See what was found, compare the results, and open the evidence behind each explanation. Private captured values stay out of these pages.</p>
+    </section>
+    <section class="flow" aria-label="Ariadne investigation workflow">
+      <div class="flow-step"><span class="flow-index">1</span><div><strong>Investigate</strong><span>Run a test or open a saved capture.</span></div></div>
+      <div class="flow-step"><span class="flow-index">2</span><div><strong>Compare</strong><span>See what changed between runs.</span></div></div>
+      <div class="flow-step"><span class="flow-index">3</span><div><strong>Trace</strong><span>Follow information to a recorded destination.</span></div></div>
+      <div class="flow-step"><span class="flow-index">4</span><div><strong>Keep evidence</strong><span>Reopen a redacted explanation later.</span></div></div>
+    </section>
+    {{if .WeatherConfigured}}<section class="panel" aria-labelledby="start-here"><p class="eyebrow">Start here</p><h2 id="start-here">Understand where information goes.</h2><p>Follow a weather website test: what location left the browser, where it went, and whether sharing less still gave a forecast. No technical knowledge needed.</p><a class="button" href="/weather">Open weather investigation</a><p class="context">This is a saved test using synthetic locations. Ariadne is not monitoring your browsing or the rest of your device.</p></section>{{end}}
+    {{if .SourceAdapterConfigured}}<section class="panel" aria-labelledby="source-adapter-start"><p class="eyebrow">Redacted information trail</p><h2 id="source-adapter-start">Understand what an authorized source observed.</h2><p>See the safe labels, completeness, and evidence identities from one adapter run. Payloads and executable details stay out of the page.</p><a class="button" href="/source-adapter">Open source-adapter explanation</a><p class="context">This is a saved redacted trace, not a monitor of the rest of your device.</p></section>{{end}}
+    {{if .HARConfigured}}<section class="panel"><p class="eyebrow">Saved browser capture</p><h2>Explore a website's recorded activity.</h2><p>See request destinations and clues about personal information in the configured capture. The explanation omits captured values.</p><a class="button" href="/capture">Explain this capture</a><p class="context">An imported file is not a controlled experiment. Clues do not establish that personal information reached a server.</p></section>{{end}}
+    {{if .HARComparisonConfigured}}<section class="panel"><h2>Look at two captures together.</h2><p>Follow the same test values across two exported files. Missing observations remain unknown.</p><a class="button" href="/capture-compare">Compare these captures</a></section>{{end}}
+    <section class="panel">
+      <div class="section-head"><h2>Ask across this archive</h2><span class="context">fixed, read only</span></div>
+      <p class="context">Choose one bounded question to re-check against every verified bundle.</p>
+      <div class="question-links" aria-label="Bounded questions">
+      {{range .Questions}}<a class="button" href="/?question_id={{query .ID}}">{{.Text}}</a>{{end}}
+      </div>
+    </section>
+    {{if .ExportConfigured}}
+    <section class="panel">
+      <div class="section-head"><h2>Portable redacted export</h2><span class="context">verified, offline</span></div>
+      <p class="context">Ask the export's fixed counterfactual question and follow safe finding references without opening captured artifacts.</p>
+      <a class="button" href="/export-ask?question_id=counterfactual-change">Ask the portable export <span aria-hidden="true">&rarr;</span></a>
+    </section>
+    {{end}}
+    {{if .TraceArchiveConfigured}}
+    <section class="panel" id="trace-archive-orientation" aria-label="Portable trace archive">
+      <div class="section-head"><h2>Portable trace archive</h2><span class="context">{{if .TraceArchiveRoundSaved}}saved question round{{else}}verified at open{{end}}</span></div>
+      <p class="context">Review caller-ordered trace snapshots and their three fixed source-neutral questions. Outcome and evidence state remain separate; captured values are never rendered.</p>
+      <a class="button" href="/trace-archive">Open trace archive review <span aria-hidden="true">&rarr;</span></a>
+    </section>
+    {{end}}
+    {{if .TraceReplicationConfigured}}
+    <section class="panel" id="trace-replication-orientation" aria-label="Replicated trace ledger">
+      <div class="section-head"><h2>Replicated trace ledger</h2><span class="context">verified, read only</span></div>
+      <p class="context">Review matched baseline/treatment pairs in their recorded orders. The aggregate outcome and evidence state remain separate; reset assertions do not prove source behavior.</p>
+      <a class="button" href="/trace-replication">Open replicated trace review <span aria-hidden="true">&rarr;</span></a>
+    </section>
+    {{end}}
+    {{if .TraceCaseConfigured}}
+    <section class="panel" id="trace-case-orientation" aria-label="Portable trace case">
+      <div class="section-head"><h2>Portable trace case</h2><span class="context">verified, read only</span></div>
+      <p class="context">Review caller-ordered archives and replicated ledgers through three fixed cross-source questions. Outcome and evidence state remain separate; caller order is not chronology and retained results do not establish causality.</p>
+      <a class="button" href="/trace-case">Open trace case review <span aria-hidden="true">&rarr;</span></a>
+    </section>
+    {{end}}
+    {{if .TraceStudyConfigured}}
+    <section class="panel" id="trace-study-orientation" aria-label="Portable replication study">
+      <div class="section-head"><h2>Portable replication study</h2><span class="context">verified, read only</span></div>
+      <p class="context">Ask the fixed questions across independently repeated ledgers. Outcome and evidence state remain separate; caller order is not chronology and unsupported runs remain unknown.</p>
+      <a class="button" href="/trace-study">Open replication study review <span aria-hidden="true">&rarr;</span></a>
+      {{if .TraceStudyComparisonConfigured}}<a class="button" href="/trace-study-comparison">Open retained study comparison <span aria-hidden="true">&rarr;</span></a>{{end}}
+    </section>
+    {{end}}
+
+    {{if .MinimizationConfigured}}
+    <section class="panel" id="minimization-orientation" aria-label="Minimum-disclosure experiment">
+      <div class="section-head"><h2>Minimum-disclosure experiment</h2><span class="context">verified, read only</span></div>
+      <p class="context">Review a tested disclosure ladder from a verified experiment or source adapter. Candidate IDs, replicated outcomes, evidence states, and provenance identities are shown; raw inputs never appear here.</p>
+      <a class="button" href="/minimization">Open minimization review <span aria-hidden="true">&rarr;</span></a>
+    </section>
+    {{end}}
+    {{if and .ReflectionHistoryRequested (or (not .SelectedQuestion.ID) (eq .SelectedQuestion.ID .ReflectionHistory.QuestionID))}}
+    <section class="panel">
+      <div class="section-head"><h2>Saved reflection history</h2><span class="context">verified ledger</span></div>
+      {{if .AcceptanceRecordRequested}}
+      <section class="panel" id="history-acceptance-record" aria-label="Portable question acceptance record">
+        <div class="section-head"><h3>Portable question acceptance</h3><span class="status">{{.AcceptanceRecordStatus}}</span></div>
+        {{if .AcceptanceRecordAvailable}}
+        <dl>
+          <dt>question ID</dt><dd>{{if and $.ReflectionHistoryRequested $.ReflectionHistoryAvailable (eq $.ReflectionHistorySummary.TransitionHistorySHA256 .AcceptanceRecord.TransitionHistorySHA256)}}<a href="/?history_question_id={{query .AcceptanceRecord.QuestionID}}" aria-label="Ask accepted history question {{.AcceptanceRecord.QuestionID}}"><code>{{.AcceptanceRecord.QuestionID}}</code></a>{{else}}<code>{{.AcceptanceRecord.QuestionID}}</code>{{end}}</dd>
+          <dt>history SHA-256</dt><dd>{{.AcceptanceRecord.TransitionHistorySHA256}}</dd>
+          <dt>question round SHA-256</dt><dd>{{.AcceptanceRecord.QuestionRoundSHA256}}</dd>
+          <dt>receipt SHA-256</dt><dd>{{.AcceptanceRecord.ReceiptSHA256}}</dd>
+          <dt>acceptance SHA-256</dt><dd>{{.AcceptanceRecord.AcceptanceSHA256}}</dd>
+        </dl>
+        {{end}}
+        <p class="context">This compares the selected read-only receipt with a saved raw-value-free identity binding. It does not prove that a UI driver performed the selection.</p>
+      </section>
+      {{end}}
+      {{if .ReflectionHistoryAvailable}}
+      <p class="context">{{.ReflectionHistory.Question}}</p>
+      <div class="section-head"><h3>Question round</h3><span class="context">fixed, verified, read only</span></div>
+      <div class="question-list" aria-label="Verified history question round">
+      {{range .ReflectionHistoryQuestionRound.Questions}}<a class="button" href="/?history_question_id={{query .QuestionID}}" aria-label="Ask verified history question {{.QuestionID}}"{{if eq $.ReflectionHistoryQuestionID .QuestionID}} aria-current="page"{{end}}><span><code>{{.QuestionID}}</code><br>{{.Question}}</span><span class="status status-{{.Result}}">{{.Result}}</span></a>{{end}}
+      </div>
+      <dl>
+        <dt>order basis</dt><dd>{{.ReflectionHistory.OrderBasis}}</dd>
+        <dt>snapshots</dt><dd>{{.ReflectionHistorySummary.Snapshots}}</dd>
+        <dt>transitions</dt><dd>{{.ReflectionHistorySummary.Transitions}}</dd>
+        <dt>history SHA-256</dt><dd>{{.ReflectionHistorySummary.TransitionHistorySHA256}}</dd>
+        <dt>question round SHA-256</dt><dd>{{.ReflectionQuestionRoundSHA256}}</dd>
+      </dl>
+      {{if .ReflectionHistoryReceiptAvailable}}
+      <section class="panel" id="history-answer-receipt-{{.ReflectionHistoryReceipt.QuestionID}}" aria-label="Portable history answer receipt">
+        <div class="section-head"><h3>Portable answer receipt</h3><span class="status">raw-value-free</span></div>
+        <dl>
+          <dt>receipt schema</dt><dd>{{.ReflectionHistoryReceipt.SchemaVersion}}</dd>
+          <dt>question ID</dt><dd><code>{{.ReflectionHistoryReceipt.QuestionID}}</code></dd>
+          <dt>result</dt><dd><span class="status status-{{.ReflectionHistoryReceipt.Result}}">{{.ReflectionHistoryReceipt.Result}}</span></dd>
+          <dt>history SHA-256</dt><dd>{{.ReflectionHistoryReceipt.TransitionHistorySHA256}}</dd>
+          <dt>receipt SHA-256</dt><dd>{{.ReflectionHistoryReceiptSHA256}}</dd>
+        </dl>
+        <pre aria-label="Portable history answer receipt JSON">{{.ReflectionHistoryReceiptJSON}}</pre>
+        <p class="context">This receipt binds the selected bounded answer to the verified history identity. It does not infer chronology or prove the underlying evidence.</p>
+      </section>
+      {{end}}
+      {{if or (eq .ReflectionHistoryQuestionID "") (eq .ReflectionHistoryQuestionID .ReflectionHistoryAnswer.QuestionID)}}
+      <section id="history-question-{{.ReflectionHistoryAnswer.QuestionID}}">
+      <div class="section-head"><h3>History question</h3><span class="status">{{.ReflectionHistoryAnswer.Result}}</span></div>
+      <p class="context">{{.ReflectionHistoryAnswer.Question}}</p>
+      <p class="context">changed transitions:</p>
+      <ul aria-label="Changed history transitions">
+      {{range .ReflectionHistoryAnswer.ChangedTransitions}}<li>transition {{.}}</li>{{end}}
+      </ul>
+      <p class="context">changed entries:</p>
+      <ul aria-label="Changed history entries">
+      {{range .ReflectionHistoryAnswer.ChangedEntries}}<li>transition {{.Transition}}: {{.Directory}}: {{.OlderState}} &rarr; {{.NewerState}}<br><span class="context">from {{.FromReflectionSHA256}} to {{.ToReflectionSHA256}}</span></li>{{end}}
+      </ul>
+      <p class="context">incomparable transitions:</p>
+      <ul aria-label="Incomparable history transitions">
+      {{range .ReflectionHistoryAnswer.IncomparableTransitions}}<li>transition {{.}}</li>{{end}}
+      </ul>
+      </section>
+      {{end}}
+      {{if or (eq .ReflectionHistoryQuestionID "") (eq .ReflectionHistoryQuestionID .ReflectionHistoryRepeatedAnswer.QuestionID)}}
+      <section id="history-question-{{.ReflectionHistoryRepeatedAnswer.QuestionID}}">
+      <div class="section-head"><h3>Repeated-change question</h3><span class="status status-{{.ReflectionHistoryRepeatedAnswer.Result}}">{{.ReflectionHistoryRepeatedAnswer.Result}}</span></div>
+      <p class="context">{{.ReflectionHistoryRepeatedAnswer.Question}}</p>
+      {{if eq .ReflectionHistoryRepeatedAnswer.Result "unavailable"}}
+      <p class="context">Repeated state changes are unavailable for legacy histories without verified state-change details.</p>
+      {{else}}
+      <p class="context">repeated entries:</p>
+      <ul aria-label="Repeated changed history entries">
+      {{range .ReflectionHistoryRepeatedAnswer.RepeatedEntries}}<li>{{.Directory}}<ul>{{range .Changes}}<li>transition {{.Transition}}: {{.OlderState}} &rarr; {{.NewerState}}<br><span class="context">from {{.FromReflectionSHA256}} to {{.ToReflectionSHA256}}</span></li>{{end}}</ul></li>{{else}}<li>none</li>{{end}}
+      </ul>
+      {{end}}
+      </section>
+      {{end}}
+      {{if or (eq .ReflectionHistoryQuestionID "") (eq .ReflectionHistoryQuestionID .ReflectionHistorySnapshotAnswer.QuestionID)}}
+      <section id="history-question-{{.ReflectionHistorySnapshotAnswer.QuestionID}}">
+      <div class="section-head"><h3>Snapshot-summary question</h3><span class="status status-{{.ReflectionHistorySnapshotAnswer.Result}}">{{.ReflectionHistorySnapshotAnswer.Result}}</span></div>
+      <p class="context">{{.ReflectionHistorySnapshotAnswer.Question}}</p>
+      {{if eq .ReflectionHistorySnapshotAnswer.Result "unavailable"}}
+      <p class="context">Snapshot summaries are unavailable for legacy histories that predate schema 3.</p>
+      {{else}}
+      <p class="context">safe snapshot summaries:</p>
+      <ul aria-label="Saved reflection snapshot summaries">
+      {{range .ReflectionHistorySnapshotAnswer.SnapshotSummaries}}<li><span class="context">{{.ReflectionSHA256}}</span>: observed {{.Observed}}, unknown {{.Unknown}}, unavailable {{.Unavailable}}, checked {{.Checked}}</li>{{end}}
+      </ul>
+      {{end}}
+      </section>
+      {{end}}
+      {{if or (eq .ReflectionHistoryQuestionID "") (eq .ReflectionHistoryQuestionID .ReflectionHistorySummaryAnswer.QuestionID)}}
+      <section id="history-question-{{.ReflectionHistorySummaryAnswer.QuestionID}}">
+      <div class="section-head"><h3>Snapshot-change question</h3><span class="status status-{{.ReflectionHistorySummaryAnswer.Result}}">{{.ReflectionHistorySummaryAnswer.Result}}</span></div>
+      <p class="context">{{.ReflectionHistorySummaryAnswer.Question}}</p>
+      {{if eq .ReflectionHistorySummaryAnswer.Result "unavailable"}}
+      <p class="context">Snapshot-summary changes are unavailable for legacy histories that predate schema 3.</p>
+      {{else}}
+      <p class="context">changed summary boundaries:</p>
+      <ul aria-label="Changed snapshot summary boundaries">
+      {{range .ReflectionHistorySummaryAnswer.ChangedTransitions}}<li>transition {{.}}</li>{{else}}<li>none</li>{{end}}
+      </ul>
+      {{end}}
+      </section>
+      {{end}}
+      <ul aria-label="Saved reflection transitions">
+      {{range .ReflectionHistory.Transitions}}
+        <li><span class="status">{{.Result}}</span> compared {{.Compared}}, changed {{.Changed}}, from-only {{.FromOnly}}, to-only {{.ToOnly}}<br><span class="context">from {{.FromReflectionSHA256}} to {{.ToReflectionSHA256}}</span>
+        {{if .StateChanges}}<br><span class="context">changed archive entries:</span><ul aria-label="Changed archive entries">{{range .StateChanges}}<li>{{.Directory}}: {{.OlderState}} &rarr; {{.NewerState}}</li>{{end}}</ul>{{end}}</li>
+      {{end}}
+      </ul>
+      <p class="context">The ledger follows caller-supplied order. It records bounded state changes only; it does not establish chronology or infer a trend.</p>
+      {{else}}
+      <p class="context">Saved reflection history is unavailable. The internal verification error is not rendered.</p>
+      {{end}}
+    </section>
+    {{end}}
+    {{if .QuestionRoundComparisonRequested}}
+    <section class="panel" id="history-question-round-comparison" aria-label="Retained question round comparison">
+      <div class="section-head"><h2>Retained question rounds</h2><span class="context">fixed, read only</span></div>
+      {{if .QuestionRoundComparisonAvailable}}
+      <p class="context">{{.QuestionRoundComparison.ComparisonQuestion}}</p>
+      <dl>
+        <dt>result</dt><dd><span class="status status-{{.QuestionRoundComparison.Result}}">{{.QuestionRoundComparison.Result}}</span></dd>
+        <dt>order basis</dt><dd>{{.QuestionRoundComparison.OrderBasis}}</dd>
+        <dt>first round SHA-256</dt><dd>{{.QuestionRoundComparison.FirstRoundSHA256}}</dd>
+        <dt>second round SHA-256</dt><dd>{{.QuestionRoundComparison.SecondRoundSHA256}}</dd>
+        <dt>first history SHA-256</dt><dd>{{.QuestionRoundComparison.FirstTransitionHistorySHA256}}</dd>
+        <dt>second history SHA-256</dt><dd>{{.QuestionRoundComparison.SecondTransitionHistorySHA256}}</dd>
+        <dt>compared</dt><dd>{{.QuestionRoundComparison.Compared}}</dd>
+        <dt>changed</dt><dd>{{.QuestionRoundComparison.Changed}}</dd>
+      </dl>
+      <p class="context">changed fixed questions:</p>
+      <ul aria-label="Changed retained questions">
+      {{range .QuestionRoundComparison.ChangedQuestions}}<li>{{if and $.ReflectionHistoryRequested $.ReflectionHistoryAvailable (or (eq $.ReflectionHistorySummary.TransitionHistorySHA256 $.QuestionRoundComparison.FirstTransitionHistorySHA256) (eq $.ReflectionHistorySummary.TransitionHistorySHA256 $.QuestionRoundComparison.SecondTransitionHistorySHA256))}}<a href="/?history_question_id={{query .QuestionID}}" aria-label="Ask changed retained question {{.QuestionID}}"><code>{{.QuestionID}}</code></a>{{else}}<code>{{.QuestionID}}</code>{{end}}: {{.FirstResult}} &rarr; {{.SecondResult}}</li>{{else}}<li>none</li>{{end}}
+      </ul>
+      <p class="context">This compares bounded question results in caller order. It does not establish chronology, infer a trend, or prove the underlying evidence.</p>
+      {{else}}
+      <p class="context">Retained question round comparison is unavailable. The internal verification error is not rendered.</p>
+      {{end}}
+    </section>
+    {{end}}
+    {{if and .SavedReflectionComparisonRequested (or (not .SelectedQuestion.ID) (eq .SelectedQuestion.ID .SavedReflectionComparison.QuestionID))}}
+    <section class="panel">
+      <div class="section-head"><h2>Saved reflection vs current</h2><span class="context">bounded comparison</span></div>
+      {{if .SavedReflectionComparisonAvailable}}
+      <p class="context">{{.SavedReflectionComparison.Question}}</p>
+      <dl>
+        <dt>comparison question</dt><dd>{{.SavedReflectionComparison.ComparisonQuestion}}</dd>
+        <dt>result</dt><dd><span class="status">{{.SavedReflectionComparison.Result}}</span></dd>
+        <dt>saved reflection SHA-256</dt><dd>{{.SavedReflectionComparison.OlderReflectionSHA256}}</dd>
+        <dt>current reflection SHA-256</dt><dd>{{.SavedReflectionComparison.NewerReflectionSHA256}}</dd>
+        <dt>compared</dt><dd>{{.SavedReflectionComparison.Compared}}</dd>
+        <dt>changed</dt><dd>{{.SavedReflectionComparison.Changed}}</dd>
+        <dt>saved-only</dt><dd>{{.SavedReflectionComparison.OlderOnly}}</dd>
+        <dt>current-only</dt><dd>{{.SavedReflectionComparison.NewerOnly}}</dd>
+      </dl>
+      {{if .SavedReflectionComparison.StateChanges}}
+      <h3>Changed archive entries</h3>
+      <ul>
+      {{range .SavedReflectionComparison.StateChanges}}<li>{{.Directory}}: {{.OlderState}} &rarr; {{.NewerState}}</li>{{end}}
+      </ul>
+      {{end}}
+      <p class="context">This compares bounded answer states only. It does not establish chronology, infer a trend, or prove the underlying evidence.</p>
+      {{else}}
+      <p class="context">Saved reflection comparison is unavailable. The internal verification error is not rendered.</p>
+      {{end}}
+    </section>
+    {{end}}
+    {{if .SelectedQuestion.ID}}
+    <section>
+      <div class="section-head"><h2>Question lens</h2><span class="context">re-verified now, oldest first</span></div>
+      <p class="question">{{.SelectedQuestion.Text}}</p>
+      <p class="context">Dated results are ordered by verified recording time; undated bundles follow.</p>
+      <div class="metrics panel" aria-label="Archive question summary">
+        <span class="metric"><strong class="metric-value">{{.ArchiveSummary.Observed}}</strong><span class="metric-label">observed</span></span>
+        <span class="metric"><strong class="metric-value">{{.ArchiveSummary.Unknown}}</strong><span class="metric-label">unknown</span></span>
+        <span class="metric"><strong class="metric-value">{{.ArchiveSummary.Unavailable}}</strong><span class="metric-label">unavailable</span></span>
+        <span class="metric"><strong class="metric-value">{{.ArchiveSummary.Total}}</strong><span class="metric-label">checked</span></span>
+      </div>
+      {{if .CurrentReflectionRequested}}
+      <section class="panel">
+        <div class="section-head"><h2>Current reflection</h2><span class="context">derived in memory</span></div>
+        {{if .CurrentReflectionAvailable}}
+        <dl>
+          <dt>reflection SHA-256</dt><dd>{{.CurrentReflectionSHA256}}</dd>
+          <dt>bundles checked</dt><dd>{{.CurrentReflectionChecked}}</dd>
+        </dl>
+        <p class="context">This digest identifies the current raw-value-free answer report. It is not a truth claim, chronology, or trend.</p>
+        {{else}}
+        <p class="context">The current reflection could not be derived from this archive. Individual result cards remain bounded re-checks.</p>
+        {{end}}
+      </section>
+      {{end}}
+      <div class="grid">
+      {{range .ArchiveAnswers}}
+        <article class="card">
+          <p class="eyebrow">bundle</p>
+          <h3>{{.ManifestName}}</h3>
+          <p class="directory">{{.Directory}}</p>
+          {{if .Available}}
+            <span class="status status-{{.Answer.State}}">{{.Answer.State}}</span>
+            {{with .Answer.Reason}}<p class="context">Why unknown: {{.}}</p>{{end}}
+            {{template "provenance" .}}
+            <a class="button" href="/ask?directory={{query .Directory}}&amp;question_id={{query $.SelectedQuestion.ID}}">Open answer details <span aria-hidden="true">→</span></a>
+          {{else}}
+            <span class="status status-unavailable">unavailable</span>
+            <p class="context">This bundle does not support the current bounded question.</p>
+          {{end}}
+        </article>
+      {{end}}
+      </div>
+    </section>
+    {{end}}
+    <section>
+      <div class="section-head"><h2>Archived bundles</h2><span class="context">{{len .Entries}} available</span></div>
+      {{if .Entries}}
+        <div class="grid">
+        {{range .Entries}}
+          <article class="card">
+            <p class="eyebrow">manifest</p>
+            <h3>{{.ManifestName}}</h3>
+            <p class="directory">{{.Directory}}</p>
+            <div class="metrics">
+              <span class="metric"><strong class="metric-value">{{.Differences}}</strong><span class="metric-label">differences</span></span>
+              <span class="metric"><strong class="metric-value">{{.Unknowns}}</strong><span class="metric-label">unknowns</span></span>
+            </div>
+            <a class="button" href="/run?directory={{query .Directory}}">Open review <span aria-hidden="true">→</span></a>
+          </article>
+        {{end}}
+        </div>
+      {{else}}
+        <p class="empty">No verified bundles are available in this archive root.</p>
+      {{end}}
+
+  {{else if eq .View "trace-archive"}}
+    <a class="back" href="/">&larr; Review archive</a>
+    <p class="eyebrow">portable trace archive &middot; verified</p>
+    <h1>Trace archive reflection</h1>
+    <p class="lede">Ask the same fixed questions across a caller-ordered sequence of standalone trace snapshots. This is a review surface for safe categories, not a chronology or raw-payload viewer.</p>
+    <section class="panel answer" aria-label="How to read this archive">
+      <div class="section-head"><h2>Start with the simple version</h2><span class="context">labels, not payloads</span></div>
+      <p>This archive puts safe category labels side by side across saved snapshots. Read it as “what changed in the recorded labels?” The page does not reveal values or infer when anything happened.</p>
+      <p class="answer-line"><strong>In this archive:</strong> {{.TraceArchiveSummary.Entries}} snapshot(s); {{.TraceArchiveSummary.Complete}} complete and {{.TraceArchiveSummary.Partial}} partial.</p>
+      <div class="flow">
+        <div class="flow-step"><span class="flow-index">1</span><div><strong>Read the labels</strong><span>What kind of information was named?</span></div></div>
+        <div class="flow-step"><span class="flow-index">2</span><div><strong>Compare snapshots</strong><span>Which safe labels changed between the supplied entries?</span></div></div>
+        <div class="flow-step"><span class="flow-index">3</span><div><strong>Check the evidence</strong><span>Complete, partial, or unknown tells you how much the archive could show.</span></div></div>
+      </div>
+      <a class="button" href="#trace-archive-questions">See the fixed questions <span aria-hidden="true">&rarr;</span></a>
+      <p class="context">The archive preserves caller order only. A changed label is a bounded observation, not a timeline or proof of cause.</p>
+    </section>
+    <details class="panel" aria-label="Verified trace archive identity">
+      <summary>Verified archive identity <span class="context">technical details</span></summary>
+      <div class="section-head"><h2>Verified archive identity</h2><span class="status">raw-value-free</span></div>
+      <dl>
+        <dt>order basis</dt><dd>{{.TraceArchiveSummary.OrderBasis}}</dd>
+        <dt>entries</dt><dd>{{.TraceArchiveSummary.Entries}}</dd>
+        <dt>complete</dt><dd>{{.TraceArchiveSummary.Complete}}</dd>
+        <dt>partial</dt><dd>{{.TraceArchiveSummary.Partial}}</dd>
+        <dt>archive SHA-256</dt><dd>{{.TraceArchiveSummary.ArchiveSHA256}}</dd>
+        <dt>question round SHA-256</dt><dd>{{.TraceArchiveRoundSHA256}}</dd>
+      </dl>
+      <h3>Reviewed source adapters</h3>
+      <ul aria-label="Reviewed trace sources">
+      {{range .TraceArchiveSummary.Sources}}<li>{{.Source}} / {{.Adapter}}: {{.Entries}} entries</li>{{else}}<li>none</li>{{end}}
+      </ul>
+      <p class="context">{{if .TraceArchiveRoundSaved}}This saved question round can be re-verified without reopening the source archive.{{else}}This question round was derived in memory from the verified archive.{{end}} The identities do not prove the underlying source or infer chronology.</p>
+    </details>
+    <details class="panel" id="trace-archive-questions" aria-label="Trace archive question round">
+      <summary>Fixed trace questions <span class="context">technical details</span></summary>
+      <div class="section-head"><h2>Fixed trace questions</h2><span class="context">caller-ordered, read only</span></div>
+      <div class="question-list">
+      {{range .TraceArchiveAnswers}}
+        <article class="panel" id="trace-question-{{.QuestionID}}">
+          <div class="section-head"><h3><code>{{.QuestionID}}</code></h3><span class="status status-{{.Result}}">{{.Result}}</span></div>
+          <p class="question">{{.Question}}</p>
+          <dl>
+            <dt>result</dt><dd><span class="status status-{{.Result}}">{{.Result}}</span></dd>
+            <dt>evidence state</dt><dd><span class="status status-{{.EvidenceState}}">{{.EvidenceState}}</span></dd>
+            <dt>archive SHA-256</dt><dd>{{.ArchiveSHA256}}</dd>
+            <dt>entries</dt><dd>{{.Entries}}</dd>
+            <dt>compared</dt><dd>{{.Compared}}</dd>
+            <dt>changed</dt><dd>{{.Changed}}</dd>
+            <dt>same</dt><dd>{{.Same}}</dd>
+            <dt>unknown</dt><dd>{{.Unknown}}</dd>
+          </dl>
+          {{with .Reason}}<p class="context">{{.}}</p>{{end}}
+        </article>
+      {{end}}
+      </div>
+      <p class="context">The outcome answers the bounded question; evidence state qualifies the support available for that answer. A result of <code>unknown</code> is not treated as no change.</p>
+    </details>
+
+  {{else if eq .View "trace-replication"}}
+    <a class="back" href="/">&larr; Review archive</a>
+    <p class="eyebrow">source-neutral replicated trace ledger &middot; verified</p>
+    <h1>Replicated trace reflection</h1>
+    <p class="lede">Review already-produced matched pairs across both explicit orders. This is a bounded aggregate of safe trace comparisons, not a runner, chronology model, or causal proof.</p>
+    <section class="panel answer" aria-label="How to read this replication">
+      <div class="section-head"><h2>Start with the simple version</h2><span class="context">outcome, then evidence</span></div>
+      <p>This page checks the same comparison in two recorded orders. The outcome says what the retained pairs reported; the evidence state says how much the runs could show.</p>
+      <p class="answer-line"><strong>In this ledger:</strong> {{.TraceReplicationSummary.Pairs}} matched pair(s), {{.TraceReplicationSummary.CompletePairs}} complete pair(s), outcome <span class="status status-{{.TraceReplicationSummary.Outcome}}">{{.TraceReplicationSummary.Outcome}}</span>.</p>
+      <div class="flow">
+        <div class="flow-step"><span class="flow-index">1</span><div><strong>Read the outcome</strong><span>Did the retained safe labels change?</span></div></div>
+        <div class="flow-step"><span class="flow-index">2</span><div><strong>Check both orders</strong><span>Was the comparison run baseline-first and treatment-first?</span></div></div>
+        <div class="flow-step"><span class="flow-index">3</span><div><strong>Check the evidence</strong><span>Unknown means the retained runs cannot support the stronger conclusion.</span></div></div>
+      </div>
+      <a class="button" href="#trace-replication-questions">See the fixed questions <span aria-hidden="true">&rarr;</span></a>
+      <p class="context">Repeated pairs are stronger repeat evidence, not proof of universal behavior or causality.</p>
+    </section>
+    <details class="panel" aria-label="Verified replicated trace ledger identity">
+      <summary>Verified replication identity <span class="context">technical details</span></summary>
+      <div class="section-head"><h2>Verified replication identity</h2><span class="status status-raw-value-free">raw-value-free</span></div>
+      <dl>
+        <dt>pairs</dt><dd>{{.TraceReplicationSummary.Pairs}}</dd>
+        <dt>baseline &rarr; treatment</dt><dd>{{.TraceReplicationSummary.BaselineTreatmentPairs}}</dd>
+        <dt>treatment &rarr; baseline</dt><dd>{{.TraceReplicationSummary.TreatmentBaselinePairs}}</dd>
+        <dt>reset-confirmed pairs</dt><dd>{{.TraceReplicationSummary.ResetConfirmedPairs}}</dd>
+        <dt>complete pairs</dt><dd>{{.TraceReplicationSummary.CompletePairs}}</dd>
+        <dt>order balanced</dt><dd>{{.TraceReplicationSummary.OrderBalanced}}</dd>
+        <dt>outcome</dt><dd><span class="status status-{{.TraceReplicationSummary.Outcome}}">{{.TraceReplicationSummary.Outcome}}</span></dd>
+        <dt>evidence state</dt><dd><span class="status status-{{.TraceReplicationSummary.EvidenceState}}">{{.TraceReplicationSummary.EvidenceState}}</span></dd>
+        <dt>ledger SHA-256</dt><dd>{{.TraceReplicationSummary.LedgerSHA256}}</dd>
+      </dl>
+      <p class="context">{{.TraceReplicationSummary.Reason}} Reset policy: <code>{{.TraceReplicationSummary.ResetPolicy}}</code>. The recorded reset is a caller assertion, not proof that a source was reset.</p>
+    </details>
+    <details class="panel" id="trace-replication-questions" aria-label="Replicated trace questions">
+      <summary>Fixed questions <span class="context">technical details</span></summary>
+      <div class="section-head"><h2>Fixed questions</h2><span class="context">re-verified now</span></div>
+      <div class="question-list">
+      {{range .TraceReplicationAnswers}}
+        <article class="panel question-card" id="trace-replication-question-{{.QuestionID}}">
+          <div class="section-head"><h3>{{.Question}}</h3><span class="status status-{{.EvidenceState}}">{{.Result}}</span></div>
+          <dl>
+            <dt>outcome</dt><dd>{{.Outcome}}</dd>
+            <dt>evidence state</dt><dd>{{.EvidenceState}}</dd>
+          </dl>
+          {{with .Reason}}<p class="context">{{.}}</p>{{end}}
+        </article>
+      {{end}}
+      </div>
+      <p class="context">Question results remain separate from evidence state. The board is read-only and exposes no source paths or captured values.</p>
+    </details>
+    <details class="panel" aria-label="Replicated trace pairs">
+      <summary>Matched pairs <span class="context">technical details</span></summary>
+      <div class="section-head"><h2>Matched pairs</h2><span class="context">caller-recorded order</span></div>
+      <div class="question-list">
+      {{range .TraceReplicationPairs}}
+        <article class="panel" id="trace-replication-pair-{{.Position}}">
+          <div class="section-head"><h3>pair {{.Position}}</h3><span class="status status-{{if eq .EvidenceState "unknown"}}unknown{{else if .Differences}}changed{{else}}same{{end}}">{{if eq .EvidenceState "unknown"}}unknown{{else if .Differences}}changed{{else}}same{{end}}</span></div>
+          <dl>
+            <dt>order</dt><dd>{{.Order}}</dd>
+            <dt>reset confirmed</dt><dd>{{.ResetConfirmed}}</dd>
+            <dt>pair SHA-256</dt><dd>{{.PairSHA256}}</dd>
+            <dt>baseline completeness</dt><dd>{{.BaselineCompleteness}}</dd>
+            <dt>treatment completeness</dt><dd>{{.TreatmentCompleteness}}</dd>
+            <dt>differences</dt><dd>{{.Differences}}</dd>
+            <dt>unknowns</dt><dd>{{.Unknowns}}</dd>
+            <dt>evidence state</dt><dd><span class="status status-{{.EvidenceState}}">{{.EvidenceState}}</span></dd>
+          </dl>
+        </article>
+      {{end}}
+      </div>
+      <p class="context">Each pair comparison is recomputed from the embedded normalized traces during verification. No source paths, payloads, URLs, or captured values are rendered.</p>
+    </details>
+
+  {{else if eq .View "trace-case"}}
+    <a class="back" href="/">&larr; Review archive</a>
+    <p class="eyebrow">portable cross-source case &middot; verified</p>
+    <h1>Trace case reflection</h1>
+    <p class="lede">Review verified trace archives and replicated ledgers in caller order through a fixed question catalog. This is a durable reflection surface, not a chronology model, universal capture service, or cross-source causal proof.</p>
+    <section class="panel answer" aria-label="How to read this case">
+      <div class="section-head"><h2>Start with the simple version</h2><span class="context">labels, not payloads</span></div>
+      <p>Ariadne is showing where a reviewed category label appeared in the saved evidence. A label such as <code>region</code> or <code>consent</code> is a description of an observation, not the value itself.</p>
+      {{if .TraceCaseDisclosureMap.Categories}}<p class="answer-line"><strong>In this case:</strong> {{len .TraceCaseDisclosureMap.Categories}} reviewed category labels appear across {{.TraceCaseDisclosureMap.Traces}} retained traces.</p>{{else}}<p class="answer-line"><strong>In this case:</strong> no reviewed category labels were retained.</p>{{end}}
+      <div class="flow">
+        <div class="flow-step"><span class="flow-index">1</span><div><strong>Look for a category</strong><span>What kind of information was named?</span></div></div>
+        <div class="flow-step"><span class="flow-index">2</span><div><strong>Read the boundary</strong><span>Which reviewed source and destination category saw it?</span></div></div>
+        <div class="flow-step"><span class="flow-index">3</span><div><strong>Check the evidence state</strong><span>Complete, partial, or unknown tells you how much the test could see.</span></div></div>
+      </div>
+      <a class="button" href="#trace-case-disclosure-map">See the recorded paths <span aria-hidden="true">&rarr;</span></a>
+      <p class="context">A listed path means the label was retained in a verified trace. It does not prove the underlying value was sent, stored, shared onward, or linked across sources.</p>
+    </section>
+    <details class="panel" aria-label="Verified trace case identity">
+      <summary>Verified case identity <span class="context">technical details</span></summary>
+      <div class="section-head"><h2>Verified case identity</h2><span class="status">raw-value-free</span></div>
+      <dl>
+        <dt>order basis</dt><dd>{{.TraceCaseSummary.OrderBasis}}</dd>
+        <dt>entries</dt><dd>{{.TraceCaseSummary.Entries}}</dd>
+        <dt>archives</dt><dd>{{.TraceCaseSummary.Archives}}</dd>
+        <dt>replicated ledgers</dt><dd>{{.TraceCaseSummary.Replications}}</dd>
+        <dt>unknown entries</dt><dd>{{.TraceCaseSummary.UnknownEntries}}</dd>
+        <dt>case SHA-256</dt><dd>{{.TraceCaseSummary.CaseSHA256}}</dd>
+      </dl>
+      <h3>Reviewed source boundaries</h3>
+      <ul aria-label="Reviewed case sources">
+      {{range .TraceCaseSummary.Sources}}<li>{{.Source}} / {{.Adapter}}: {{.Entries}} entries</li>{{else}}<li>none</li>{{end}}
+      </ul>
+      <p class="context">The package preserves caller order only. It does not infer chronology, join source values, or attribute a result across source boundaries.</p>
+    </details>
+    <details class="panel" aria-label="Trace case questions">
+      <summary>Fixed case questions <span class="context">technical details</span></summary>
+      <div class="section-head"><h2>Fixed case questions</h2><span class="context">re-verified now</span></div>
+      <div class="question-list">
+      {{range .TraceCaseAnswers}}
+        <article class="panel question-card" id="trace-case-question-{{.QuestionID}}">
+          <div class="section-head"><h3><code>{{.QuestionID}}</code></h3><span class="status status-{{.Result}}">{{.Result}}</span></div>
+          <p class="question">{{.Question}}</p>
+          <dl>
+            <dt>result</dt><dd><span class="status status-{{.Result}}">{{.Result}}</span></dd>
+            <dt>evidence state</dt><dd><span class="status status-{{.EvidenceState}}">{{.EvidenceState}}</span></dd>
+            <dt>entries</dt><dd>{{.Entries}}</dd>
+            <dt>archives</dt><dd>{{.Archives}}</dd>
+            <dt>replicated ledgers</dt><dd>{{.Replications}}</dd>
+            <dt>unknown entries</dt><dd>{{.UnknownEntries}}</dd>
+          </dl>
+          {{with .Reason}}<p class="context">{{.}}</p>{{end}}
+        </article>
+      {{end}}
+      </div>
+      <p class="context">The result answers the bounded question; evidence state qualifies the support available for that answer. Unknown is not treated as no change or as causal evidence.</p>
+    </details>
+    <section class="panel" id="trace-case-disclosure-map" aria-label="Cross-source disclosure map">
+      <div class="section-head"><h2>Cross-source disclosure map</h2><span class="context">derived from verified labels</span></div>
+      <dl>
+        <dt>retained traces</dt><dd>{{.TraceCaseDisclosureMap.Traces}}</dd>
+        <dt>coverage state</dt><dd><span class="status status-{{.TraceCaseDisclosureMap.CoverageState}}">{{.TraceCaseDisclosureMap.CoverageState}}</span></dd>
+      </dl>
+      <p class="context">Each row marks a category directly retained in a verified trace. Aggregate coverage is unknown when any contributing trace is partial; that does not turn retained labels into inferred values.</p>
+      <div class="question-list">
+      {{range .TraceCaseDisclosureMap.Categories}}
+        {{$category := .Category}}
+        <article class="panel" id="trace-case-disclosure-{{.Category}}">
+          <div class="section-head"><h3><code>{{.Category}}</code></h3><span class="context">{{len .Observations}} locations</span></div>
+          <p class="context">This category label appeared at the reviewed boundaries below. The page does not contain the value itself.</p>
+          <div aria-label="Disclosure paths for {{.Category}}">
+          {{range .Observations}}
+            <ol class="path" aria-label="Recorded category path">
+              <li><span class="path-label">Source</span><strong>{{.Source}}</strong><small>{{.Adapter}}</small></li>
+              <li><span class="path-label">Reviewed category</span><strong><code>{{$category}}</code></strong><small>label retained by the verifier</small></li>
+              <li><span class="path-label">Destination</span><strong>{{.Destination}}</strong><small>{{.Channel}} / {{.Kind}}</small></li>
+            </ol>
+            <p class="context path-meta">{{.TraceCount}} retained trace(s) &middot; <span class="status status-{{.EvidenceState}}">{{.EvidenceState}}</span></p>
+          {{end}}
+          </div>
+        </article>
+      {{else}}
+        <p class="empty">No reviewed categories were retained.</p>
+      {{end}}
+      </div>
+      <p class="context">This map preserves safe category and destination labels only. It does not join source identities, expose values or URLs, infer chronology, or establish causality.</p>
+    </section>
+    <section class="panel" id="trace-case-disclosure-questions" aria-label="Disclosure map questions">
+      <div class="section-head"><h2>Disclosure map questions</h2><span class="context">re-verified now</span></div>
+      <p class="context">question round SHA-256: {{.TraceCaseDisclosureQuestionRoundSHA256}}</p>
+      {{if .TraceCaseDisclosureQuestionRoundSaved}}<p class="context">saved question round: verified against the current case</p>{{else}}<p class="context">question round: derived from the verified case</p>{{end}}
+      <p class="context">These fixed questions summarize safe category boundaries. Result and evidence state are separate; unknown means the retained evidence cannot support the stronger conclusion.</p>
+      <div class="question-list">
+      {{range .TraceCaseDisclosureQuestions}}
+        <article class="panel question-card" id="trace-case-disclosure-question-{{.QuestionID}}">
+          <div class="section-head"><h3><code>{{.QuestionID}}</code></h3><span class="status status-{{.Result}}">{{.Result}}</span></div>
+          <p class="question">{{.Question}}</p>
+          <dl>
+            <dt>result</dt><dd><span class="status status-{{.Result}}">{{.Result}}</span></dd>
+            <dt>evidence state</dt><dd><span class="status status-{{.EvidenceState}}">{{.EvidenceState}}</span></dd>
+            <dt>retained traces</dt><dd>{{.Traces}}</dd>
+            <dt>coverage state</dt><dd><span class="status status-{{.CoverageState}}">{{.CoverageState}}</span></dd>
+            <dt>overlapping categories</dt><dd>{{if .OverlappingCategories}}{{range $index, $category := .OverlappingCategories}}{{if $index}}, {{end}}{{$category}}{{end}}{{else}}none{{end}}</dd>
+          </dl>
+          {{with .Reason}}<p class="context">{{.}}</p>{{end}}
+          <h4>Reviewed boundaries by category</h4>
+          <ul>
+          {{range .Categories}}
+            <li><code>{{.Category}}</code>: {{range $index, $boundary := .Boundaries}}{{if $index}}, {{end}}{{$boundary.Source}} / {{$boundary.Adapter}}{{end}}</li>
+          {{else}}
+            <li>none</li>
+          {{end}}
+          </ul>
+          <a class="button" href="/trace-case?disclosure_question_id={{query .QuestionID}}">View raw-value-free receipt projection <span aria-hidden="true">&rarr;</span></a>
+        </article>
+      {{end}}
+      </div>
+      {{if .TraceCaseDisclosureReceiptAvailable}}
+      <article class="panel" id="trace-case-disclosure-receipt" aria-label="Selected disclosure question receipt">
+        <div class="section-head"><h3>Selected receipt: <code>{{.TraceCaseDisclosureQuestionID}}</code></h3><span class="status status-raw-value-free">raw-value-free</span>{{if .TraceCaseDisclosureReceiptSaved}}<span class="status status-observed">saved and verified</span>{{end}}</div>
+        <dl>
+          <dt>result</dt><dd><span class="status status-{{.TraceCaseDisclosureReceipt.Result}}">{{.TraceCaseDisclosureReceipt.Result}}</span></dd>
+          <dt>evidence state</dt><dd><span class="status status-{{.TraceCaseDisclosureReceipt.EvidenceState}}">{{.TraceCaseDisclosureReceipt.EvidenceState}}</span></dd>
+          <dt>case SHA-256</dt><dd>{{.TraceCaseDisclosureReceipt.CaseSHA256}}</dd>
+          <dt>question round SHA-256</dt><dd>{{.TraceCaseDisclosureReceipt.RoundSHA256}}</dd>
+          <dt>receipt SHA-256</dt><dd>{{.TraceCaseDisclosureReceiptSHA256}}</dd>
+        </dl>
+        <p class="context">This selected receipt is derived from the verified case for review. Save a durable receipt with the CLI when it must be exchanged or archived.</p>
+        <details><summary>Receipt JSON</summary><pre aria-label="Selected disclosure receipt JSON">{{.TraceCaseDisclosureReceiptJSON}}</pre></details>
+      </article>
+      {{end}}
+    </section>
+    <details class="panel" aria-label="Trace case entries">
+      <summary>Verified case entries <span class="context">technical details</span></summary>
+      <div class="section-head"><h2>Verified case entries</h2><span class="context">caller order</span></div>
+      <div class="question-list">
+      {{range .TraceCaseSummary.EntrySummaries}}
+        <article class="panel" id="trace-case-entry-{{.Position}}">
+          <div class="section-head"><h3>entry {{.Position}} &middot; {{.Kind}}</h3><span class="status status-{{.EvidenceState}}">{{.EvidenceState}}</span></div>
+          <dl>
+            <dt>position</dt><dd>{{.Position}}</dd>
+            <dt>artifact SHA-256</dt><dd>{{.ArtifactSHA256}}</dd>
+            <dt>question round SHA-256</dt><dd>{{.QuestionRoundSHA256}}</dd>
+            <dt>evidence state</dt><dd><span class="status status-{{.EvidenceState}}">{{.EvidenceState}}</span></dd>
+            {{if eq .Kind "trace-archive"}}
+            <dt>complete</dt><dd>{{.Complete}}</dd>
+            <dt>partial</dt><dd>{{.Partial}}</dd>
+            {{else}}
+            <dt>pairs</dt><dd>{{.Pairs}}</dd>
+            <dt>unknown pairs</dt><dd>{{.UnknownPairs}}</dd>
+            <dt>outcome</dt><dd><span class="status status-{{.Outcome}}">{{.Outcome}}</span></dd>
+            {{end}}
+          </dl>
+          <h4>Reviewed source boundaries</h4>
+          <ul>
+          {{range .Sources}}<li>{{.Source}} / {{.Adapter}}: {{.Entries}} entries</li>{{else}}<li>none</li>{{end}}
+          </ul>
+        </article>
+      {{end}}
+      </div>
+      <p class="context">Child artifacts and their matching question rounds were re-verified before rendering. No local input paths, target identifiers, process arguments, URLs, or captured values are shown.</p>
+    </details>
+
+  {{else if eq .View "trace-study"}}
+    <a class="back" href="/">&larr; Review archive</a>
+    <p class="eyebrow">portable replication study &middot; verified</p>
+    <h1>Replication study reflection</h1>
+    <p class="lede">Review fixed questions across independently repeated matched ledgers. Outcome and evidence state are separate; this page preserves caller order and does not infer chronology or causality.</p>
+    <section class="panel answer" aria-label="How to read this study">
+      <div class="section-head"><h2>Start with the simple version</h2><span class="context">outcome, support, and order</span></div>
+      <p>This study brings independent repeated ledgers together under one reviewed comparison. Read the outcome first, then check how many runs supported it and whether any run remains unknown.</p>
+      <p class="answer-line"><strong>In this study:</strong> {{.TraceStudySummary.Runs}} independent run(s), {{.TraceStudySummary.SupportedRuns}} supported and {{.TraceStudySummary.UnknownRuns}} unknown; outcome <span class="status status-{{.TraceStudySummary.Outcome}}">{{.TraceStudySummary.Outcome}}</span>.</p>
+      <div class="flow">
+        <div class="flow-step"><span class="flow-index">1</span><div><strong>Read the outcome</strong><span>What did the repeated ledgers report?</span></div></div>
+        <div class="flow-step"><span class="flow-index">2</span><div><strong>Check the support</strong><span>How many independent runs could be compared?</span></div></div>
+        <div class="flow-step"><span class="flow-index">3</span><div><strong>Keep the limits</strong><span>Caller order is not chronology, and unknown stays unknown.</span></div></div>
+      </div>
+      <a class="button" href="#trace-study-questions">See the fixed study questions <span aria-hidden="true">&rarr;</span></a>
+      <p class="context">A repeated study is a bounded reflection of retained evidence, not a universal or causal claim.</p>
+    </section>
+    <details class="panel" aria-label="Verified replication study identity">
+      <summary>Verified replication study identity <span class="context">technical details</span></summary>
+      <div class="section-head"><h2>Verified replication study identity</h2><span class="status status-raw-value-free">raw-value-free</span></div>
+      <dl>
+        <dt>contrast commitment SHA-256</dt><dd>{{.TraceStudySummary.ContrastSHA256}}</dd>
+        <dt>order basis</dt><dd>{{.TraceStudySummary.OrderBasis}}</dd>
+        <dt>runs</dt><dd>{{.TraceStudySummary.Runs}}</dd>
+        <dt>pairs</dt><dd>{{.TraceStudySummary.Pairs}}</dd>
+        <dt>supported runs</dt><dd>{{.TraceStudySummary.SupportedRuns}}</dd>
+        <dt>unknown runs</dt><dd>{{.TraceStudySummary.UnknownRuns}}</dd>
+        <dt>balanced runs</dt><dd>{{.TraceStudySummary.BalancedRuns}}</dd>
+        <dt>reset-confirmed pairs</dt><dd>{{.TraceStudySummary.ResetConfirmedPairs}}</dd>
+        <dt>complete pairs</dt><dd>{{.TraceStudySummary.CompletePairs}}</dd>
+        <dt>changed runs</dt><dd>{{.TraceStudySummary.ChangedRuns}}</dd>
+        <dt>no-change runs</dt><dd>{{.TraceStudySummary.NoChangeRuns}}</dd>
+        <dt>mixed runs</dt><dd>{{.TraceStudySummary.MixedRuns}}</dd>
+        <dt>unknown pairs</dt><dd>{{.TraceStudySummary.UnknownPairs}}</dd>
+        <dt>outcome</dt><dd><span class="status status-{{.TraceStudySummary.Outcome}}">{{.TraceStudySummary.Outcome}}</span></dd>
+        <dt>evidence state</dt><dd><span class="status status-{{.TraceStudySummary.EvidenceState}}">{{.TraceStudySummary.EvidenceState}}</span></dd>
+        <dt>study SHA-256</dt><dd>{{.TraceStudySummary.StudySHA256}}</dd>
+      </dl>
+      <p class="context">{{.TraceStudySummary.Reason}} Caller order is not chronology. No source paths, payloads, URLs, or captured values are rendered.</p>
+    </details>
+    <details class="panel" id="trace-study-questions" aria-label="Replication study questions">
+      <summary>Fixed study questions <span class="context">technical details</span></summary>
+      <div class="section-head"><h2>Fixed study questions</h2><span class="context">re-verified now</span></div>
+      <div class="question-list">
+      {{range .TraceStudyAnswers}}
+        <article class="panel question-card" id="trace-study-question-{{.QuestionID}}">
+          <div class="section-head"><h3><code>{{.QuestionID}}</code></h3><span class="status status-{{.Result}}">{{.Result}}</span></div>
+          <p class="question">{{.Question}}</p>
+          <dl>
+            <dt>result</dt><dd><span class="status status-{{.Result}}">{{.Result}}</span></dd>
+            <dt>evidence state</dt><dd><span class="status status-{{.EvidenceState}}">{{.EvidenceState}}</span></dd>
+            <dt>aggregate outcome</dt><dd>{{.Outcome}}</dd>
+            <dt>study SHA-256</dt><dd>{{.StudySHA256}}</dd>
+            <dt>runs</dt><dd>{{.Runs}}</dd>
+            <dt>pairs</dt><dd>{{.Pairs}}</dd>
+            <dt>supported runs</dt><dd>{{.SupportedRuns}}</dd>
+            <dt>unknown runs</dt><dd>{{.UnknownRuns}}</dd>
+            <dt>balanced runs</dt><dd>{{.BalancedRuns}}</dd>
+            <dt>reset-confirmed pairs</dt><dd>{{.ResetConfirmedPairs}}</dd>
+            <dt>complete pairs</dt><dd>{{.CompletePairs}}</dd>
+            <dt>changed runs</dt><dd>{{.ChangedRuns}}</dd>
+            <dt>no-change runs</dt><dd>{{.NoChangeRuns}}</dd>
+            <dt>mixed runs</dt><dd>{{.MixedRuns}}</dd>
+            <dt>unknown pairs</dt><dd>{{.UnknownPairs}}</dd>
+          </dl>
+          {{with .Reason}}<p class="context">{{.}}</p>{{end}}
+        </article>
+      {{end}}
+      </div>
+      <p class="context">The result answers the fixed study question; evidence state qualifies the support available for that answer. Unknown is not treated as no change or causal evidence.</p>
+    </details>
+    {{if .TraceStudyRoundSaved}}
+    <section class="panel" aria-label="Saved replication study question round">
+      <div class="section-head"><h2>Durable question round</h2><span class="context">verified offline</span></div>
+      <dl>
+        <dt>study SHA-256</dt><dd>{{.TraceStudyRoundSummary.StudySHA256}}</dd>
+        <dt>questions</dt><dd>{{.TraceStudyRoundSummary.Questions}}</dd>
+        <dt>round SHA-256</dt><dd>{{.TraceStudyRoundSummary.RoundSHA256}}</dd>
+      </dl>
+      <p class="context">This round was re-verified against the configured study before rendering. It contains only fixed answers and identities, not source paths or captured values.</p>
+    </section>
+    {{end}}
+    {{if .TraceStudyReceiptAvailable}}
+    <section class="panel" aria-label="Selected replication study question receipt">
+      <div class="section-head"><h2>Selected question receipt</h2><span class="context">raw-value-free</span></div>
+      <dl>
+        <dt>question ID</dt><dd><code>{{.TraceStudyReceiptSummary.QuestionID}}</code></dd>
+        <dt>result</dt><dd><span class="status status-{{.TraceStudyReceiptSummary.Result}}">{{.TraceStudyReceiptSummary.Result}}</span></dd>
+        <dt>evidence state</dt><dd><span class="status status-{{.TraceStudyReceiptSummary.EvidenceState}}">{{.TraceStudyReceiptSummary.EvidenceState}}</span></dd>
+        <dt>aggregate outcome</dt><dd>{{.TraceStudyReceiptSummary.Outcome}}</dd>
+        <dt>study SHA-256</dt><dd>{{.TraceStudyReceiptSummary.StudySHA256}}</dd>
+        <dt>round SHA-256</dt><dd>{{.TraceStudyReceiptSummary.RoundSHA256}}</dd>
+        <dt>receipt SHA-256</dt><dd>{{.TraceStudyReceiptSummary.ReceiptSHA256}}</dd>
+      </dl>
+      <p class="context">The selected receipt answers one fixed study question. A changed result is not a chronology, causality, or improvement claim.</p>
+    </section>
+    {{end}}    <details class="panel" aria-label="Replication study runs">
+      <summary>Independent runs <span class="context">technical details</span></summary>
+      <div class="section-head"><h2>Independent runs</h2><span class="context">caller order</span></div>
+      <div class="question-list">
+      {{range .TraceStudyRuns}}
+        <article class="panel" id="trace-study-run-{{.Position}}">
+          <div class="section-head"><h3>run {{.Position}}</h3><span class="status">verified identities</span></div>
+          <dl>
+            <dt>position</dt><dd>{{.Position}}</dd>
+            <dt>ledger SHA-256</dt><dd>{{.LedgerSHA256}}</dd>
+            <dt>question round SHA-256</dt><dd>{{.QuestionRoundSHA256}}</dd>
+          </dl>
+        </article>
+      {{end}}
+      </div>
+      <p class="context">Each embedded ledger and matching question round was re-verified before rendering. The study does not infer chronology, expose local input paths, or render captured values.</p>
+    </details>
+  {{else if eq .View "trace-study-comparison"}}
+    <a class="back" href="/">&larr; Review archive</a>
+    <p class="eyebrow">portable study reflection comparison &middot; verified</p>
+    <h1>Compare retained study reflections</h1>
+    <p class="lede">Compare two independently retained study question rounds in caller order. This page exposes bounded reflection changes only; it does not infer chronology, trend, improvement, regression, authorization, or causality.</p>
+    <section class="panel answer" aria-label="How to read this study comparison">
+      <div class="section-head"><h2>Start with the simple version</h2><span class="context">bounded reflection</span></div>
+      <p>This page checks the same fixed study questions in two retained answer sets. The result says whether those bounded projections changed; it does not say why, when, or whether anything improved.</p>
+      <p class="answer-line"><strong>In this comparison:</strong> {{.TraceStudyComparison.Compared}} fixed question projection(s) checked, {{.TraceStudyComparison.Changed}} changed; result <span class="status status-{{.TraceStudyComparison.Result}}">{{.TraceStudyComparison.Result}}</span>.</p>
+      <div class="flow">
+        <div class="flow-step"><span class="flow-index">1</span><div><strong>Read the result</strong><span>Same, changed, or incomparable?</span></div></div>
+        <div class="flow-step"><span class="flow-index">2</span><div><strong>Inspect the questions</strong><span>Which fixed projection changed?</span></div></div>
+        <div class="flow-step"><span class="flow-index">3</span><div><strong>Keep the limits</strong><span>Caller order is not chronology or causality.</span></div></div>
+      </div>
+      <a class="button" href="#trace-study-comparison-changes">See changed questions <span aria-hidden="true">&rarr;</span></a>
+      <p class="context">An incomparable boundary withholds a stronger comparison instead of treating it as unchanged.</p>
+    </section>
+    <details class="panel" aria-label="Verified study comparison identity">
+      <summary>Verified study comparison <span class="context">technical details</span></summary>
+      <div class="section-head"><h2>Verified study comparison</h2><span class="status status-raw-value-free">raw-value-free</span></div>
+      <dl>
+        <dt>comparison question</dt><dd>{{.TraceStudyComparison.ComparisonQuestion}}</dd>
+        <dt>result</dt><dd><span class="status status-{{.TraceStudyComparison.Result}}">{{.TraceStudyComparison.Result}}</span></dd>
+        <dt>valid results</dt><dd>same, changed, or incomparable</dd>
+        <dt>comparison ID</dt><dd>{{.TraceStudyComparison.ComparisonID}}</dd>
+        <dt>order basis</dt><dd>{{.TraceStudyComparison.OrderBasis}}</dd>
+        <dt>first study SHA-256</dt><dd>{{.TraceStudyComparison.FirstStudySHA256}}</dd>
+        <dt>first round SHA-256</dt><dd>{{.TraceStudyComparison.FirstRoundSHA256}}</dd>
+        <dt>second study SHA-256</dt><dd>{{.TraceStudyComparison.SecondStudySHA256}}</dd>
+        <dt>second round SHA-256</dt><dd>{{.TraceStudyComparison.SecondRoundSHA256}}</dd>
+        <dt>compared</dt><dd>{{.TraceStudyComparison.Compared}}</dd>
+        <dt>changed</dt><dd>{{.TraceStudyComparison.Changed}}</dd>
+        {{with .TraceStudyComparison.IncomparableReason}}<dt>incomparable reason</dt><dd>{{.}}</dd>{{end}}
+      </dl>
+      <p class="context">The supplied order is caller order; it does not establish chronology. Matching commitments and reviewed provenance are compatibility checks, not target data or causal proof.</p>
+    </details>
+    <details class="panel" id="trace-study-comparison-changes" aria-label="Changed study questions">
+      <summary>Changed questions <span class="context">technical details</span></summary>
+      <div class="section-head"><h2>Changed questions</h2><span class="context">fixed projection</span></div>
+      <div class="question-list">
+      {{range .TraceStudyComparison.ChangedQuestions}}
+        <article class="panel question-card" id="trace-study-comparison-question-{{.QuestionID}}">
+          <div class="section-head"><h3><code>{{.QuestionID}}</code></h3><span class="status status-changed">changed</span></div>
+          <dl>
+            <dt>first result</dt><dd>{{.FirstResult}}</dd>
+            <dt>second result</dt><dd>{{.SecondResult}}</dd>
+            <dt>first outcome</dt><dd>{{.FirstOutcome}}</dd>
+            <dt>second outcome</dt><dd>{{.SecondOutcome}}</dd>
+            <dt>first evidence state</dt><dd><span class="status status-{{.FirstEvidenceState}}">{{.FirstEvidenceState}}</span></dd>
+            <dt>second evidence state</dt><dd><span class="status status-{{.SecondEvidenceState}}">{{.SecondEvidenceState}}</span></dd>
+            <dt>change kinds</dt><dd><ul>{{range .ChangeKinds}}<li>{{.}}</li>{{else}}<li>none</li>{{end}}</ul></dd>
+          </dl>
+        </article>
+      {{else}}
+        {{if eq .TraceStudyComparison.Result "incomparable"}}
+        <p class="empty">No fixed question projection was compared.</p>
+        {{else}}
+        <p class="empty">No fixed question projection changed.</p>
+        {{end}}
+      {{end}}
+      </div>
+      <p class="context">Question result, aggregate outcome, and evidence state are shown separately. A changed projection is not a chronology or causal claim.</p>
+    </details>
+  {{else if eq .View "minimization"}}
+    <a class="back" href="/">&larr; Review archive</a>
+    <p class="eyebrow">minimum-disclosure experiment &middot; verified</p>
+    <h1>Review tested disclosure levels.</h1>
+    <p class="lede">This page is a read-only projection of one verified minimization receipt. The ladder preserves its recorded candidate order, while functionality classification, counterfactual outcome, and evidence state remain separate.</p>
+    <section class="panel answer" aria-label="How to read this minimization result">
+      <div class="section-head"><h2>Start with the simple version</h2><span class="context">tested candidates only</span></div>
+      <p>This experiment asks one practical question: could the app still work while sharing less? Ariadne compares each named candidate with the precise reference and keeps functionality separate from the strength of the evidence.</p>
+      {{if eq .Minimization.SelectionState "selected"}}
+      <p class="answer-line"><strong>What the test supports:</strong> <code>{{.Minimization.SelectedCandidate}}</code> is the least-disclosing candidate established by this tested ladder. Evidence state: <span class="status status-{{.Minimization.EvidenceState}}">{{.Minimization.EvidenceState}}</span>.</p>
+      {{else}}
+      <p class="answer-line"><strong>What the test supports:</strong> no candidate was selected. The ladder has mixed, unknown, or incomplete support, so Ariadne withholds a stronger privacy conclusion. Evidence state: <span class="status status-{{.Minimization.EvidenceState}}">{{.Minimization.EvidenceState}}</span>.</p>
+      {{end}}
+      <div class="flow">
+        <div class="flow-step"><span class="flow-index">1</span><div><strong>Read the tested answer</strong><span>Selected or withheld?</span></div></div>
+        <div class="flow-step"><span class="flow-index">2</span><div><strong>Check functionality</strong><span>Did the intended behavior remain available?</span></div></div>
+        <div class="flow-step"><span class="flow-index">3</span><div><strong>Check evidence</strong><span>Does the retained evidence support that conclusion?</span></div></div>
+      </div>
+      <a class="button" href="#minimization-candidate-ladder">See the tested candidate ladder <span aria-hidden="true">&rarr;</span></a>
+      <p class="context">This is the least-disclosing candidate established by this tested receipt, not an absolute minimum or a promise about future runs.</p>
+    </section>
+    <details class="panel" aria-label="Verified minimization receipt">
+      <summary>Verified minimization receipt <span class="context">technical details</span></summary>
+      <div class="section-head"><h2>Verified minimization identity</h2><span class="status status-raw-value-free">raw-value-free</span></div>
+      <dl>
+        <dt>receipt schema</dt><dd>{{.Minimization.SchemaVersion}}</dd>
+        <dt>plan name</dt><dd>{{.Minimization.PlanName}}</dd>
+        <dt>variable</dt><dd><code>{{.Minimization.Variable}}</code></dd>
+        <dt>reference candidate</dt><dd><code>{{.Minimization.ReferenceCandidate}}</code></dd>
+        <dt>functionality criterion</dt><dd><code>{{.Minimization.FunctionalityCriterion}}</code></dd>
+        {{if .Minimization.Adapter}}
+        <dt>adapter</dt><dd><code>{{.Minimization.Adapter}}</code></dd>
+        <dt>adapter version</dt><dd>{{.Minimization.AdapterVersion}}</dd>
+        <dt>procedure SHA-256</dt><dd>{{.Minimization.ProcedureSHA256}}</dd>
+        <dt>scope</dt><dd><code>{{.Minimization.Scope}}</code></dd>
+        <dt>reset policy</dt><dd><code>{{.Minimization.ResetPolicy}}</code></dd>
+        {{end}}
+        <dt>pairs per order</dt><dd>{{.Minimization.PairsPerOrder}}</dd>
+        <dt>aggregate evidence state</dt><dd><span class="status status-{{.Minimization.EvidenceState}}">{{.Minimization.EvidenceState}}</span></dd>
+        <dt>selection state</dt><dd><span class="status status-{{.Minimization.SelectionState}}">{{.Minimization.SelectionState}}</span></dd>
+        {{with .Minimization.SelectedCandidate}}<dt>selected candidate</dt><dd><code>{{.}}</code></dd>{{end}}
+        <dt>receipt SHA-256</dt><dd>{{.Minimization.ReceiptSHA256}}</dd>
+      </dl>
+      {{if eq .Minimization.SelectionState "selected"}}
+      <p class="context">Minimum tested sufficient disclosure: <code>{{.Minimization.SelectedCandidate}}</code>. This is the least-disclosing candidate established by this tested ladder, not an absolute minimum.</p>
+      {{else}}
+      <p class="context">No minimum tested sufficient disclosure was established. Mixed, unknown, or incomplete evidence is not treated as functionality equivalence.</p>
+      {{end}}
+      <p class="context">Verification re-checked the canonical receipt and every candidate replication before this page was rendered. The configured local directory, personas, candidate values, manifests, and captured observations are intentionally omitted.</p>
+    </details>
+{{if .Minimization.QuestionsAvailable}}
+    <details class="panel" aria-label="Minimization question round">
+      <summary>Fixed minimization questions <span class="context">technical details</span></summary>
+    <section class="panel" aria-label="Minimization question round">
+      <div class="section-head"><h2>Fixed minimization questions</h2><span class="context">{{if .Minimization.RoundSaved}}saved and verified{{else}}derived from the verified minimization receipt{{end}}</span></div>
+      <div class="question-list">
+      {{range .Minimization.Questions}}
+        <article class="panel question-card" id="minimization-question-{{.QuestionID}}">
+          <div class="section-head"><h3><code>{{.QuestionID}}</code></h3><span class="status status-{{.Result}}">{{.Result}}</span></div>
+          <p class="question">{{.Question}}</p>
+          <dl>
+            <dt>result</dt><dd><span class="status status-{{.Result}}">{{.Result}}</span></dd>
+            <dt>evidence state</dt><dd><span class="status status-{{.EvidenceState}}">{{.EvidenceState}}</span></dd>
+            <dt>selection state</dt><dd>{{.SelectionState}}</dd>
+            {{with .SelectedCandidate}}<dt>selected candidate</dt><dd><code>{{.}}</code></dd>{{end}}
+            <dt>minimization SHA-256</dt><dd>{{.MinimizationSHA256}}</dd>
+            <dt>candidate count</dt><dd>{{.CandidateCount}}</dd>
+            <dt>supported candidates</dt><dd>{{.SupportedCandidates}}</dd>
+            <dt>unknown candidates</dt><dd>{{.UnknownCandidates}}</dd>
+          </dl>
+          <p class="context">{{.Reason}}</p>
+          {{if or (not $.Minimization.ReceiptSaved) (eq $.Minimization.SelectedQuestionID .QuestionID)}}
+          <a class="button" href="/minimization?question_id={{query .QuestionID}}">Open selected question receipt <span aria-hidden="true">&rarr;</span></a>
+          {{end}}
+        </article>
+      {{end}}
+      </div>
+      <p class="context">Question result and evidence state are independent. Candidate counterfactual outcomes remain on the ladder; missing support stays unknown.</p>
+    </section>
+    {{if .Minimization.RoundSaved}}
+    <section class="panel" aria-label="Saved minimization question round">
+      <div class="section-head"><h2>Durable question round</h2><span class="status status-observed">verified</span></div>
+      <dl>
+        <dt>questions</dt><dd>{{.Minimization.RoundSummary.Questions}}</dd>
+        <dt>candidates</dt><dd>{{.Minimization.RoundSummary.Candidates}}</dd>
+        <dt>minimization SHA-256</dt><dd>{{.Minimization.RoundSummary.MinimizationSHA256}}</dd>
+        <dt>round SHA-256</dt><dd>{{.Minimization.RoundSummary.RoundSHA256}}</dd>
+      </dl>
+      <p class="context">This portable round retains fixed answers and safe candidate counts only. It can be verified without reopening the source run, and does not contain local paths, personas, or candidate values.</p>
+    </section>
+    {{end}}
+    {{if .Minimization.ReceiptAvailable}}
+    <section class="panel" aria-label="Selected minimization question receipt">
+      <div class="section-head"><h2>Selected question receipt</h2><span class="status status-raw-value-free">raw-value-free</span></div>
+      <dl>
+        <dt>question ID</dt><dd><code>{{.Minimization.ReceiptSummary.QuestionID}}</code></dd>
+        <dt>question result</dt><dd><span class="status status-{{.Minimization.ReceiptSummary.Result}}">{{.Minimization.ReceiptSummary.Result}}</span></dd>
+        <dt>evidence state</dt><dd><span class="status status-{{.Minimization.ReceiptSummary.EvidenceState}}">{{.Minimization.ReceiptSummary.EvidenceState}}</span></dd>
+        <dt>selection state</dt><dd>{{.Minimization.ReceiptSummary.SelectionState}}</dd>
+        {{with .Minimization.ReceiptSummary.SelectedCandidate}}<dt>selected candidate</dt><dd><code>{{.}}</code></dd>{{end}}
+        <dt>minimization SHA-256</dt><dd>{{.Minimization.ReceiptSummary.MinimizationSHA256}}</dd>
+        <dt>round SHA-256</dt><dd>{{.Minimization.ReceiptSummary.RoundSHA256}}</dd>
+        <dt>receipt SHA-256</dt><dd>{{.Minimization.ReceiptSummary.ReceiptSHA256}}</dd>
+      </dl>
+      <p class="context">The selected receipt preserves one fixed answer and its verified round identity. It does not turn an observed result into a causal proof.</p>
+    </section>
+    {{end}}
+    </details>
+{{end}}
+    <details class="panel" id="minimization-candidate-ladder" aria-label="Tested candidate ladder">
+      <summary>Tested candidate ladder <span class="context">technical details</span></summary>
+      <div class="section-head"><h2>Tested candidate ladder</h2><span class="context">recorded order</span></div>
+      <div class="question-list">
+      {{range .Minimization.Candidates}}
+        <article class="panel" id="minimization-candidate-{{.ID}}">
+          <div class="section-head"><h3><code>{{.ID}}</code></h3><span class="status status-{{.Classification}}">{{.Classification}}</span></div>
+          <dl>
+            <dt>candidate ID</dt><dd><code>{{.ID}}</code></dd>
+            <dt>functionality classification</dt><dd><span class="status status-{{.Classification}}">{{.Classification}}</span></dd>
+            <dt>counterfactual outcome</dt><dd><span class="status status-{{.Outcome}}">{{.Outcome}}</span></dd>
+            <dt>evidence state</dt><dd><span class="status status-{{.EvidenceState}}">{{.EvidenceState}}</span></dd>
+            <dt>pairs per order</dt><dd>{{.PairsPerOrder}}</dd>
+            <dt>total ordered runs</dt><dd>{{.Pairs}}</dd>
+            <dt>completed pairs</dt><dd>{{.CompletedPairs}}</dd>
+            <dt>changed pairs</dt><dd>{{.ChangedPairs}}</dd>
+            <dt>no-change pairs</dt><dd>{{.NoChangePairs}}</dd>
+            <dt>unknown pairs</dt><dd>{{.UnknownPairs}}</dd>
+            <dt>replication receipt SHA-256</dt><dd>{{.ReceiptSHA256}}</dd>
+          </dl>
+          <p class="context">Classification is the bounded functionality conclusion. Outcome summarizes the replicated counterfactual result. Evidence state qualifies support for both; none is a causal proof.</p>
+        </article>
+      {{end}}
+      </div>
+      <p class="context">Candidate order is preserved from the receipt. Only safe identifiers, counts, classifications, outcomes, evidence states, and hashes are rendered.</p>
+    </details>
+
+  {{else if eq .View "run"}}
+    <a class="back" href="/">← All bundles</a>
+    <p class="eyebrow">{{.Summary.ManifestName}} · verified</p>
+    <h1>{{.Directory}}</h1>
+    <div class="metrics panel">
+      <span class="metric"><strong class="metric-value">{{.Summary.Differences}}</strong><span class="metric-label">differences</span></span>
+      <span class="metric"><strong class="metric-value">{{.Summary.Unknowns}}</strong><span class="metric-label">unknowns</span></span>
+    </div>
+    {{template "provenance" .}}
+    {{if .Answers}}
+    <section>
+      <div class="section-head"><h2>Bounded question board</h2><span class="context">re-verified now</span></div>
+      <div class="question-list">
+      {{range .Answers}}
+        <article class="panel question-card">
+          <div class="section-head"><h3>{{.Question}}</h3><span class="status status-{{.State}}">{{.State}}</span></div>
+          {{with .Reason}}<p class="context">Why unknown: {{.}}</p>{{end}}
+          {{if .FindingIDs}}
+          <p class="context">Referenced findings</p>
+          <ul>
+          {{range .FindingIDs}}<li><a class="finding" href="/finding?directory={{query $.Directory}}&amp;finding_id={{query .}}">{{.}}</a></li>{{end}}
+          </ul>
+          {{else}}<p class="context">No finding references were produced for this question.</p>{{end}}
+          <a class="button" href="/ask?directory={{query $.Directory}}&amp;question_id={{query .QuestionID}}">Open answer details <span aria-hidden="true">→</span></a>
+        </article>
+      {{end}}
+      </div>
+    </section>
+    {{else}}
+    <section class="panel">
+      <h2>Bounded questions unavailable</h2>
+      <p class="context">This verified bundle does not support the current question catalog. Its safe summary remains available.</p>
+    </section>
+    {{end}}
+
+  {{else if eq .View "ask"}}
+    <a class="back" href="/run?directory={{query .Directory}}">← Bundle review</a>
+    <p class="eyebrow">bounded question · {{.Directory}}</p>
+    <h1>Question result</h1>
+    <p class="question">{{.Answer.Question}}</p>
+    <span class="status status-{{.Answer.State}}">{{.Answer.State}}</span>
+    {{with .Answer.Reason}}<p class="context">Why unknown: {{.}}</p>{{end}}
+    {{template "provenance" .}}
+    <section class="panel" style="margin-top: 28px">
+      <h2>Referenced findings</h2>
+      {{if .Answer.FindingIDs}}
+        <ul>
+        {{range .Answer.FindingIDs}}
+          <li><a class="finding" href="/finding?directory={{query $.Directory}}&amp;finding_id={{query .}}">{{.}}</a></li>
+        {{end}}
+        </ul>
+      {{else}}
+        <p class="context">No finding references were produced for this question.</p>
+      {{end}}
+    </section>
+
+  {{else if eq .View "finding"}}
+    <a class="back" href="/run?directory={{query .Directory}}">← Bundle review</a>
+    <p class="eyebrow">{{.Finding.Kind}} · {{.Finding.State}} · {{.Directory}}</p>
+    <h1>Finding detail</h1>
+    <p class="lede">This is a verified, raw-value-free finding reference.</p>
+    {{template "provenance" .}}
+    <section class="panel">
+      <dl>
+        <dt>id</dt><dd>{{.Finding.ID}}</dd>
+        <dt>field</dt><dd>{{.Finding.Field}}</dd>
+        {{with .Finding.Classification}}<dt>classification</dt><dd>{{.}}</dd>{{end}}
+        <dt>answer state</dt><dd>{{.Finding.AnswerState}}</dd>
+        <dt>finding state</dt><dd>{{.Finding.State}}</dd>
+        {{with .Finding.Reason}}<dt>reason</dt><dd>{{.}}</dd>{{end}}
+      </dl>
+      <h2>Evidence sources</h2>
+      <ul>
+      {{range .Finding.Evidence}}<li>{{.}}</li>{{end}}
+      </ul>
+      <p class="context">Observed values and captured payloads are intentionally not rendered.</p>
+    </section>
+
+  {{else if eq .View "export-ask"}}
+    <a class="back" href="/">&larr; Review archive</a>
+    <p class="eyebrow">portable redacted export &middot; verified</p>
+    <h1>Question result</h1>
+    <p class="question">{{.ExportAnswer.Question}}</p>
+    <span class="status status-{{.ExportAnswer.State}}">{{.ExportAnswer.State}}</span>
+    {{with .ExportAnswer.Reason}}<p class="context">Why unknown: {{.}}</p>{{end}}
+    {{template "export-identity" .}}
+    <section class="panel" style="margin-top: 28px">
+      <h2>Referenced findings</h2>
+      {{if .ExportAnswer.FindingIDs}}
+        <ul>
+        {{range .ExportAnswer.FindingIDs}}
+          <li><a class="finding" href="/export-finding?finding_id={{query .}}">{{.}}</a></li>
+        {{end}}
+        </ul>
+      {{else}}
+        <p class="context">No finding references were produced for this question.</p>
+      {{end}}
+    </section>
+
+  {{else if eq .View "export-finding"}}
+    <a class="back" href="/export-ask?question_id=counterfactual-change">&larr; Export question</a>
+    <p class="eyebrow">{{.ExportFinding.Kind}} &middot; {{.ExportFinding.State}} &middot; portable export</p>
+    <h1>Finding detail</h1>
+    <p class="lede">This is a verified, raw-value-free finding reference from a portable export.</p>
+    {{template "export-identity" .}}
+    <section class="panel">
+      <dl>
+        <dt>id</dt><dd>{{.ExportFinding.ID}}</dd>
+        <dt>field</dt><dd>{{.ExportFinding.Field}}</dd>
+        {{with .ExportFinding.Classification}}<dt>classification</dt><dd>{{.}}</dd>{{end}}
+        <dt>answer state</dt><dd>{{.ExportFinding.AnswerState}}</dd>
+        <dt>finding state</dt><dd>{{.ExportFinding.State}}</dd>
+        {{with .ExportFinding.Reason}}<dt>reason</dt><dd>{{.}}</dd>{{end}}
+      </dl>
+      <h2>Evidence sources</h2>
+      <ul>
+      {{range .ExportFinding.Evidence}}<li>{{.}}</li>{{end}}
+      </ul>
+      <p class="context">Observed values and captured payloads are intentionally not rendered.</p>
+    </section>
+  {{end}}
+
+  <footer>Read-only review surface. Raw observations are never rendered.</footer>
+</main>
+</body>
+</html>`))

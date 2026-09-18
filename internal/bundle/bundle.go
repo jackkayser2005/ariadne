@@ -10,25 +10,45 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/jackkayser2005/ariadne/internal/adb"
 	"github.com/jackkayser2005/ariadne/internal/analysis"
 	"github.com/jackkayser2005/ariadne/internal/evidence"
+	"github.com/jackkayser2005/ariadne/internal/experiment"
 	"github.com/jackkayser2005/ariadne/internal/jsoncheck"
+	"github.com/jackkayser2005/ariadne/internal/securefs"
 )
 
 const (
-	maxSessionBytes = 64 << 10
-	maxStorageBytes = 64 << 10
-	maxNetworkBytes = 96 << 10
+	maxSessionBytes             = 64 << 10
+	maxStorageBytes             = 64 << 10
+	maxNetworkBytes             = 96 << 10
+	maxOutputBytes              = 128 << 10
+	redactedExportSchemaVersion = 1
+
+	treatmentStorageObservationUnknownReason = "treatment storage observation was not captured"
+	treatmentNetworkObservationUnknownReason = "treatment network observation was not captured"
 )
 
 var expectedSteps = []string{
+	"reset",
+	"connect_network",
+	"start",
+	"interact",
+	"capture_network",
+	"capture_storage",
+	"disconnect_network",
+}
+
+var legacyExpectedSteps = []string{
 	"reset",
 	"connect_network",
 	"start",
@@ -39,19 +59,169 @@ var expectedSteps = []string{
 
 // Summary describes a completed evidence bundle without observed values.
 type Summary struct {
-	ManifestName string
-	Differences  int
-	Unknowns     int
+	ManifestName           string         `json:"manifest_name"`
+	DeclaredVariable       string         `json:"-"`
+	Differences            int            `json:"differences"`
+	Unknowns               int            `json:"unknowns"`
+	Question               string         `json:"-"`
+	AnswerState            evidence.State `json:"-"`
+	ManifestContractSHA256 string         `json:"-"`
+	// EvidenceSHA256 is the digest of the verified authoritative evidence.json.
+	EvidenceSHA256 string `json:"-"`
+	// Authenticated is true only when both session records use the current
+	// authenticated schema and pass the session-binding checks.
+	Authenticated bool `json:"-"`
+	// EnvironmentSHA256 is the canonical identity of the shared authenticated
+	// execution environment. It is internal provenance, never portable output.
+	EnvironmentSHA256 string `json:"-"`
+	AriadneRevision   string `json:"-"`
+	AriadneModified   bool   `json:"-"`
+	// RecordedAt is the verified baseline session start in UTC for current bundles.
+	RecordedAt string `json:"-"`
+	// TargetPackage is the verified package identity for the selected target.
+	TargetPackage string `json:"-"`
+	// TargetDevice is the verified device identity for internal provenance checks.
+	TargetDevice string `json:"-"`
+	// TargetADBVersion is the verified ADB version for internal provenance checks.
+	TargetADBVersion string `json:"-"`
+	// ProcedureSHA256 is the verified Android procedure identity when available.
+	ProcedureSHA256 string `json:"-"`
+	// TargetAndroidAPI is the verified Android API for the selected target.
+	TargetAndroidAPI int `json:"-"`
+	// TargetArchitecture is the verified architecture for the selected target.
+	TargetArchitecture string `json:"-"`
+	// TargetPackageVersionCode is the verified package version for the selected target.
+	TargetPackageVersionCode uint64 `json:"-"`
+	// TargetPackageSHA256 is the verified package digest for the selected target.
+	TargetPackageSHA256 string `json:"-"`
+	// Normalizations lists the verified, deterministic normalization steps for the bundle.
+	Normalizations []string `json:"-"`
+}
+
+// ExportSummary describes a successful raw-value-free export.
+type ExportSummary struct {
+	SourceEvidenceSHA256 string `json:"source_evidence_sha256"`
+	ExportSHA256         string `json:"export_sha256"`
+}
+
+// ExportVerificationSummary describes a structurally valid redacted export.
+type ExportVerificationSummary struct {
+	SchemaVersion        int    `json:"schema_version"`
+	SourceEvidenceSHA256 string `json:"source_evidence_sha256"`
+	ExportSHA256         string `json:"export_sha256"`
+}
+
+// Finding is the safe, raw-value-free view of one verified conclusion.
+type Finding struct {
+	Question             string         `json:"question"`
+	AnswerState          evidence.State `json:"answer_state"`
+	Kind                 string         `json:"kind"`
+	Classification       string         `json:"classification,omitempty"`
+	ID                   string         `json:"id"`
+	Field                string         `json:"field"`
+	State                evidence.State `json:"state"`
+	Reason               string         `json:"reason,omitempty"`
+	Evidence             []string       `json:"evidence"`
+	SourceEvidenceSHA256 string         `json:"source_evidence_sha256,omitempty"`
+	ExportSHA256         string         `json:"export_sha256,omitempty"`
+}
+
+// Answer is the deterministic result of one bounded bundle question.
+type Answer struct {
+	QuestionID           string         `json:"question_id"`
+	Question             string         `json:"question"`
+	State                evidence.State `json:"answer_state"`
+	Reason               string         `json:"reason,omitempty"`
+	FindingIDs           []string       `json:"finding_ids"`
+	SourceEvidenceSHA256 string         `json:"source_evidence_sha256,omitempty"`
+	ExportSHA256         string         `json:"export_sha256,omitempty"`
+}
+
+// Question describes one bounded question available for a verified bundle.
+type Question struct {
+	ID   string `json:"id"`
+	Text string `json:"question"`
+}
+
+// Questions returns the fixed question catalog in stable order.
+func Questions() []Question {
+	return []Question{
+		{
+			ID:   "counterfactual-change",
+			Text: "Did changing the declared variable influence an observed output?",
+		},
+		{
+			ID:   "capture-complete",
+			Text: "Were all required observations captured for both sessions?",
+		},
+		{
+			ID:   "source-integrity",
+			Text: "Do the verified findings still match their source artifacts?",
+		},
+	}
 }
 
 type document struct {
-	SchemaVersion    int                 `json:"schema_version"`
-	ManifestName     string              `json:"manifest_name"`
-	DeclaredVariable string              `json:"declared_variable"`
-	Target           target              `json:"target"`
-	Normalizations   []string            `json:"normalizations"`
-	Artifacts        []artifact          `json:"artifacts"`
-	Comparison       analysis.Comparison `json:"comparison"`
+	SchemaVersion          int                 `json:"schema_version"`
+	ManifestName           string              `json:"manifest_name"`
+	DeclaredVariable       string              `json:"declared_variable"`
+	ManifestContractSHA256 string              `json:"manifest_contract_sha256,omitempty"`
+	Question               string              `json:"question,omitempty"`
+	AnswerState            evidence.State      `json:"answer_state,omitempty"`
+	Target                 target              `json:"target"`
+	Normalizations         []string            `json:"normalizations"`
+	Artifacts              []artifact          `json:"artifacts"`
+	Comparison             analysis.Comparison `json:"comparison"`
+}
+
+type redactedDocument struct {
+	SchemaVersion               int                `json:"schema_version"`
+	SourceEvidenceSchemaVersion int                `json:"source_evidence_schema_version"`
+	Redacted                    bool               `json:"redacted"`
+	SourceEvidenceSHA256        string             `json:"source_evidence_sha256"`
+	ManifestName                string             `json:"manifest_name"`
+	DeclaredVariable            string             `json:"declared_variable"`
+	ManifestContractSHA256      string             `json:"manifest_contract_sha256,omitempty"`
+	Question                    string             `json:"question,omitempty"`
+	AnswerState                 evidence.State     `json:"answer_state,omitempty"`
+	Target                      redactedTarget     `json:"target"`
+	Normalizations              []string           `json:"normalizations"`
+	Artifacts                   []artifact         `json:"artifacts"`
+	Comparison                  redactedComparison `json:"comparison"`
+}
+
+type redactedTarget struct {
+	AndroidAPI         int    `json:"android_api"`
+	Architecture       string `json:"architecture"`
+	Package            string `json:"package"`
+	PackageVersionCode uint64 `json:"package_version_code"`
+	PackageSHA256      string `json:"package_sha256"`
+	AriadneRevision    string `json:"ariadne_revision"`
+	AriadneModified    bool   `json:"ariadne_modified"`
+}
+
+type redactedComparison struct {
+	SchemaVersion    int                  `json:"schema_version"`
+	UnchangedFields  []string             `json:"unchanged_fields"`
+	NormalizedFields []string             `json:"normalized_fields"`
+	Differences      []redactedDifference `json:"differences"`
+	Unknowns         []redactedUnknown    `json:"unknowns"`
+}
+
+type redactedDifference struct {
+	ID       string         `json:"id,omitempty"`
+	Field    string         `json:"field"`
+	Kind     string         `json:"kind"`
+	State    evidence.State `json:"state"`
+	Evidence []string       `json:"evidence"`
+}
+
+type redactedUnknown struct {
+	ID       string         `json:"id,omitempty"`
+	Field    string         `json:"field"`
+	State    evidence.State `json:"state"`
+	Reason   string         `json:"reason,omitempty"`
+	Evidence []string       `json:"evidence"`
 }
 
 type target struct {
@@ -82,20 +252,429 @@ type loadedSession struct {
 
 // Write verifies runDir and creates evidence.json and report.md without overwriting.
 func Write(runDir string) (Summary, error) {
+	evidence, summary, err := buildDocument(runDir, true)
+	if err != nil {
+		return Summary{}, err
+	}
+	evidenceData, err := encodeDocument(evidence)
+	if err != nil {
+		return Summary{}, err
+	}
+	reportData, err := encodeReport(evidence)
+	if err != nil {
+		return Summary{}, err
+	}
+	if err := writeOutputs(runDir, evidenceData, reportData); err != nil {
+		return Summary{}, err
+	}
+	return summary, nil
+}
+
+// Verify checks an existing evidence bundle without writing either output.
+func Verify(runDir string) (Summary, error) {
+	_, summary, err := verifyDocument(runDir)
+	return summary, err
+}
+
+// Export verifies runDir and writes a separate raw-value-free JSON projection.
+// It never overwrites the destination or the authoritative evidence outputs.
+func Export(runDir, exportPath string) (ExportSummary, error) {
+	if strings.TrimSpace(exportPath) == "" {
+		return ExportSummary{}, errors.New("export path is required")
+	}
+
+	evidence, _, existingEvidence, err := verifyDocumentWithOutput(runDir)
+	if err != nil {
+		return ExportSummary{}, err
+	}
+	sum := sha256.Sum256(existingEvidence)
+	sourceDigest := hex.EncodeToString(sum[:])
+	redacted := redactedDocument{
+		SchemaVersion:               redactedExportSchemaVersion,
+		SourceEvidenceSchemaVersion: evidence.SchemaVersion,
+		Redacted:                    true,
+		SourceEvidenceSHA256:        sourceDigest,
+		ManifestName:                evidence.ManifestName,
+		DeclaredVariable:            evidence.DeclaredVariable,
+		ManifestContractSHA256:      evidence.ManifestContractSHA256,
+		Question:                    evidence.Question,
+		AnswerState:                 evidence.AnswerState,
+		Target: redactedTarget{
+			AndroidAPI:         evidence.Target.AndroidAPI,
+			Architecture:       evidence.Target.Architecture,
+			Package:            evidence.Target.Package,
+			PackageVersionCode: evidence.Target.PackageVersionCode,
+			PackageSHA256:      evidence.Target.PackageSHA256,
+			AriadneRevision:    evidence.Target.AriadneRevision,
+			AriadneModified:    evidence.Target.AriadneModified,
+		},
+		Normalizations: slices.Clone(evidence.Normalizations),
+		Artifacts:      slices.Clone(evidence.Artifacts),
+		Comparison:     redactedComparisonFor(evidence.Comparison),
+	}
+	if err := validateRedactedDocument(redacted); err != nil {
+		return ExportSummary{}, fmt.Errorf("redacted export: %w", err)
+	}
+	exportSHA256, err := redactedExportSHA256(redacted)
+	if err != nil {
+		return ExportSummary{}, err
+	}
+	exportData, err := encodeRedactedDocument(redacted)
+	if err != nil {
+		return ExportSummary{}, err
+	}
+	if err := writeExclusive(exportPath, exportData); err != nil {
+		return ExportSummary{}, err
+	}
+	return ExportSummary{SourceEvidenceSHA256: sourceDigest, ExportSHA256: exportSHA256}, nil
+}
+
+// VerifyExport checks a redacted export without requiring its source bundle.
+// It validates the export contract, not the truth of the original evidence.
+func VerifyExport(exportPath string) (ExportVerificationSummary, error) {
+	export, err := readVerifiedRedactedDocument(exportPath)
+	if err != nil {
+		return ExportVerificationSummary{}, err
+	}
+	exportSHA256, err := redactedExportSHA256(export)
+	if err != nil {
+		return ExportVerificationSummary{}, fmt.Errorf("redacted export: %w", err)
+	}
+	return ExportVerificationSummary{
+		SchemaVersion:        export.SchemaVersion,
+		SourceEvidenceSHA256: export.SourceEvidenceSHA256,
+		ExportSHA256:         exportSHA256,
+	}, nil
+}
+
+// AskExport answers the one counterfactual question carried by a verified export.
+// It never reconstructs a question from redacted metadata or raw observations.
+func AskExport(exportPath, questionID string) (Answer, error) {
+	if _, ok := questionForID(questionID); !ok {
+		return Answer{}, errors.New("question ID is invalid")
+	}
+	if questionID != "counterfactual-change" {
+		return Answer{}, errors.New("redacted export cannot answer this question")
+	}
+	export, err := readVerifiedRedactedDocument(exportPath)
+	if err != nil {
+		return Answer{}, err
+	}
+	return redactedExportAnswer(export)
+}
+
+// FindExport returns one safe finding from a verified redacted export.
+// It never returns comparison values or requires the source bundle.
+func FindExport(exportPath, id string) (Finding, error) {
+	if !validFindingID(id) {
+		return Finding{}, errors.New("finding ID is invalid")
+	}
+	export, err := readVerifiedRedactedDocument(exportPath)
+	if err != nil {
+		return Finding{}, err
+	}
+	answer, err := redactedExportAnswer(export)
+	if err != nil {
+		return Finding{}, err
+	}
+	for _, difference := range export.Comparison.Differences {
+		if difference.ID == id {
+			return Finding{
+				Question:             answer.Question,
+				AnswerState:          answer.State,
+				Kind:                 "difference",
+				Classification:       difference.Kind,
+				ID:                   difference.ID,
+				Field:                difference.Field,
+				State:                difference.State,
+				Evidence:             slices.Clone(difference.Evidence),
+				SourceEvidenceSHA256: answer.SourceEvidenceSHA256,
+				ExportSHA256:         answer.ExportSHA256,
+			}, nil
+		}
+	}
+	for _, unknown := range export.Comparison.Unknowns {
+		if unknown.ID == id {
+			return Finding{
+				Question:             answer.Question,
+				AnswerState:          answer.State,
+				Kind:                 "unknown",
+				ID:                   unknown.ID,
+				Field:                unknown.Field,
+				State:                unknown.State,
+				Reason:               safeUnknownReason(unknown.Reason),
+				Evidence:             slices.Clone(unknown.Evidence),
+				SourceEvidenceSHA256: answer.SourceEvidenceSHA256,
+				ExportSHA256:         answer.ExportSHA256,
+			}, nil
+		}
+	}
+	return Finding{}, errors.New("finding not found")
+}
+
+func redactedExportAnswer(export redactedDocument) (Answer, error) {
+	catalogQuestion, ok := questionForID("counterfactual-change")
+	if !ok {
+		return Answer{}, errors.New("question catalog is invalid")
+	}
+	if export.AnswerState == "" {
+		return Answer{}, errors.New("redacted export has no counterfactual answer")
+	}
+	if export.AnswerState != evidence.Observed && export.AnswerState != evidence.Unknown {
+		return Answer{}, errors.New("redacted export counterfactual answer state is invalid")
+	}
+	exportSHA256, err := redactedExportSHA256(export)
+	if err != nil {
+		return Answer{}, fmt.Errorf("redacted export: %w", err)
+	}
+	findingIDs := redactedFindingIDs(export.Comparison)
+	unknownReason := ""
+	if export.AnswerState == evidence.Unknown {
+		for _, unknown := range export.Comparison.Unknowns {
+			if reason := safeUnknownReason(unknown.Reason); reason != "" {
+				unknownReason = reason
+				break
+			}
+		}
+	}
+	return Answer{
+		QuestionID:           "counterfactual-change",
+		Question:             catalogQuestion.Text,
+		State:                export.AnswerState,
+		Reason:               unknownReason,
+		FindingIDs:           findingIDs,
+		SourceEvidenceSHA256: export.SourceEvidenceSHA256,
+		ExportSHA256:         exportSHA256,
+	}, nil
+}
+
+func redactedFindingIDs(comparison redactedComparison) []string {
+	ids := make([]string, 0, len(comparison.Differences)+len(comparison.Unknowns))
+	for _, difference := range comparison.Differences {
+		if difference.ID != "" {
+			ids = append(ids, difference.ID)
+		}
+	}
+	for _, unknown := range comparison.Unknowns {
+		if unknown.ID != "" {
+			ids = append(ids, unknown.ID)
+		}
+	}
+	return ids
+}
+
+func readVerifiedRedactedDocument(exportPath string) (redactedDocument, error) {
+	if strings.TrimSpace(exportPath) == "" {
+		return redactedDocument{}, errors.New("export path is required")
+	}
+	data, err := readFileBounded(exportPath, maxOutputBytes)
+	if err != nil {
+		return redactedDocument{}, fmt.Errorf("redacted export: %w", err)
+	}
+	export, err := decodeRedactedDocument(data)
+	if err != nil {
+		return redactedDocument{}, fmt.Errorf("redacted export: %w", err)
+	}
+	if err := validateRedactedDocument(export); err != nil {
+		return redactedDocument{}, fmt.Errorf("redacted export: %w", err)
+	}
+	return export, nil
+}
+
+// Find verifies a bundle and returns one finding without observed values.
+func Find(runDir, id string) (Finding, error) {
+	if !validFindingID(id) {
+		return Finding{}, errors.New("finding ID is invalid")
+	}
+	evidence, _, err := verifyDocument(runDir)
+	if err != nil {
+		return Finding{}, err
+	}
+	for _, difference := range evidence.Comparison.Differences {
+		if difference.ID == id {
+			return Finding{
+				Question:       evidence.Question,
+				AnswerState:    evidence.AnswerState,
+				Kind:           "difference",
+				Classification: difference.Kind,
+				ID:             difference.ID,
+				Field:          difference.Field,
+				State:          difference.State,
+				Evidence:       slices.Clone(difference.Evidence),
+			}, nil
+		}
+	}
+	for _, unknown := range evidence.Comparison.Unknowns {
+		if unknown.ID == id {
+			return Finding{
+				Question:    evidence.Question,
+				AnswerState: evidence.AnswerState,
+				Kind:        "unknown",
+				ID:          unknown.ID,
+				Field:       unknown.Field,
+				State:       unknown.State,
+				Reason:      safeUnknownReason(unknown.Reason),
+				Evidence:    slices.Clone(unknown.Evidence),
+			}, nil
+		}
+	}
+	return Finding{}, errors.New("finding not found")
+}
+
+// Ask verifies a bundle and answers one bounded question without observed values.
+func Ask(runDir, questionID string) (Answer, error) {
+	catalogQuestion, ok := questionForID(questionID)
+	if !ok {
+		return Answer{}, errors.New("question ID is invalid")
+	}
+	verified, _, err := verifyDocument(runDir)
+	if err != nil {
+		return Answer{}, err
+	}
+	if verified.SchemaVersion != 7 || verified.Comparison.SchemaVersion != 5 {
+		return Answer{}, errors.New("question catalog requires current evidence schema")
+	}
+	findingIDs := comparisonFindingIDs(verified.Comparison)
+	unknownReason := ""
+	if verified.AnswerState == evidence.Unknown {
+		unknownReason = comparisonUnknownReason(verified.Comparison)
+	}
+	switch questionID {
+	case "counterfactual-change":
+		return Answer{
+			QuestionID: questionID,
+			Question:   catalogQuestion.Text,
+			State:      verified.AnswerState,
+			Reason:     unknownReason,
+			FindingIDs: findingIDs,
+		}, nil
+	case "capture-complete":
+		state := evidence.Observed
+		if len(verified.Comparison.Unknowns) > 0 {
+			state = evidence.Unknown
+		}
+		return Answer{
+			QuestionID: questionID,
+			Question:   catalogQuestion.Text,
+			State:      state,
+			Reason:     unknownReason,
+			FindingIDs: slices.Clone(findingIDs),
+		}, nil
+	case "source-integrity":
+		return Answer{
+			QuestionID: questionID,
+			Question:   catalogQuestion.Text,
+			State:      evidence.Observed,
+			FindingIDs: slices.Clone(findingIDs),
+		}, nil
+	default:
+		return Answer{}, errors.New("question ID is invalid")
+	}
+}
+
+func comparisonUnknownReason(comparison analysis.Comparison) string {
+	for _, unknown := range comparison.Unknowns {
+		if reason := safeUnknownReason(unknown.Reason); reason != "" {
+			return reason
+		}
+	}
+	return ""
+}
+
+// safeUnknownReason exposes only reasons owned by the current verifier.
+func safeUnknownReason(reason string) string {
+	if reason == treatmentStorageObservationUnknownReason || reason == treatmentNetworkObservationUnknownReason {
+		return reason
+	}
+	return ""
+}
+
+func questionForID(id string) (Question, bool) {
+	for _, question := range Questions() {
+		if question.ID == id {
+			return question, true
+		}
+	}
+	return Question{}, false
+}
+
+func comparisonFindingIDs(comparison analysis.Comparison) []string {
+	ids := make([]string, 0, len(comparison.Differences)+len(comparison.Unknowns))
+	for _, difference := range comparison.Differences {
+		ids = append(ids, difference.ID)
+	}
+	for _, unknown := range comparison.Unknowns {
+		ids = append(ids, unknown.ID)
+	}
+	return ids
+}
+
+func verifyDocument(runDir string) (document, Summary, error) {
+	evidence, summary, _, err := verifyDocumentWithOutput(runDir)
+	return evidence, summary, err
+}
+
+func verifyDocumentWithOutput(runDir string) (document, Summary, []byte, error) {
 	if strings.TrimSpace(runDir) == "" {
-		return Summary{}, errors.New("run directory is required")
+		return document{}, Summary{}, nil, errors.New("run directory is required")
+	}
+	existingEvidence, err := readFileBounded(filepath.Join(runDir, "evidence.json"), maxOutputBytes)
+	if err != nil {
+		return document{}, Summary{}, nil, fmt.Errorf("evidence output: %w", err)
+	}
+	outputSchemaVersion, err := evidenceOutputSchema(existingEvidence)
+	if err != nil {
+		return document{}, Summary{}, nil, fmt.Errorf("evidence output: %w", err)
+	}
+	evidence, summary, err := buildDocument(runDir, outputSchemaVersion == 7)
+	if err != nil {
+		return document{}, Summary{}, nil, err
+	}
+	evidenceData, err := encodeDocument(evidence)
+	if err != nil {
+		return document{}, Summary{}, nil, err
+	}
+	if !bytes.Equal(existingEvidence, evidenceData) {
+		return document{}, Summary{}, nil, errors.New("evidence output does not match verified artifacts")
+	}
+	existingReport, err := readFileBounded(filepath.Join(runDir, "report.md"), maxOutputBytes)
+	if err != nil {
+		return document{}, Summary{}, nil, fmt.Errorf("report output: %w", err)
+	}
+	reportData, err := encodeReport(evidence)
+	if err != nil {
+		return document{}, Summary{}, nil, err
+	}
+	if !bytes.Equal(existingReport, reportData) {
+		return document{}, Summary{}, nil, errors.New("report output does not match verified artifacts")
+	}
+	evidenceDigest := sha256.Sum256(existingEvidence)
+	summary.EvidenceSHA256 = hex.EncodeToString(evidenceDigest[:])
+	return evidence, summary, existingEvidence, nil
+}
+
+func buildDocument(runDir string, includeFindingIDs bool) (document, Summary, error) {
+	if strings.TrimSpace(runDir) == "" {
+		return document{}, Summary{}, errors.New("run directory is required")
 	}
 
 	baseline, err := loadSession(runDir, "baseline")
 	if err != nil {
-		return Summary{}, err
+		return document{}, Summary{}, err
 	}
 	treatment, err := loadSession(runDir, "treatment")
 	if err != nil {
-		return Summary{}, err
+		return document{}, Summary{}, err
 	}
 	if err := validatePair(baseline.record, treatment.record); err != nil {
-		return Summary{}, err
+		return document{}, Summary{}, err
+	}
+	environmentSHA256 := ""
+	if validSessionBindingSchema(baseline.record.SchemaVersion) {
+		environmentSHA256, err = adb.SessionEnvironmentSHA256(baseline.record)
+		if err != nil {
+			return document{}, Summary{}, fmt.Errorf("environment binding: %w", err)
+		}
 	}
 
 	baselineNormalized, err := analysis.Normalize(
@@ -103,7 +682,10 @@ func Write(runDir string) (Summary, error) {
 		bytes.NewReader(baseline.network),
 	)
 	if err != nil {
-		return Summary{}, fmt.Errorf("baseline: %w", err)
+		return document{}, Summary{}, fmt.Errorf("baseline: %w", err)
+	}
+	if err := validateAuthenticatedEvidence(baseline.record, baselineNormalized, "baseline"); err != nil {
+		return document{}, Summary{}, err
 	}
 	var comparison analysis.Comparison
 	var normalizations []string
@@ -113,34 +695,91 @@ func Write(runDir string) (Summary, error) {
 			bytes.NewReader(treatment.network),
 		)
 		if err != nil {
-			return Summary{}, fmt.Errorf("treatment: %w", err)
+			return document{}, Summary{}, fmt.Errorf("treatment: %w", err)
 		}
-		comparison = analysis.Compare(baselineNormalized, treatmentNormalized)
+		if err := validateAuthenticatedEvidence(treatment.record, treatmentNormalized, "treatment"); err != nil {
+			return document{}, Summary{}, err
+		}
+		comparison = analysis.Compare(
+			baselineNormalized,
+			treatmentNormalized,
+			baseline.record.VolatileFields,
+		)
 		normalizations = []string{
 			"decoded network body_base64",
 			"required storage and network payload equality per session",
 			"removed HTTP transport fields from semantic comparison",
 		}
+		for _, field := range comparison.NormalizedFields {
+			normalizations = append(
+				normalizations,
+				"removed declared volatile observation field "+field+" from comparison",
+			)
+		}
 	} else {
-		if _, err := analysis.NormalizeNetwork(bytes.NewReader(treatment.network)); err != nil {
-			return Summary{}, fmt.Errorf("treatment: %w", err)
+		unknownReason := treatmentStorageObservationUnknownReason
+		var treatmentAvailable analysis.Session
+		if len(treatment.network) == 0 {
+			unknownReason = treatmentNetworkObservationUnknownReason
+			normalizations = []string{
+				"withheld semantic comparison because treatment network evidence was unavailable",
+			}
+		} else {
+			treatmentAvailable, err = analysis.NormalizeNetwork(bytes.NewReader(treatment.network))
+			if err != nil {
+				return document{}, Summary{}, fmt.Errorf("treatment: %w", err)
+			}
+			if err := validateAuthenticatedEvidence(treatment.record, treatmentAvailable, "treatment"); err != nil {
+				// An incomplete authenticated session with unavailable or unbound
+				// challenge evidence is still a readable run, but it cannot support
+				// a semantic comparison. Preserve the artifact and report unknown.
+				treatmentAvailable = analysis.Session{}
+				normalizations = []string{
+					"decoded available network body_base64",
+					"required baseline storage and network payload equality",
+					"withheld semantic comparison because authenticated challenge evidence was unavailable",
+				}
+			} else {
+				normalizations = []string{
+					"decoded available network body_base64",
+					"required baseline storage and network payload equality",
+					"withheld semantic comparison without treatment storage",
+				}
+			}
 		}
-		comparison = incompleteTreatmentComparison()
-		normalizations = []string{
-			"decoded available network body_base64",
-			"required baseline storage and network payload equality",
-			"withheld semantic comparison without treatment storage",
-		}
+		comparison = incompleteTreatmentComparison(baselineNormalized, treatmentAvailable, unknownReason)
 	}
 
 	artifacts := []artifact{baseline.metadata}
 	artifacts = append(artifacts, baseline.artifacts...)
 	artifacts = append(artifacts, treatment.metadata)
 	artifacts = append(artifacts, treatment.artifacts...)
+	evidenceSchemaVersion := 4
+	question := ""
+	answerState := evidence.State("")
+	recordedAt := ""
+	if baseline.record.ManifestContractSHA256 != "" {
+		evidenceSchemaVersion = 6
+		question = "Did changing " + baseline.record.DeclaredVariable + " influence an observed output?"
+		answerState = evidence.Observed
+		recordedAt = baseline.record.StartedAt.UTC().Format(time.RFC3339Nano)
+		if !sessionComplete(treatment.record) {
+			answerState = evidence.Unknown
+		}
+		if includeFindingIDs {
+			evidenceSchemaVersion = 7
+			if err := assignFindingIDs(&comparison, artifacts); err != nil {
+				return document{}, Summary{}, err
+			}
+		}
+	}
 	evidence := document{
-		SchemaVersion:    3,
-		ManifestName:     baseline.record.ManifestName,
-		DeclaredVariable: baseline.record.DeclaredVariable,
+		SchemaVersion:          evidenceSchemaVersion,
+		ManifestName:           baseline.record.ManifestName,
+		DeclaredVariable:       baseline.record.DeclaredVariable,
+		ManifestContractSHA256: baseline.record.ManifestContractSHA256,
+		Question:               question,
+		AnswerState:            answerState,
 		Target: target{
 			ADBVersion:         baseline.record.ADBVersion,
 			Device:             baseline.record.Device,
@@ -157,20 +796,321 @@ func Write(runDir string) (Summary, error) {
 		Comparison:     comparison,
 	}
 
-	evidenceData, err := json.MarshalIndent(evidence, "", "  ")
-	if err != nil {
-		return Summary{}, fmt.Errorf("encode evidence: %w", err)
-	}
-	evidenceData = append(evidenceData, '\n')
-	reportData := renderReport(evidence)
-	if err := writeOutputs(runDir, evidenceData, reportData); err != nil {
-		return Summary{}, err
-	}
-	return Summary{
-		ManifestName: baseline.record.ManifestName,
-		Differences:  len(comparison.Differences),
-		Unknowns:     len(comparison.Unknowns),
+	return evidence, Summary{
+		ManifestName:             evidence.ManifestName,
+		DeclaredVariable:         evidence.DeclaredVariable,
+		Differences:              len(comparison.Differences),
+		Unknowns:                 len(comparison.Unknowns),
+		Question:                 evidence.Question,
+		AnswerState:              evidence.AnswerState,
+		ManifestContractSHA256:   evidence.ManifestContractSHA256,
+		Authenticated:            validSessionBindingSchema(baseline.record.SchemaVersion) && validSessionBindingSchema(treatment.record.SchemaVersion),
+		EnvironmentSHA256:        environmentSHA256,
+		ProcedureSHA256:          baseline.record.ProcedureSHA256,
+		AriadneRevision:          evidence.Target.AriadneRevision,
+		AriadneModified:          evidence.Target.AriadneModified,
+		RecordedAt:               recordedAt,
+		TargetPackage:            evidence.Target.Package,
+		TargetDevice:             evidence.Target.Device,
+		TargetADBVersion:         evidence.Target.ADBVersion,
+		TargetAndroidAPI:         evidence.Target.AndroidAPI,
+		TargetArchitecture:       evidence.Target.Architecture,
+		TargetPackageVersionCode: evidence.Target.PackageVersionCode,
+		TargetPackageSHA256:      evidence.Target.PackageSHA256,
+		Normalizations:           slices.Clone(evidence.Normalizations),
 	}, nil
+}
+
+func evidenceOutputSchema(data []byte) (int, error) {
+	if err := jsoncheck.RejectDuplicateKeys(data); err != nil {
+		return 0, fmt.Errorf("invalid schema_version: %w", err)
+	}
+	var header struct {
+		SchemaVersion int `json:"schema_version"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	if err := decoder.Decode(&header); err != nil {
+		return 0, fmt.Errorf("invalid schema_version: %w", err)
+	}
+	var trailing json.RawMessage
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return 0, errors.New("invalid schema_version: trailing data")
+	}
+	if header.SchemaVersion != 4 && header.SchemaVersion != 6 && header.SchemaVersion != 7 {
+		return 0, errors.New("unsupported schema_version")
+	}
+	return header.SchemaVersion, nil
+}
+
+func assignFindingIDs(comparison *analysis.Comparison, artifacts []artifact) error {
+	digests := make(map[string]string, len(artifacts))
+	for _, item := range artifacts {
+		digests[item.Path] = item.SHA256
+	}
+	for index := range comparison.Differences {
+		difference := &comparison.Differences[index]
+		id, err := findingID(
+			"difference",
+			difference.Field,
+			string(difference.State),
+			difference.Kind,
+			difference.Evidence,
+			digests,
+		)
+		if err != nil {
+			return err
+		}
+		difference.ID = id
+	}
+	for index := range comparison.Unknowns {
+		unknown := &comparison.Unknowns[index]
+		id, err := findingID(
+			"unknown",
+			unknown.Field,
+			string(unknown.State),
+			unknown.Reason,
+			unknown.Evidence,
+			digests,
+		)
+		if err != nil {
+			return err
+		}
+		unknown.ID = id
+	}
+	comparison.SchemaVersion = 5
+	return nil
+}
+
+func findingID(
+	kind, field, state, qualifier string,
+	references []string,
+	digests map[string]string,
+) (string, error) {
+	if len(references) == 0 {
+		return "", fmt.Errorf("finding %q has no evidence references", field)
+	}
+	parts := []string{"ariadne:finding:v1", kind, field, state, qualifier}
+	for _, reference := range references {
+		path, _, ok := strings.Cut(reference, "#")
+		if !ok || path == "" {
+			return "", fmt.Errorf("finding %q has invalid evidence reference", field)
+		}
+		digest, ok := digests[path]
+		if !ok {
+			return "", fmt.Errorf("finding %q references missing artifact %q", field, path)
+		}
+		parts = append(parts, reference, digest)
+	}
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+	return "sha256:" + hex.EncodeToString(sum[:]), nil
+}
+
+func encodeDocument(evidence document) ([]byte, error) {
+	data, err := json.MarshalIndent(evidence, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("encode evidence: %w", err)
+	}
+	data = append(data, '\n')
+	if len(data) > maxOutputBytes {
+		return nil, fmt.Errorf("evidence output exceeds %d-byte limit", maxOutputBytes)
+	}
+	return data, nil
+}
+
+func redactedComparisonFor(comparison analysis.Comparison) redactedComparison {
+	redacted := redactedComparison{
+		SchemaVersion:    comparison.SchemaVersion,
+		UnchangedFields:  slices.Clone(comparison.UnchangedFields),
+		NormalizedFields: slices.Clone(comparison.NormalizedFields),
+		Differences:      make([]redactedDifference, 0, len(comparison.Differences)),
+		Unknowns:         make([]redactedUnknown, 0, len(comparison.Unknowns)),
+	}
+	for _, difference := range comparison.Differences {
+		redacted.Differences = append(redacted.Differences, redactedDifference{
+			ID:       difference.ID,
+			Field:    difference.Field,
+			Kind:     difference.Kind,
+			State:    difference.State,
+			Evidence: slices.Clone(difference.Evidence),
+		})
+	}
+	for _, unknown := range comparison.Unknowns {
+		redacted.Unknowns = append(redacted.Unknowns, redactedUnknown{
+			ID:       unknown.ID,
+			Field:    unknown.Field,
+			State:    unknown.State,
+			Reason:   safeUnknownReason(unknown.Reason),
+			Evidence: slices.Clone(unknown.Evidence),
+		})
+	}
+	return redacted
+}
+
+func encodeRedactedDocument(export redactedDocument) ([]byte, error) {
+	data, err := json.MarshalIndent(export, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("encode redacted export: %w", err)
+	}
+	data = append(data, '\n')
+	if len(data) > maxOutputBytes {
+		return nil, fmt.Errorf("redacted export exceeds %d-byte limit", maxOutputBytes)
+	}
+	return data, nil
+}
+
+func redactedExportSHA256(export redactedDocument) (string, error) {
+	data, err := json.Marshal(export)
+	if err != nil {
+		return "", fmt.Errorf("canonicalize redacted export: %w", err)
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+func decodeRedactedDocument(data []byte) (redactedDocument, error) {
+	if err := jsoncheck.RejectDuplicateKeys(data); err != nil {
+		return redactedDocument{}, err
+	}
+	var export redactedDocument
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&export); err != nil {
+		return redactedDocument{}, fmt.Errorf("decode: %w", err)
+	}
+	var trailing json.RawMessage
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return redactedDocument{}, errors.New("trailing data")
+	}
+	return export, nil
+}
+
+func validateRedactedDocument(export redactedDocument) error {
+	if export.SchemaVersion != redactedExportSchemaVersion {
+		return errors.New("unsupported schema_version")
+	}
+	if !export.Redacted {
+		return errors.New("redacted marker is required")
+	}
+	if !validDigest(export.SourceEvidenceSHA256) {
+		return errors.New("source_evidence_sha256 is invalid")
+	}
+	switch export.SourceEvidenceSchemaVersion {
+	case 4, 6, 7:
+	default:
+		return errors.New("unsupported source_evidence_schema_version")
+	}
+	if export.ManifestName == "" || !validMetadataValue(export.ManifestName) ||
+		export.DeclaredVariable == "" || !validMetadataValue(export.DeclaredVariable) {
+		return errors.New("manifest metadata is invalid")
+	}
+	if export.ManifestContractSHA256 != "" && !validDigest(export.ManifestContractSHA256) {
+		return errors.New("manifest_contract_sha256 is invalid")
+	}
+	if export.AnswerState != "" && !export.AnswerState.Valid() {
+		return errors.New("answer_state is invalid")
+	}
+	if export.Target.AndroidAPI < 1 || export.Target.AndroidAPI > 999 ||
+		!validMetadataValue(export.Target.Architecture) ||
+		!validMetadataValue(export.Target.Package) ||
+		export.Target.PackageVersionCode == 0 ||
+		!validDigest(export.Target.PackageSHA256) ||
+		!validRevision(export.Target.AriadneRevision) {
+		return errors.New("target metadata is invalid")
+	}
+	for _, item := range export.Artifacts {
+		if item.Path == "" || item.SizeBytes < 0 || !validDigest(item.SHA256) {
+			return errors.New("artifact metadata is invalid")
+		}
+	}
+	expectedComparisonSchema := 4
+	if export.SourceEvidenceSchemaVersion == 7 {
+		expectedComparisonSchema = 5
+	}
+	if export.Comparison.SchemaVersion != expectedComparisonSchema {
+		return errors.New("comparison schema_version is incompatible")
+	}
+	for _, field := range append(
+		slices.Clone(export.Comparison.UnchangedFields),
+		append(slices.Clone(export.Comparison.NormalizedFields), differenceFields(export.Comparison.Differences)...)...,
+	) {
+		if !validExportField(field) {
+			return errors.New("comparison field is invalid")
+		}
+	}
+	for _, difference := range export.Comparison.Differences {
+		if !validExportField(difference.Field) ||
+			(difference.Kind != "added" && difference.Kind != "removed" && difference.Kind != "changed") ||
+			!difference.State.Valid() ||
+			(difference.ID != "" && !validFindingID(difference.ID)) ||
+			len(difference.Evidence) == 0 {
+			return errors.New("difference is invalid")
+		}
+	}
+	for _, unknown := range export.Comparison.Unknowns {
+		if !validExportField(unknown.Field) ||
+			unknown.State != evidence.Unknown ||
+			(unknown.ID != "" && !validFindingID(unknown.ID)) ||
+			(unknown.Reason != "" && safeUnknownReason(unknown.Reason) == "") ||
+			len(unknown.Evidence) == 0 {
+			return errors.New("unknown is invalid")
+		}
+	}
+	if export.SourceEvidenceSchemaVersion == 7 {
+		for _, difference := range export.Comparison.Differences {
+			if difference.ID == "" {
+				return errors.New("current difference ID is required")
+			}
+		}
+		for _, unknown := range export.Comparison.Unknowns {
+			if unknown.ID == "" {
+				return errors.New("current unknown ID is required")
+			}
+		}
+	} else {
+		for _, difference := range export.Comparison.Differences {
+			if difference.ID != "" {
+				return errors.New("legacy difference ID is invalid")
+			}
+		}
+		for _, unknown := range export.Comparison.Unknowns {
+			if unknown.ID != "" {
+				return errors.New("legacy unknown ID is invalid")
+			}
+		}
+	}
+	return nil
+}
+
+func validExportField(field string) bool {
+	return experiment.ValidateVolatileFields([]string{field}) == nil
+}
+
+func validateAuthenticatedEvidence(record adb.SessionRecord, session analysis.Session, kind string) error {
+	if record.SchemaVersion < 8 {
+		return nil
+	}
+	if !session.HasChallenge() {
+		return fmt.Errorf("%s: authenticated challenge evidence is unavailable", kind)
+	}
+	if session.ChallengeCommitment() != record.ChallengeCommitment {
+		return fmt.Errorf("%s: authenticated challenge evidence is not bound to session", kind)
+	}
+	return nil
+}
+func differenceFields(differences []redactedDifference) []string {
+	fields := make([]string, 0, len(differences))
+	for _, difference := range differences {
+		fields = append(fields, difference.Field)
+	}
+	return fields
+}
+
+func encodeReport(evidence document) ([]byte, error) {
+	data := renderReport(evidence)
+	if len(data) > maxOutputBytes {
+		return nil, fmt.Errorf("report output exceeds %d-byte limit", maxOutputBytes)
+	}
+	return data, nil
 }
 
 func loadSession(runDir, kind string) (loadedSession, error) {
@@ -214,7 +1154,9 @@ func loadSession(runDir, kind string) (loadedSession, error) {
 		},
 	}
 	expectedCount := len(expected)
-	if !sessionComplete(record) {
+	if !sessionComplete(record) && record.FailureStage == "capture_network" && len(record.Artifacts) == 0 {
+		expectedCount = 0
+	} else if !sessionComplete(record) && record.FailureStage != "cleanup_input" {
 		expectedCount = 1
 	}
 	if len(record.Artifacts) != expectedCount {
@@ -266,11 +1208,21 @@ func decodeSession(data []byte, record *adb.SessionRecord) error {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(data, &fields); err == nil {
 		allowed := map[string]struct{}{
-			"schema_version":       {},
-			"kind":                 {},
-			"manifest_name":        {},
-			"declared_variable":    {},
-			"persona_fields":       {},
+			"schema_version":           {},
+			"kind":                     {},
+			"manifest_name":            {},
+			"declared_variable":        {},
+			"persona_fields":           {},
+			"volatile_fields":          {},
+			"tap_resource_id":          {},
+			"manifest_contract_sha256": {},
+			"challenge_commitment":     {},
+			"role":                     {},
+			"order":                    {},
+			"procedure_sha256":         {},
+
+			"reset_policy":         {},
+			"binding_sha256":       {},
 			"adb_version":          {},
 			"device":               {},
 			"package":              {},
@@ -307,7 +1259,15 @@ func decodeSession(data []byte, record *adb.SessionRecord) error {
 }
 
 func validateSession(record adb.SessionRecord, kind string) error {
-	if (record.SchemaVersion != 2 && record.SchemaVersion != 3) ||
+	if (record.SchemaVersion != 2 &&
+		record.SchemaVersion != 3 &&
+		record.SchemaVersion != 4 &&
+		record.SchemaVersion != 5 &&
+		record.SchemaVersion != 6 &&
+		record.SchemaVersion != 7 &&
+		record.SchemaVersion != 8 &&
+		record.SchemaVersion != adb.LegacyAuthenticatedSessionSchemaVersion &&
+		record.SchemaVersion != adb.AuthenticatedSessionSchemaVersion) ||
 		record.Kind != kind {
 		return errors.New("schema_version or kind is invalid")
 	}
@@ -327,6 +1287,55 @@ func validateSession(record adb.SessionRecord, kind string) error {
 	}
 	if record.PersonaFields < 1 {
 		return errors.New("persona_fields is invalid")
+	}
+	if record.SchemaVersion < 4 && len(record.VolatileFields) > 0 {
+		return errors.New("legacy session volatile_fields is invalid")
+	}
+	if err := experiment.ValidateVolatileFields(record.VolatileFields); err != nil {
+		return err
+	}
+	if record.SchemaVersion < 5 && record.TapResourceID != "" {
+		return errors.New("legacy session tap_resource_id is invalid")
+	}
+	if record.SchemaVersion >= 5 && !experiment.ValidResourceID(record.TapResourceID) {
+		return errors.New("tap_resource_id is invalid")
+	}
+	if record.SchemaVersion < 6 && record.ManifestContractSHA256 != "" {
+		return errors.New("legacy session manifest_contract_sha256 is invalid")
+	}
+	if record.SchemaVersion >= 6 && !validDigest(record.ManifestContractSHA256) {
+		return errors.New("manifest_contract_sha256 is invalid")
+	}
+	if record.SchemaVersion < 8 {
+		if record.ChallengeCommitment != "" || record.Role != "" || record.Order != "" || record.ProcedureSHA256 != "" {
+			return errors.New("legacy session authentication fields are invalid")
+		}
+	} else {
+		if !validDigest(record.ChallengeCommitment) {
+			return errors.New("challenge_commitment is invalid")
+		}
+		if record.Role != kind {
+			return errors.New("session role is invalid")
+		}
+		if record.Order != adb.ReplicationOrderBaselineTreatment && record.Order != adb.ReplicationOrderTreatmentBaseline {
+			return errors.New("session order is invalid")
+		}
+		if !validDigest(record.ProcedureSHA256) {
+			return errors.New("procedure_sha256 is invalid")
+		}
+		if record.SchemaVersion <= adb.LegacyAuthenticatedSessionSchemaVersion {
+			if record.ProcedureSHA256 != record.ManifestContractSHA256 {
+				return errors.New("legacy procedure_sha256 is invalid")
+			}
+		} else {
+			expectedProcedure, err := adb.AndroidProcedureSHA256()
+			if err != nil || record.ProcedureSHA256 != expectedProcedure {
+				return errors.New("procedure_sha256 is not a reviewed Android procedure")
+			}
+		}
+	}
+	if !slices.IsSorted(record.VolatileFields) {
+		return errors.New("volatile_fields are not canonical")
 	}
 	if record.AndroidAPI < 1 || record.AndroidAPI > 999 {
 		return errors.New("android_api is invalid")
@@ -359,21 +1368,30 @@ func validateSession(record adb.SessionRecord, kind string) error {
 			if !adb.ValidFailureStage(record.FailureStage) {
 				return errors.New("incomplete session failure_stage is invalid")
 			}
-			if record.FailureStage != "capture_storage" {
+			if record.FailureStage != "capture_storage" &&
+				(record.SchemaVersion < 8 || (record.FailureStage != "capture_network" && record.FailureStage != "cleanup_input")) {
 				return fmt.Errorf("session is incomplete at %s", record.FailureStage)
 			}
 		default:
 			return errors.New("session status is invalid")
 		}
 	}
-	if len(record.Steps) != len(expectedSteps) {
+	steps := expectedSteps
+	if record.SchemaVersion < 5 {
+		steps = legacyExpectedSteps
+	}
+	if len(record.Steps) != len(steps) {
 		return errors.New("step sequence is incomplete")
 	}
 	previous := record.StartedAt
-	for index, expected := range expectedSteps {
+	for index, expected := range steps {
 		step := record.Steps[index]
 		statusValid := step.Status == "ok" && step.ExitCode == 0
-		if !sessionComplete(record) && expected == "capture_storage" {
+		if !sessionComplete(record) && expected == "capture_storage" &&
+			(record.FailureStage == "capture_storage" || (record.SchemaVersion >= 8 && record.FailureStage == "capture_network")) {
+			statusValid = step.Status == "error" && step.ExitCode != 0
+		}
+		if !sessionComplete(record) && record.SchemaVersion >= 8 && expected == "capture_network" && record.FailureStage == "capture_network" {
 			statusValid = step.Status == "error" && step.ExitCode != 0
 		}
 		if step.Name != expected ||
@@ -385,17 +1403,44 @@ func validateSession(record adb.SessionRecord, kind string) error {
 			record.FinishedAt.Before(step.FinishedAt) {
 			return fmt.Errorf("step %q is invalid", expected)
 		}
+		if record.SchemaVersion < 7 && step.UIHierarchySHA256 != "" {
+			return errors.New("legacy session ui_hierarchy_sha256 is invalid")
+		}
+		if record.SchemaVersion >= 7 {
+			if expected == "interact" && step.Status == "ok" && !validDigest(step.UIHierarchySHA256) {
+				return errors.New("interact UI hierarchy SHA-256 is invalid")
+			}
+			if expected != "interact" && step.UIHierarchySHA256 != "" {
+				return fmt.Errorf("step %q UI hierarchy SHA-256 is invalid", expected)
+			}
+		}
 		previous = step.FinishedAt
+	}
+	if record.SchemaVersion < adb.LegacyAuthenticatedSessionSchemaVersion {
+		if record.ResetPolicy != "" || record.BindingSHA256 != "" {
+			return errors.New("legacy session binding fields are invalid")
+		}
+	} else {
+		if record.ResetPolicy != adb.ReplicationResetPolicy || !validDigest(record.BindingSHA256) {
+			return errors.New("authenticated session binding is invalid")
+		}
+		expectedBinding, err := adb.SessionBindingSHA256(record)
+		if err != nil || expectedBinding != record.BindingSHA256 {
+			return errors.New("authenticated session binding does not match metadata")
+		}
 	}
 	return nil
 }
 
 func validatePair(baseline, treatment adb.SessionRecord) error {
+	sessionsOverlap := baseline.StartedAt.Before(treatment.FinishedAt) &&
+		treatment.StartedAt.Before(baseline.FinishedAt)
 	if !sessionComplete(baseline) ||
 		baseline.SchemaVersion != treatment.SchemaVersion ||
 		baseline.ManifestName != treatment.ManifestName ||
 		baseline.DeclaredVariable != treatment.DeclaredVariable ||
 		baseline.PersonaFields != treatment.PersonaFields ||
+		!slices.Equal(baseline.VolatileFields, treatment.VolatileFields) ||
 		baseline.ADBVersion != treatment.ADBVersion ||
 		baseline.Device != treatment.Device ||
 		baseline.Package != treatment.Package ||
@@ -405,8 +1450,17 @@ func validatePair(baseline, treatment adb.SessionRecord) error {
 		baseline.PackageSHA256 != treatment.PackageSHA256 ||
 		baseline.AriadneRevision != treatment.AriadneRevision ||
 		baseline.AriadneModified != treatment.AriadneModified ||
-		treatment.StartedAt.Before(baseline.FinishedAt) {
+		baseline.TapResourceID != treatment.TapResourceID ||
+		baseline.ManifestContractSHA256 != treatment.ManifestContractSHA256 ||
+		sessionsOverlap {
 		return errors.New("baseline and treatment session metadata disagree")
+	}
+	if baseline.SchemaVersion >= 8 &&
+		(baseline.Role != "baseline" || treatment.Role != "treatment" ||
+			baseline.Order != treatment.Order ||
+			baseline.ProcedureSHA256 != treatment.ProcedureSHA256 ||
+			baseline.ChallengeCommitment == treatment.ChallengeCommitment) {
+		return errors.New("authenticated baseline and treatment metadata disagree")
 	}
 	return nil
 }
@@ -415,25 +1469,47 @@ func sessionComplete(record adb.SessionRecord) bool {
 	return record.SchemaVersion == 2 || record.Status == "complete"
 }
 
-func incompleteTreatmentComparison() analysis.Comparison {
-	unknowns := make([]analysis.Unknown, 0, 2)
-	for _, field := range []string{"region", "variant"} {
+func incompleteTreatmentComparison(
+	baseline, treatment analysis.Session,
+	unknownReason string,
+) analysis.Comparison {
+	fields := make(map[string]struct{}, len(baseline.Fields)+len(treatment.Fields))
+	for field := range baseline.Fields {
+		fields[field] = struct{}{}
+	}
+	for field := range treatment.Fields {
+		fields[field] = struct{}{}
+	}
+
+	unknowns := make([]analysis.Unknown, 0, len(fields))
+	for _, field := range slices.Sorted(maps.Keys(fields)) {
+		references := make([]string, 0, 3)
+		if _, ok := baseline.Fields[field]; ok {
+			references = append(
+				references,
+				"baseline/observations/storage.json#/"+field,
+				"baseline/observations/network.json#decoded-body/"+field,
+			)
+		}
+		if _, ok := treatment.Fields[field]; ok {
+			references = append(
+				references,
+				"treatment/observations/network.json#decoded-body/"+field,
+			)
+		}
 		unknowns = append(unknowns, analysis.Unknown{
-			Field:  field,
-			State:  evidence.Unknown,
-			Reason: "treatment storage observation was not captured",
-			Evidence: []string{
-				"baseline/observations/storage.json#/" + field,
-				"baseline/observations/network.json#decoded-body/" + field,
-				"treatment/observations/network.json#decoded-body/" + field,
-			},
+			Field:    field,
+			State:    evidence.Unknown,
+			Reason:   unknownReason,
+			Evidence: references,
 		})
 	}
 	return analysis.Comparison{
-		SchemaVersion:   2,
-		UnchangedFields: make([]string, 0),
-		Differences:     make([]analysis.Difference, 0),
-		Unknowns:        unknowns,
+		SchemaVersion:    4,
+		UnchangedFields:  make([]string, 0),
+		NormalizedFields: make([]string, 0),
+		Differences:      make([]analysis.Difference, 0),
+		Unknowns:         unknowns,
 	}
 }
 
@@ -449,12 +1525,85 @@ func artifactByPath(artifacts []adb.Artifact, path string) (adb.Artifact, bool) 
 	return found, count == 1
 }
 
+var errUnsafePath = errors.New("unsafe path")
+
+func pathSafetyError(info os.FileInfo) error {
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("symbolic links are not allowed: %w", errUnsafePath)
+	}
+	if info.Mode()&os.ModeIrregular != 0 {
+		return fmt.Errorf("reparse points and other irregular path components are not allowed: %w", errUnsafePath)
+	}
+	return nil
+}
+
+// IsPathSafetyError reports whether err indicates a rejected symlink, reparse
+// point, or path replacement during safe file opening.
+func IsPathSafetyError(err error) bool {
+	return errors.Is(err, errUnsafePath)
+}
+
+func lstatNoSymlinkPath(path string) (os.FileInfo, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	volume := filepath.VolumeName(absolute)
+	remainder := strings.TrimPrefix(absolute, volume)
+	current := volume
+	separator := string(filepath.Separator)
+	if strings.HasPrefix(remainder, separator) {
+		current += separator
+		remainder = strings.TrimPrefix(remainder, separator)
+	}
+	if remainder == "" {
+		return os.Lstat(current)
+	}
+
+	var info os.FileInfo
+	for _, component := range strings.Split(remainder, separator) {
+		if component == "" || component == "." {
+			continue
+		}
+		current = filepath.Join(current, component)
+		info, err = os.Lstat(current)
+		if err != nil {
+			return nil, err
+		}
+		if err := pathSafetyError(info); err != nil {
+			return nil, err
+		}
+	}
+	return info, nil
+}
+
 func readFileBounded(path string, limit int64) ([]byte, error) {
+	info, err := lstatNoSymlinkPath(path)
+	if err != nil {
+		return nil, fmt.Errorf("open: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("open: regular file required: %w", errUnsafePath)
+	}
 	file, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open: %w", err)
 	}
 	defer file.Close()
+	openedInfo, err := file.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("stat after open: %w", err)
+	}
+	if !os.SameFile(info, openedInfo) {
+		return nil, fmt.Errorf("open: path changed during verification: %w", errUnsafePath)
+	}
+	currentInfo, err := lstatNoSymlinkPath(path)
+	if err != nil {
+		return nil, fmt.Errorf("recheck after open: %w", err)
+	}
+	if !currentInfo.Mode().IsRegular() || !os.SameFile(currentInfo, openedInfo) {
+		return nil, fmt.Errorf("open: path changed during verification: %w", errUnsafePath)
+	}
 	data, err := io.ReadAll(io.LimitReader(file, limit+1))
 	if err != nil {
 		return nil, fmt.Errorf("read: %w", err)
@@ -465,6 +1614,12 @@ func readFileBounded(path string, limit int64) ([]byte, error) {
 	return data, nil
 }
 
+// ReadBoundedFile reads one regular file through the bundle's no-symlink,
+// bounded reader. Internal consumers use this when they need the same path
+// safety contract without parsing a bundle.
+func ReadBoundedFile(path string, limit int64) ([]byte, error) {
+	return readFileBounded(path, limit)
+}
 func artifactFor(path string, data []byte) artifact {
 	sum := sha256.Sum256(data)
 	return artifact{
@@ -477,6 +1632,11 @@ func artifactFor(path string, data []byte) artifact {
 func validDigest(value string) bool {
 	decoded, err := hex.DecodeString(value)
 	return err == nil && len(decoded) == sha256.Size && value == strings.ToLower(value)
+}
+
+func validFindingID(value string) bool {
+	const prefix = "sha256:"
+	return strings.HasPrefix(value, prefix) && validDigest(value[len(prefix):])
 }
 
 func validMetadataValue(value string) bool {
@@ -507,6 +1667,17 @@ func renderReport(evidence document) []byte {
 	report.WriteString("# Evidence Report\n\n")
 	fmt.Fprintf(&report, "- Manifest: %s\n", code(evidence.ManifestName))
 	fmt.Fprintf(&report, "- Declared variable: %s\n", code(evidence.DeclaredVariable))
+	if evidence.ManifestContractSHA256 != "" {
+		fmt.Fprintf(
+			&report,
+			"- Manifest contract SHA-256: %s\n",
+			code(evidence.ManifestContractSHA256),
+		)
+	}
+	if evidence.Question != "" {
+		fmt.Fprintf(&report, "- Question: %s\n", code(evidence.Question))
+		fmt.Fprintf(&report, "- Answer state: %s\n", code(string(evidence.AnswerState)))
+	}
 	fmt.Fprintf(&report, "- Device: %s\n", code(evidence.Target.Device))
 	fmt.Fprintf(&report, "- Android API: %d\n", evidence.Target.AndroidAPI)
 	fmt.Fprintf(&report, "- Architecture: %s\n", code(evidence.Target.Architecture))
@@ -529,9 +1700,17 @@ func renderReport(evidence document) []byte {
 	}
 	for _, difference := range evidence.Comparison.Differences {
 		fmt.Fprintf(&report, "\n### %s\n\n", code(difference.Field))
+		if difference.ID != "" {
+			fmt.Fprintf(&report, "- Finding ID: %s\n", code(difference.ID))
+		}
 		fmt.Fprintf(&report, "- State: %s\n", code(string(difference.State)))
-		fmt.Fprintf(&report, "- Baseline: %s\n", code(difference.Baseline))
-		fmt.Fprintf(&report, "- Treatment: %s\n", code(difference.Treatment))
+		fmt.Fprintf(&report, "- Kind: %s\n", code(difference.Kind))
+		if difference.Kind != "added" {
+			fmt.Fprintf(&report, "- Baseline: %s\n", code(difference.Baseline))
+		}
+		if difference.Kind != "removed" {
+			fmt.Fprintf(&report, "- Treatment: %s\n", code(difference.Treatment))
+		}
 		report.WriteString("- Evidence:\n")
 		for _, reference := range difference.Evidence {
 			fmt.Fprintf(&report, "  - %s\n", code(reference))
@@ -542,6 +1721,9 @@ func renderReport(evidence document) []byte {
 		report.WriteString("\n## Unknowns\n")
 		for _, unknown := range evidence.Comparison.Unknowns {
 			fmt.Fprintf(&report, "\n### %s\n\n", code(unknown.Field))
+			if unknown.ID != "" {
+				fmt.Fprintf(&report, "- Finding ID: %s\n", code(unknown.ID))
+			}
 			fmt.Fprintf(&report, "- State: %s\n", code(string(unknown.State)))
 			fmt.Fprintf(&report, "- Reason: %s\n", html.EscapeString(unknown.Reason))
 			report.WriteString("- Available evidence:\n")
@@ -593,26 +1775,8 @@ func writeOutputs(runDir string, evidence, report []byte) error {
 }
 
 func writeExclusive(path string, data []byte) error {
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return fmt.Errorf("create %s: %w", filepath.Base(path), err)
-	}
-	remove := true
-	defer func() {
-		_ = file.Close()
-		if remove {
-			_ = os.Remove(path)
-		}
-	}()
-	if _, err := file.Write(data); err != nil {
+	if err := securefs.WriteExclusiveExistingParent(path, data, 0o600); err != nil {
 		return fmt.Errorf("write %s: %w", filepath.Base(path), err)
 	}
-	if err := file.Sync(); err != nil {
-		return fmt.Errorf("sync %s: %w", filepath.Base(path), err)
-	}
-	if err := file.Close(); err != nil {
-		return fmt.Errorf("close %s: %w", filepath.Base(path), err)
-	}
-	remove = false
 	return nil
 }
