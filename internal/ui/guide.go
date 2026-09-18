@@ -97,7 +97,7 @@ var guideTemplate = template.Must(template.New("guide").Parse(`<!doctype html>
     <details>
       <summary>See all reviewed category labels</summary>
       <div class="cards">
-      {{range .}}
+      {{range .Categories}}
         <article class="card"><h3><strong>{{.Label}}</strong></h3><p><code>{{.ID}}</code></p><p>{{.Description}}</p></article>
       {{end}}
       </div>
@@ -107,8 +107,8 @@ var guideTemplate = template.Must(template.New("guide").Parse(`<!doctype html>
   <section class="panel" aria-labelledby="start-title">
     <p class="eyebrow">Start with a saved investigation</p>
     <h2 id="start-title">Choose the question you want answered.</h2>
-    <p>For the current weather example, Ariadne compares precise, city-level, and denied location access. It reports the observed request path separately from whether a local forecast still worked.</p>
-    <div class="links"><a class="button" href="/weather">Open weather investigation <span aria-hidden="true">→</span></a><a class="button" href="/">Browse all saved evidence <span aria-hidden="true">→</span></a></div>
+    {{if .WeatherAvailable}}<p>For the current weather example, Ariadne compares precise, city-level, and denied location access. It reports the observed request path separately from whether a local forecast still worked.</p>{{else}}<p>Open a saved investigation from the evidence configured for this review.</p>{{end}}
+    <div class="links">{{if .WeatherAvailable}}<a class="button" href="/weather">Open weather investigation <span aria-hidden="true">→</span></a>{{end}}<a class="button" href="/">Browse all saved evidence <span aria-hidden="true">→</span></a></div>
     <details><summary>What Ariadne does not claim</summary><p class="muted">A local review page cannot see a company's private server logs, unsupported browser channels, or activity that was never captured. It does not monitor the rest of your device, identify an organization from a domain label, or turn a changed result into a causal proof.</p></details>
   </section>
 
@@ -126,7 +126,11 @@ func (h handler) handleGuide(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := guideTemplate.Execute(w, trace.CategoryDefinitions()); err != nil {
+	data := struct {
+		Categories       []trace.CategoryDefinition
+		WeatherAvailable bool
+	}{trace.CategoryDefinitions(), h.weatherPath != ""}
+	if err := guideTemplate.Execute(w, data); err != nil {
 		http.Error(w, "page unavailable", http.StatusInternalServerError)
 	}
 }

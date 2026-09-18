@@ -143,6 +143,10 @@ func TestSourceAdapterMeaningKeepsUnknownsExplicit(t *testing.T) {
 		t.Fatalf("partial meaning = %q", got)
 	}
 	empty := complete
+	partial.Receipt.Events = 0
+	if got := sourceAdapterMeaning(partial); got != "No supported observations were reported; incomplete coverage means missing observations are unknown." {
+		t.Fatalf("empty partial meaning = %q", got)
+	}
 	empty.Receipt.Events = 0
 	if got := sourceAdapterMeaning(empty); got != "No supported observations were reported; that is not proof that no information left the source." {
 		t.Fatalf("empty meaning = %q", got)

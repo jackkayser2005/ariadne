@@ -54,7 +54,7 @@ func traceEvidenceMeaning(value any) string {
 
 func traceCoverageMeaning(value any) string {
 	switch fmt.Sprint(value) {
-	case "complete":
+	case "complete", "observed":
 		return "The declared channels were covered for this retained trace."
 	case "partial":
 		return "Some declared channels were missing, so absence remains unknown."

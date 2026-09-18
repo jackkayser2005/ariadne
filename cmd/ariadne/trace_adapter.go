@@ -14,6 +14,8 @@ type sourceAdapterVerifier func(string) (trace.SourceAdapterRunSummary, error)
 
 func sourceAdapterMeaning(summary trace.SourceAdapterRunSummary) string {
 	switch {
+	case summary.Receipt.Completeness == trace.Partial && summary.Receipt.Events == 0:
+		return "No supported observations were reported; incomplete coverage means missing observations are unknown."
 	case summary.Receipt.Completeness == trace.Partial:
 		return "The source reported some reviewed labels, but incomplete coverage means missing observations are unknown."
 	case summary.Receipt.Completeness == trace.Complete && summary.Receipt.Events == 0:

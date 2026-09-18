@@ -37,6 +37,8 @@ var sourceAdapterTemplate = template.Must(template.New("source-adapter").Funcs(t
 
 func sourceAdapterMeaning(completeness string, events int) string {
 	switch {
+	case completeness == trace.Partial && events == 0:
+		return "No supported observations were reported; missing channels remain unknown."
 	case completeness == trace.Partial:
 		return "Some reviewed labels were found, but missing channels remain unknown."
 	case completeness == trace.Complete && events == 0:

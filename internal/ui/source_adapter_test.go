@@ -71,6 +71,7 @@ func TestSourceAdapterMeaningKeepsCoverageLimits(t *testing.T) {
 		{name: "complete with events", completeness: trace.Complete, events: 1, want: "The source reported reviewed labels from the channels this run could inspect."},
 		{name: "complete empty", completeness: trace.Complete, events: 0, want: "No supported observations were reported; this is not proof that nothing left the source."},
 		{name: "partial", completeness: trace.Partial, events: 1, want: "Some reviewed labels were found, but missing channels remain unknown."},
+		{name: "partial empty", completeness: trace.Partial, events: 0, want: "No supported observations were reported; missing channels remain unknown."},
 		{name: "unknown completeness", completeness: "", events: 0, want: "Coverage is not fully described; missing or unsupported activity remains unknown."},
 	}
 	for _, test := range tests {

@@ -38,6 +38,7 @@ func TestTraceReadingMeaningsStayFixedAndBounded(t *testing.T) {
 		}
 	}
 	coverage := map[string]string{
+		"observed": "The declared channels were covered for this retained trace.",
 		"complete": "The declared channels were covered for this retained trace.",
 		"partial":  "Some declared channels were missing, so absence remains unknown.",
 		"unknown":  "The retained traces do not support a complete coverage conclusion.",

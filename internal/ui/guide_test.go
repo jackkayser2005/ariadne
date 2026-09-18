@@ -49,3 +49,17 @@ func TestGuidePageIsReaderFirstAndGETOnly(t *testing.T) {
 		t.Fatalf("POST /guide status/allow = %d/%q, want %d/%q", post.Code, post.Header().Get("Allow"), http.StatusMethodNotAllowed, http.MethodGet)
 	}
 }
+
+func TestGuideOnlyOffersConfiguredWeatherInvestigation(t *testing.T) {
+	for _, configured := range []bool{false, true} {
+		settings := handler{}
+		if configured {
+			settings.weatherPath = "weather-run"
+		}
+		response := httptest.NewRecorder()
+		newHandler(settings).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/guide", nil))
+		if got := strings.Contains(response.Body.String(), `href="/weather"`); got != configured {
+			t.Fatalf("weather link available=%v, configured=%v", got, configured)
+		}
+	}
+}
