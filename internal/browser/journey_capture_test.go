@@ -45,6 +45,7 @@ const worker=new Worker('/worker.js');document.querySelector('#send').onclick=as
 		t.Fatal(err)
 	}
 	defer capture.Stop(true)
+	waitFixtureReady(t, capture, `!!document.querySelector('#send')?.onclick`)
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		err = capture.FillSynthetic(ctx, "#email", "m1")

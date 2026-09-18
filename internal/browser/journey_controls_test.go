@@ -49,6 +49,18 @@ func evaluateFixture(t *testing.T, capture *JourneyCapture, expression string) a
 	return response.Result.Value
 }
 
+func waitFixtureReady(t *testing.T, capture *JourneyCapture, expression string) {
+	t.Helper()
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		if evaluateFixture(t, capture, expression) == true {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("local fixture did not finish initializing its interaction handler")
+}
+
 func TestJourneyControlsBlockPageAndWorkerRequests(t *testing.T) {
 	requireJourneyBrowser(t)
 	var received atomic.Int32
@@ -81,6 +93,7 @@ func TestJourneyControlsBlockPageAndWorkerRequests(t *testing.T) {
 		}
 		return false
 	})
+	waitFixtureReady(t, capture, `!!document.querySelector('#email')?.oninput`)
 	for _, selector := range []string{"#password", "#check", "#readonly", "input", "[", strings.Repeat("a", 513), ""} {
 		if err := capture.FillSynthetic(context.Background(), selector, "m1"); err == nil {
 			t.Errorf("filled unsupported selector %q", selector)

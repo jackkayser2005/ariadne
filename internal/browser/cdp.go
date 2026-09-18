@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -93,7 +94,14 @@ func (c *cdpClient) read() {
 	}
 }
 
-func (c *cdpClient) call(ctx context.Context, session, method string, params any, result any) error {
+func (c *cdpClient) call(ctx context.Context, session, method string, params any, result any) (callErr error) {
+	// The method is a constant at every production call site. Never include
+	// protocol error messages, parameters, or replies: they can contain payloads.
+	defer func() {
+		if callErr != nil {
+			callErr = fmt.Errorf("%s: %w", method, callErr)
+		}
+	}()
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	parameters, err := json.Marshal(params)
