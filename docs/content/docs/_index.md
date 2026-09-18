@@ -4,6 +4,9 @@ title: Documentation
 
 Ariadne treats privacy claims as hypotheses to test.
 
+Start a [guided website investigation](guided-investigation/) to browse in a
+fresh Chrome or Edge profile, follow synthetic inputs, and export verified evidence.
+
 Start with the [project principles](concepts/principles/) and then read the
 [Experiment 001 plan](experiments/experiment-001/).
 

@@ -5,7 +5,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"errors"
-	"net/url"
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -72,6 +72,7 @@ type JourneyCapture struct {
 	ready                          chan error
 	session, target, frame, origin string
 	sessions                       map[string]captureSession
+	contexts                       map[string]captureSession
 	requests                       map[string]requestObservation
 	references                     int
 	stopping, stopped              bool
@@ -118,7 +119,7 @@ func StartCapture(ctx context.Context, options CaptureOptions) (*JourneyCapture,
 		_ = process.close()
 		return nil, err
 	}
-	c := &JourneyCapture{options: options, matcher: matcher, client: client, process: process, cancel: cancel, done: make(chan struct{}), ready: make(chan error, 1), origin: u.Scheme + "://" + u.Host, sessions: map[string]captureSession{}, requests: map[string]requestObservation{}}
+	c := &JourneyCapture{options: options, matcher: matcher, client: client, process: process, cancel: cancel, done: make(chan struct{}), ready: make(chan error, 1), origin: u.Scheme + "://" + u.Host, sessions: map[string]captureSession{}, contexts: map[string]captureSession{}, requests: map[string]requestObservation{}}
 	c.result = CaptureResult{Journey: trace.NewJourney(), Destinations: []DestinationName{{Alias: "d1", Origin: c.origin}}, Steps: []InvestigationStep{}}
 	c.result.Journey.AddGap("server-side-unobservable")
 	c.result.Journey.AddGap("unmatched-information")
@@ -138,7 +139,10 @@ func StartCapture(ctx context.Context, options CaptureOptions) (*JourneyCapture,
 	}
 	c.target = created.TargetID
 	go c.collect(lifetime)
-	err = client.call(lifetime, "", "Target.setAutoAttach", map[string]any{"autoAttach": true, "waitForDebuggerOnStart": true, "flatten": true}, nil)
+	err = client.call(lifetime, "", "Browser.setDownloadBehavior", map[string]any{"behavior": "deny"}, nil)
+	if err == nil {
+		err = client.call(lifetime, "", "Target.setAutoAttach", map[string]any{"autoAttach": true, "waitForDebuggerOnStart": true, "flatten": true}, nil)
+	}
 	if err == nil {
 		select {
 		case err = <-c.ready:
@@ -153,7 +157,7 @@ func StartCapture(ctx context.Context, options CaptureOptions) (*JourneyCapture,
 	}
 	if err != nil {
 		_, _ = c.Stop(true)
-		return nil, errors.New("browser recording could not start")
+		return nil, fmt.Errorf("browser recording could not start: %w", err)
 	}
 	go func() {
 		select {
@@ -218,13 +222,16 @@ func (c *JourneyCapture) configure(ctx context.Context, session, kind string) er
 			}
 		}
 	}
-	// A worker waiting for the debugger cannot execute Runtime.evaluate. Resume
-	// it first; report the unavoidable worker-start visibility boundary as a gap.
+	// A target waiting for the debugger cannot execute Runtime.evaluate. Page
+	// hooks run on the next navigation; workers need evaluation after resuming.
 	if kind == "worker" {
 		c.gap("worker-unavailable")
-		if err := c.client.call(ctx, session, "Runtime.runIfWaitingForDebugger", map[string]any{}, nil); err != nil {
-			return err
-		}
+	}
+	if err := c.client.call(ctx, session, "Runtime.runIfWaitingForDebugger", map[string]any{}, nil); err != nil {
+		return err
+	}
+	if kind == "page" {
+		return nil
 	}
 	return c.client.call(ctx, session, "Runtime.evaluate", map[string]any{"expression": journeyHooks}, nil)
 }
@@ -373,8 +380,51 @@ func (c *JourneyCapture) event(ctx context.Context, m cdpMessage) {
 		return
 	}
 	switch m.Method {
+	case "Runtime.executionContextCreated":
+		var p struct {
+			Context struct {
+				ID      int
+				Origin  string
+				AuxData struct{ FrameID string }
+			}
+		}
+		if json.Unmarshal(m.Params, &p) != nil || p.Context.ID <= 0 {
+			c.gap("instrumentation-unavailable")
+			return
+		}
+		c.mu.Lock()
+		if len(c.contexts) >= 256 {
+			c.result.Journey.AddGap("frame-unavailable")
+		} else {
+			where := session.context
+			if p.Context.AuxData.FrameID != "" && p.Context.AuxData.FrameID != c.frame {
+				where = "frame"
+			}
+			c.contexts[m.Session+":"+strconv.Itoa(p.Context.ID)] = captureSession{context: where, origin: p.Context.Origin}
+		}
+		c.mu.Unlock()
+	case "Runtime.executionContextDestroyed", "Runtime.executionContextsCleared":
+		var p struct{ ExecutionContextID int }
+		if json.Unmarshal(m.Params, &p) != nil {
+			c.gap("instrumentation-unavailable")
+			return
+		}
+		c.mu.Lock()
+		if m.Method == "Runtime.executionContextDestroyed" {
+			delete(c.contexts, m.Session+":"+strconv.Itoa(p.ExecutionContextID))
+		} else {
+			for key := range c.contexts {
+				if strings.HasPrefix(key, m.Session+":") {
+					delete(c.contexts, key)
+				}
+			}
+		}
+		c.mu.Unlock()
 	case "Runtime.bindingCalled":
-		var p struct{ Name, Payload string }
+		var p struct {
+			Name, Payload      string
+			ExecutionContextID int
+		}
 		var observation struct {
 			Kind, Payload, URL, Selector, Gap string
 			Checkpoint                        bool
@@ -383,14 +433,25 @@ func (c *JourneyCapture) event(ctx context.Context, m cdpMessage) {
 			c.gap("unsupported-payload")
 			return
 		}
+		if p.ExecutionContextID > 0 {
+			c.mu.Lock()
+			where, found := c.contexts[m.Session+":"+strconv.Itoa(p.ExecutionContextID)]
+			c.mu.Unlock()
+			if found {
+				session.context = where.context
+			} else {
+				c.gap("frame-unavailable")
+			}
+		}
 		if observation.Gap != "" {
 			c.gap(observation.Gap)
 			return
 		}
 		if observation.Kind == "ready" {
 			c.mu.Lock()
-			session.ready = true
-			c.sessions[m.Session] = session
+			registered := c.sessions[m.Session]
+			registered.ready = true
+			c.sessions[m.Session] = registered
 			c.mu.Unlock()
 			return
 		}
@@ -400,7 +461,7 @@ func (c *JourneyCapture) event(ctx context.Context, m cdpMessage) {
 			c.mu.Unlock()
 			return
 		}
-		if !slices.Contains([]string{"input", "click", "storage-read", "storage-write", "cookie-read", "cookie-write", "worker-send", "worker-receive", "fetch", "xhr", "beacon"}, observation.Kind) {
+		if !slices.Contains([]string{"input", "click", "storage-read", "storage-write", "cookie-read", "cookie-write", "worker-send", "worker-receive", "message-receive", "fetch", "xhr", "beacon"}, observation.Kind) {
 			c.gap("unsupported-payload")
 			return
 		}
@@ -474,7 +535,9 @@ func (c *JourneyCapture) event(ctx context.Context, m cdpMessage) {
 			c.result.Journey.AddGap("instrumentation-unavailable")
 		} else if m.Method == "Network.responseReceived" {
 			_ = c.result.Journey.Append(trace.JourneyObservation{Kind: "response", Context: "network", Destination: request.destination, Reference: request.reference, Matches: []trace.JourneyMatch{}})
-		} else if p.BlockedReason != "inspector" {
+		} else if p.BlockedReason == "inspector" {
+			_ = c.result.Journey.Append(trace.JourneyObservation{Kind: "blocked", Context: "network", Destination: request.destination, Reference: request.reference, Matches: request.matches})
+		} else {
 			c.result.Journey.AddGap("request-failed")
 		}
 		c.mu.Unlock()
@@ -544,8 +607,8 @@ func (c *JourneyCapture) reference() string {
 	return "r" + strconv.Itoa(c.references)
 }
 func (c *JourneyCapture) destination(raw string) string {
-	u, err := url.Parse(raw)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+	u, err := InvestigationURL(strings.Split(raw, "#")[0])
+	if err != nil {
 		c.result.Journey.AddGap("unsupported-payload")
 		return ""
 	}
@@ -655,7 +718,7 @@ func (c *JourneyCapture) FillSynthetic(ctx context.Context, selector, markerID s
 	}
 	selectorJSON, _ := json.Marshal(selector)
 	valueJSON, _ := json.Marshal(marker.Value)
-	expression := `(() => { const fields=document.querySelectorAll(` + string(selectorJSON) + `);if(fields.length!==1) return false;const el=fields[0];if(!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) || el.type==='password' || el.type==='file')return false;el.value=` + string(valueJSON) + `;el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));return true; })()`
+	expression := `(() => { const fields=document.querySelectorAll(` + string(selectorJSON) + `);if(fields.length!==1) return false;const el=fields[0];if(el.disabled || el.readOnly || !(el instanceof HTMLTextAreaElement || (el instanceof HTMLInputElement && ['text','email','url','tel','search'].includes(el.type))))return false;el.value=` + string(valueJSON) + `;el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));return true; })()`
 	var result struct {
 		Result           struct{ Value bool }
 		ExceptionDetails json.RawMessage

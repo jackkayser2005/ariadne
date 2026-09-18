@@ -33,6 +33,7 @@
 /.hugo_build.lock
 
 # Local tooling
+/.playwright-cli/
 /.cache/
 /.idea/
 /.vscode/

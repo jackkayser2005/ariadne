@@ -66,7 +66,7 @@
         set(value){emit('cookie-write',text(value));return Reflect.apply(cookie.set,this,[value]);}
       }); else gap();
     } catch (_) { gap(); }
-    if (navigator.sendBeacon) wrap(Object.getPrototypeOf(navigator),'sendBeacon',(url,body)=>emit('beacon',text(body),url));
+    if (navigator.sendBeacon) wrap(Object.getPrototypeOf(navigator),'sendBeacon',(url,body)=>emit('beacon',text(body),new URL(url,location.href).href));
   }
   if (typeof fetch==='function') wrap(globalThis,'fetch',(input,options)=>{
     const url=typeof input==='string' || input instanceof URL ? String(input) : input.url;
@@ -78,9 +78,18 @@
     wrap(XMLHttpRequest.prototype,'open',function(method,url){urls.set(this,new URL(url,location.href).href);});
     wrap(XMLHttpRequest.prototype,'send',function(body){emit('xhr',text(body),urls.get(this));});
   }
-  if (typeof Worker!=='undefined') wrap(Worker.prototype,'postMessage',function(value){emit('worker-send',text(value));});
+  if (typeof Worker!=='undefined') {
+    wrap(Worker.prototype,'postMessage',function(value){emit('worker-send',text(value));});
+    try {
+      globalThis.Worker=new Proxy(Worker,{construct(target,args,newTarget){
+        const worker=Reflect.construct(target,args,newTarget);
+        worker.addEventListener('message',event=>emit('worker-receive',text(event.data)));
+        return worker;
+      }});
+    } catch (_) { gap(); }
+  }
   if (typeof MessagePort!=='undefined') wrap(MessagePort.prototype,'postMessage',function(value){emit('worker-send',text(value));});
   if (typeof document==='undefined' && typeof postMessage==='function') wrap(globalThis,'postMessage',value=>emit('worker-send',text(value)));
-  globalThis.addEventListener('message',event=>emit('worker-receive',text(event.data)));
+  globalThis.addEventListener('message',event=>emit(typeof document==='undefined'?'worker-receive':'message-receive',text(event.data)));
   emit('ready');
 })()

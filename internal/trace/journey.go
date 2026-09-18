@@ -190,7 +190,7 @@ func validateJourneyObservation(o JourneyObservation) error {
 	if o.Sequence < 1 || o.Sequence > MaxJourneyObservations || !numberedLabel(o.Destination, "d", 256) ||
 		!numberedLabel(o.Reference, "r", MaxJourneyObservations*16) ||
 		!slices.Contains([]string{"page", "frame", "worker", "network"}, o.Context) ||
-		!slices.Contains([]string{"navigation", "click", "input", "storage-read", "storage-write", "cookie-read", "cookie-write", "worker-send", "worker-receive", "fetch", "xhr", "beacon", "request", "response", "redirect", "websocket-sent", "websocket-received", "location", "blocked"}, o.Kind) ||
+		!slices.Contains([]string{"navigation", "click", "input", "storage-read", "storage-write", "cookie-read", "cookie-write", "worker-send", "worker-receive", "message-receive", "fetch", "xhr", "beacon", "request", "response", "redirect", "websocket-sent", "websocket-received", "location", "blocked"}, o.Kind) ||
 		len(o.Matches) > 64 || o.Matches == nil {
 		return errors.New("journey observation is invalid")
 	}

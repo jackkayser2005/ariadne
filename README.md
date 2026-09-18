@@ -7,7 +7,27 @@ data, and reports which observable behaviors change.
 Reports classify conclusions as **observed**, **inferred**, **claimed**, or
 **unknown**.
 
-Start with the guided command map:
+Start a guided website investigation (Chrome or Edge is located automatically):
+
+```console
+go run ./cmd/ariadne investigate https://example.com
+```
+
+Choose a website, browse in the fresh recording window, stop, and review where
+synthetic test inputs appeared. **Try sharing less** can start a fresh trial
+with location denial, a synthetic approximate location, or selected destination
+blocks. Current trials remain separate observations; automatic task verification
+and persistent companion protection are subsequent milestones.
+
+Use `investigate --no-open` to print the local interface URL, or
+`investigate --duration 30s <url>` for a terminal-controlled recording. Reopen a
+saved investigation with `inspect <directory-or-export.json>`. The interface's
+**Export verified evidence** button produces a portable bundle containing aliases;
+destination names stay in private local context. See the
+[guided investigation guide](docs/content/docs/guided-investigation.md) for
+recording boundaries and CLI controls.
+
+The command map and specialized evidence tools remain available:
 
 ```console
 go run ./cmd/ariadne --help

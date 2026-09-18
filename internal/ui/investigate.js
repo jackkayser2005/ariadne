@@ -50,12 +50,18 @@
         const row = node('div',undefined,'marker panel');
         const label = node('label',marker.category === 'email' ? 'Test email' : 'Test account identifier');
         const field = node('input');field.readOnly=true;field.value=marker.value;field.id='marker-'+marker.id;label.htmlFor=field.id;
-        const button = node('button','Fill selected field');button.type='button';button.addEventListener('click',()=>act('fill',{marker:marker.id}));
+        const button = node('button',marker.category === 'email' ? 'Fill test email' : 'Fill test account ID');button.type='button';button.addEventListener('click',()=>act('fill',{marker:marker.id}));
         row.append(label,field,button);$('markers').append(row);
       }
     }
     $('saved-path').textContent = state.saved_path ? 'Saved locally: '+state.saved_path : 'This recording has not been saved.';
-    if (!state.journey) return;
+    if (!state.journey) {
+      lastEvidence='';
+      for(const id of ['cards','timeline','gaps','destinations'])$(id).replaceChildren();
+      $('overview').textContent='Start an investigation to see supported test-input observations.';
+      $('identity').textContent='No evidence recorded.';
+      return;
+    }
     const signature=JSON.stringify([state.journey,state.destinations]);if(signature===lastEvidence)return;lastEvidence=signature;
     const names=new Map((state.destinations||[]).map(d=>[d.alias,d.origin]));
     const categories=new Map((state.categories||[]).map(c=>[c.id||c.ID,c.label||c.Label]));

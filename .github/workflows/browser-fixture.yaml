@@ -32,6 +32,14 @@ jobs:
           node --check cmd/browser-fixture-driver/weather_driver.mjs
           node --test cmd/browser-fixture-driver/weather_driver.test.mjs
 
+      - name: Check guided browser journeys
+        shell: pwsh
+        env:
+          ARIADNE_BROWSER_TESTS: '1'
+        run: |
+          go test -race ./internal/browser ./internal/ui ./cmd/ariadne -run 'Journey|Guided|InspectCLI|TimedInvestigation' -count=1 -timeout=120s
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Capture local browser fixture
         shell: pwsh
         run: |
