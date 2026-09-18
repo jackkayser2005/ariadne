@@ -238,9 +238,42 @@ func (c *JourneyCapture) configure(ctx context.Context, session, kind string) er
 
 func (c *JourneyCapture) collect(ctx context.Context) {
 	defer close(c.done)
-	for message := range c.client.events {
-		c.event(ctx, message)
+	// Target setup may wait for a renderer, while that renderer waits for an
+	// intercepted request. Keep request continuations independent of setup and
+	// keep the observation reader moving. Both queues are bounded; overload closes
+	// the connection and is retained as missing visibility.
+	targets, requests := make(chan cdpMessage, 64), make(chan cdpMessage, 64)
+	var controls sync.WaitGroup
+	for _, queue := range []chan cdpMessage{targets, requests} {
+		controls.Add(1)
+		go func() {
+			defer controls.Done()
+			for message := range queue {
+				c.event(ctx, message)
+			}
+		}()
 	}
+	for message := range c.client.events {
+		var queue chan cdpMessage
+		switch message.Method {
+		case "Target.attachedToTarget", "Target.targetCreated":
+			queue = targets
+		case "Fetch.requestPaused":
+			queue = requests
+		default:
+			c.event(ctx, message)
+			continue
+		}
+		select {
+		case queue <- message:
+		default:
+			c.gap("event-limit")
+			c.client.cancel()
+		}
+	}
+	close(targets)
+	close(requests)
+	controls.Wait()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.stopping {
@@ -338,6 +371,7 @@ func (c *JourneyCapture) event(ctx context.Context, m cdpMessage) {
 		}
 		c.mu.Lock()
 		mainFrame := c.frame
+		mainSession := c.session
 		c.mu.Unlock()
 		u, err := InvestigationURL(strings.Split(p.Request.URL, "#")[0])
 		outside := err != nil || u.Scheme+"://"+u.Host != c.origin
@@ -345,7 +379,7 @@ func (c *JourneyCapture) event(ctx context.Context, m cdpMessage) {
 		if err == nil && slices.Contains(c.options.BlockOrigins, u.Scheme+"://"+u.Host) {
 			block = true
 		}
-		if p.ResourceType == "Document" && m.Session == c.session && p.FrameID == mainFrame && outside {
+		if p.ResourceType == "Document" && m.Session == mainSession && p.FrameID == mainFrame && outside {
 			c.gap("out-of-scope-navigation")
 			block = true
 		}
@@ -397,7 +431,7 @@ func (c *JourneyCapture) event(ctx context.Context, m cdpMessage) {
 			c.result.Journey.AddGap("frame-unavailable")
 		} else {
 			where := session.context
-			if p.Context.AuxData.FrameID != "" && p.Context.AuxData.FrameID != c.frame {
+			if c.frame != "" && p.Context.AuxData.FrameID != "" && p.Context.AuxData.FrameID != c.frame {
 				where = "frame"
 			}
 			c.contexts[m.Session+":"+strconv.Itoa(p.Context.ID)] = captureSession{context: where, origin: p.Context.Origin}

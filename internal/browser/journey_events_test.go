@@ -7,6 +7,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/coder/websocket"
 
 	"github.com/jackkayser2005/ariadne/internal/trace"
 )
@@ -191,4 +194,72 @@ func TestJourneyFrameContextLifecycleIsBounded(t *testing.T) {
 		c.event(context.Background(), cdpMessage{Method: method, Session: "page", Params: json.RawMessage(`{`)})
 	}
 	create(0, "invalid")
+}
+
+func TestJourneyCollectorContinuesRequestsDuringTargetSetup(t *testing.T) {
+	client := protocolFixture(t, func(ctx context.Context, connection *websocket.Conn) {
+		send := func(value any) bool {
+			data, _ := json.Marshal(value)
+			return connection.Write(ctx, websocket.MessageText, data) == nil
+		}
+		if !send(map[string]any{"method": "Target.attachedToTarget", "params": map[string]any{"sessionId": "page", "targetInfo": map[string]any{"type": "page", "targetId": "owned", "url": "about:blank"}}}) {
+			return
+		}
+		waiting := 0
+		for {
+			_, data, err := connection.Read(ctx)
+			if err != nil {
+				return
+			}
+			var command cdpMessage
+			if json.Unmarshal(data, &command) != nil {
+				return
+			}
+			if command.Method == "Runtime.enable" {
+				waiting = command.ID
+				if !send(map[string]any{"method": "Fetch.requestPaused", "sessionId": "page", "params": map[string]any{"requestId": "paused", "resourceType": "Script", "request": map[string]any{"url": "https://fixture.invalid/script.js"}}}) {
+					return
+				}
+				continue
+			}
+			result := json.RawMessage(`{}`)
+			if command.Method == "Page.getFrameTree" {
+				result = json.RawMessage(`{"frameTree":{"frame":{"id":"main"}}}`)
+			}
+			if !send(cdpMessage{ID: command.ID, Result: result}) {
+				return
+			}
+			if command.Method == "Fetch.continueRequest" && waiting > 0 {
+				if !send(cdpMessage{ID: waiting, Result: json.RawMessage(`{}`)}) {
+					return
+				}
+				waiting = 0
+			}
+		}
+	})
+	c := eventCapture(t)
+	c.client = client
+	c.target = "owned"
+	c.origin = "https://fixture.invalid"
+	c.sessions = map[string]captureSession{}
+	c.done = make(chan struct{})
+	c.ready = make(chan error, 1)
+	go c.collect(context.Background())
+	select {
+	case err := <-c.ready:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Error("target setup deadlocked intercepted request")
+	}
+	c.mu.Lock()
+	c.stopping = true
+	c.mu.Unlock()
+	client.close()
+	select {
+	case <-c.done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("collector did not stop")
+	}
 }
