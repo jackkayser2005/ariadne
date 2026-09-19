@@ -102,7 +102,11 @@ func (c *cdpClient) call(ctx context.Context, session, method string, params any
 			callErr = fmt.Errorf("%s: %w", method, callErr)
 		}
 	}()
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	timeout := 5 * time.Second
+	if method == "Page.navigate" {
+		timeout = 30 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	parameters, err := json.Marshal(params)
 	if err != nil {
@@ -117,21 +121,23 @@ func (c *cdpClient) call(ctx context.Context, session, method string, params any
 	defer func() { c.mu.Lock(); delete(c.pending, id); c.mu.Unlock() }()
 	data, _ := json.Marshal(cdpMessage{ID: id, Session: session, Method: method, Params: parameters})
 	if c.connection.Write(ctx, websocket.MessageText, data) != nil {
-		return errCDP
+		return fmt.Errorf("%w (command send failed)", errCDP)
 	}
 	select {
 	case reply := <-response:
 		if len(reply.Error) != 0 {
-			return errCDP
+			var protocol struct{ Code int }
+			_ = json.Unmarshal(reply.Error, &protocol)
+			return fmt.Errorf("%w (protocol code %d)", errCDP, protocol.Code)
 		}
 		if result != nil && json.Unmarshal(reply.Result, result) != nil {
 			return errCDP
 		}
 		return nil
 	case <-ctx.Done():
-		return errCDP
+		return fmt.Errorf("%w (command deadline or cancellation)", errCDP)
 	case <-c.done:
-		return errCDP
+		return fmt.Errorf("%w (connection ended)", errCDP)
 	}
 }
 

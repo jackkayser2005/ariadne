@@ -28,6 +28,97 @@ func guidedRequest(h *InvestigationHandler, method, path, body string) *httptest
 	return w
 }
 
+func TestGuidedRetainsStoppedEvidenceWhenPublicationFails(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "output")
+	if err := os.WriteFile(root, []byte("occupied by a file"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	h, err := NewInvestigationHandler(InvestigationOptions{Host: "127.0.0.1:8787", OutputRoot: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Close()
+	result := browser.CaptureResult{Journey: trace.NewJourney(), Destinations: []browser.DestinationName{{Alias: "d1", Origin: "https://private.invalid"}}, Steps: []browser.InvestigationStep{}}
+	h.pending = &result
+	h.phase = "unsaved"
+	bundle, err := browser.BuildJourneyBundle(result.Journey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.bundle = &bundle
+	if response := guidedRequest(h, "POST", "/api/save", `{}`); response.Code != 422 || h.pending == nil {
+		t.Fatal("failed save discarded the recording")
+	}
+	if response := guidedRequest(h, "POST", "/api/start", `{"url":"https://private.invalid"}`); response.Code != 409 {
+		t.Fatal("new recording replaced unsaved evidence")
+	}
+	response := guidedRequest(h, "GET", "/api/export", "")
+	if response.Code != 200 {
+		t.Fatal(response.Body.String())
+	}
+	if _, err := browser.DecodeJourneyBundle(response.Body.Bytes()); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(response.Body.String(), "private.invalid") {
+		t.Fatal("fallback export leaked private names")
+	}
+	if err := os.Remove(root); err != nil {
+		t.Fatal(err)
+	}
+	if response := guidedRequest(h, "POST", "/api/save", `{}`); response.Code != 200 || h.phase != "saved" || h.pending != nil {
+		t.Fatal("could not retry retained recording")
+	}
+	if _, _, err := browser.ReadInvestigation(h.savedPath); err != nil {
+		t.Fatal(err)
+	}
+	if response := guidedRequest(h, "POST", "/api/save", `{}`); response.Code != 409 {
+		t.Fatal("repeated save unexpectedly replaced evidence")
+	}
+	h.pending = &result
+	h.phase = "unsaved"
+	if response := guidedRequest(h, "POST", "/api/cancel", `{}`); response.Code != 200 || h.pending != nil || h.bundle != nil || h.savedPath != "" {
+		t.Fatal("could not explicitly discard retained recording")
+	}
+}
+
+func TestGuidedBrowserRecordingSurvivesOutputBecomingUnavailable(t *testing.T) {
+	if os.Getenv("ARIADNE_BROWSER_TESTS") != "1" {
+		t.Skip("requires installed Chrome/Edge")
+	}
+	site := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "<title>Local save failure fixture</title>")
+	}))
+	defer site.Close()
+	root := filepath.Join(t.TempDir(), "output")
+	if err := os.Mkdir(root, 0700); err != nil {
+		t.Fatal(err)
+	}
+	h, err := NewInvestigationHandler(InvestigationOptions{Host: "127.0.0.1:8787", OutputRoot: root, Headless: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Close()
+	body, _ := json.Marshal(map[string]string{"url": site.URL})
+	if response := guidedRequest(h, "POST", "/api/start", string(body)); response.Code != 200 {
+		t.Fatal(response.Body.String())
+	}
+	if err := os.Remove(root); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(root, []byte("output became unavailable"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if response := guidedRequest(h, "POST", "/api/stop", `{}`); response.Code != 422 || h.capture != nil || h.pending == nil || h.phase != "unsaved" {
+		t.Fatalf("stopped recording was not retained: %d %s", response.Code, response.Body.String())
+	}
+	if response := guidedRequest(h, "GET", "/api/export", ""); response.Code != 200 {
+		t.Fatal("retained recording could not be exported")
+	}
+	if response := guidedRequest(h, "POST", "/api/cancel", `{}`); response.Code != 200 {
+		t.Fatal("retained recording could not be discarded")
+	}
+}
+
 func TestGuidedCaptureUsesSeparateLoopbackAuthenticationAndOrigins(t *testing.T) {
 	h, err := NewInvestigationHandler(InvestigationOptions{Host: "127.0.0.1:8787", OutputRoot: t.TempDir()})
 	if err != nil {

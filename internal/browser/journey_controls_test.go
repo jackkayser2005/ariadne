@@ -305,3 +305,54 @@ func TestJourneyFramesXHRBeaconAndSyntheticLocation(t *testing.T) {
 		t.Fatalf("unexpected lab location: %v", location)
 	}
 }
+
+func TestJourneyDeniesLocationInDelegatedCrossOriginFrame(t *testing.T) {
+	requireJourneyBrowser(t)
+	frame := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, `<script>navigator.permissions.query({name:'geolocation'}).then(p=>parent.postMessage(p.state,'*'));</script>`)
+	}))
+	defer frame.Close()
+	site := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprintf(w, `<script>onmessage=e=>{window.framePermission=e.data};</script><iframe allow="geolocation *" src=%q></iframe>`, frame.URL)
+	}))
+	defer site.Close()
+	capture, err := StartCapture(context.Background(), CaptureOptions{URL: site.URL, Markers: GenerateMarkers(), Headless: true, Location: "deny"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer capture.Stop(true)
+	waitFixtureReady(t, capture, `window.framePermission==='denied'`)
+}
+
+func TestJourneyPacedBindingFloodEndsRecordingAndCleansProfile(t *testing.T) {
+	requireJourneyBrowser(t)
+	site := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprint(w, `<p>Local adversarial fixture</p>`)
+	}))
+	defer site.Close()
+	capture, err := StartCapture(context.Background(), CaptureOptions{URL: site.URL, Markers: GenerateMarkers(), Headless: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer capture.Stop(true)
+	waitFixtureReady(t, capture, `document.readyState==='complete'`)
+	_ = capture.client.call(context.Background(), capture.session, "Runtime.evaluate", map[string]any{"expression": `new Promise(resolve=>{const timer=setInterval(()=>__ariadneObserve(JSON.stringify({kind:'input',url:location.href,payload:'x'.repeat(250000)})),15);setTimeout(()=>{clearInterval(timer);resolve(true)},3000)})`, "awaitPromise": true}, nil)
+	select {
+	case <-capture.done:
+	case <-time.After(8 * time.Second):
+		t.Fatal("paced payload budget did not stop recording")
+	}
+	result, err := capture.Stop(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(result.Journey.Gaps, "size-limit") {
+		t.Fatalf("missing cumulative size gap: %+v", result.Journey.Gaps)
+	}
+	if _, err := os.Stat(capture.process.profile); !os.IsNotExist(err) {
+		t.Fatal("flooded browser profile retained")
+	}
+}

@@ -60,23 +60,25 @@ type captureSession struct {
 
 // JourneyCapture owns one isolated Chrome/Edge process and its transient raw observations.
 type JourneyCapture struct {
-	mu                             sync.Mutex
-	stopMu                         sync.Mutex
-	result                         CaptureResult
-	options                        CaptureOptions
-	matcher                        *MarkerMatcher
-	client                         *cdpClient
-	process                        *browserProcess
-	cancel                         context.CancelFunc
-	done                           chan struct{}
-	ready                          chan error
-	session, target, frame, origin string
-	sessions                       map[string]captureSession
-	contexts                       map[string]captureSession
-	requests                       map[string]requestObservation
-	references                     int
-	stopping, stopped              bool
-	cleanupError                   error
+	mu                              sync.Mutex
+	stopMu                          sync.Mutex
+	result                          CaptureResult
+	options                         CaptureOptions
+	matcher                         *MarkerMatcher
+	client                          *cdpClient
+	process                         *browserProcess
+	cancel                          context.CancelFunc
+	done                            chan struct{}
+	ready                           chan error
+	session, target, frame, origin  string
+	sessions                        map[string]captureSession
+	contexts                        map[string]captureSession
+	requests                        map[string]requestObservation
+	references                      int
+	stopping, stopped               bool
+	cleanupError                    error
+	processedEvents, processedBytes int
+	exhausted                       bool
 }
 
 // StartCapture opens a fresh visible profile by default and instruments it before
@@ -208,8 +210,8 @@ func (c *JourneyCapture) configure(ctx context.Context, session, kind string) er
 		if err := c.client.call(ctx, session, "Fetch.enable", map[string]any{"patterns": []map[string]string{{"urlPattern": "*", "requestStage": "Request"}}}, nil); err != nil {
 			return err
 		}
-		if c.options.Location == "deny" {
-			if err := c.client.call(ctx, "", "Browser.setPermission", map[string]any{"permission": map[string]string{"name": "geolocation"}, "setting": "denied", "origin": c.origin}, nil); err != nil {
+		if c.options.Location == "deny" || c.options.Location == "approximate" {
+			if err := c.client.call(ctx, "", "Browser.setPermission", map[string]any{"permission": map[string]string{"name": "geolocation"}, "setting": "denied"}, nil); err != nil {
 				return err
 			}
 		}
@@ -276,7 +278,7 @@ func (c *JourneyCapture) collect(ctx context.Context) {
 	controls.Wait()
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if !c.stopping {
+	if !c.stopping && !c.exhausted {
 		c.result.Journey.AddGap("browser-crashed")
 	}
 	c.client.mu.Lock()
@@ -288,6 +290,9 @@ func (c *JourneyCapture) collect(ctx context.Context) {
 }
 
 func (c *JourneyCapture) event(ctx context.Context, m cdpMessage) {
+	if !c.consumeEvent(m) {
+		return
+	}
 	if m.Method == "Target.attachedToTarget" {
 		var p struct {
 			SessionID  string                               `json:"sessionId"`
@@ -625,6 +630,32 @@ func (c *JourneyCapture) event(ctx context.Context, m cdpMessage) {
 	case "Inspector.targetCrashed", "Target.targetCrashed":
 		c.gap("browser-crashed")
 	}
+}
+
+func (c *JourneyCapture) consumeEvent(message cdpMessage) bool {
+	c.mu.Lock()
+	if c.exhausted {
+		c.mu.Unlock()
+		return false
+	}
+	c.processedEvents++
+	c.processedBytes += len(message.Params)
+	gap := ""
+	if c.processedEvents > 8192 || len(c.result.Journey.Observations) >= trace.MaxJourneyObservations {
+		gap = "event-limit"
+	}
+	if c.processedBytes > 8<<20 {
+		gap = "size-limit"
+	}
+	if gap != "" {
+		c.exhausted = true
+		c.result.Journey.AddGap(gap)
+	}
+	c.mu.Unlock()
+	if gap != "" && c.client != nil {
+		c.client.cancel()
+	}
+	return gap == ""
 }
 
 func (c *JourneyCapture) gap(reason string) {

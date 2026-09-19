@@ -31,14 +31,17 @@
     latestState=state;
     const recording = state.phase === 'recording' || state.phase === 'interrupted';
     const saved = state.phase === 'saved';
+    const unsaved = state.phase === 'unsaved';
     $('status').textContent = ({ready:'Ready to investigate.',recording:'Recording in a fresh browser profile. Return here to stop or cancel.',interrupted:'The browser recording ended. Stop to save the partial evidence, or cancel to discard it.',saved:'Investigation saved. Review the observations and visibility limits.',cancelled:'Recording cancelled. The browser profile was removed and no investigation was saved.',error:'The investigation could not be saved.'})[state.phase] || 'Investigation unavailable.';
+    if(unsaved)$('status').textContent='Recording stopped. Evidence is held in memory until you save, export, or discard it.';
     $('capture-panel').hidden = state.read_only;
     $('site').disabled = recording || busy;
-    $('start').hidden = recording;
-    $('stop').hidden = !recording; $('cancel').hidden = !recording;
+    $('start').hidden = recording || unsaved;
+    $('stop').hidden = !recording; $('cancel').hidden = !recording && !unsaved;
+    $('save').hidden = !unsaved;
     $('test-inputs').hidden = !recording;
     $('less-panel').hidden = !saved || state.read_only;
-    $('export').hidden = !saved;
+    $('export').hidden = !saved && !unsaved;
     if (initial) {
       $('site').value = state.initial_url || '';
       initial=false;
@@ -82,6 +85,7 @@
   async function act(action,body){if(busy)return;busy=true;revision++;$('message').hidden=true;document.querySelectorAll('button').forEach(b=>b.disabled=true);$('status').textContent=action==='start'?'Opening a fresh recording browser…':'Working…';try{render(await(await request(action,body)).json());if(action==='stop')$('review-title').scrollIntoView({behavior:'smooth'});}catch(error){showError(error);}finally{busy=false;document.querySelectorAll('button').forEach(b=>b.disabled=false);if(latestState)render(latestState);}}
   $('start-form').addEventListener('submit',event=>{event.preventDefault();act('start',{url:$('site').value});});
   $('stop').addEventListener('click',()=>act('stop',{}));$('cancel').addEventListener('click',()=>act('cancel',{}));
+  $('save').addEventListener('click',()=>act('save',{}));
   $('retry').addEventListener('click',()=>act('start',{url:$('site').value,location:$('location').value,block_origins:Array.from($('destinations').querySelectorAll('input:checked')).map(input=>input.value)}));
   $('export').addEventListener('click',async()=>{try{const response=await request('export');const url=URL.createObjectURL(await response.blob());const link=node('a');link.href=url;link.download='ariadne-evidence.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(error){showError(error);}});
   async function refresh(){const observedRevision=revision;if(!busy){try{const state=await(await request('state')).json();if(!busy&&revision===observedRevision)render(state);}catch(error){if(!busy&&revision===observedRevision)showError(error);}}setTimeout(refresh,1500);}

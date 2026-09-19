@@ -19,7 +19,14 @@ data you are authorized to test.
    ordered observations and the evidence disclosure for technical details.
 5. Select **Export verified evidence** to download a checked, portable JSON file.
 
+If saving fails after recording, keep the local server open: Ariadne retains the
+stopped evidence for **Export verified evidence** or **Retry saving**. Restore the
+output directory before retrying. **Cancel and discard** releases that retained
+recording when you no longer need it.
+
 Recording is bounded to 20 minutes, 2,048 observations, and 64 interaction steps.
+An additional cumulative limit of 8 MiB of protocol event data or 8,192 events
+ends recording even if a page paces large payloads below the transport limit.
 Navigation outside the chosen origin and downloads are blocked. Subresources,
 frames, and supported workers may contact other origins so their destinations
 can be observed. Clicks and submissions remain manual checkpoints; Ariadne does

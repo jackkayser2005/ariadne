@@ -43,6 +43,7 @@ type InvestigationHandler struct {
 	cancel           context.CancelFunc
 	token            string
 	capture          *browser.JourneyCapture
+	pending          *browser.CaptureResult
 	markers          []browser.SyntheticMarker
 	bundle           *browser.JourneyBundle
 	destinations     []browser.DestinationName
@@ -152,11 +153,17 @@ func (h *InvestigationHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		if !getOnly(w, r) {
 			return
 		}
-		if h.savedPath == "" {
+		if h.savedPath == "" && h.pending == nil {
 			http.Error(w, "stop and save the investigation before exporting", http.StatusConflict)
 			return
 		}
-		bundle, _, err := browser.ReadInvestigation(h.savedPath)
+		var bundle browser.JourneyBundle
+		var err error
+		if h.pending != nil {
+			bundle, err = browser.BuildJourneyBundle(h.pending.Journey)
+		} else {
+			bundle, _, err = browser.ReadInvestigation(h.savedPath)
+		}
 		if err != nil {
 			http.Error(w, "saved evidence failed verification", http.StatusUnprocessableEntity)
 			return
@@ -203,6 +210,10 @@ func (h *InvestigationHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	}
 	switch r.URL.Path {
 	case "/api/start":
+		if h.pending != nil {
+			http.Error(w, "save, export, or discard the stopped investigation before starting another", http.StatusConflict)
+			return
+		}
 		if h.capture != nil {
 			http.Error(w, "an investigation is already recording", http.StatusConflict)
 			return
@@ -231,6 +242,16 @@ func (h *InvestigationHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	case "/api/stop", "/api/cancel":
+		if r.URL.Path == "/api/cancel" && h.pending != nil {
+			h.pending = nil
+			h.bundle = nil
+			h.destinations = nil
+			h.savedPath = ""
+			h.phase = "cancelled"
+			h.markers = browser.GenerateMarkers()
+			h.state(w)
+			return
+		}
 		if h.capture == nil {
 			http.Error(w, "no investigation is recording", http.StatusConflict)
 			return
@@ -245,20 +266,32 @@ func (h *InvestigationHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 			h.savedPath = ""
 			h.markers = browser.GenerateMarkers()
 		} else {
-			path := filepath.Join(h.options.OutputRoot, "investigation-"+time.Now().UTC().Format("20060102-150405")+"-"+rand.Text()[:8])
-			bundle, err := browser.SaveInvestigation(path, result)
+			h.pending = &result
+			h.phase = "unsaved"
+			h.destinations = result.Destinations
+			bundle, err := browser.BuildJourneyBundle(result.Journey)
 			if err != nil {
 				h.phase = "error"
 				http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 				return
 			}
 			h.bundle = &bundle
-			h.destinations = result.Destinations
-			h.savedPath = path
-			h.phase = "saved"
+			if err := h.publish(); err != nil {
+				http.Error(w, "Recording stopped and retained in memory. Export the evidence, or fix the output directory and retry saving.", http.StatusUnprocessableEntity)
+				return
+			}
 		}
 		if cleanupErr != nil {
 			http.Error(w, cleanupErr.Error(), http.StatusInternalServerError)
+			return
+		}
+	case "/api/save":
+		if h.pending == nil {
+			http.Error(w, "no stopped investigation needs saving", http.StatusConflict)
+			return
+		}
+		if err := h.publish(); err != nil {
+			http.Error(w, "Recording is retained in memory. Export the evidence, or fix the output directory and retry saving.", http.StatusUnprocessableEntity)
 			return
 		}
 	default:
@@ -266,6 +299,20 @@ func (h *InvestigationHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	h.state(w)
+}
+
+func (h *InvestigationHandler) publish() error {
+	path := filepath.Join(h.options.OutputRoot, "investigation-"+time.Now().UTC().Format("20060102-150405")+"-"+rand.Text()[:8])
+	bundle, err := browser.SaveInvestigation(path, *h.pending)
+	if err != nil {
+		return err
+	}
+	h.bundle = &bundle
+	h.destinations = h.pending.Destinations
+	h.savedPath = path
+	h.phase = "saved"
+	h.pending = nil
+	return nil
 }
 
 func (h *InvestigationHandler) state(w http.ResponseWriter) {

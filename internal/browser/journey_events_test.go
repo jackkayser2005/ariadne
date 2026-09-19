@@ -263,3 +263,33 @@ func TestJourneyCollectorContinuesRequestsDuringTargetSetup(t *testing.T) {
 		t.Fatal("collector did not stop")
 	}
 }
+
+func TestJourneyCumulativeBudgetsStopBeforeMorePayloadWork(t *testing.T) {
+	for _, scenario := range []string{"bytes", "events", "observations"} {
+		t.Run(scenario, func(t *testing.T) {
+			c := eventCapture(t)
+			message := cdpMessage{Method: "Runtime.bindingCalled", Session: "page", Params: json.RawMessage(`{}`)}
+			want := "event-limit"
+			switch scenario {
+			case "bytes":
+				c.processedBytes = 8 << 20
+				want = "size-limit"
+			case "events":
+				c.processedEvents = 8192
+			case "observations":
+				c.result.Journey.Observations = make([]trace.JourneyObservation, trace.MaxJourneyObservations)
+			}
+			c.event(context.Background(), message)
+			if !c.exhausted || !slices.Contains(c.result.Journey.Gaps, want) {
+				t.Fatal("capture budget did not close")
+			}
+			bytes, events := c.processedBytes, c.processedEvents
+			for range 100 {
+				c.event(context.Background(), message)
+			}
+			if c.processedBytes != bytes || c.processedEvents != events {
+				t.Fatal("exhausted capture kept processing payloads")
+			}
+		})
+	}
+}
