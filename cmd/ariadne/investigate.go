@@ -17,18 +17,22 @@ import (
 	"time"
 
 	"github.com/jackkayser2005/ariadne/internal/browser"
+	"github.com/jackkayser2005/ariadne/internal/securefs"
 	"github.com/jackkayser2005/ariadne/internal/ui"
 )
 
 const guidedUsage = `usage:
   ariadne investigate [--no-open] [--addr 127.0.0.1:0] [--output directory] [url]
   ariadne investigate --duration 30s [--output new-directory] [--location deny|approximate] [--block-origin https://destination.example] url
+  ariadne investigate --pair --duration 30s [--order treatment-baseline] [--location deny] [--output new-directory] url
+  ariadne compare [--json] [--baseline-task works|broken|unknown] [--trial-task works|broken|unknown] [--profile new-private-file.json] <baseline-directory> <trial-directory>
   ariadne inspect [--no-open] [--json] <bundle-directory-or-export.json>
 
 Investigate opens a local interface and discovers Chrome or Edge automatically.
 Browse in its fresh recording window, then stop, review, and export the evidence.
 Use --no-open to print the interface URL without opening it automatically.
 Use --duration for a timed recording controlled from the terminal (up to 20m).
+Use --pair for two fresh recordings with shared test inputs (duration per run).
 Saved inspections verify the evidence before opening a read-only view.
 `
 
@@ -42,6 +46,8 @@ func runGuided(command string, args []string, stdout, stderr io.Writer, serve gu
 	output := flags.String("output", "", "")
 	jsonOutput := flags.Bool("json", false, "")
 	duration := flags.Duration("duration", 0, "")
+	pair := flags.Bool("pair", false, "")
+	order := flags.String("order", "baseline-treatment", "")
 	location := flags.String("location", "unchanged", "")
 	var blocked []string
 	flags.Func("block-origin", "", func(value string) error { blocked = append(blocked, value); return nil })
@@ -52,7 +58,7 @@ func runGuided(command string, args []string, stdout, stderr io.Writer, serve gu
 		}
 		return 2
 	}
-	if flags.NArg() > 1 || (command == "inspect" && flags.NArg() != 1) || *duration < 0 || *duration > 20*time.Minute || (*jsonOutput && command != "inspect") {
+	if flags.NArg() > 1 || (command == "inspect" && flags.NArg() != 1) || *duration < 0 || *duration > 20*time.Minute || (*jsonOutput && command != "inspect") || (*pair && (command != "investigate" || *duration == 0)) || (*order != "baseline-treatment" && (!*pair || *order != "treatment-baseline")) {
 		_, _ = io.WriteString(stderr, guidedUsage)
 		return 2
 	}
@@ -99,7 +105,14 @@ func runGuided(command string, args []string, stdout, stderr io.Writer, serve gu
 			}
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 			defer stop()
-			if err := recordTimed(ctx, browser.CaptureOptions{URL: options.InitialURL, Location: *location, BlockOrigins: blocked}, *duration, path, stdout); err != nil {
+			captureOptions := browser.CaptureOptions{URL: options.InitialURL, Location: *location, BlockOrigins: blocked}
+			var err error
+			if *pair {
+				err = recordPair(ctx, captureOptions, *duration, path, *order, stdout)
+			} else {
+				err = recordTimed(ctx, captureOptions, *duration, path, stdout)
+			}
+			if err != nil {
 				fmt.Fprintln(stderr, "ariadne: investigate:", err)
 				return 1
 			}
@@ -122,7 +135,15 @@ func runGuided(command string, args []string, stdout, stderr io.Writer, serve gu
 }
 
 func recordTimed(ctx context.Context, options browser.CaptureOptions, duration time.Duration, path string, output io.Writer) error {
-	options.Markers = browser.GenerateMarkers()
+	if err := securefs.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return errors.New("investigation output directory is unavailable")
+	}
+	if err := securefs.RequireAbsent(path); err != nil {
+		return errors.New("investigation output already exists or is unsafe")
+	}
+	if options.Markers == nil {
+		options.Markers = browser.GenerateMarkers()
+	}
 	capture, err := browser.StartCapture(ctx, options)
 	if err != nil {
 		return err

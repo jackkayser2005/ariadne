@@ -4,7 +4,7 @@
   const fragment = location.hash.slice(1);
   if (fragment) { sessionStorage.setItem('ariadne-session', fragment); history.replaceState(null, '', location.pathname); }
   const token = fragment || sessionStorage.getItem('ariadne-session') || '';
-  let busy = false, initial = true, lastEvidence = '', lastMarkers = '', revision = 0, latestState;
+  let busy = false, initial = true, lastEvidence = '', lastMarkers = '', lastComparison = '', revision = 0, latestState;
   const node = (tag, text, className) => { const element = document.createElement(tag); if (text !== undefined) element.textContent = text; if (className) element.className = className; return element; };
   const showError = error => { $('message').textContent = error.message; $('message').className = 'error'; $('message').hidden = false; };
   async function request(path, body) {
@@ -20,13 +20,42 @@
     'event-limit':'The recording reached its event limit. Later activity may be missing.',
     'size-limit':'An observation exceeded a size limit and was not retained.',
     'request-failed':'A request failed before a response could be observed.',
-    'browser-crashed':'The browser connection ended unexpectedly.',
+    'browser-crashed':'A browser target crashed or its connection ended. Some activity may be missing.',
     'cancelled':'Recording was cancelled.',
     'out-of-scope-navigation':'Navigation outside the chosen website was blocked.',
     'manual-checkpoint':'An interaction requires a manual checkpoint.',
     'unmatched-information':'Information other than the supplied synthetic markers is outside this investigation.',
     'server-side-unobservable':'Onward handling by servers cannot be seen from the browser.'
   };
+  const comparisonGaps = {
+    'trial-provenance-unavailable':'These files do not establish one controlled pair.',
+    'interaction-steps-differ':'The recorded interaction steps differ between runs.',
+    'no-control-change':'No privacy control changed between runs.',
+    'incomplete-visibility':'One or both recordings have visibility gaps. A reduction remains unknown.',
+    'baseline-has-no-supported-disclosure':'The baseline has no supported marker-bearing network activity to reduce.'
+  };
+  function renderComparison(state) {
+    $('notice').textContent=state.notice||state.comparison_error||'';
+    $('notice').hidden=!$('notice').textContent;
+    $('comparison-panel').hidden=!state.comparison;
+    const signature=JSON.stringify(state.comparison);
+    if(signature===lastComparison)return;
+    lastComparison=signature;
+    if(!state.comparison)return;
+    const result=state.comparison;
+    $('comparison-summary').textContent=result.reduction==='unknown'?'The privacy reduction remains unknown. These counts describe the supported observations.':result.reduction==='reduced'?'Fewer supported marker-bearing network observations remained after blocking.':'No reduction was observed in the supported marker-bearing network activity.';
+    $('comparison-counts').replaceChildren();
+    for(const [key,label] of [['requests','Requests attempted'],['responses','Responses observed'],['blocked','Attempts blocked'],['websocket_frames','Text WebSocket frames sent']]){
+      const row=node('tr');const heading=node('th',label);heading.scope='row';
+      row.append(heading,node('td',String(result.baseline[key])),node('td',String(result.treatment[key])));$('comparison-counts').append(row);
+    }
+    $('comparison-gaps').replaceChildren();
+    for(const gap of result.unknowns)$('comparison-gaps').append(node('li',comparisonGaps[gap]||'A comparison boundary remains unknown.'));
+    $('baseline-functionality').value=result.functionality.baseline;
+    $('treatment-functionality').value=result.functionality.treatment;
+    const labels={unknown:'not confirmed',works:'worked',broken:'did not work'};
+    $('functionality-summary').textContent='Your reports: baseline '+labels[result.functionality.baseline]+'; trial '+labels[result.functionality.treatment]+'. Automatic functionality verification: '+result.automatic_functionality+'.';
+  }
   function render(state) {
     latestState=state;
     const recording = state.phase === 'recording' || state.phase === 'interrupted';
@@ -40,8 +69,9 @@
     $('stop').hidden = !recording; $('cancel').hidden = !recording && !unsaved;
     $('save').hidden = !unsaved;
     $('test-inputs').hidden = !recording;
-    $('less-panel').hidden = !saved || state.read_only;
+    $('less-panel').hidden = !saved || state.read_only || !state.can_compare;
     $('export').hidden = !saved && !unsaved;
+    renderComparison(state);
     if (initial) {
       $('site').value = state.initial_url || '';
       initial=false;
@@ -86,8 +116,11 @@
   $('start-form').addEventListener('submit',event=>{event.preventDefault();act('start',{url:$('site').value});});
   $('stop').addEventListener('click',()=>act('stop',{}));$('cancel').addEventListener('click',()=>act('cancel',{}));
   $('save').addEventListener('click',()=>act('save',{}));
-  $('retry').addEventListener('click',()=>act('start',{url:$('site').value,location:$('location').value,block_origins:Array.from($('destinations').querySelectorAll('input:checked')).map(input=>input.value)}));
-  $('export').addEventListener('click',async()=>{try{const response=await request('export');const url=URL.createObjectURL(await response.blob());const link=node('a');link.href=url;link.download='ariadne-evidence.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(error){showError(error);}});
+  $('retry').addEventListener('click',()=>act('start',{url:latestState.initial_url,trial:true,location:$('location').value,block_origins:Array.from($('destinations').querySelectorAll('input:checked')).map(input=>input.value)}));
+  $('functionality-form').addEventListener('submit',event=>{event.preventDefault();act('functionality',{functionality:{baseline:$('baseline-functionality').value,treatment:$('treatment-functionality').value}});});
+  async function download(path,filename){try{const response=await request(path);const url=URL.createObjectURL(await response.blob());const link=node('a');link.href=url;link.download=filename;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(error){showError(error);}}
+  $('export').addEventListener('click',()=>download('export','ariadne-evidence.json'));
+  $('profile').addEventListener('click',()=>download('profile','ariadne-private-protection.json'));
   async function refresh(){const observedRevision=revision;if(!busy){try{const state=await(await request('state')).json();if(!busy&&revision===observedRevision)render(state);}catch(error){if(!busy&&revision===observedRevision)showError(error);}}setTimeout(refresh,1500);}
   refresh();
 })();

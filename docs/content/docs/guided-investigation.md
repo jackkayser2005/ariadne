@@ -63,10 +63,30 @@ consistency; they are not signatures or independent proof of source truth.
 
 After saving, **Try sharing less** starts another fresh recording with selected
 destination blocks, location denial, or a fixed synthetic approximate location.
-Repeat the same task using the same markers. The approximate location is a lab
-input, not an approximation of your actual location. Persistent protection and
-verified baseline/treatment comparisons are later milestones; the current guide
-keeps each trial's observations and uncertainty visible without claiming success.
+Repeat the same task using the same markers. Ariadne binds the baseline and trial
+to the same input set, site, browser version, platform, and execution order. It
+compares recorded interaction steps and supported marker-bearing network counts.
+Different steps, missing bindings, or incomplete visibility keep reduction
+**unknown**. Cancelling a trial preserves its saved baseline for another attempt.
+
+**What changed?** separates attempted requests, observed responses, blocked
+attempts, and supported text WebSocket frames. Report whether your task worked in
+each run. These answers remain **user reports**; they never become automatic
+functionality verification. **Use these reports** applies them to the current
+session; exporting a private protection profile saves them with its receipt.
+The existing trace comparison and minimization
+classifications retain their original semantics.
+
+**Save private protection profile** exports the controls actually installed in
+the trial together with its comparison receipt and your task reports. This
+versioned private file contains site and destination addresses. Keep it local;
+share portable evidence instead. The receipt references checked source hashes,
+but is not a signature or independent attestation of the original captures.
+The optional companion consumes this profile in the following milestone.
+
+The approximate location is a fixed lab input, not an approximation of your
+actual location. Approximate trials cannot produce a persistent protection
+profile; retest with denied or unchanged location first.
 
 ## Terminal access
 
@@ -76,11 +96,23 @@ ariadne investigate --duration 30s --location deny --block-origin https://collec
 ariadne inspect .ariadne/my-trial
 ariadne inspect --no-open ariadne-evidence.json
 ariadne inspect --json ariadne-evidence.json
+ariadne investigate --pair --duration 30s --location deny --output .ariadne/my-pair https://example.com
+ariadne investigate --pair --order treatment-baseline --duration 30s --location deny --output .ariadne/reversed-pair https://example.com
+ariadne compare .ariadne/my-pair/baseline .ariadne/my-pair/treatment
+ariadne compare --json --baseline-task works --trial-task broken .ariadne/my-pair/baseline .ariadne/my-pair/treatment
+ariadne compare --baseline-task works --trial-task works --profile private-protection.json .ariadne/my-pair/baseline .ariadne/my-pair/treatment
 ```
 
 Put flags before the website or bundle argument. `--no-open` prints the loopback
 interface URL; `--duration` records from the terminal and prints synthetic inputs.
 Ctrl+C cancels a timed recording without saving. Output directories must be new.
+`--pair` records two runs using the same generated inputs, with the requested
+duration per run. Repeat the same task in both fresh windows. `--order
+treatment-baseline` reverses execution while preserving the baseline/trial
+meaning of the comparison arguments. If the second run fails or is cancelled,
+the completed first run remains available for inspection; an incomplete pair
+cannot produce a comparison or protection profile. Profile files are never
+overwritten. Comparison JSON contains safe counts and identities, not addresses.
 `inspect` verifies saved content before opening a read-only view; `--json` emits
 only portable evidence. Existing weather, trace, Android, and evidence-review
 commands retain their original behavior.
