@@ -42,6 +42,7 @@ type privateJourneyContext struct {
 	JourneySHA256 string              `json:"journey_sha256"`
 	Destinations  []DestinationName   `json:"destinations"`
 	Steps         []InvestigationStep `json:"steps"`
+	Trial         *TrialSettings      `json:"trial,omitempty"`
 }
 type privateJourneyReceipt struct {
 	SchemaVersion int    `json:"schema_version"`
@@ -134,6 +135,10 @@ func SaveInvestigation(path string, result CaptureResult) (JourneyBundle, error)
 		return bundle, err
 	}
 	private := privateJourneyContext{SchemaVersion: 1, JourneySHA256: bundle.Receipt.JourneySHA256, Destinations: result.Destinations, Steps: result.Steps}
+	if result.Trial != nil {
+		private.SchemaVersion = 2
+		private.Trial = result.Trial
+	}
 	if err := private.validate(bundle); err != nil {
 		return bundle, err
 	}
@@ -172,8 +177,11 @@ func SaveInvestigation(path string, result CaptureResult) (JourneyBundle, error)
 }
 
 func (private privateJourneyContext) validate(bundle JourneyBundle) error {
-	if private.SchemaVersion != 1 || private.JourneySHA256 != bundle.Receipt.JourneySHA256 || len(private.Destinations) == 0 || len(private.Destinations) > 256 || len(private.Steps) > 64 || private.Steps == nil {
+	if (private.SchemaVersion != 1 && private.SchemaVersion != 2) || private.JourneySHA256 != bundle.Receipt.JourneySHA256 || len(private.Destinations) == 0 || len(private.Destinations) > 256 || len(private.Steps) > 64 || private.Steps == nil {
 		return errors.New("private investigation context is invalid")
+	}
+	if (private.SchemaVersion == 1 && private.Trial != nil) || (private.SchemaVersion == 2 && (private.Trial == nil || private.Trial.validate() != nil)) {
+		return errors.New("private trial settings are invalid")
 	}
 	seen := map[string]bool{}
 	for i, destination := range private.Destinations {
@@ -206,60 +214,66 @@ func (private privateJourneyContext) validate(bundle JourneyBundle) error {
 // ReadInvestigation verifies a saved directory or portable JSON export. Only a
 // local directory can return separately verified private destination names.
 func ReadInvestigation(path string) (JourneyBundle, []DestinationName, error) {
+	bundle, private, err := readInvestigation(path)
+	return bundle, private.Destinations, err
+}
+
+func readInvestigation(path string) (JourneyBundle, privateJourneyContext, error) {
+	var empty privateJourneyContext
 	info, err := os.Lstat(path)
 	if err != nil {
-		return JourneyBundle{}, nil, errors.New("saved investigation is unavailable")
+		return JourneyBundle{}, empty, errors.New("saved investigation is unavailable")
 	}
 	if !info.IsDir() {
 		data, err := readInvestigationFile(path, maxJourneyBundleBytes)
 		if err != nil {
-			return JourneyBundle{}, nil, err
+			return JourneyBundle{}, empty, err
 		}
 		bundle, err := DecodeJourneyBundle(data)
-		return bundle, nil, err
+		return bundle, empty, err
 	}
 	if securefs.ValidateDirectory(path) != nil {
-		return JourneyBundle{}, nil, errors.New("saved investigation path is unsafe")
+		return JourneyBundle{}, empty, errors.New("saved investigation path is unsafe")
 	}
 	bundle := JourneyBundle{SchemaVersion: 1}
 	for name, target := range map[string]any{"journey.json": &bundle.Journey, "trace.json": &bundle.Trace, "receipt.json": &bundle.Receipt} {
 		data, err := readInvestigationFile(filepath.Join(path, name), maxJourneyBundleBytes)
 		if err != nil {
-			return bundle, nil, err
+			return bundle, empty, err
 		}
 		if err := decodeInvestigationJSON(data, maxJourneyBundleBytes, target); err != nil {
-			return bundle, nil, err
+			return bundle, empty, err
 		}
 	}
 	if err := bundle.Verify(); err != nil {
-		return bundle, nil, err
+		return bundle, empty, err
 	}
 	privatePath := filepath.Join(path, "private-context.json")
 	privateReceiptPath := filepath.Join(path, "private-receipt.json")
 	_, contextErr := os.Lstat(privatePath)
 	_, receiptErr := os.Lstat(privateReceiptPath)
 	if errors.Is(contextErr, os.ErrNotExist) && errors.Is(receiptErr, os.ErrNotExist) {
-		return bundle, nil, nil
+		return bundle, empty, nil
 	}
 	data, err := readInvestigationFile(privatePath, 256<<10)
 	if err != nil {
-		return bundle, nil, err
+		return bundle, empty, err
 	}
 	var private privateJourneyContext
 	if decodeInvestigationJSON(data, 256<<10, &private) != nil || private.validate(bundle) != nil {
-		return bundle, nil, errors.New("private investigation context failed verification")
+		return bundle, empty, errors.New("private investigation context failed verification")
 	}
 	receiptData, err := readInvestigationFile(privateReceiptPath, 1024)
 	if err != nil {
-		return bundle, nil, err
+		return bundle, empty, err
 	}
 	var receipt privateJourneyReceipt
 	canonical, _ := json.Marshal(private)
 	digest := sha256.Sum256(canonical)
 	if decodeInvestigationJSON(receiptData, 1024, &receipt) != nil || receipt.SchemaVersion != 1 || receipt.ContextSHA256 != hex.EncodeToString(digest[:]) {
-		return bundle, nil, errors.New("private investigation context identity does not match")
+		return bundle, empty, errors.New("private investigation context identity does not match")
 	}
-	return bundle, private.Destinations, nil
+	return bundle, private, nil
 }
 
 func readInvestigationFile(path string, limit int) ([]byte, error) {

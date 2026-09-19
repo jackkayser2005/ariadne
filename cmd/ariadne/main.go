@@ -35,6 +35,7 @@ Start a guided website investigation:
   ariadne investigate [url]                           open the local guide
   ariadne investigate --no-open [url]                 print the local guide URL
   ariadne inspect <bundle-directory-or-export.json>   verify and review saved evidence
+  ariadne compare <baseline-directory> <trial-directory> compare a paired investigation
 
 Review a specialized weather investigation:
   ariadne browser weather verify <run-directory>
@@ -117,6 +118,8 @@ command groups
 guided investigation
   ariadne investigate [--no-open] [url]
   ariadne investigate --duration 30s [--output new-directory] [--location deny|approximate] [--block-origin https://destination.example] url
+  ariadne investigate --pair --duration 30s [--order treatment-baseline] [--location deny] [--output new-directory] url
+  ariadne compare [--json] [--baseline-task works|broken|unknown] [--trial-task works|broken|unknown] [--profile new-private-file.json] <baseline-directory> <trial-directory>
   ariadne inspect [--no-open] [--json] <bundle-directory-or-export.json>
 
 help
@@ -275,6 +278,9 @@ func main() {
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == "compare" {
+		return runJourneyCompare(args[1:], stdout, stderr)
+	}
 	if len(args) > 0 && (args[0] == "investigate" || args[0] == "inspect") {
 		return runGuided(args[0], args[1:], stdout, stderr, serveGuided)
 	}

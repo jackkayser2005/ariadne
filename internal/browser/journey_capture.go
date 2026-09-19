@@ -40,6 +40,7 @@ type CaptureOptions struct {
 	BlockOrigins []string
 	Location     string // unchanged, deny, or approximate (lab-only synthetic location)
 	Headless     bool
+	Trial        *TrialIdentity
 }
 
 // CaptureResult separates portable evidence from private destination context.
@@ -47,6 +48,7 @@ type CaptureResult struct {
 	Journey      trace.Journey
 	Destinations []DestinationName
 	Steps        []InvestigationStep
+	Trial        *TrialSettings
 }
 
 type requestObservation struct {
@@ -89,6 +91,13 @@ func StartCapture(ctx context.Context, options CaptureOptions) (*JourneyCapture,
 	}
 	options.Markers = slices.Clone(options.Markers)
 	options.BlockOrigins = slices.Clone(options.BlockOrigins)
+	if options.Trial != nil {
+		identity := *options.Trial
+		if err := identity.validate(); err != nil {
+			return nil, err
+		}
+		options.Trial = &identity
+	}
 	u, err := InvestigationURL(options.URL)
 	if err != nil {
 		return nil, err
@@ -129,6 +138,19 @@ func StartCapture(ctx context.Context, options CaptureOptions) (*JourneyCapture,
 	// every response body, storage mechanism, encrypted payload, or service worker.
 	// Until those boundaries are proven, absence is explicitly unknown.
 	c.result.Journey.AddGap("instrumentation-unavailable")
+	if options.Trial != nil {
+		var version struct{ Product string }
+		err = client.call(lifetime, "", "Browser.getVersion", map[string]any{}, &version)
+		if err == nil {
+			c.result.Trial, err = newTrialSettings(*options.Trial, version.Product, options)
+		}
+		if err != nil {
+			client.close()
+			cancel()
+			_ = process.close()
+			return nil, err
+		}
+	}
 	var created struct {
 		TargetID string `json:"targetId"`
 	}
@@ -728,6 +750,11 @@ func (c *JourneyCapture) Snapshot() CaptureResult {
 	result.Journey.LinkMatches()
 	result.Destinations = slices.Clone(c.result.Destinations)
 	result.Steps = slices.Clone(c.result.Steps)
+	if c.result.Trial != nil {
+		copied := *c.result.Trial
+		copied.BlockOrigins = slices.Clone(c.result.Trial.BlockOrigins)
+		result.Trial = &copied
+	}
 	return result
 }
 
