@@ -31,6 +31,8 @@ jobs:
         run: go vet ./...
 
       - name: Test
+        env:
+          ARIADNE_BROWSER_TESTS: '1'
         run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
 
       - name: Enforce 90% coverage

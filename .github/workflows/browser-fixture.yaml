@@ -14,7 +14,7 @@ permissions:
 jobs:
   fixture:
     runs-on: windows-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -31,6 +31,14 @@ jobs:
           node --check cmd/browser-fixture-driver/browser_fixture_driver.mjs
           node --check cmd/browser-fixture-driver/weather_driver.mjs
           node --test cmd/browser-fixture-driver/weather_driver.test.mjs
+
+      - name: Check guided browser journeys
+        shell: pwsh
+        env:
+          ARIADNE_BROWSER_TESTS: '1'
+        run: |
+          go test -p 1 -race ./internal/browser ./internal/ui ./cmd/ariadne -run 'Journey|Guided|InspectCLI|TimedInvestigation' -count=1 -timeout=120s
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Capture local browser fixture
         shell: pwsh
