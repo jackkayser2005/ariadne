@@ -64,6 +64,7 @@ type captureSession struct {
 type JourneyCapture struct {
 	mu                              sync.Mutex
 	stopMu                          sync.Mutex
+	hooks                           sync.WaitGroup
 	result                          CaptureResult
 	options                         CaptureOptions
 	matcher                         *MarkerMatcher
@@ -257,7 +258,17 @@ func (c *JourneyCapture) configure(ctx context.Context, session, kind string) er
 	if kind == "page" {
 		return nil
 	}
-	return c.client.call(ctx, session, "Runtime.evaluate", map[string]any{"expression": journeyHooks}, nil)
+	// Evaluation can wait for another attached target to resume. Do not hold the
+	// target setup queue while waiting for page-owned code. The session limit
+	// bounds these tasks; collection joins them before publishing its result.
+	c.hooks.Add(1)
+	go func() {
+		defer c.hooks.Done()
+		if c.client.call(ctx, session, "Runtime.evaluate", map[string]any{"expression": journeyHooks}, nil) != nil {
+			c.gap(kind + "-unavailable")
+		}
+	}()
+	return nil
 }
 
 func (c *JourneyCapture) collect(ctx context.Context) {
@@ -298,6 +309,7 @@ func (c *JourneyCapture) collect(ctx context.Context) {
 	close(targets)
 	close(requests)
 	controls.Wait()
+	c.hooks.Wait()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.stopping && !c.exhausted {
@@ -373,6 +385,10 @@ func (c *JourneyCapture) event(ctx context.Context, m cdpMessage) {
 		}
 		if count >= 64 || !slices.Contains([]string{"worker", "shared_worker", "service_worker", "iframe"}, p.TargetInfo.Type) {
 			c.gap("worker-unavailable")
+			if len(c.options.BlockOrigins) > 0 {
+				c.closeUncontrolledTarget(ctx, p.TargetInfo.TargetID)
+				return
+			}
 			_ = c.client.call(ctx, p.SessionID, "Runtime.runIfWaitingForDebugger", map[string]any{}, nil)
 			return
 		}
@@ -381,6 +397,10 @@ func (c *JourneyCapture) event(ctx context.Context, m cdpMessage) {
 		c.mu.Unlock()
 		if c.configure(ctx, p.SessionID, kind) != nil {
 			c.gap(kind + "-unavailable")
+			if len(c.options.BlockOrigins) > 0 {
+				c.closeUncontrolledTarget(ctx, p.TargetInfo.TargetID)
+				return
+			}
 		}
 		if c.client.call(ctx, p.SessionID, "Runtime.runIfWaitingForDebugger", map[string]any{}, nil) != nil {
 			c.gap(kind + "-unavailable")
@@ -651,6 +671,12 @@ func (c *JourneyCapture) event(ctx context.Context, m cdpMessage) {
 		c.mu.Unlock()
 	case "Inspector.targetCrashed", "Target.targetCrashed":
 		c.gap("browser-crashed")
+	}
+}
+
+func (c *JourneyCapture) closeUncontrolledTarget(ctx context.Context, target string) {
+	if c.client.call(ctx, "", "Target.closeTarget", map[string]any{"targetId": target}, nil) != nil {
+		c.client.cancel()
 	}
 }
 

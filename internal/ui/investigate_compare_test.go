@@ -100,6 +100,46 @@ func TestGuidedComparisonReportsRemainClaimedAndProfileStaysPrivate(t *testing.T
 	}
 }
 
+func TestGuidedProfileRejectsValidSourceReplacementUntilComparisonRefresh(t *testing.T) {
+	for i, role := range []string{"baseline", "treatment"} {
+		t.Run(role, func(t *testing.T) {
+			h := savedGuidedPair(t, "deny")
+			path := h.baselinePath
+			location := "unchanged"
+			if role == "treatment" {
+				path, location = h.savedPath, "deny"
+			}
+			bundle, names, err := browser.ReadInvestigation(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			bundle.Journey.AddGap("worker-unavailable")
+			identity := *h.trialIdentity
+			identity.Role = role
+			replacement := browser.CaptureResult{Journey: bundle.Journey, Destinations: names, Steps: []browser.InvestigationStep{}, Trial: &browser.TrialSettings{SchemaVersion: 1, Identity: identity, StartedAt: int64(i + 1), Browser: "Chrome/153.0.0.0", Platform: "windows", Location: location, BlockOrigins: []string{}}}
+			if err := os.Rename(path, path+".original"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := browser.SaveInvestigation(path, replacement); err != nil {
+				t.Fatal(err)
+			}
+			fresh, err := browser.BuildSiteProtectionProfile(h.baselinePath, h.savedPath, h.confirmation)
+			if err != nil || fresh.Test.ComparisonSHA256 == h.comparison.SHA256() {
+				t.Fatalf("replacement should remain valid and change the comparison: %v", err)
+			}
+			if r := guidedRequest(h, "GET", "/api/profile", ""); r.Code != http.StatusConflict || !strings.Contains(r.Body.String(), "review the updated comparison") {
+				t.Fatal("export accepted evidence the displayed comparison did not use", r.Code, r.Body.String())
+			}
+			if r := guidedRequest(h, "GET", "/api/state", ""); r.Code != http.StatusOK {
+				t.Fatal(r.Body.String())
+			}
+			if r := guidedRequest(h, "GET", "/api/profile", ""); r.Code != http.StatusOK {
+				t.Fatal("updated comparison cannot be exported", r.Body.String())
+			}
+		})
+	}
+}
+
 func TestGuidedComparisonCancellationRestoresBaselineAndRejectsUnsafeRetry(t *testing.T) {
 	h := savedGuidedPair(t, "approximate")
 	baseline := h.baselinePath

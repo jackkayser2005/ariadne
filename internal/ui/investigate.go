@@ -197,6 +197,10 @@ func (h *InvestigationHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return
 		}
+		if profile.Test.ComparisonSHA256 != h.comparison.SHA256() {
+			http.Error(w, "saved evidence changed; review the updated comparison before saving protection", http.StatusConflict)
+			return
+		}
 		data, err := profile.PrivateJSON()
 		if err != nil {
 			http.Error(w, "private protection profile failed verification", http.StatusUnprocessableEntity)
