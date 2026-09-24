@@ -37,17 +37,23 @@ type InvestigationOptions struct {
 // InvestigationHandler owns one guided session. Existing evidence review
 // handlers remain read-only and do not share its capture controls or token.
 type InvestigationHandler struct {
-	mu               sync.Mutex
-	options          InvestigationOptions
-	ctx              context.Context
-	cancel           context.CancelFunc
-	token            string
-	capture          *browser.JourneyCapture
-	pending          *browser.CaptureResult
-	markers          []browser.SyntheticMarker
-	bundle           *browser.JourneyBundle
-	destinations     []browser.DestinationName
-	savedPath, phase string
+	mu                   sync.Mutex
+	options              InvestigationOptions
+	ctx                  context.Context
+	cancel               context.CancelFunc
+	token                string
+	capture              *browser.JourneyCapture
+	pending              *browser.CaptureResult
+	markers              []browser.SyntheticMarker
+	bundle               *browser.JourneyBundle
+	destinations         []browser.DestinationName
+	savedPath, phase     string
+	baselinePath, notice string
+	trialIdentity        *browser.TrialIdentity
+	currentTrial         bool
+	confirmation         browser.TaskConfirmation
+	comparison           *browser.JourneyComparison
+	comparisonError      string
 }
 
 // NewInvestigationHandler validates loopback binding and any saved bundle before
@@ -178,6 +184,33 @@ func (h *InvestigationHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		_, _ = w.Write(data)
 		return
 	}
+	if r.URL.Path == "/api/profile" {
+		if !getOnly(w, r) {
+			return
+		}
+		if h.options.SavedPath != "" || h.comparison == nil || h.phase != "saved" {
+			http.Error(w, "complete a paired trial before saving protection", http.StatusConflict)
+			return
+		}
+		profile, err := browser.BuildSiteProtectionProfile(h.baselinePath, h.savedPath, h.confirmation)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+			return
+		}
+		if profile.Test.ComparisonSHA256 != h.comparison.SHA256() {
+			http.Error(w, "saved evidence changed; review the updated comparison before saving protection", http.StatusConflict)
+			return
+		}
+		data, err := profile.PrivateJSON()
+		if err != nil {
+			http.Error(w, "private protection profile failed verification", http.StatusUnprocessableEntity)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Disposition", `attachment; filename="ariadne-private-protection.json"`)
+		_, _ = w.Write(data)
+		return
+	}
 	if h.options.SavedPath != "" {
 		http.Error(w, "saved investigation review is read only", http.StatusMethodNotAllowed)
 		return
@@ -192,10 +225,12 @@ func (h *InvestigationHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var input struct {
-		URL          string   `json:"url"`
-		BlockOrigins []string `json:"block_origins"`
-		Location     string   `json:"location"`
-		Marker       string   `json:"marker"`
+		URL           string                   `json:"url"`
+		BlockOrigins  []string                 `json:"block_origins"`
+		Location      string                   `json:"location"`
+		Marker        string                   `json:"marker"`
+		Trial         bool                     `json:"trial"`
+		Functionality browser.TaskConfirmation `json:"functionality"`
 	}
 	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 16<<10))
 	if err != nil || jsoncheck.RejectDuplicateKeys(data) != nil {
@@ -222,12 +257,46 @@ func (h *InvestigationHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 			http.Error(w, "an output directory is required", http.StatusConflict)
 			return
 		}
-		capture, err := browser.StartCapture(h.ctx, browser.CaptureOptions{URL: input.URL, Markers: h.markers, BlockOrigins: input.BlockOrigins, Location: input.Location, Headless: h.options.Headless})
+		markers := h.markers
+		var identity *browser.TrialIdentity
+		if input.Trial {
+			if h.trialIdentity == nil || h.baselinePath == "" || input.URL != h.options.InitialURL {
+				http.Error(w, "save a baseline and repeat the same website before comparing", http.StatusConflict)
+				return
+			}
+			if _, _, err := browser.ReadInvestigation(h.baselinePath); err != nil {
+				http.Error(w, "baseline failed verification", http.StatusUnprocessableEntity)
+				return
+			}
+			copy := *h.trialIdentity
+			copy.Role = "treatment"
+			identity = &copy
+		} else {
+			markers = browser.GenerateMarkers()
+			if len(input.BlockOrigins) == 0 && (input.Location == "" || input.Location == "unchanged") {
+				pair := browser.NewTrialIdentity("baseline-treatment")
+				identity = &pair
+			}
+		}
+		capture, err := browser.StartCapture(h.ctx, browser.CaptureOptions{URL: input.URL, Markers: markers, BlockOrigins: input.BlockOrigins, Location: input.Location, Headless: h.options.Headless, Trial: identity})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 			return
 		}
 		h.capture = capture
+		h.markers = markers
+		h.notice = ""
+		h.comparison = nil
+		h.comparisonError = ""
+		h.currentTrial = input.Trial
+		h.options.InitialURL = input.URL
+		if !input.Trial {
+			h.trialIdentity = identity
+			h.baselinePath = ""
+			h.confirmation = browser.TaskConfirmation{Baseline: "unknown", Treatment: "unknown"}
+		} else {
+			h.confirmation.Treatment = "unknown"
+		}
 		h.bundle = nil
 		h.savedPath = ""
 		h.destinations = nil
@@ -243,12 +312,7 @@ func (h *InvestigationHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		}
 	case "/api/stop", "/api/cancel":
 		if r.URL.Path == "/api/cancel" && h.pending != nil {
-			h.pending = nil
-			h.bundle = nil
-			h.destinations = nil
-			h.savedPath = ""
-			h.phase = "cancelled"
-			h.markers = browser.GenerateMarkers()
+			h.discard()
 			h.state(w)
 			return
 		}
@@ -260,11 +324,7 @@ func (h *InvestigationHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		result, cleanupErr := h.capture.Stop(cancelled)
 		h.capture = nil
 		if cancelled {
-			h.phase = "cancelled"
-			h.bundle = nil
-			h.destinations = nil
-			h.savedPath = ""
-			h.markers = browser.GenerateMarkers()
+			h.discard()
 		} else {
 			h.pending = &result
 			h.phase = "unsaved"
@@ -294,6 +354,18 @@ func (h *InvestigationHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 			http.Error(w, "Recording is retained in memory. Export the evidence, or fix the output directory and retry saving.", http.StatusUnprocessableEntity)
 			return
 		}
+	case "/api/functionality":
+		if h.comparison == nil || h.phase != "saved" {
+			http.Error(w, "complete the paired trial before confirming functionality", http.StatusConflict)
+			return
+		}
+		comparison, err := browser.CompareInvestigations(h.baselinePath, h.savedPath, input.Functionality)
+		if err != nil {
+			http.Error(w, "functionality confirmation or saved evidence is invalid", http.StatusUnprocessableEntity)
+			return
+		}
+		h.confirmation = input.Functionality
+		h.comparison = &comparison
 	default:
 		http.NotFound(w, r)
 		return
@@ -311,11 +383,56 @@ func (h *InvestigationHandler) publish() error {
 	h.destinations = h.pending.Destinations
 	h.savedPath = path
 	h.phase = "saved"
+	if h.pending.Trial != nil && h.pending.Trial.Identity.Role == "baseline" {
+		h.baselinePath = path
+	}
 	h.pending = nil
+	h.refreshComparison()
 	return nil
 }
 
+func (h *InvestigationHandler) discard() {
+	h.pending = nil
+	h.bundle = nil
+	h.destinations = nil
+	h.savedPath = ""
+	h.comparison = nil
+	h.comparisonError = ""
+	h.phase = "cancelled"
+	if h.currentTrial && h.baselinePath != "" {
+		if bundle, names, err := browser.ReadInvestigation(h.baselinePath); err == nil {
+			h.bundle = &bundle
+			h.destinations = names
+			h.savedPath = h.baselinePath
+			h.phase = "saved"
+			h.currentTrial = false
+			h.notice = "Trial cancelled. Your saved baseline is ready for another comparison."
+			return
+		}
+	}
+	h.markers = browser.GenerateMarkers()
+	h.baselinePath = ""
+	h.trialIdentity = nil
+	h.currentTrial = false
+	h.notice = ""
+}
+
+func (h *InvestigationHandler) refreshComparison() {
+	if !h.currentTrial || h.savedPath == "" || h.baselinePath == "" || h.phase != "saved" {
+		return
+	}
+	comparison, err := browser.CompareInvestigations(h.baselinePath, h.savedPath, h.confirmation)
+	if err != nil {
+		h.comparison = nil
+		h.comparisonError = "The saved baseline and trial could not be verified as one comparison."
+		return
+	}
+	h.comparison = &comparison
+	h.comparisonError = ""
+}
+
 func (h *InvestigationHandler) state(w http.ResponseWriter) {
+	h.refreshComparison()
 	var journey *trace.Journey
 	if h.capture != nil {
 		snapshot := h.capture.Snapshot()
@@ -328,15 +445,20 @@ func (h *InvestigationHandler) state(w http.ResponseWriter) {
 		journey = &h.bundle.Journey
 	}
 	state := struct {
-		Phase        string                     `json:"phase"`
-		InitialURL   string                     `json:"initial_url"`
-		ReadOnly     bool                       `json:"read_only"`
-		Markers      []browser.SyntheticMarker  `json:"markers"`
-		Journey      *trace.Journey             `json:"journey"`
-		Destinations []browser.DestinationName  `json:"destinations"`
-		SavedPath    string                     `json:"saved_path"`
-		Categories   []trace.CategoryDefinition `json:"categories"`
-	}{h.phase, h.options.InitialURL, h.options.SavedPath != "", h.markers, journey, h.destinations, h.savedPath, trace.CategoryDefinitions()}
+		Phase           string                     `json:"phase"`
+		InitialURL      string                     `json:"initial_url"`
+		ReadOnly        bool                       `json:"read_only"`
+		Markers         []browser.SyntheticMarker  `json:"markers"`
+		Journey         *trace.Journey             `json:"journey"`
+		Destinations    []browser.DestinationName  `json:"destinations"`
+		SavedPath       string                     `json:"saved_path"`
+		Categories      []trace.CategoryDefinition `json:"categories"`
+		CanCompare      bool                       `json:"can_compare"`
+		BaselinePath    string                     `json:"baseline_path"`
+		Comparison      *browser.JourneyComparison `json:"comparison"`
+		ComparisonError string                     `json:"comparison_error"`
+		Notice          string                     `json:"notice"`
+	}{Phase: h.phase, InitialURL: h.options.InitialURL, ReadOnly: h.options.SavedPath != "", Markers: h.markers, Journey: journey, Destinations: h.destinations, SavedPath: h.savedPath, Categories: trace.CategoryDefinitions(), CanCompare: h.trialIdentity != nil && h.baselinePath != "", BaselinePath: h.baselinePath, Comparison: h.comparison, ComparisonError: h.comparisonError, Notice: h.notice}
 	if state.ReadOnly {
 		state.Markers = nil
 	}

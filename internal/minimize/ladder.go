@@ -407,7 +407,13 @@ func classifyLadderResult(result LadderCandidateResult, pairs int) (CandidateCla
 			outcome = portabletrace.MixedInconsistent
 		}
 	}
-	return classify(outcome, result.EvidenceState), outcome, nil
+	return ClassifyFunctionality(outcome, result.EvidenceState), outcome, nil
+}
+
+// ClassifyFunctionality applies the shared minimization decision to an outcome.
+// Claimed or incomplete functionality evidence never becomes sufficient.
+func ClassifyFunctionality(outcome portabletrace.ReplicatedOutcome, state evidence.State) CandidateClassification {
+	return classify(outcome, state)
 }
 
 // ClassifyLadderCandidate derives one candidate classification from its

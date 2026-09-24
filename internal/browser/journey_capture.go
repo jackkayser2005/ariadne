@@ -40,6 +40,7 @@ type CaptureOptions struct {
 	BlockOrigins []string
 	Location     string // unchanged, deny, or approximate (lab-only synthetic location)
 	Headless     bool
+	Trial        *TrialIdentity
 }
 
 // CaptureResult separates portable evidence from private destination context.
@@ -47,6 +48,7 @@ type CaptureResult struct {
 	Journey      trace.Journey
 	Destinations []DestinationName
 	Steps        []InvestigationStep
+	Trial        *TrialSettings
 }
 
 type requestObservation struct {
@@ -62,6 +64,7 @@ type captureSession struct {
 type JourneyCapture struct {
 	mu                              sync.Mutex
 	stopMu                          sync.Mutex
+	hooks                           sync.WaitGroup
 	result                          CaptureResult
 	options                         CaptureOptions
 	matcher                         *MarkerMatcher
@@ -89,6 +92,13 @@ func StartCapture(ctx context.Context, options CaptureOptions) (*JourneyCapture,
 	}
 	options.Markers = slices.Clone(options.Markers)
 	options.BlockOrigins = slices.Clone(options.BlockOrigins)
+	if options.Trial != nil {
+		identity := *options.Trial
+		if err := identity.validate(); err != nil {
+			return nil, err
+		}
+		options.Trial = &identity
+	}
 	u, err := InvestigationURL(options.URL)
 	if err != nil {
 		return nil, err
@@ -129,6 +139,19 @@ func StartCapture(ctx context.Context, options CaptureOptions) (*JourneyCapture,
 	// every response body, storage mechanism, encrypted payload, or service worker.
 	// Until those boundaries are proven, absence is explicitly unknown.
 	c.result.Journey.AddGap("instrumentation-unavailable")
+	if options.Trial != nil {
+		var version struct{ Product string }
+		err = client.call(lifetime, "", "Browser.getVersion", map[string]any{}, &version)
+		if err == nil {
+			c.result.Trial, err = newTrialSettings(*options.Trial, version.Product, options)
+		}
+		if err != nil {
+			client.close()
+			cancel()
+			_ = process.close()
+			return nil, err
+		}
+	}
 	var created struct {
 		TargetID string `json:"targetId"`
 	}
@@ -235,7 +258,17 @@ func (c *JourneyCapture) configure(ctx context.Context, session, kind string) er
 	if kind == "page" {
 		return nil
 	}
-	return c.client.call(ctx, session, "Runtime.evaluate", map[string]any{"expression": journeyHooks}, nil)
+	// Evaluation can wait for another attached target to resume. Do not hold the
+	// target setup queue while waiting for page-owned code. The session limit
+	// bounds these tasks; collection joins them before publishing its result.
+	c.hooks.Add(1)
+	go func() {
+		defer c.hooks.Done()
+		if c.client.call(ctx, session, "Runtime.evaluate", map[string]any{"expression": journeyHooks}, nil) != nil {
+			c.gap(kind + "-unavailable")
+		}
+	}()
+	return nil
 }
 
 func (c *JourneyCapture) collect(ctx context.Context) {
@@ -276,6 +309,7 @@ func (c *JourneyCapture) collect(ctx context.Context) {
 	close(targets)
 	close(requests)
 	controls.Wait()
+	c.hooks.Wait()
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.stopping && !c.exhausted {
@@ -351,6 +385,10 @@ func (c *JourneyCapture) event(ctx context.Context, m cdpMessage) {
 		}
 		if count >= 64 || !slices.Contains([]string{"worker", "shared_worker", "service_worker", "iframe"}, p.TargetInfo.Type) {
 			c.gap("worker-unavailable")
+			if len(c.options.BlockOrigins) > 0 {
+				c.closeUncontrolledTarget(ctx, p.TargetInfo.TargetID)
+				return
+			}
 			_ = c.client.call(ctx, p.SessionID, "Runtime.runIfWaitingForDebugger", map[string]any{}, nil)
 			return
 		}
@@ -359,6 +397,10 @@ func (c *JourneyCapture) event(ctx context.Context, m cdpMessage) {
 		c.mu.Unlock()
 		if c.configure(ctx, p.SessionID, kind) != nil {
 			c.gap(kind + "-unavailable")
+			if len(c.options.BlockOrigins) > 0 {
+				c.closeUncontrolledTarget(ctx, p.TargetInfo.TargetID)
+				return
+			}
 		}
 		if c.client.call(ctx, p.SessionID, "Runtime.runIfWaitingForDebugger", map[string]any{}, nil) != nil {
 			c.gap(kind + "-unavailable")
@@ -632,6 +674,12 @@ func (c *JourneyCapture) event(ctx context.Context, m cdpMessage) {
 	}
 }
 
+func (c *JourneyCapture) closeUncontrolledTarget(ctx context.Context, target string) {
+	if c.client.call(ctx, "", "Target.closeTarget", map[string]any{"targetId": target}, nil) != nil {
+		c.client.cancel()
+	}
+}
+
 func (c *JourneyCapture) consumeEvent(message cdpMessage) bool {
 	c.mu.Lock()
 	if c.exhausted {
@@ -728,6 +776,11 @@ func (c *JourneyCapture) Snapshot() CaptureResult {
 	result.Journey.LinkMatches()
 	result.Destinations = slices.Clone(c.result.Destinations)
 	result.Steps = slices.Clone(c.result.Steps)
+	if c.result.Trial != nil {
+		copied := *c.result.Trial
+		copied.BlockOrigins = slices.Clone(c.result.Trial.BlockOrigins)
+		result.Trial = &copied
+	}
 	return result
 }
 
