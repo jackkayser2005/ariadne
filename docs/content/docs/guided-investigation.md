@@ -82,7 +82,9 @@ the trial together with its comparison receipt and your task reports. This
 versioned private file contains site and destination addresses. Keep it local;
 share portable evidence instead. The receipt references checked source hashes,
 but is not a signature or independent attestation of the original captures.
-The optional companion consumes this profile in the following milestone.
+Import this file into the optional [Chrome/Edge companion](../companion-protection/)
+to preview and enable its supported everyday controls. Profile exports recheck
+the saved sources and reject changes since the displayed comparison.
 
 The approximate location is a fixed lab input, not an approximation of your
 actual location. Approximate trials cannot produce a persistent protection

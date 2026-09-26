@@ -16,8 +16,11 @@ go run ./cmd/ariadne investigate https://example.com
 Choose a website, browse in the fresh recording window, stop, and review where
 synthetic test inputs appeared. **Try sharing less** can start a fresh trial
 with location denial, a synthetic approximate location, or selected destination
-blocks. Current trials remain separate observations; automatic task verification
-and persistent companion protection are subsequent milestones.
+blocks. Paired comparisons keep missing evidence unknown and user task reports
+separate from automatic verification. The optional
+[Chrome/Edge companion](docs/content/docs/companion-protection.md) imports tested
+profiles for persistent destination blocking, location denial, and explicit
+alias filling, with per-site pause and undo.
 
 Use `investigate --no-open` to print the local interface URL, or
 `investigate --duration 30s <url>` for a terminal-controlled recording. Reopen a
