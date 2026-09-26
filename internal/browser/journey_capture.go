@@ -196,6 +196,17 @@ func StartCapture(ctx context.Context, options CaptureOptions) (*JourneyCapture,
 }
 
 func (c *JourneyCapture) configure(ctx context.Context, session, kind string) error {
+	resumed := false
+	if kind == "worker" && len(c.options.BlockOrigins) == 0 {
+		// A worker waiting for the debugger may itself be needed for other
+		// renderer requests to finish. Without destination controls to install,
+		// resume it before waiting on commands dispatched to that worker.
+		// Early worker activity remains explicitly partial until hooks are ready.
+		if err := c.client.call(ctx, session, "Runtime.runIfWaitingForDebugger", map[string]any{}, nil); err != nil {
+			return err
+		}
+		resumed = true
+	}
 	for _, command := range []struct {
 		method string
 		params any
@@ -256,8 +267,10 @@ func (c *JourneyCapture) configure(ctx context.Context, session, kind string) er
 	if kind == "worker" {
 		c.gap("worker-unavailable")
 	}
-	if err := c.client.call(ctx, session, "Runtime.runIfWaitingForDebugger", map[string]any{}, nil); err != nil {
-		return err
+	if !resumed {
+		if err := c.client.call(ctx, session, "Runtime.runIfWaitingForDebugger", map[string]any{}, nil); err != nil {
+			return err
+		}
 	}
 	if kind == "page" {
 		return nil
@@ -376,9 +389,6 @@ func (c *JourneyCapture) event(ctx context.Context, m cdpMessage) {
 				c.mu.Lock()
 				c.frame = tree.FrameTree.Frame.ID
 				c.mu.Unlock()
-				if err == nil {
-					err = c.client.call(ctx, p.SessionID, "Runtime.runIfWaitingForDebugger", map[string]any{}, nil)
-				}
 				c.ready <- err
 			}
 			return
@@ -405,9 +415,6 @@ func (c *JourneyCapture) event(ctx context.Context, m cdpMessage) {
 				c.closeUncontrolledTarget(ctx, p.TargetInfo.TargetID)
 				return
 			}
-		}
-		if c.client.call(ctx, p.SessionID, "Runtime.runIfWaitingForDebugger", map[string]any{}, nil) != nil {
-			c.gap(kind + "-unavailable")
 		}
 		return
 	}
