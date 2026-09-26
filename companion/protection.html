@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Ariadne protection</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script type="module" src="protection.mjs"></script>
+  </head>
+  <body>
+    <main>
+      <header>
+        <p class="brand">ARIADNE COMPANION</p>
+        <h1>Your tested controls.</h1>
+        <p>
+          Settings stay on this device. This companion does not record browsing
+          or upload profiles.
+        </p>
+        <button id="manage" type="button" class="secondary">
+          Open full page
+        </button>
+      </header>
+      <p id="message" role="status" aria-live="polite"></p>
+      <p id="error" role="alert" hidden></p>
+      <button id="retry" type="button" hidden>Retry saved controls</button>
+      <section aria-labelledby="import-title">
+        <h2 id="import-title">Import a private profile</h2>
+        <p>
+          In Ariadne, finish a paired investigation and save a private
+          protection profile. Choose that file here to preview its controls.
+        </p>
+        <label for="file">Profile file</label
+        ><input id="file" type="file" accept="application/json,.json" />
+        <div id="preview" hidden></div>
+        <button id="import" type="button" hidden>Import paused</button>
+      </section>
+      <section aria-labelledby="sites-title">
+        <h2 id="sites-title">Your sites</h2>
+        <p id="empty">
+          No profiles imported. Importing starts with all controls paused.
+        </p>
+        <div id="sites"></div>
+      </section>
+      <section id="fill-panel" aria-labelledby="fill-title" hidden>
+        <h2 id="fill-title">Fill your alias</h2>
+        <p id="fill-site"></p>
+        <p>
+          Select a text field on the page, then reopen this companion. Ariadne
+          does not submit the form. Sites can react immediately to edited
+          fields.
+        </p>
+        <button id="fill" type="button">Fill alias in selected field</button>
+      </section>
+      <details>
+        <summary>Scope and undo</summary>
+        <p>
+          Destination blocking covers the tested top-level host and its
+          subdomains on all ports and schemes. For requests without a top-level
+          page, the initiating host is used. Location is denied at the exact
+          tested address, including when embedded elsewhere; embedded pages
+          cannot bypass that denial. A lab result does not guarantee every
+          everyday interaction will work.
+        </p>
+        <p>
+          Pause stops a site's controls and keeps its profile and alias. Undo
+          removes them. Existing browser preferences return when Ariadne's
+          location rules are removed. Reload pages after changing controls; undo
+          cannot recall information already sent.
+        </p>
+        <p>
+          Profile integrity checks consistency. The receipt is not a signature
+          or independent proof of the original captures. Approximate location
+          remains lab-only.
+        </p>
+        <button id="reset" type="button" class="secondary">
+          Undo all controls and delete local profiles
+        </button>
+      </details>
+    </main>
+  </body>
+</html>

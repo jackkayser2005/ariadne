@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Ariadne Companion",
+  "version": "0.1.0",
+  "minimum_chrome_version": "145",
+  "description": "Apply locally tested privacy controls. Import a private Ariadne profile, preview, enable, pause, or undo.",
+  "permissions": [
+    "storage",
+    "declarativeNetRequest",
+    "contentSettings",
+    "activeTab",
+    "scripting"
+  ],
+  "background": { "service_worker": "background.mjs", "type": "module" },
+  "action": {
+    "default_title": "Ariadne protection",
+    "default_popup": "protection.html"
+  },
+  "options_ui": { "page": "protection.html", "open_in_tab": true },
+  "content_security_policy": {
+    "extension_pages": "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+  }
+}

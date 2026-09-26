@@ -1,0 +1,12 @@
+{
+  "name": "ariadne-companion-checks",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test controller.test.mjs",
+    "test:browser": "node --test acceptance.test.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}
