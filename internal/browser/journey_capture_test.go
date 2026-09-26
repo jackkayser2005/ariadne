@@ -46,6 +46,22 @@ const worker=new Worker('/worker.js');document.querySelector('#send').onclick=as
 	}
 	defer capture.Stop(true)
 	waitFixtureReady(t, capture, `!!document.querySelector('#send')?.onclick`)
+	workerDeadline := time.Now().Add(15 * time.Second)
+	for {
+		capture.mu.Lock()
+		ready := false
+		for _, session := range capture.sessions {
+			ready = ready || (session.context == "worker" && session.ready)
+		}
+		capture.mu.Unlock()
+		if ready {
+			break
+		}
+		if time.Now().After(workerDeadline) {
+			t.Fatalf("fixture worker hooks did not become ready: %#v", capture.Snapshot())
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		err = capture.FillSynthetic(ctx, "#email", "m1")

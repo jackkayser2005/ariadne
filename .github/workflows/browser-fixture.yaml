@@ -12,6 +12,53 @@ permissions:
   contents: read
 
 jobs:
+  companion:
+    name: companion-${{ matrix.browser }}
+    runs-on: windows-latest
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, msedge]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install companion test tools
+        working-directory: companion
+        shell: pwsh
+        run: |
+          npm ci --ignore-scripts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Install pinned Chrome for Testing
+        if: matrix.browser == 'chromium'
+        working-directory: companion
+        shell: pwsh
+        run: npx --no-install playwright install chromium --no-shell
+
+      - name: Check companion validation and native controls
+        working-directory: companion
+        shell: pwsh
+        env:
+          ARIADNE_COMPANION_CHANNEL: ${{ matrix.browser }}
+        run: node --test controller.test.mjs acceptance.test.mjs
+
+      - name: Package only companion runtime files
+        if: matrix.browser == 'chromium'
+        shell: pwsh
+        run: |
+          $files = @('manifest.json', 'background.mjs', 'controller.mjs', 'profile.mjs', 'protection.html', 'protection.mjs', 'styles.css') | ForEach-Object { Join-Path 'companion' $_ }
+          Compress-Archive -LiteralPath $files -DestinationPath (Join-Path $env:RUNNER_TEMP 'ariadne-companion.zip')
+
+      - name: Upload companion
+        if: matrix.browser == 'chromium'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ariadne-companion-${{ github.sha }}
+          path: ${{ runner.temp }}/ariadne-companion.zip
+          if-no-files-found: error
+
   fixture:
     runs-on: windows-latest
     timeout-minutes: 8

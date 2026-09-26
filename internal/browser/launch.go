@@ -142,15 +142,18 @@ func (p *browserProcess) close() error {
 			return errors.New("browser process cleanup did not finish")
 		}
 	}
-	// Only our randomly created, owned profile is removed. Chrome can release its
-	// last file handles briefly after exiting on Windows.
-	for attempt := 0; attempt < 20; attempt++ {
+	// Only our randomly created, owned profile is removed. Child processes and
+	// Windows file scanning can release handles after the browser parent exits.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
 		if err := os.RemoveAll(p.profile); err == nil {
 			return nil
 		}
+		if time.Now().After(deadline) {
+			return errors.New("browser closed but its temporary profile could not be removed")
+		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	return errors.New("browser closed but its temporary profile could not be removed")
 }
 
 // OpenInterface opens the trusted loopback interface in the supported browser.
