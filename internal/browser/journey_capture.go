@@ -230,7 +230,11 @@ func (c *JourneyCapture) configure(ctx context.Context, session, kind string) er
 		if err := c.client.call(ctx, session, "Page.addScriptToEvaluateOnNewDocument", map[string]any{"source": journeyHooks}, nil); err != nil {
 			return err
 		}
-		if err := c.client.call(ctx, session, "Fetch.enable", map[string]any{"patterns": []map[string]string{{"urlPattern": "*", "requestStage": "Request"}}}, nil); err != nil {
+		// Only document navigation needs interception for the investigation scope.
+		// Pausing subresources and fetches can stall a renderer while an attached
+		// worker is itself waiting for debugger setup. Network events still observe
+		// those requests, and Network.setBlockedURLs enforces destination controls.
+		if err := c.client.call(ctx, session, "Fetch.enable", map[string]any{"patterns": []map[string]string{{"urlPattern": "*", "resourceType": "Document", "requestStage": "Request"}}}, nil); err != nil {
 			return err
 		}
 		if c.options.Location == "deny" || c.options.Location == "approximate" {

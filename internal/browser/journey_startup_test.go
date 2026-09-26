@@ -65,6 +65,52 @@ func TestJourneyWorkerHookEvaluationDoesNotDelayNextTarget(t *testing.T) {
 	}
 }
 
+func TestJourneyInterceptsOnlyDocumentNavigation(t *testing.T) {
+	patterns := make(chan json.RawMessage, 1)
+	client := protocolFixture(t, func(ctx context.Context, connection *websocket.Conn) {
+		for {
+			_, data, err := connection.Read(ctx)
+			if err != nil {
+				return
+			}
+			var request cdpMessage
+			if json.Unmarshal(data, &request) != nil {
+				return
+			}
+			if request.Method == "Fetch.enable" {
+				patterns <- request.Params
+			}
+			reply, _ := json.Marshal(cdpMessage{ID: request.ID, Result: json.RawMessage(`{}`)})
+			if connection.Write(ctx, websocket.MessageText, reply) != nil {
+				return
+			}
+		}
+	})
+	defer client.close()
+	capture := &JourneyCapture{client: client}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := capture.configure(ctx, "page", "page"); err != nil {
+		t.Fatal(err)
+	}
+	var configured struct {
+		Patterns []struct {
+			URLPattern, ResourceType, RequestStage string
+		}
+	}
+	select {
+	case raw := <-patterns:
+		if err := json.Unmarshal(raw, &configured); err != nil {
+			t.Fatal(err)
+		}
+	default:
+		t.Fatal("document navigation interception was not configured")
+	}
+	if len(configured.Patterns) != 1 || configured.Patterns[0].URLPattern != "*" || configured.Patterns[0].ResourceType != "Document" || configured.Patterns[0].RequestStage != "Request" {
+		t.Fatalf("unexpected interception scope: %+v", configured.Patterns)
+	}
+}
+
 func TestJourneyClosesWorkerWhenDestinationControlCannotBeInstalled(t *testing.T) {
 	for _, limit := range []bool{false, true} {
 		t.Run(map[bool]string{false: "command-rejected", true: "session-limit"}[limit], func(t *testing.T) {
