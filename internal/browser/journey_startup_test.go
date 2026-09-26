@@ -65,6 +65,105 @@ func TestJourneyWorkerHookEvaluationDoesNotDelayNextTarget(t *testing.T) {
 	}
 }
 
+func TestJourneyInterceptsOnlyDocumentNavigation(t *testing.T) {
+	patterns := make(chan json.RawMessage, 1)
+	client := protocolFixture(t, func(ctx context.Context, connection *websocket.Conn) {
+		for {
+			_, data, err := connection.Read(ctx)
+			if err != nil {
+				return
+			}
+			var request cdpMessage
+			if json.Unmarshal(data, &request) != nil {
+				return
+			}
+			if request.Method == "Fetch.enable" {
+				patterns <- request.Params
+			}
+			reply, _ := json.Marshal(cdpMessage{ID: request.ID, Result: json.RawMessage(`{}`)})
+			if connection.Write(ctx, websocket.MessageText, reply) != nil {
+				return
+			}
+		}
+	})
+	defer client.close()
+	capture := &JourneyCapture{client: client}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := capture.configure(ctx, "page", "page"); err != nil {
+		t.Fatal(err)
+	}
+	var configured struct {
+		Patterns []struct {
+			URLPattern, ResourceType, RequestStage string
+		}
+	}
+	select {
+	case raw := <-patterns:
+		if err := json.Unmarshal(raw, &configured); err != nil {
+			t.Fatal(err)
+		}
+	default:
+		t.Fatal("document navigation interception was not configured")
+	}
+	if len(configured.Patterns) != 1 || configured.Patterns[0].URLPattern != "*" || configured.Patterns[0].ResourceType != "Document" || configured.Patterns[0].RequestStage != "Request" {
+		t.Fatalf("unexpected interception scope: %+v", configured.Patterns)
+	}
+}
+
+func TestJourneyWorkerResumesBeforeUncontrolledSetup(t *testing.T) {
+	for _, blocked := range []bool{false, true} {
+		t.Run(map[bool]string{false: "observation", true: "destination-control"}[blocked], func(t *testing.T) {
+			var mu sync.Mutex
+			var methods []string
+			client := protocolFixture(t, func(ctx context.Context, connection *websocket.Conn) {
+				for {
+					_, data, err := connection.Read(ctx)
+					if err != nil {
+						return
+					}
+					var request cdpMessage
+					if json.Unmarshal(data, &request) != nil {
+						return
+					}
+					mu.Lock()
+					methods = append(methods, request.Method)
+					mu.Unlock()
+					reply, _ := json.Marshal(cdpMessage{ID: request.ID, Result: json.RawMessage(`{}`)})
+					if connection.Write(ctx, websocket.MessageText, reply) != nil {
+						return
+					}
+				}
+			})
+			options := CaptureOptions{}
+			if blocked {
+				options.BlockOrigins = []string{"https://collector.invalid"}
+			}
+			capture := &JourneyCapture{client: client, options: options, result: CaptureResult{Journey: trace.NewJourney()}}
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			if err := capture.configure(ctx, "worker", "worker"); err != nil {
+				t.Fatal(err)
+			}
+			capture.hooks.Wait()
+			client.close()
+			mu.Lock()
+			defer mu.Unlock()
+			resume := slices.Index(methods, "Runtime.runIfWaitingForDebugger")
+			if resume < 0 || slices.Index(methods[resume+1:], "Runtime.runIfWaitingForDebugger") >= 0 {
+				t.Fatalf("worker must resume exactly once: %v", methods)
+			}
+			control := slices.Index(methods, "Network.setBlockedURLs")
+			if blocked && (control < 0 || control > resume) {
+				t.Fatalf("destination control was not installed before worker resume: %v", methods)
+			}
+			if !blocked && (resume != 0 || control >= 0) {
+				t.Fatalf("uncontrolled worker did not resume before setup: %v", methods)
+			}
+		})
+	}
+}
+
 func TestJourneyClosesWorkerWhenDestinationControlCannotBeInstalled(t *testing.T) {
 	for _, limit := range []bool{false, true} {
 		t.Run(map[bool]string{false: "command-rejected", true: "session-limit"}[limit], func(t *testing.T) {

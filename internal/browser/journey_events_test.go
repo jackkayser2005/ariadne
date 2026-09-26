@@ -217,7 +217,7 @@ func TestJourneyCollectorContinuesRequestsDuringTargetSetup(t *testing.T) {
 			}
 			if command.Method == "Runtime.enable" {
 				waiting = command.ID
-				if !send(map[string]any{"method": "Fetch.requestPaused", "sessionId": "page", "params": map[string]any{"requestId": "paused", "resourceType": "Script", "request": map[string]any{"url": "https://fixture.invalid/script.js"}}}) {
+				if !send(map[string]any{"method": "Fetch.requestPaused", "sessionId": "page", "params": map[string]any{"requestId": "paused", "resourceType": "Document", "request": map[string]any{"url": "https://fixture.invalid/next"}}}) {
 					return
 				}
 				continue
