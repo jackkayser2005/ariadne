@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
-trap 'echo "experiment-001 script failed at line ${LINENO}" >&2' ERR
+report_failure() {
+  local focus
+  focus="$(timeout 5s adb -s emulator-5554 shell dumpsys window 2>/dev/null |
+    awk '/mCurrentFocus/ {if (/dev.ariadne.fixture/) state="fixture"; else if (/com.android.systemui/) state="system-ui"; else if (/launcher/) state="launcher"; else state="other"} END {print state ? state : "unavailable"}' || true)"
+  echo "android foreground: ${focus:-unavailable}" >&2
+  if timeout 5s adb -s emulator-5554 shell run-as dev.ariadne.fixture test -f files/ariadne-input.json >/dev/null 2>&1; then
+    echo "private fixture input pending: yes" >&2
+  else
+    echo "private fixture input pending: no or unavailable" >&2
+  fi
+  echo "experiment-001 script failed at line $1" >&2
+}
+trap 'report_failure "$LINENO"' ERR
 
 run_dir=".ariadne/ci/experiment-001"
 ariadne="${RUNNER_TEMP}/ariadne"
@@ -22,9 +34,6 @@ for attempt in $(seq 1 30); do
   fi
   sleep 2
 done
-
-# The runner's earlier unlock can race adb startup even after boot completes.
-adb -s emulator-5554 shell input keyevent 82
 
 adb -s emulator-5554 install -r \
   fixture/android/app/build/outputs/apk/debug/app-debug.apk
@@ -348,7 +357,7 @@ cleanup_review() {
   kill "${review_pid}" 2>/dev/null || true
   wait "${review_pid}" 2>/dev/null || true
 }
-trap 'cleanup_review; echo "experiment-001 script failed at line ${LINENO}" >&2' ERR
+trap 'cleanup_review; report_failure "$LINENO"' ERR
 review_ready=false
 for attempt in $(seq 1 30); do
   if curl --silent --show-error --fail \
@@ -383,7 +392,7 @@ if grep -F -q \
   exit 1
 fi
 cleanup_review
-trap 'echo "experiment-001 script failed at line ${LINENO}" >&2' ERR
+trap 'report_failure "$LINENO"' ERR
 
 archive_question_older_json="${RUNNER_TEMP}/ariadne-archive-question-older.json"
 archive_question_newer_json="${RUNNER_TEMP}/ariadne-archive-question-newer.json"
