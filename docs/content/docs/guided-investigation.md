@@ -131,3 +131,8 @@ or Edge. Set `ARIADNE_BROWSER_TESTS=1` before running
 `go test -race -covermode=atomic -coverprofile=coverage.out ./...`.
 CI requires these tests on Linux and repeats the guided acceptance suite on Windows.
 Transport, parser, and hostile-payload tests also run without a browser.
+The Windows Chrome/Edge matrix also drives the rendered guide against a local
+two-origin fixture. It checks keyboard navigation, an invalid-address error,
+the input and storage path, a blocked trial, conservative comparison, portable
+export redaction and verification, and private profile integrity. This run
+uses a built Ariadne CLI and does not contact an external website.
