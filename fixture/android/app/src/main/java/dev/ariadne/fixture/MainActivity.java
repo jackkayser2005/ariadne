@@ -2,6 +2,7 @@ package dev.ariadne.fixture;
 
 import android.app.Activity;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 
@@ -17,6 +18,7 @@ public final class MainActivity extends Activity {
     static final String INPUT_FILE = "ariadne-input.json";
     static final String OBSERVATION_FILE = "observation.json";
     private static final int REPORT_TIMEOUT_MILLIS = 5_000;
+    private static final String TAG = "AriadneFixture";
 
     private String email;
     private String region;
@@ -28,16 +30,19 @@ public final class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        Log.i(TAG, "activity-created");
 
         FixtureInput input;
         try {
             input = FixtureInput.read(this);
         } catch (IOException error) {
+            Log.w(TAG, "input-rejected");
             setResult(RESULT_CANCELED);
             finish();
             return;
         }
         if (!getPackageName().equals(input.packageName())) {
+            Log.w(TAG, "package-mismatch");
             setResult(RESULT_CANCELED);
             finish();
             return;
@@ -48,6 +53,7 @@ public final class MainActivity extends Activity {
         location = input.value("location");
         challenge = input.challenge();
         if (email == null || (region == null && location == null) || challenge == null) {
+            Log.w(TAG, "required-fields-missing");
             setResult(RESULT_CANCELED);
             finish();
             return;
@@ -59,6 +65,7 @@ public final class MainActivity extends Activity {
         Button observeButton = findViewById(R.id.observe_button);
         observeButton.setOnClickListener(this::runObservation);
         observeButton.requestFocus();
+        Log.i(TAG, "view-ready");
     }
 
     private void runObservation(View view) {
