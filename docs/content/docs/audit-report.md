@@ -45,7 +45,10 @@ location denial; approximate location remains a lab-only experiment.
 
 The integrated `main` passed `go build ./...`, `go vet ./...`, and the full
 race-enabled suite across all 16 Go packages with installed-browser tests;
-total statement coverage was **90.2%**. Hosted checks passed for the rendered
+total statement coverage was **90.2%**. A fresh
+`go run golang.org/x/vuln/cmd/govulncheck@latest ./...` reported no known
+vulnerabilities on this revision; the database result is point-in-time. Hosted
+checks passed for the rendered
 guided journey in Chrome and Edge, the local browser fixture, documentation,
 and the Android emulator. A local two-origin fixture showed a synthetic input
 in input and storage observations, a destination request, and a blocked trial.
