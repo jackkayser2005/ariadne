@@ -15,7 +15,7 @@ jobs:
   companion:
     name: companion-${{ matrix.browser }}
     runs-on: windows-latest
-    timeout-minutes: 8
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -23,6 +23,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
 
       - name: Install companion test tools
         working-directory: companion
@@ -43,6 +49,18 @@ jobs:
         env:
           ARIADNE_COMPANION_CHANNEL: ${{ matrix.browser }}
         run: node --test controller.test.mjs acceptance.test.mjs
+
+      - name: Build guided CLI
+        shell: pwsh
+        run: go build -o (Join-Path $env:RUNNER_TEMP 'ariadne-guided.exe') ./cmd/ariadne
+
+      - name: Check rendered guided journey and export
+        working-directory: companion
+        shell: pwsh
+        env:
+          ARIADNE_BINARY: ${{ runner.temp }}/ariadne-guided.exe
+          ARIADNE_COMPANION_CHANNEL: ${{ matrix.browser }}
+        run: node --test guided_acceptance.test.mjs
 
       - name: Package only companion runtime files
         if: matrix.browser == 'chromium'

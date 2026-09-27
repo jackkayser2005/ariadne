@@ -62,13 +62,13 @@ const worker=new Worker('/worker.js');document.querySelector('#send').onclick=as
 		}
 		time.Sleep(30 * time.Millisecond)
 	}
-	deadline := time.Now().Add(10 * time.Second)
+	fillDeadline := time.Now().Add(10 * time.Second)
 	for {
 		err = capture.FillSynthetic(ctx, "#email", "m1")
 		if err == nil {
 			break
 		}
-		if time.Now().After(deadline) {
+		if time.Now().After(fillDeadline) {
 			t.Fatal(err)
 		}
 		time.Sleep(30 * time.Millisecond)
@@ -91,6 +91,7 @@ const worker=new Worker('/worker.js');document.querySelector('#send').onclick=as
 			t.Fatal("fixture did not finish")
 		}
 	}
+	observationDeadline := time.Now().Add(10 * time.Second)
 	for {
 		result := capture.Snapshot()
 		found := false
@@ -104,8 +105,8 @@ const worker=new Worker('/worker.js');document.querySelector('#send').onclick=as
 		if found {
 			break
 		}
-		if time.Now().After(deadline) {
-			t.Fatal("worker SHA-256 request was not observed")
+		if time.Now().After(observationDeadline) {
+			t.Fatalf("worker SHA-256 request was not observed; safe journey: %#v", result.Journey)
 		}
 		time.Sleep(30 * time.Millisecond)
 	}
