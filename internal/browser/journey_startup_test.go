@@ -157,6 +157,14 @@ func TestJourneyWorkerResumesBeforeUncontrolledSetup(t *testing.T) {
 			if blocked && (control < 0 || control > resume) {
 				t.Fatalf("destination control was not installed before worker resume: %v", methods)
 			}
+			if blocked {
+				network := slices.Index(methods, "Network.enable")
+				attachment := slices.Index(methods, "Target.setAutoAttach")
+				runtime := slices.Index(methods, "Runtime.enable")
+				if network < 0 || network > control || attachment < control || attachment > resume || runtime < resume {
+					t.Fatalf("worker must resume after blocking but before runtime hooks: %v", methods)
+				}
+			}
 			if !blocked && (resume != 0 || control >= 0) {
 				t.Fatalf("uncontrolled worker did not resume before setup: %v", methods)
 			}
