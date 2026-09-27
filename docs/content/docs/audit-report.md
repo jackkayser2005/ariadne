@@ -3,11 +3,11 @@ title: Ariadne audit and verification report
 weight: 5
 ---
 
-This report records the current Ariadne audit baseline as of 2026-09-11. It
-covers the local Go implementation, browser and proxy boundaries, portable
-evidence verification, the green local review flow, and one live weather-site
-investigation. It describes what the checks establish and keeps unsupported
-claims as explicit gaps.
+This report records the 2026-09-11 audit baseline and a 2026-09-27 integration
+update. The earlier baseline covers the local Go implementation, browser and
+proxy boundaries, portable evidence verification, the local review flow, and
+one live weather-site investigation. The update describes the guided browser
+workflow and keeps unsupported claims as explicit gaps.
 
 ## Verification baseline
 
@@ -32,6 +32,34 @@ Proxy replication reports session-bound boundary consistency while retaining unk
 unavailable unless a separate controlled procedure supplies them.
 
 The dependency baseline was checked with `go run golang.org/x/vuln/cmd/govulncheck@latest ./...` on Go 1.26.8. It completed successfully and reported `No vulnerabilities found.` This is a point-in-time result from the scanner database fetched during the run; repeat it before release.
+
+## 2026-09-27 integration update
+
+The guided flow is **Choose a website → Browse → Review information shared → Try
+sharing less**. It launches a fresh Chrome or Edge profile, records bounded
+synthetic-input journeys, compares a fresh trial with its baseline, and exports
+verified portable evidence. Portable exports omit private destination names
+and trial controls. The local investigation directory contains private context;
+a separately downloaded site-protection profile contains selected origins and
+controls, which the optional companion stores locally when imported. The
+companion applies browser-native destination blocking and location denial;
+approximate location remains a lab-only experiment.
+
+The integrated `main` passed `go build ./...`, `go vet ./...`, and the full
+race-enabled suite across all 16 Go packages with installed-browser tests;
+total statement coverage was **90.2%**. A fresh
+`go run golang.org/x/vuln/cmd/govulncheck@latest ./...` reported no known
+vulnerabilities on this revision; the database result is point-in-time. Hosted
+checks passed for the rendered
+guided journey in Chrome and Edge, the local browser fixture, documentation,
+and the Android emulator. A local two-origin fixture showed a synthetic input
+in input and storage observations, a destination request, and a blocked trial.
+The portable download passed `ariadne inspect` and excluded private origins and
+marker values. The comparison stayed `unknown` because browser visibility is
+partial; a person's task report remained `claimed`, separate from automatic
+functionality evidence. These checks establish the tested workflow, not
+complete observation of arbitrary websites. A broader security review remains
+in progress.
 
 ## Findings and remediations
 
@@ -104,16 +132,18 @@ identities remain available under the collapsed evidence section.
 
 ## Remaining coverage gaps and next phases
 
-The current evidence does not cover worker traffic, unsupported encodings,
-missing browser events, server-side processing, or arbitrary personal browsing.
+The September 11 weather capture did not cover worker traffic. The guided
+recorder now observes supported worker messages and requests, but early worker
+activity, unsupported encodings, missing browser events, server-side processing,
+and arbitrary personal browsing remain visibility gaps.
 A denied geolocation permission records configuration; it does not prove that a
 page never attempted another location estimate. Geographic infrastructure
 mapping remains a separate enrichment slice and is not inferred from this
 capture.
 
-The supported product flow is now:
+The guided product flow is:
 
-`investigation -> comparison -> trace -> evidence`
+`choose a website -> browse -> review information shared -> try sharing less`
 
 The next phases can add reviewed data categories and more deterministic
 fixtures while preserving portable local evidence bundles as the authority.
