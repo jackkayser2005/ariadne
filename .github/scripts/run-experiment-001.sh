@@ -23,6 +23,9 @@ for attempt in $(seq 1 30); do
   sleep 2
 done
 
+# The runner's earlier unlock can race adb startup even after boot completes.
+adb -s emulator-5554 shell input keyevent 82
+
 adb -s emulator-5554 install -r \
   fixture/android/app/build/outputs/apk/debug/app-debug.apk
 
