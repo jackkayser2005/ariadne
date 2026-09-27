@@ -233,6 +233,8 @@ artifact guarantees:
 go run ./cmd/ariadne validate --json examples/experiment-001.json
 go run ./cmd/ariadne validate --json .ariadne/runs/experiment-001-replicated
 go run ./cmd/ariadne validate --json .ariadne/runs/experiment-001
+go run ./cmd/ariadne validate --json .ariadne/investigations/my-site
+go run ./cmd/ariadne validate --json ariadne-evidence.json
 go run ./cmd/ariadne validate .ariadne/runs/android-location-minimize
 go run ./cmd/ariadne validate --json .ariadne/runs/weather-location
 go run ./cmd/ariadne validate --json .ariadne/trace-archive.json
@@ -257,7 +259,8 @@ For trace archives, replication ledgers, cross-source cases, and studies, the sa
 summary when `--json` is omitted; JSON remains available for scripts and the local
 review server.
 
-The validation surface recognizes a JSON experiment manifest (including `manifest.json`),
+The validation surface recognizes saved guided investigations and their portable
+exports, a JSON experiment manifest (including `manifest.json`),
 verified source-neutral trace archives, replication ledgers, cross-source cases, studies, generic source-adapter runs, bounded HAR exports, and verified browser fixture replication and minimization directories plus proxy replication directories; portable fixed-question rounds, selected receipts, and acceptance records; Android replication and minimization directories, standalone Android evidence-run
 directories, and a verified browser weather investigation directory containing
 `weather.json`. Every report lists
