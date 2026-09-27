@@ -72,6 +72,13 @@ async function fillRecordedEmail(page, destination) {
   throw new Error("The synthetic input never reached the local fixture");
 }
 
+async function waitForMarkerObservation(page, kind, site) {
+  await waitUntil(async () => {
+    const rows = await page.locator("#timeline li").allTextContents();
+    return rows.some((row) => row.startsWith(kind + " · page · " + site) && row.includes("Email"));
+  }, "The rendered journey did not show its " + kind + " marker observation");
+}
+
 test("rendered guide records, compares, and exports a bounded local journey", { timeout: 150000 }, async (t) => {
   assert.equal(process.platform, "win32", "The guided acceptance runner uses visible Windows Chrome/Edge");
   const binary = process.env.ARIADNE_BINARY;
@@ -138,6 +145,8 @@ test("rendered guide records, compares, and exports a bounded local journey", { 
   const marker = await page.locator("#marker-m1").inputValue();
   await fillRecordedEmail(page, destination);
   await waitUntil(() => received === 1, "The baseline request did not reach the local collector");
+  await waitForMarkerObservation(page, "input", site);
+  await waitForMarkerObservation(page, "storage write", site);
   await waitUntil(async () => (await page.locator("#timeline").textContent()).includes("response"), "The baseline response was not observed");
   await page.getByRole("button", { name: "Stop and review" }).click();
   await page.getByRole("button", { name: "Export verified evidence" }).waitFor();
