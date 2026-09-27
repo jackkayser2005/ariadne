@@ -38,10 +38,12 @@ The dependency baseline was checked with `go run golang.org/x/vuln/cmd/govulnche
 The guided flow is **Choose a website → Browse → Review information shared → Try
 sharing less**. It launches a fresh Chrome or Edge profile, records bounded
 synthetic-input journeys, compares a fresh trial with its baseline, and exports
-verified portable evidence. Private destination names and trial controls stay
-in the local investigation directory. The optional companion imports a private
-site-protection profile and applies browser-native destination blocking and
-location denial; approximate location remains a lab-only experiment.
+verified portable evidence. Portable exports omit private destination names
+and trial controls. The local investigation directory contains private context;
+a separately downloaded site-protection profile contains selected origins and
+controls, which the optional companion stores locally when imported. The
+companion applies browser-native destination blocking and location denial;
+approximate location remains a lab-only experiment.
 
 The integrated `main` passed `go build ./...`, `go vet ./...`, and the full
 race-enabled suite across all 16 Go packages with installed-browser tests;
