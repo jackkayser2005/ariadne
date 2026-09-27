@@ -44,6 +44,8 @@ const (
 	KindBrowserReplication ArtifactKind = "browser-replication"
 	// KindBrowserHAR identifies a bounded HAR export inventory.
 	KindBrowserHAR ArtifactKind = "browser-har"
+	// KindBrowserJourney identifies a saved or portable guided investigation.
+	KindBrowserJourney ArtifactKind = "browser-journey"
 	// KindArchiveQuestion identifies a saved raw-value-free archive-question reflection.
 	KindArchiveQuestion ArtifactKind = "archive-question"
 	// KindArchiveQuestionTransitionHistory identifies a saved raw-value-free archive-question transition history.
@@ -173,6 +175,12 @@ func Validate(path string) Report {
 	}
 	if filepath.Base(path) != "manifest.json" && !strings.EqualFold(filepath.Ext(path), ".json") {
 		return unavailableReport(KindUnknown, ReasonUnsupportedArtifact)
+	}
+	if journey, _, err := browser.ReadInvestigation(path); err == nil {
+		return reportFromJourney(journey)
+	}
+	if strings.EqualFold(filepath.Base(path), "ariadne-evidence.json") {
+		return rejectedReport(KindBrowserJourney)
 	}
 	if summary, err := bundle.VerifyArchiveQuestionTransitionHistoryAcceptanceRecord(path); err == nil {
 		return reportFromArchiveQuestionTransitionHistoryAcceptance(summary)
@@ -382,6 +390,8 @@ func looksLikeTraceReplicationPath(path string) bool {
 }
 
 func validateDirectory(path string) Report {
+	journey, journeyErr := inspectMarker(path, "journey.json")
+	privateContext, privateContextErr := inspectMarker(path, "private-context.json")
 	weather, weatherErr := inspectMarker(path, "weather.json")
 	replication, replicationErr := inspectMarker(path, "replication.json")
 	minimization, minimizationErr := inspectMarker(path, "minimization.json")
@@ -390,10 +400,21 @@ func validateDirectory(path string) Report {
 	androidReport, androidReportErr := inspectMarker(path, "report.md")
 	androidBaseline, androidBaselineErr := inspectMarker(path, "baseline")
 	androidTreatment, androidTreatmentErr := inspectMarker(path, "treatment")
-	if weatherErr != nil || replicationErr != nil || minimizationErr != nil ||
+	if journeyErr != nil || privateContextErr != nil || weatherErr != nil || replicationErr != nil || minimizationErr != nil ||
 		sourceAdapterErr != nil || androidEvidenceErr != nil || androidReportErr != nil ||
 		androidBaselineErr != nil || androidTreatmentErr != nil {
 		return unavailableReport(KindUnknown, ReasonArtifactUnavailable)
+	}
+	if journey.present || privateContext.present {
+		if weather.present || replication.present || minimization.present ||
+			androidEvidence.present || androidReport.present || androidBaseline.present || androidTreatment.present {
+			return rejectedReport(KindUnknown)
+		}
+		investigation, _, err := browser.ReadInvestigation(path)
+		if err != nil {
+			return rejectedReport(KindBrowserJourney)
+		}
+		return reportFromJourney(investigation)
 	}
 	standaloneAndroid := androidEvidence.present || androidReport.present ||
 		androidBaseline.present || androidTreatment.present
@@ -781,6 +802,18 @@ func reportFromHAR(summary browser.HARVerificationSummary) Report {
 	report.Identity = summary.HARFileSHA256
 	setTier(&report, TierBoundary, StatusUnavailable, ReasonProvenanceUnavailable)
 	setTier(&report, TierReplay, StatusUnavailable, ReasonNotApplicable)
+	return finalize(report)
+}
+func reportFromJourney(bundle browser.JourneyBundle) Report {
+	report := verifiedReport(KindBrowserJourney)
+	report.Identity = bundle.Receipt.JourneySHA256
+	setTier(&report, TierBoundary, StatusUnavailable, ReasonProvenanceUnavailable)
+	if bundle.Journey.Completeness == trace.Complete {
+		report.EvidenceState = evidence.Observed
+		setTier(&report, TierReplay, StatusUnavailable, ReasonNotApplicable)
+	} else {
+		setTier(&report, TierReplay, StatusUnknown, ReasonIncompleteCapture)
+	}
 	return finalize(report)
 }
 func reportFromTrace(summary trace.VerificationSummary) Report {

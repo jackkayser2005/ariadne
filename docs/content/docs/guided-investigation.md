@@ -98,6 +98,8 @@ ariadne investigate --duration 30s --location deny --block-origin https://collec
 ariadne inspect .ariadne/my-trial
 ariadne inspect --no-open ariadne-evidence.json
 ariadne inspect --json ariadne-evidence.json
+ariadne validate --json .ariadne/my-trial
+ariadne validate --json ariadne-evidence.json
 ariadne investigate --pair --duration 30s --location deny --output .ariadne/my-pair https://example.com
 ariadne investigate --pair --order treatment-baseline --duration 30s --location deny --output .ariadne/reversed-pair https://example.com
 ariadne compare .ariadne/my-pair/baseline .ariadne/my-pair/treatment
@@ -108,6 +110,11 @@ ariadne compare --baseline-task works --trial-task works --profile private-prote
 Put flags before the website or bundle argument. `--no-open` prints the loopback
 interface URL; `--duration` records from the terminal and prints synthetic inputs.
 Ctrl+C cancels a timed recording without saving. Output directories must be new.
+`validate` checks the saved or portable journey and trace identities. Its
+`boundary` tier remains unavailable without independent source provenance;
+`replay` is unavailable for complete synthetic-marker journeys and `unknown`
+when recording visibility is partial. A complete marker journey does not imply
+complete visibility into everything a site shared.
 `--pair` records two runs using the same generated inputs, with the requested
 duration per run. Repeat the same task in both fresh windows. `--order
 treatment-baseline` reverses execution while preserving the baseline/trial
