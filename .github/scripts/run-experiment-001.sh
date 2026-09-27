@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 report_failure() {
-  local focus
+  local focus lifecycle
   focus="$(timeout 5s adb -s emulator-5554 shell dumpsys window 2>/dev/null |
     awk '/mCurrentFocus/ {if (/dev.ariadne.fixture/) state="fixture"; else if (/com.android.systemui/) state="system-ui"; else if (/launcher/) state="launcher"; else state="other"} END {print state ? state : "unavailable"}' || true)"
   echo "android foreground: ${focus:-unavailable}" >&2
@@ -9,6 +9,22 @@ report_failure() {
     echo "private fixture input pending: yes" >&2
   else
     echo "private fixture input pending: no or unavailable" >&2
+  fi
+  if lifecycle="$(timeout 5s adb -s emulator-5554 logcat -d -t 200 -s AriadneFixture:I 2>/dev/null |
+    awk '/AriadneFixture.*activity-created/ {created++}
+         /AriadneFixture.*input-rejected/ {rejected++}
+         /AriadneFixture.*(package-mismatch|required-fields-missing)/ {identity++}
+         /AriadneFixture.*view-ready/ {ready++}
+         END {printf "fixture lifecycle: created=%d input_rejected=%d identity_rejected=%d view_ready=%d", created, rejected, identity, ready}')"; then
+    echo "$lifecycle" >&2
+  else
+    echo "fixture lifecycle: unavailable" >&2
+  fi
+  if timeout 5s adb -s emulator-5554 logcat -d -t 200 -s AndroidRuntime:E 2>/dev/null |
+    awk '/Process: dev.ariadne.fixture/ {found=1} END {exit !found}'; then
+    echo "fixture crash: yes" >&2
+  else
+    echo "fixture crash: no or unavailable" >&2
   fi
   echo "experiment-001 script failed at line $1" >&2
 }
