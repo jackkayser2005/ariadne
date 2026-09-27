@@ -196,8 +196,18 @@ func StartCapture(ctx context.Context, options CaptureOptions) (*JourneyCapture,
 }
 
 func (c *JourneyCapture) configure(ctx context.Context, session, kind string) error {
+	patterns := []string{}
+	for _, origin := range c.options.BlockOrigins {
+		patterns = append(patterns, origin+"/*")
+		if strings.HasPrefix(origin, "https://") {
+			patterns = append(patterns, "wss://"+strings.TrimPrefix(origin, "https://")+"/*")
+		} else {
+			patterns = append(patterns, "ws://"+strings.TrimPrefix(origin, "http://")+"/*")
+		}
+	}
+	blockedWorker := kind == "worker" && len(patterns) > 0
 	resumed := false
-	if kind == "worker" && len(c.options.BlockOrigins) == 0 {
+	if kind == "worker" && !blockedWorker {
 		// A worker waiting for the debugger may itself be needed for other
 		// renderer requests to finish. Without destination controls to install,
 		// resume it before waiting on commands dispatched to that worker.
@@ -205,6 +215,25 @@ func (c *JourneyCapture) configure(ctx context.Context, session, kind string) er
 		if err := c.client.call(ctx, session, "Runtime.runIfWaitingForDebugger", map[string]any{}, nil); err != nil {
 			return err
 		}
+		resumed = true
+	}
+	if blockedWorker {
+		// Install request blocking and nested-target attachment while the worker
+		// is paused. Runtime setup can wait for its thread, so do that after resume.
+		for _, command := range []struct {
+			method string
+			params any
+		}{
+			{"Network.enable", map[string]any{"maxTotalBufferSize": 1048576, "maxResourceBufferSize": 262144, "maxPostDataSize": 262144}},
+			{"Network.setBlockedURLs", map[string]any{"urls": patterns}},
+			{"Target.setAutoAttach", map[string]any{"autoAttach": true, "waitForDebuggerOnStart": true, "flatten": true}},
+			{"Runtime.runIfWaitingForDebugger", map[string]any{}},
+		} {
+			if err := c.client.call(ctx, session, command.method, command.params, nil); err != nil {
+				return err
+			}
+		}
+		c.gap("worker-unavailable")
 		resumed = true
 	}
 	for _, command := range []struct {
@@ -216,20 +245,14 @@ func (c *JourneyCapture) configure(ctx context.Context, session, kind string) er
 		{"Network.enable", map[string]any{"maxTotalBufferSize": 1048576, "maxResourceBufferSize": 262144, "maxPostDataSize": 262144}},
 		{"Target.setAutoAttach", map[string]any{"autoAttach": true, "waitForDebuggerOnStart": true, "flatten": true}},
 	} {
+		if blockedWorker && (command.method == "Network.enable" || command.method == "Target.setAutoAttach") {
+			continue
+		}
 		if err := c.client.call(ctx, session, command.method, command.params, nil); err != nil {
 			return err
 		}
 	}
-	patterns := []string{}
-	for _, origin := range c.options.BlockOrigins {
-		patterns = append(patterns, origin+"/*")
-		if strings.HasPrefix(origin, "https://") {
-			patterns = append(patterns, "wss://"+strings.TrimPrefix(origin, "https://")+"/*")
-		} else {
-			patterns = append(patterns, "ws://"+strings.TrimPrefix(origin, "http://")+"/*")
-		}
-	}
-	if len(patterns) > 0 {
+	if len(patterns) > 0 && !blockedWorker {
 		if err := c.client.call(ctx, session, "Network.setBlockedURLs", map[string]any{"urls": patterns}, nil); err != nil {
 			return err
 		}
@@ -264,7 +287,7 @@ func (c *JourneyCapture) configure(ctx context.Context, session, kind string) er
 	}
 	// A target waiting for the debugger cannot execute Runtime.evaluate. Page
 	// hooks run on the next navigation; workers need evaluation after resuming.
-	if kind == "worker" {
+	if kind == "worker" && !blockedWorker {
 		c.gap("worker-unavailable")
 	}
 	if !resumed {
