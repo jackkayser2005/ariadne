@@ -75,7 +75,7 @@ func TestArchiveQuestionTransitionHistoryAcceptanceRecordRejectsInvalidRecords(t
 	}{
 		{name: "malformed", data: []byte("{"), want: "invalid JSON"},
 		{name: "duplicate", data: bytes.Replace(valid, []byte(`"schema_version":1`), []byte(`"schema_version":1,"schema_version":1`), 1), want: "duplicate object key"},
-		{name: "unknown", data: bytes.Replace(valid, []byte("{"), []byte(`{"extra":true,`), 1), want: "unknown field"},
+		{name: "unknown", data: bytes.Replace(valid, []byte("{"), []byte(`{"extra":true,`), 1), want: "archive acceptance fields are invalid"},
 		{name: "trailing", data: append(append([]byte(nil), valid...), []byte("{}")...), want: "trailing data"},
 		{name: "schema", data: bytes.Replace(valid, []byte(`"schema_version":1`), []byte(`"schema_version":2`), 1), want: "unsupported schema_version"},
 		{name: "history digest", data: bytes.Replace(valid, []byte(strings.Repeat("a", 64)), []byte("bad"), 1), want: "transition_history_sha256 is invalid"},

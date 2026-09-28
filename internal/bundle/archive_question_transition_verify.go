@@ -81,7 +81,7 @@ func decodeArchiveQuestionTransitionHistory(data []byte) (ArchiveQuestionTransit
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&history); err != nil {
-		return ArchiveQuestionTransitionHistory{}, fmt.Errorf("decode: %w", err)
+		return ArchiveQuestionTransitionHistory{}, errors.New("archive transition fields are invalid")
 	}
 	var trailing json.RawMessage
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {

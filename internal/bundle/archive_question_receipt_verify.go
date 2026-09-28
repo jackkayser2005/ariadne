@@ -78,7 +78,7 @@ func decodeArchiveQuestionTransitionHistoryAnswerReceipt(data []byte) (ArchiveQu
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&receipt); err != nil {
-		return ArchiveQuestionTransitionHistoryAnswerReceipt{}, fmt.Errorf("decode: %w", err)
+		return ArchiveQuestionTransitionHistoryAnswerReceipt{}, errors.New("archive answer receipt fields are invalid")
 	}
 	var trailing json.RawMessage
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
@@ -520,7 +520,7 @@ func decodeArchiveQuestionTransitionHistoryReceiptAnswer(data []byte, target any
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
-		return fmt.Errorf("decode answer: %w", err)
+		return errors.New("archive answer fields are invalid")
 	}
 	var trailing json.RawMessage
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {

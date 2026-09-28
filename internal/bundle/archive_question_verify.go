@@ -87,7 +87,7 @@ func decodeArchiveQuestionReport(data []byte) (ArchiveQuestionReport, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&report); err != nil {
-		return ArchiveQuestionReport{}, fmt.Errorf("decode: %w", err)
+		return ArchiveQuestionReport{}, errors.New("archive report fields are invalid")
 	}
 	var trailing json.RawMessage
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {

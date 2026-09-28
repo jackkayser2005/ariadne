@@ -21,6 +21,14 @@ import (
 	"github.com/jackkayser2005/ariadne/internal/experiment"
 )
 
+func TestDecodeRedactsUnknownPlanField(t *testing.T) {
+	const privateKey = "person@example.invalid"
+	_, err := Decode(strings.NewReader(`{"` + privateKey + `":true}`))
+	if err == nil || strings.Contains(err.Error(), privateKey) {
+		t.Fatalf("Decode() exposed an unknown plan field: %v", err)
+	}
+}
+
 func TestDecodeAndValidatePlan(t *testing.T) {
 	plan := testPlan()
 	data, err := json.Marshal(plan)
