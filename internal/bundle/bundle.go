@@ -887,17 +887,17 @@ func findingID(
 	digests map[string]string,
 ) (string, error) {
 	if len(references) == 0 {
-		return "", fmt.Errorf("finding %q has no evidence references", field)
+		return "", errors.New("finding has no evidence references")
 	}
 	parts := []string{"ariadne:finding:v1", kind, field, state, qualifier}
 	for _, reference := range references {
 		path, _, ok := strings.Cut(reference, "#")
 		if !ok || path == "" {
-			return "", fmt.Errorf("finding %q has invalid evidence reference", field)
+			return "", errors.New("finding has invalid evidence reference")
 		}
 		digest, ok := digests[path]
 		if !ok {
-			return "", fmt.Errorf("finding %q references missing artifact %q", field, path)
+			return "", errors.New("finding references missing artifact")
 		}
 		parts = append(parts, reference, digest)
 	}
@@ -1241,7 +1241,7 @@ func decodeSession(data []byte, record *adb.SessionRecord) error {
 		}
 		for field := range fields {
 			if _, ok := allowed[field]; !ok {
-				return fmt.Errorf("unknown field %q", field)
+				return errors.New("unknown session field")
 			}
 		}
 	}
@@ -1249,7 +1249,7 @@ func decodeSession(data []byte, record *adb.SessionRecord) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(record); err != nil {
-		return fmt.Errorf("decode: %w", err)
+		return errors.New("decode: invalid session metadata")
 	}
 	var trailing json.RawMessage
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {

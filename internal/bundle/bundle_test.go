@@ -1463,6 +1463,26 @@ func TestWriteRejectsSessionAndSourceDisagreement(t *testing.T) {
 	})
 }
 
+func TestSessionAndFindingErrorsRedactUntrustedNames(t *testing.T) {
+	const privateKey = "person@example.invalid"
+	for _, input := range []string{
+		`{"` + privateKey + `":true}`,
+		`{"steps":[{"` + privateKey + `":true}]}`,
+	} {
+		var record adb.SessionRecord
+		err := decodeSession([]byte(input), &record)
+		if err == nil || strings.Contains(err.Error(), privateKey) {
+			t.Fatalf("decodeSession() exposed an untrusted field: %v", err)
+		}
+	}
+	for _, references := range [][]string{nil, {privateKey}, {privateKey + "#item"}} {
+		_, err := findingID("difference", privateKey, "observed", "changed", references, nil)
+		if err == nil || strings.Contains(err.Error(), privateKey) {
+			t.Fatalf("findingID() exposed an untrusted field or reference: %v", err)
+		}
+	}
+}
+
 func TestWriteRejectsInvalidSessionJSON(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -1486,7 +1506,7 @@ func TestWriteRejectsInvalidSessionJSON(t *testing.T) {
 			change: func(input string) string {
 				return strings.Replace(input, `"kind":`, `"extra": true, "kind":`, 1)
 			},
-			want: `unknown field "extra"`,
+			want: "unknown session field",
 		},
 		{
 			name:   "trailing",

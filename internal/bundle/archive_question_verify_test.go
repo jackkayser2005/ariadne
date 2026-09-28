@@ -97,6 +97,14 @@ func TestVerifyArchiveQuestionReportAcceptsUnavailableEntry(t *testing.T) {
 	}
 }
 
+func TestArchiveQuestionObjectRedactsUnknownField(t *testing.T) {
+	const privateKey = "person@example.invalid"
+	_, err := archiveQuestionObject([]byte(`{"`+privateKey+`":true}`), nil, nil)
+	if err == nil || strings.Contains(err.Error(), privateKey) {
+		t.Fatalf("archiveQuestionObject() exposed an untrusted field: %v", err)
+	}
+}
+
 func TestVerifyArchiveQuestionReportRejectsInvalidReports(t *testing.T) {
 	path, _ := savedArchiveQuestionReport(t, "a-run")
 	valid, err := os.ReadFile(path)
@@ -114,7 +122,7 @@ func TestVerifyArchiveQuestionReportRejectsInvalidReports(t *testing.T) {
 		{name: "trailing", data: append(append([]byte(nil), valid...), []byte("{}")...), want: "trailing data"},
 		{name: "schema", data: bytes.Replace(valid, []byte(`"schema_version":2`), []byte(`"schema_version":1`), 1), want: "unsupported schema_version"},
 		{name: "missing summary field", data: bytes.Replace(valid, []byte(`"unknown":0,`), nil, 1), want: "missing required field \"unknown\""},
-		{name: "case variant", data: bytes.Replace(valid, []byte(`"schema_version":2`), []byte(`"SCHEMA_VERSION":2`), 1), want: "unknown field \"SCHEMA_VERSION\""},
+		{name: "case variant", data: bytes.Replace(valid, []byte(`"schema_version":2`), []byte(`"SCHEMA_VERSION":2`), 1), want: "unknown field"},
 		{name: "missing provenance field", data: bytes.Replace(valid, []byte(`,"ariadne_modified":false`), nil, 1), want: "missing required field \"ariadne_modified\""},
 		{name: "state", data: bytes.Replace(valid, []byte(`"answer_state":"observed"`), []byte(`"answer_state":"invalid"`), 1), want: "archive answer state is invalid"},
 		{name: "digest", data: bytes.Replace(valid, []byte(`"source_evidence_sha256":"`), []byte(`"source_evidence_sha256":"bad`), 1), want: "archive result provenance is invalid"},
