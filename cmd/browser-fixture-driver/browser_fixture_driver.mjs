@@ -317,7 +317,7 @@ class DevTools {
   }
 
   async command(method, params = {}) {
-    if (this.lost) {
+    if (this.lost || this.closing) {
       throw new Error("browser connection closed");
     }
     const id = this.nextID++;
@@ -325,7 +325,7 @@ class DevTools {
     try {
       this.socket.send(JSON.stringify({id, method, params}));
       const response = await beforeDeadline(result, this.deadline);
-      if (this.lost && !this.closing) {
+      if (this.lost || this.closing) {
         throw new Error("browser connection closed");
       }
       return response;
