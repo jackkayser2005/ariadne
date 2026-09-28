@@ -190,15 +190,17 @@ func ensureFixtureInputDirectory(ctx context.Context, run commandRunner, binary 
 	return err
 }
 
-func verifyFixtureInput(ctx context.Context, run commandRunner, binary string, target Target) error {
-	_, err := run(
+func verifyFixtureInput(ctx context.Context, run commandRunner, binary string, target Target, expected []byte) error {
+	actual, err := run(
 		ctx,
 		binary,
-		"-s", target.Device,
-		"shell", "run-as", target.Package,
-		"ls", "-l", fixtureInputPath,
+		"-s", target.Device, "exec-out", "run-as", target.Package,
+		"cat", fixtureInputPath,
 	)
-	return err
+	if err != nil || !bytes.Equal(actual, expected) {
+		return errors.New("private fixture input readback does not match staged bytes")
+	}
+	return nil
 }
 
 func removeFixtureInput(ctx context.Context, run commandRunner, binary string, target Target) error {

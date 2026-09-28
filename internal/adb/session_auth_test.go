@@ -83,6 +83,9 @@ func TestRunPairWithAuthenticatedInputBoundary(t *testing.T) {
 		}
 
 		if len(args) > 2 && args[2] == "exec-out" {
+			if contains(args, fixtureInputPath) {
+				return append([]byte(nil), inputDocuments[len(inputDocuments)-1]...), nil
+			}
 			return []byte(fmt.Sprintf(
 				`{"schema_version":1,"challenge":"%s","region":"us-east","request_id":"request-%s","variant":"standard"}`,
 				currentInput.Challenge,
@@ -177,6 +180,22 @@ func TestRunPairWithAuthenticatedInputBoundary(t *testing.T) {
 	}
 }
 
+func TestVerifyFixtureInputRejectsChangedBytesWithoutDisclosure(t *testing.T) {
+	const secret = "private-persona-value"
+	expected := []byte(secret)
+	target := sessionTarget()
+	run := func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		if strings.Join(args, " ") != "-s emulator-5554 exec-out run-as dev.ariadne.fixture cat files/ariadne-input.json" {
+			t.Fatalf("unexpected readback command: %v", args)
+		}
+		return []byte(secret + "-changed"), nil
+	}
+	err := verifyFixtureInput(context.Background(), run, "adb", target, expected)
+	if err == nil || strings.Contains(err.Error(), secret) {
+		t.Fatalf("unsafe input readback error: %v", err)
+	}
+}
+
 func TestValidateObservationChallengeRejectsUnverifiableEvidence(t *testing.T) {
 	expected := strings.Repeat("a", 64)
 	tests := []struct {
@@ -248,6 +267,7 @@ func TestRunPairWithAuthenticatedUnverifiableStorageIsCaptureFailure(t *testing.
 	manifest.TapResourceID = "dev.ariadne.fixture:id/observe_button"
 	target := sessionTarget()
 	currentInput := fixtureInput{}
+	var inputData []byte
 	ui := []byte("<hierarchy><node resource-id=\"dev.ariadne.fixture:id/observe_button\" bounds=\"[100,200][300,400]\" /> </hierarchy>")
 	run := func(_ context.Context, _ string, args ...string) ([]byte, error) {
 		if len(args) > 3 && args[3] == "pm" {
@@ -286,11 +306,15 @@ func TestRunPairWithAuthenticatedUnverifiableStorageIsCaptureFailure(t *testing.
 			return nil, nil
 		}
 		if len(args) > 2 && args[2] == "exec-out" {
+			if contains(args, fixtureInputPath) {
+				return append([]byte(nil), inputData...), nil
+			}
 			return []byte("cat: files/observation.json: No such file or directory\n"), nil
 		}
 		return []byte("Status: ok\n"), nil
 	}
 	writeInput := func(_ context.Context, _ string, data []byte, _ ...string) ([]byte, error) {
+		inputData = append([]byte(nil), data...)
 		if err := json.Unmarshal(data, &currentInput); err != nil {
 			return nil, err
 		}

@@ -301,8 +301,10 @@ func TestAuthenticatedReplicationRecordsCanonicalProvenance(t *testing.T) {
 	}
 	challengeIndex := 0
 	currentInput := fixtureInput{}
+	var inputData []byte
 	ui := []byte("<hierarchy><node resource-id=\"dev.ariadne.fixture:id/observe_button\" bounds=\"[100,200][300,400]\" /> </hierarchy>")
 	writeInput := func(_ context.Context, _ string, data []byte, _ ...string) ([]byte, error) {
+		inputData = append([]byte(nil), data...)
 		if err := json.Unmarshal(data, &currentInput); err != nil {
 			return nil, err
 		}
@@ -344,6 +346,9 @@ func TestAuthenticatedReplicationRecordsCanonicalProvenance(t *testing.T) {
 			return ui, nil
 		}
 		if len(args) > 2 && args[2] == "exec-out" {
+			if contains(args, fixtureInputPath) {
+				return append([]byte(nil), inputData...), nil
+			}
 			return []byte("{\"schema_version\":1,\"challenge\":\"" + currentInput.Challenge + "\",\"region\":\"us-east\",\"variant\":\"standard\"}"), nil
 		}
 		return []byte("Status: ok\n"), nil
