@@ -443,7 +443,11 @@ func TestAuthenticatedRunRecordsZeroNetworkCaptureShape(t *testing.T) {
 	manifest.SchemaVersion = 3
 	manifest.TapResourceID = "dev.ariadne.fixture:id/observe_button"
 	ui := []byte(`<hierarchy><node resource-id="dev.ariadne.fixture:id/observe_button" bounds="[100,200][300,400]" /></hierarchy>`)
+	var inputData []byte
 	run := func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		if args[2] == "exec-out" && contains(args, fixtureInputPath) {
+			return append([]byte(nil), inputData...), nil
+		}
 		if args[3] == "pm" {
 			return []byte("Success"), nil
 		}
@@ -461,7 +465,8 @@ func TestAuthenticatedRunRecordsZeroNetworkCaptureShape(t *testing.T) {
 		}
 		return []byte("Status: ok"), nil
 	}
-	writeInput := func(context.Context, string, []byte, ...string) ([]byte, error) {
+	writeInput := func(_ context.Context, _ string, data []byte, _ ...string) ([]byte, error) {
+		inputData = append([]byte(nil), data...)
 		return nil, nil
 	}
 	challenge := func() (string, error) {
@@ -486,6 +491,34 @@ func TestAuthenticatedRunRecordsZeroNetworkCaptureShape(t *testing.T) {
 	}
 	if record.Steps[4].Name != "capture_network" || record.Steps[4].Status != "error" || record.Steps[5].Name != "capture_storage" || record.Steps[5].Status != "error" {
 		t.Fatalf("zero-network steps = %#v", record.Steps)
+	}
+}
+
+func TestRunPairRejectsUnconfirmedActivityStart(t *testing.T) {
+	outputDir := filepath.Join(t.TempDir(), "run")
+	run := func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		if args[3] == "pm" {
+			return []byte("Success\n"), nil
+		}
+		if args[3] == "am" {
+			return []byte("Error: activity was not started\n"), nil
+		}
+		return nil, nil
+	}
+	err := runPairWith(context.Background(), "adb", sessionTarget(), sessionManifest(), outputDir, run, sequenceClock())
+	if err == nil || !strings.Contains(err.Error(), "activity start was not confirmed") {
+		t.Fatalf("unconfirmed activity start error = %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(outputDir, "baseline", "session.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record SessionRecord
+	if err := json.Unmarshal(data, &record); err != nil {
+		t.Fatal(err)
+	}
+	if record.Status != "incomplete" || record.FailureStage != "start" {
+		t.Fatalf("unconfirmed activity start receipt = %#v", record)
 	}
 }
 

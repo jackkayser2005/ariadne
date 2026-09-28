@@ -473,7 +473,7 @@ func runSessionWithAuth(
 					failureStage = "start"
 					return fmt.Errorf("%s: write private fixture input: %w", kind, err)
 				}
-				if err := verifyFixtureInput(ctx, run, binary, target); err != nil {
+				if err := verifyFixtureInput(ctx, run, binary, target, inputData); err != nil {
 					failureStage = "start"
 					return fmt.Errorf("%s: verify private fixture input: %w", kind, err)
 				}
@@ -493,11 +493,16 @@ func runSessionWithAuth(
 				args = append(args, "--ei", "collector_port", port)
 			}
 
-			start, _, err := runStep(ctx, run, now, "start", binary, args...)
+			start, output, err := runStep(ctx, run, now, "start", binary, args...)
 			record.Steps = append(record.Steps, start)
 			if err != nil {
 				failureStage = "start"
 				return fmt.Errorf("%s: start fixture: %w", kind, err)
+			}
+			if !activityStartConfirmed(output) {
+				record.Steps[len(record.Steps)-1].Status = "error"
+				failureStage = "start"
+				return fmt.Errorf("%s: fixture activity start was not confirmed", kind)
 			}
 
 			if manifest.TapResourceID != "" {
@@ -733,6 +738,15 @@ func runStep(
 		step.Status = "error"
 	}
 	return step, output, err
+}
+
+func activityStartConfirmed(output []byte) bool {
+	for _, line := range bytes.Split(output, []byte{'\n'}) {
+		if bytes.Equal(bytes.TrimSpace(line), []byte("Status: ok")) {
+			return true
+		}
+	}
+	return false
 }
 
 const uiDumpPath = "/sdcard/ariadne-ui.xml"
