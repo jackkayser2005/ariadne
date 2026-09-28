@@ -173,7 +173,7 @@ func Decode(reader io.Reader) (MinimizationPlan, error) {
 	decoder.DisallowUnknownFields()
 	var plan MinimizationPlan
 	if err := decoder.Decode(&plan); err != nil {
-		return MinimizationPlan{}, fmt.Errorf("minimization plan: decode: %w", err)
+		return MinimizationPlan{}, errors.New("minimization plan: invalid JSON fields")
 	}
 	var trailing json.RawMessage
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
@@ -465,7 +465,7 @@ func completedPairDirectories(candidateDir string, pairs int) (map[string]struct
 	decoder.DisallowUnknownFields()
 	var record adb.ReplicatedRunRecord
 	if err := decoder.Decode(&record); err != nil {
-		return nil, fmt.Errorf("replication metadata: decode: %w", err)
+		return nil, errors.New("replication metadata: invalid JSON fields")
 	}
 	var trailing json.RawMessage
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
@@ -678,7 +678,7 @@ func decodeSummary(data []byte) (MinimizationSummary, error) {
 	decoder.DisallowUnknownFields()
 	var summary MinimizationSummary
 	if err := decoder.Decode(&summary); err != nil {
-		return MinimizationSummary{}, fmt.Errorf("minimization receipt: decode: %w", err)
+		return MinimizationSummary{}, errors.New("minimization receipt: invalid JSON fields")
 	}
 	var trailing json.RawMessage
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {

@@ -386,7 +386,7 @@ func TestVerifyExportRejectsInvalidEnvelope(t *testing.T) {
 				"{\n  \"extra\": true,\n  \"schema_version\": 1,",
 				1,
 			),
-			want: "unknown field",
+			want: "redacted evidence fields are invalid",
 		},
 		{
 			name: "unsupported export schema",

@@ -407,7 +407,7 @@ func DecodeMinimizationQuestionRound(data []byte) (MinimizationQuestionRound, er
 	decoder.DisallowUnknownFields()
 	var round MinimizationQuestionRound
 	if err := decoder.Decode(&round); err != nil {
-		return MinimizationQuestionRound{}, fmt.Errorf("minimization question round: decode: %w", err)
+		return MinimizationQuestionRound{}, errors.New("minimization question round: invalid JSON fields")
 	}
 	var trailing json.RawMessage
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
@@ -513,7 +513,7 @@ func DecodeMinimizationQuestionReceipt(data []byte) (MinimizationQuestionReceipt
 	decoder.DisallowUnknownFields()
 	var receipt MinimizationQuestionReceipt
 	if err := decoder.Decode(&receipt); err != nil {
-		return MinimizationQuestionReceipt{}, fmt.Errorf("minimization question receipt: decode: %w", err)
+		return MinimizationQuestionReceipt{}, errors.New("minimization question receipt: invalid JSON fields")
 	}
 	var trailing json.RawMessage
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {

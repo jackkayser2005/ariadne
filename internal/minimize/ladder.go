@@ -102,7 +102,7 @@ func DecodeLadder(reader io.Reader) (LadderPlan, error) {
 	decoder.DisallowUnknownFields()
 	var plan LadderPlan
 	if err := decoder.Decode(&plan); err != nil {
-		return LadderPlan{}, fmt.Errorf("ladder plan: decode: %w", err)
+		return LadderPlan{}, errors.New("ladder plan: invalid JSON fields")
 	}
 	var trailing json.RawMessage
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
@@ -361,7 +361,7 @@ func VerifyLadder(rootDir string, verifyChild LadderChildVerifier) (LadderSummar
 	decoder.DisallowUnknownFields()
 	var summary LadderSummary
 	if err := decoder.Decode(&summary); err != nil {
-		return LadderSummary{}, "", fmt.Errorf("ladder receipt: decode: %w", err)
+		return LadderSummary{}, "", errors.New("ladder receipt: invalid JSON fields")
 	}
 	var trailing json.RawMessage
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {

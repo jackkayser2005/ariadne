@@ -303,7 +303,7 @@ func readReplicatedRecord(rootDir string) (adb.ReplicatedRunRecord, []byte, erro
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&record); err != nil {
-		return adb.ReplicatedRunRecord{}, nil, fmt.Errorf("replication metadata: decode: %w", err)
+		return adb.ReplicatedRunRecord{}, nil, errors.New("replication metadata: invalid JSON fields")
 	}
 	var trailing json.RawMessage
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {

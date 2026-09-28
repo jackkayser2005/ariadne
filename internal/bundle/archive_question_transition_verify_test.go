@@ -57,7 +57,7 @@ func TestVerifyArchiveQuestionTransitionHistoryRejectsInvalidLedgers(t *testing.
 	}{
 		{name: "malformed", data: []byte("{"), want: "invalid JSON"},
 		{name: "duplicate", data: bytes.Replace(valid, []byte(`"schema_version":2`), []byte(`"schema_version":2,"schema_version":2`), 1), want: "duplicate object key"},
-		{name: "unknown", data: bytes.Replace(valid, []byte("{"), []byte(`{"extra":true,`), 1), want: "unknown field"},
+		{name: "unknown", data: bytes.Replace(valid, []byte("{"), []byte(`{"extra":true,`), 1), want: "archive transition fields are invalid"},
 		{name: "trailing", data: append(append([]byte(nil), valid...), []byte("{}")...), want: "trailing data"},
 		{name: "schema", data: bytes.Replace(valid, []byte(`"schema_version":2`), []byte(`"schema_version":4`), 1), want: "unsupported schema_version"},
 		{name: "history ID", data: bytes.Replace(valid, []byte(`"history_id":"answer-state-transitions"`), []byte(`"history_id":"other"`), 1), want: "history ID is invalid"},
@@ -69,8 +69,8 @@ func TestVerifyArchiveQuestionTransitionHistoryRejectsInvalidLedgers(t *testing.
 		{name: "same counts", data: bytes.Replace(valid, []byte(`"result":"changed"`), []byte(`"result":"same"`), 1), want: "same transition counts are invalid"},
 		{name: "changed counts", data: bytes.Replace(valid, []byte(`"changed":1`), []byte(`"changed":0`), 1), want: "changed transition counts are invalid"},
 		{name: "state change count", data: bytes.Replace(valid, []byte(`"state_changes":[{"directory":"run-001","older_state":"observed","newer_state":"unknown"}]`), []byte(`"state_changes":[]`), 1), want: "transition state change count does not match changed count"},
-		{name: "state changes type", data: bytes.Replace(valid, []byte(`"state_changes":[{"directory":"run-001","older_state":"observed","newer_state":"unknown"}]`), []byte(`"state_changes":{}`), 1), want: "cannot unmarshal object"},
-		{name: "state change unknown field", data: bytes.Replace(valid, []byte(`{"directory":"run-001","older_state":"observed","newer_state":"unknown"}`), []byte(`{"extra":true,"directory":"run-001","older_state":"observed","newer_state":"unknown"}`), 1), want: "unknown field"},
+		{name: "state changes type", data: bytes.Replace(valid, []byte(`"state_changes":[{"directory":"run-001","older_state":"observed","newer_state":"unknown"}]`), []byte(`"state_changes":{}`), 1), want: "archive transition fields are invalid"},
+		{name: "state change unknown field", data: bytes.Replace(valid, []byte(`{"directory":"run-001","older_state":"observed","newer_state":"unknown"}`), []byte(`{"extra":true,"directory":"run-001","older_state":"observed","newer_state":"unknown"}`), 1), want: "archive transition fields are invalid"},
 		{name: "state change directory", data: bytes.Replace(valid, []byte(`"directory":"run-001"`), []byte(`"directory":"../run"`), 1), want: "transition state change directory ordering is invalid"},
 		{name: "state change state", data: bytes.Replace(valid, []byte(`"newer_state":"unknown"`), []byte(`"newer_state":"inferred"`), 1), want: "transition state change state is invalid"},
 		{name: "state change no-op", data: bytes.Replace(valid, []byte(`"newer_state":"unknown"`), []byte(`"newer_state":"observed"`), 1), want: "transition state change does not change state"},
@@ -150,7 +150,7 @@ func TestVerifyArchiveQuestionTransitionHistoryRejectsInvalidSnapshotSummaries(t
 
 	data := archiveQuestionTransitionHistoryBytes(t, valid)
 	data = bytes.Replace(data, []byte(`{"reflection_sha256":`), []byte(`{"extra":true,"reflection_sha256":`), 1)
-	if _, err := VerifyArchiveQuestionTransitionHistory(writeArchiveQuestionTransitionHistoryBytes(t, data)); err == nil || !strings.Contains(err.Error(), "unknown field") {
+	if _, err := VerifyArchiveQuestionTransitionHistory(writeArchiveQuestionTransitionHistoryBytes(t, data)); err == nil || !strings.Contains(err.Error(), "archive transition fields are invalid") {
 		t.Fatalf("VerifyArchiveQuestionTransitionHistory() unknown snapshot field error = %v", err)
 	}
 
@@ -164,7 +164,7 @@ func TestVerifyArchiveQuestionTransitionHistoryRejectsInvalidSnapshotSummaries(t
 	invalid = append(invalid, []byte(`"snapshot_summaries":{}`)...)
 	invalid = append(invalid, data[end+1:]...)
 	data = invalid
-	if _, err := VerifyArchiveQuestionTransitionHistory(writeArchiveQuestionTransitionHistoryBytes(t, data)); err == nil || !strings.Contains(err.Error(), "cannot unmarshal object") {
+	if _, err := VerifyArchiveQuestionTransitionHistory(writeArchiveQuestionTransitionHistoryBytes(t, data)); err == nil || !strings.Contains(err.Error(), "archive transition fields are invalid") {
 		t.Fatalf("VerifyArchiveQuestionTransitionHistory() snapshot type error = %v", err)
 	}
 

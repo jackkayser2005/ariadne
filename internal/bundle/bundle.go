@@ -975,7 +975,7 @@ func decodeRedactedDocument(data []byte) (redactedDocument, error) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&export); err != nil {
-		return redactedDocument{}, fmt.Errorf("decode: %w", err)
+		return redactedDocument{}, errors.New("redacted evidence fields are invalid")
 	}
 	var trailing json.RawMessage
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {

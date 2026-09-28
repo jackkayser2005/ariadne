@@ -73,7 +73,7 @@ func decodeArchiveQuestionTransitionHistoryQuestionRound(data []byte) (ArchiveQu
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&round); err != nil {
-		return ArchiveQuestionTransitionHistoryQuestionRoundAnswer{}, fmt.Errorf("decode: %w", err)
+		return ArchiveQuestionTransitionHistoryQuestionRoundAnswer{}, errors.New("archive question round fields are invalid")
 	}
 	var trailing json.RawMessage
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {

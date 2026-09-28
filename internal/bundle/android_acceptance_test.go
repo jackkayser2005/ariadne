@@ -204,6 +204,14 @@ func TestVerifyAndroidAcceptanceRecordRejectsUnsafeOrInvalidInput(t *testing.T) 
 	}
 }
 
+func TestAndroidAcceptanceDecoderRedactsUnknownField(t *testing.T) {
+	const privateKey = "person@example.invalid"
+	_, err := decodeAndroidAcceptanceRecord([]byte(`{"` + privateKey + `":true}`))
+	if err == nil || strings.Contains(err.Error(), privateKey) {
+		t.Fatalf("decodeAndroidAcceptanceRecord() exposed an unknown field: %v", err)
+	}
+}
+
 func TestVerifyAndroidAcceptanceRecordRejectsMalformedJSON(t *testing.T) {
 	record := validAndroidAcceptanceRecordForTest(t)
 	validData, err := json.Marshal(record)
@@ -216,7 +224,7 @@ func TestVerifyAndroidAcceptanceRecordRejectsMalformedJSON(t *testing.T) {
 		want string
 	}{
 		{name: "malformed", data: []byte("{"), want: "invalid JSON"},
-		{name: "unknown field", data: append(append([]byte{}, validData[:len(validData)-1]...), []byte(",\"extra\":true}")...), want: "unknown field"},
+		{name: "unknown field", data: append(append([]byte{}, validData[:len(validData)-1]...), []byte(",\"extra\":true}")...), want: "android acceptance fields are invalid"},
 		{name: "duplicate field", data: []byte("{\"schema_version\":1,\"schema_version\":1}"), want: "duplicate"},
 		{name: "trailing data", data: append(append([]byte{}, validData...), []byte("{}")...), want: "trailing"},
 	}

@@ -243,7 +243,7 @@ func decodeAndroidAcceptanceRecord(data []byte) (AndroidAcceptanceRecord, error)
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&record); err != nil {
-		return AndroidAcceptanceRecord{}, fmt.Errorf("decode: %w", err)
+		return AndroidAcceptanceRecord{}, errors.New("android acceptance fields are invalid")
 	}
 	var trailing json.RawMessage
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
