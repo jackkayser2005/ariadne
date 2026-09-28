@@ -10,7 +10,7 @@ report_failure() {
   else
     echo "private fixture input pending: no or unavailable" >&2
   fi
-  if lifecycle="$(timeout 5s adb -s emulator-5554 logcat -d -t 200 -s AriadneFixture:I 2>/dev/null |
+  if lifecycle="$(timeout 5s adb -s emulator-5554 logcat -d -t 2000 -s AriadneFixture:I 2>/dev/null |
     awk '/AriadneFixture.*activity-created/ {created++}
          /AriadneFixture.*input-rejected/ {rejected++}
          /AriadneFixture.*(package-mismatch|required-fields-missing)/ {identity++}
@@ -20,7 +20,7 @@ report_failure() {
   else
     echo "fixture lifecycle: unavailable" >&2
   fi
-  if timeout 5s adb -s emulator-5554 logcat -d -t 200 -s AndroidRuntime:E 2>/dev/null |
+  if timeout 5s adb -s emulator-5554 logcat -d -t 2000 -s AndroidRuntime:E 2>/dev/null |
     awk '/Process: dev.ariadne.fixture/ {found=1} END {exit !found}'; then
     echo "fixture crash: yes" >&2
   else
