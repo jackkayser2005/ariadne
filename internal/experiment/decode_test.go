@@ -46,14 +46,14 @@ func TestDecode(t *testing.T) {
 		{name: "duplicate top-level key", input: `{
 			"schema_version": 1,
 			"schema_version": 1
-		}`, wantErr: `duplicate key "schema_version"`},
+		}`, wantErr: "duplicate object key"},
 		{name: "duplicate persona key", input: `{
 			"schema_version": 1,
 			"name": "duplicate",
 			"variable": "email",
 			"baseline": {"email": "first", "email": "second"},
 			"treatment": {"email": "third"}
-		}`, wantErr: `duplicate key "email"`},
+		}`, wantErr: "duplicate object key"},
 		{name: "unknown field", input: `{
 			"schema_version": 1,
 			"name": "unknown",

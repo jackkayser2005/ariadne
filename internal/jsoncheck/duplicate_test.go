@@ -18,17 +18,17 @@ func TestRejectDuplicateKeys(t *testing.T) {
 		{
 			name:    "top-level duplicate",
 			input:   `{"key":1,"key":2}`,
-			wantErr: `duplicate key "key"`,
+			wantErr: "duplicate object key",
 		},
 		{
 			name:    "nested duplicate",
 			input:   `{"outer":{"key":1,"key":2}}`,
-			wantErr: `duplicate key "key"`,
+			wantErr: "duplicate object key",
 		},
 		{
 			name:    "array duplicate",
 			input:   `[{"key":1,"key":2}]`,
-			wantErr: `duplicate key "key"`,
+			wantErr: "duplicate object key",
 		},
 	}
 
@@ -49,5 +49,10 @@ func TestRejectDuplicateKeys(t *testing.T) {
 				)
 			}
 		})
+	}
+	const privateKey = "person@example.invalid"
+	err := RejectDuplicateKeys([]byte(`{"` + privateKey + `":1,"` + privateKey + `":2}`))
+	if err == nil || strings.Contains(err.Error(), privateKey) {
+		t.Fatalf("RejectDuplicateKeys() exposed a duplicate key: %v", err)
 	}
 }

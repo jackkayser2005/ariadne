@@ -376,7 +376,7 @@ func TestVerifyExportRejectsInvalidEnvelope(t *testing.T) {
 				"{\n  \"schema_version\": 1,\n  \"schema_version\": 1,",
 				1,
 			),
-			want: "duplicate key",
+			want: "duplicate object key",
 		},
 		{
 			name: "unknown key",
@@ -1479,7 +1479,7 @@ func TestWriteRejectsInvalidSessionJSON(t *testing.T) {
 					1,
 				)
 			},
-			want: `duplicate key "schema_version"`,
+			want: "duplicate object key",
 		},
 		{
 			name: "unknown",

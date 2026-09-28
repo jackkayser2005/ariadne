@@ -316,7 +316,7 @@ func decodeStrict(data []byte, allowed []string, destination any) error {
 		}
 		for field := range fields {
 			if _, ok := allowedFields[field]; !ok {
-				return fmt.Errorf("unknown field %q", field)
+				return errors.New("unknown observation field")
 			}
 		}
 	}

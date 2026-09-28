@@ -100,7 +100,7 @@ func TestNormalizeRejectsInvalidArtifacts(t *testing.T) {
 				`"method":"POST","method":"GET"`,
 				1,
 			),
-			want: `duplicate key "method"`,
+			want: "duplicate object key",
 		},
 		{
 			name:    "network metadata",
@@ -200,6 +200,12 @@ func TestNormalizeDoesNotExposeValues(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), secret) {
 		t.Fatalf("Normalize() exposed field name: %v", err)
+	}
+
+	network = strings.Replace(networkArtifact(baselineBody), `"body_base64":`, `"`+secret+`":"value","body_base64":`, 1)
+	_, err = Normalize(strings.NewReader(baselineBody), strings.NewReader(network))
+	if err == nil || strings.Contains(err.Error(), secret) {
+		t.Fatalf("Normalize() exposed an unexpected network field: %v", err)
 	}
 }
 
