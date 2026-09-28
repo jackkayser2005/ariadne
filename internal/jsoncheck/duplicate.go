@@ -46,7 +46,7 @@ func scanValue(decoder *json.Decoder) error {
 				return errors.New("object key is not a string")
 			}
 			if _, exists := keys[key]; exists {
-				return fmt.Errorf("duplicate key %q", key)
+				return errors.New("duplicate object key")
 			}
 			keys[key] = struct{}{}
 			if err := scanValue(decoder); err != nil {

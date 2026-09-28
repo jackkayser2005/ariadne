@@ -72,7 +72,7 @@ func rejectUnknownTopLevelFields(data []byte) error {
 	}
 	for field := range fields {
 		if _, ok := allowed[field]; !ok {
-			return fmt.Errorf("unknown field %q", field)
+			return errors.New("unknown manifest field")
 		}
 	}
 	return nil

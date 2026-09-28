@@ -158,7 +158,7 @@ func archiveQuestionObject(data []byte, required, optional []string) (map[string
 	}
 	for key := range object {
 		if _, ok := allowed[key]; !ok {
-			return nil, fmt.Errorf("unknown field %q", key)
+			return nil, errors.New("unknown field")
 		}
 	}
 	for _, key := range required {

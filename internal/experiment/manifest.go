@@ -32,11 +32,11 @@ func (p *Persona) UnmarshalJSON(data []byte) error {
 	persona := make(Persona, len(fields))
 	for key, raw := range fields {
 		if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
-			return fmt.Errorf("persona field %q: value must be a string", key)
+			return errors.New("persona value must be a string")
 		}
 		var value string
 		if err := json.Unmarshal(raw, &value); err != nil {
-			return fmt.Errorf("persona field %q: value must be a string: %w", key, err)
+			return errors.New("persona value must be a string")
 		}
 		persona[key] = value
 	}

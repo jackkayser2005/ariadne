@@ -46,14 +46,14 @@ func TestDecode(t *testing.T) {
 		{name: "duplicate top-level key", input: `{
 			"schema_version": 1,
 			"schema_version": 1
-		}`, wantErr: `duplicate key "schema_version"`},
+		}`, wantErr: "duplicate object key"},
 		{name: "duplicate persona key", input: `{
 			"schema_version": 1,
 			"name": "duplicate",
 			"variable": "email",
 			"baseline": {"email": "first", "email": "second"},
 			"treatment": {"email": "third"}
-		}`, wantErr: `duplicate key "email"`},
+		}`, wantErr: "duplicate object key"},
 		{name: "unknown field", input: `{
 			"schema_version": 1,
 			"name": "unknown",
@@ -61,13 +61,13 @@ func TestDecode(t *testing.T) {
 			"baseline": {"email": "first"},
 			"treatment": {"email": "second"},
 			"extra": [{"nested": true}]
-		}`, wantErr: `unknown field "extra"`},
+		}`, wantErr: "unknown manifest field"},
 		{name: "case-insensitive field alias", input: strings.Replace(
 			validJSON,
 			`"name"`,
 			`"NAME"`,
 			1,
-		), wantErr: `unknown field "NAME"`},
+		), wantErr: "unknown manifest field"},
 		{name: "trailing data", input: validJSON + `{}`, wantErr: "trailing data"},
 		{name: "non-string persona value", input: `{
 			"schema_version": 1,
@@ -75,7 +75,7 @@ func TestDecode(t *testing.T) {
 			"variable": "consent",
 			"baseline": {"consent": false},
 			"treatment": {"consent": true}
-		}`, wantErr: "cannot unmarshal bool"},
+		}`, wantErr: "persona value must be a string"},
 		{name: "null persona value", input: `{
 			"schema_version": 1,
 			"name": "typed",
@@ -113,6 +113,21 @@ func TestDecode(t *testing.T) {
 				t.Fatalf("Decode() error = %v, want containing %q", err, test.wantErr)
 			}
 		})
+	}
+}
+
+func TestDecodeRedactsUnexpectedNames(t *testing.T) {
+	const privateKey = "person@example.invalid"
+	inputs := []string{
+		strings.Replace(validJSON, `"name":`, `"`+privateKey+`":true,"name":`, 1),
+		strings.Replace(validJSON, `"email": "baseline@example.invalid"`, `"`+privateKey+`":null,"email": "baseline@example.invalid"`, 1),
+		strings.Replace(validJSON, `"email": "baseline@example.invalid"`, `"`+privateKey+`":false,"email": "baseline@example.invalid"`, 1),
+	}
+	for _, input := range inputs {
+		_, err := Decode(strings.NewReader(input))
+		if err == nil || strings.Contains(err.Error(), privateKey) {
+			t.Fatalf("Decode() exposed an untrusted field name: %v", err)
+		}
 	}
 }
 
