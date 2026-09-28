@@ -96,6 +96,20 @@ function delay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+async function beforeDeadline(promise, deadline) {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error("browser operation timed out")), Math.max(1, deadline - Date.now()));
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function readProcedure() {
   const chunks = [];
   let length = 0;
@@ -164,7 +178,8 @@ async function waitForBrowserExit(browser) {
 }
 
 async function removeProfile(profile) {
-  for (let attempt = 0; attempt < 120; attempt += 1) {
+  const deadline = Date.now() + 30000;
+  do {
     try {
       await rm(profile, {recursive: true, force: true, maxRetries: 2, retryDelay: 250});
     } catch {
@@ -174,7 +189,7 @@ async function removeProfile(profile) {
       return;
     }
     await delay(250);
-  }
+  } while (Date.now() < deadline);
   throw new Error("temporary browser profile could not be removed");
 }
 
@@ -236,7 +251,9 @@ function chromePath() {
 async function waitForPage(debugPort, deadline) {
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`);
+      const response = await fetch(`http://127.0.0.1:${debugPort}/json/list`, {
+        signal: AbortSignal.timeout(Math.min(1000, Math.max(1, deadline - Date.now()))),
+      });
       if (response.ok) {
         const targets = await response.json();
         const page = targets.find((target) => target.type === "page" && typeof target.webSocketDebuggerUrl === "string");
@@ -264,8 +281,9 @@ function browserFailure(browser) {
 }
 
 class DevTools {
-  constructor(url) {
+  constructor(url, deadline = Date.now() + 30000) {
     this.url = url;
+    this.deadline = deadline;
     this.nextID = 1;
     this.pending = new Map();
     this.listeners = new Map();
@@ -286,10 +304,10 @@ class DevTools {
       }
       this.pending.clear();
     });
-    await new Promise((resolve, reject) => {
+    await beforeDeadline(new Promise((resolve, reject) => {
       this.socket.addEventListener("open", resolve, {once: true});
       this.socket.addEventListener("error", () => reject(new Error("browser connection failed")), {once: true});
-    });
+    }), this.deadline);
   }
 
   on(method, listener) {
@@ -299,17 +317,21 @@ class DevTools {
   }
 
   async command(method, params = {}) {
-    if (this.lost) {
+    if (this.lost || this.closing) {
       throw new Error("browser connection closed");
     }
     const id = this.nextID++;
     const result = new Promise((resolve, reject) => this.pending.set(id, {resolve, reject}));
-    this.socket.send(JSON.stringify({id, method, params}));
-    const response = await result;
-    if (this.lost && !this.closing) {
-      throw new Error("browser connection closed");
+    try {
+      this.socket.send(JSON.stringify({id, method, params}));
+      const response = await beforeDeadline(result, this.deadline);
+      if (this.lost || this.closing) {
+        throw new Error("browser connection closed");
+      }
+      return response;
+    } finally {
+      this.pending.delete(id);
     }
-    return response;
   }
 
   message(data) {
@@ -517,7 +539,7 @@ async function capture(procedure) {
     stage = "cdp-discovery";
     const socketURL = await Promise.race([waitForPage(debugPort, deadline), browserFailure(browser)]);
     stage = "cdp-connect";
-    devTools = new DevTools(socketURL);
+    devTools = new DevTools(socketURL, deadline);
     await devTools.connect();
     stage = "cdp-events";
     const observed = collector(target?.hostname || "");

@@ -126,7 +126,7 @@ export async function captureWeather(request, executable) {
     browser=spawn(executable,['--headless=new','--disable-gpu','--disable-extensions','--disable-background-networking','--disable-component-update','--disable-sync','--disable-crash-reporter','--disable-breakpad','--no-proxy-server','--no-first-run','--no-default-browser-check','--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE beta.weather.gov',`--user-data-dir=${profile}`,'--remote-debugging-address=127.0.0.1',`--remote-debugging-port=${port}`,'about:blank'],{stdio:'ignore',windowsHide:true,detached:process.platform!=='win32'});
     const work=async()=>{
       const socket=await Promise.race([waitForPage(port,deadline),browserFailure(browser)]);
-      cdp=new DevTools(socket);await cdp.connect();
+      cdp=new DevTools(socket,deadline);await cdp.connect();
       cdp.on('Network.requestWillBeSent',p=>collector.request(p));
       cdp.on('Network.responseReceived',p=>collector.response(p));
       cdp.on('Network.loadingFailed',p=>collector.failed(p));

@@ -20,7 +20,7 @@ const (
 	minCaptureDurationMS = 100
 	maxCaptureDurationMS = 5 * 60 * 1000
 	maxDriverStderrBytes = 64 << 10
-	captureCleanupGrace  = 15 * time.Second
+	captureCleanupGrace  = 45 * time.Second
 )
 
 // CaptureSummary identifies the verified procedure and trace produced by a
