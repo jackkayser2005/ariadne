@@ -51,7 +51,7 @@ const worker=new Worker('/worker.js');document.querySelector('#send').onclick=as
 		capture.mu.Lock()
 		ready := false
 		for _, session := range capture.sessions {
-			ready = ready || (session.context == "worker" && session.ready)
+			ready = ready || (session.context == "worker" && session.origin == site.URL+"/worker.js" && session.ready)
 		}
 		capture.mu.Unlock()
 		if ready {
